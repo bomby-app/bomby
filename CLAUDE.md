@@ -9,16 +9,16 @@ Talk to Claude Code. A voice agent (LiveKit Agents, Python, Gemini 3.8 Live) han
 | Path | What |
 | --- | --- |
 | `agent/` | The voice agent (uv project). `agent.py` entrypoint, `tools/claude.py` the Claude runner and tool, `prompts/` the two prompts, `tests/` with a fake ACP agent. |
-| `app/` | The desktop app (planned). |
+| `app/` | The desktop app: Tauri v2, React frontend in `src/`, Rust core in `src-tauri/`. See `docs/tauri-notes.md`. |
 | `docs/` | Architecture, roadmap, decisions, library notes. |
-| `justfile`, `agent.just` | Every main command, run from the repo root. The root `justfile` has repo-wide recipes and one `mod` per part: `just agent console`, later `just app build`. `just` lists them. |
-| `mise.toml` | Pinned tools: `lk` and `claude-agent-acp`. |
+| `justfile`, `agent.just`, `app.just` | Every main command, run from the repo root. The root `justfile` has repo-wide recipes and one `mod` per part: `just agent console`, later `just app build`. `just` lists them. |
+| `mise.toml` | Pinned tools: `lk`, `claude-agent-acp`, `rust`, `bun`. |
 
 ## Rules
 
 - **Run commands through `just`** from the repo root. A new main command gets a recipe in its part's module (`agent.just`, later `app.just`) with a doc comment, a group and `[working-directory: '...']`. A new part gets its own `<part>.just` and a `mod <part>` line in the `justfile`.
 - **`just check` must pass** (lint, types with 0 errors and 0 warnings, tests) before a change is done. Fix any lint, type or test failure you see, related or not.
-- **Don't run dev servers, `lk agent console` or the app.** Report what to run; the owner tests first.
+- **Don't run dev servers, `lk agent console` or the app (`just app dev`).** Builds and checks are fine. Report what to run; the owner tests first.
 - **Only `uv` for Python deps.** Pin new tools in `mise.toml`. No system-level installs.
 - **Never trust memory for LiveKit, Gemini, ACP or Tauri APIs.** They move fast. Check the installed source and current docs, and record what you found in the matching `docs/*-notes.md` with source and version.
 - **Never name a file `claude.md`.** macOS is case-insensitive, so it is `CLAUDE.md`, which Claude Code loads as instructions.

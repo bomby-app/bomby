@@ -8,7 +8,7 @@ claude-livekit lets you talk to Claude Code. A desktop app holds your projects; 
 | --- | --- | --- |
 | Voice agent | `agent/` (Python, LiveKit Agents, Gemini 3.8 Live) | Built |
 | Claude runner | `agent/tools/claude.py` (ACP client driving `claude-agent-acp`) | Built |
-| Desktop app | `app/` (Tauri v2, React, LiveKit Agents UI) | Planned, see [roadmap](roadmap.md) |
+| Desktop app | `app/` (Tauri v2, React, LiveKit Agents UI) | Scaffolded, see [roadmap](roadmap.md) and [tauri-notes.md](tauri-notes.md) |
 | LiveKit server | LiveKit Cloud or self-hosted; not needed for `just agent console` | External |
 
 ```mermaid
