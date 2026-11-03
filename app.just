@@ -61,6 +61,7 @@ icon:
 [working-directory: 'app']
 add +components:
     bun x shadcn add --yes --overwrite {{components}}
+    scripts/clean-generated.sh
     bun x biome check --write src/components/ui src/hooks
 
 # Run the Rust core's unit tests

@@ -38,7 +38,8 @@ console-debug:
 [group('run')]
 [working-directory: 'agent']
 dev:
-    lk agent dev
+    # Python directly: `lk agent dev` would use the lk CLI's selected project instead.
+    uv run python agent.py dev
 
 # Run the tests, e.g. `just agent test -k steer`
 [group('check')]

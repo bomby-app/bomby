@@ -17,8 +17,8 @@ const MAX_NAME_LEN: usize = 80;
 #[serde(rename_all = "camelCase")]
 pub struct Project {
     id: i64,
-    name: String,
-    folders: Vec<String>,
+    pub(crate) name: String,
+    pub(crate) folders: Vec<String>,
     created_at: i64,
     /// Newest first.
     calls: Vec<CallSummary>,
@@ -98,7 +98,7 @@ fn write_folders(conn: &Connection, project_id: i64, folders: &[String]) -> Resu
     Ok(())
 }
 
-fn load(conn: &Connection, id: i64) -> Result<Project> {
+pub(crate) fn load(conn: &Connection, id: i64) -> Result<Project> {
     let (name, created_at) = conn
         .query_row(
             "SELECT name, created_at FROM projects WHERE id = ?1",

@@ -28,3 +28,16 @@ export function saveCredentials(input: CredentialsInput): Promise<void> {
 export function clearCredentials(): Promise<void> {
   return invoke("clear_credentials")
 }
+
+/** Whether a Gemini API key is saved (the key stays in the core). */
+export function hasGeminiKey(): Promise<boolean> {
+  return invoke("has_gemini_key")
+}
+
+export function saveGeminiKey(key: string): Promise<void> {
+  return invoke("save_gemini_key", { key })
+}
+
+export function clearGeminiKey(): Promise<void> {
+  return invoke("clear_gemini_key")
+}

@@ -1,12 +1,21 @@
+import type { ReactNode } from "react"
+
 import { Separator } from "@/components/ui/separator"
 import { SidebarTrigger, useSidebar } from "@/components/ui/sidebar"
 import { cn } from "@/lib/utils"
 
 /**
- * The top bar of the main panel. The bar itself drags the window; its text ignores the
- * pointer so a drag that starts on the title still moves the window.
+ * The top bar of the main panel: the title, and the page's actions on the right. The bar
+ * itself drags the window; its text ignores the pointer so a drag that starts on the
+ * title still moves the window.
  */
-export function AppHeader({ title }: { title: string }) {
+export function AppHeader({
+  title,
+  actions,
+}: {
+  title: string
+  actions?: ReactNode
+}) {
   const { state } = useSidebar()
 
   return (
@@ -26,6 +35,7 @@ export function AppHeader({ title }: { title: string }) {
       <h1 className="pointer-events-none truncate text-sm font-medium">
         {title}
       </h1>
+      {actions && <div className="ml-auto shrink-0">{actions}</div>}
     </header>
   )
 }

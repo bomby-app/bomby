@@ -63,7 +63,20 @@ CLOSE_TIMEOUT_S = 5
 # Never passed to Claude. With an API key in its environment Claude Code bills the API
 # account instead of the Claude plan. Claude Code sets CLAUDECODE in its own shells and
 # refuses to start under it, which would break running this agent from a Claude terminal.
-BLOCKED_ENV = frozenset({"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDECODE"})
+# The desktop app starts this agent with the user's LiveKit and Gemini keys in its
+# environment (not in .env), so those names are blocked here too.
+BLOCKED_ENV = frozenset(
+    {
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
+        "CLAUDECODE",
+        "LIVEKIT_URL",
+        "LIVEKIT_API_KEY",
+        "LIVEKIT_API_SECRET",
+        "GOOGLE_API_KEY",
+        "GEMINI_API_KEY",
+    }
+)
 # claude-agent-acp's extension for injecting a message into a running turn. The SDK sends
 # it as `_session/steering`; initialize advertises it in `_meta.steering.supported`.
 STEER_METHOD = "session/steering"

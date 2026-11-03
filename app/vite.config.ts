@@ -15,6 +15,9 @@ export default defineConfig({
   },
   // One HTML page per window (src-tauri/src/windows.rs opens the others by file name).
   build: {
+    // The pages load from disk inside the app, not over a network; livekit-client and the
+    // transcript's markdown renderer make the main chunk about 1.4 MB.
+    chunkSizeWarningLimit: 2000,
     rolldownOptions: {
       input: {
         main: path.resolve(import.meta.dirname, "index.html"),

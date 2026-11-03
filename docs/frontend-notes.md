@@ -34,7 +34,16 @@ The app's web half (`app/src`). Checked against shadcn CLI 4.23.0, Tailwind CSS 
 - Linting is off for `src/components/ui/**` and `src/hooks/use-mobile.ts` (generated); formatting still applies.
 - Tailwind class sorting (`useTailwindSortedClasses`) is a nursery rule in 2.6, so it's off.
 
-## Agents UI (next step)
+## Agents UI
+
+- Installed with `just app add @agents-ui/<name>`: `agent-session-provider`, `agent-control-bar`, `agent-chat-transcript`, `agent-audio-visualizer-bar` and what they pull in. Files land in `src/components/agents-ui/` and `src/hooks/agents-ui/`; like `components/ui`, they are generated (Biome lints them off).
+- **Two hand fixes for Base UI**, marked `// Base UI:` in the files, needed because Agents UI was written against Radix's Select and Toggle: `agent-track-control.tsx` (`onValueChange` gets `string | null`; `SelectContent` has no `position="popper"`, use `alignItemWithTrigger={false}`) and `agent-track-toggle.tsx` (its props omit the button's `value`). Any `just app add` that pulls these in (the control bar, the session view block) overwrites them; redo the fixes after.
+- **Unused `React` imports.** Registry code writes `import React, { ... }` without using `React`, which `noUnusedLocals` rejects. `app/scripts/clean-generated.sh` (run by `just app add`) drops that default import from generated files that never say `React.`.
+- **The call screen** (`features/call/call-view.tsx`) follows the official `agent-session-view-01` block from LiveKit's agent starter (`livekit-examples/agent-starter-react`, cloned for reference into `.scratch/`, gitignored): agent visual in the middle, a transcript that opens over it, a status line and `AgentControlBar variant="livekit"` (mic with its device menu, transcript toggle, leave) at the bottom, `StartAudioButton` for blocked playback. We compose it from the block's parts instead of using the block, so the centre can be ours: `AgentAudioVisualizerAura` in highlighter (`color`, `themeMode`, `audioTrack={useAgent().microphoneTrack}`) with Dot Dot inside. The block and the grid, radial and wave visualizers were removed after.
+- **Devices follow the system.** `AgentControlBar` remembers a chosen device in local storage unless `saveUserChoices={false}`; we pass false. livekit-client captures `deviceId: { ideal: "default" }` with `echoCancellation`, `noiseSuppression`, `autoGainControl` and `voiceIsolation` on by default (`audioDefaults` in livekit-client 2.23.0).
+- **Levels.** `useTrackVolume(track)` (0 to 1) on `useAgent().microphoneTrack` (the agent's voice) and `useLocalParticipant().microphoneTrack.audioTrack` (the user's mic) drive the mascot.
+
+## Agents UI, from the docs
 
 - LiveKit's shadcn registry for agent frontends: `shadcn registry add @agents-ui`, then `shadcn add @agents-ui/<component>`; files land in `components/agents-ui/`.
 - Its components import no primitive library themselves: they use our shadcn components through `registryDependencies` (`button`, `toggle`, `select`, `message`, `bubble`, `marker`, `message-scroller`), so they follow our base. Checked in the registry JSON at `https://livekit.io/ui/r/<name>.json`, 2026-11-03. Its own package.json lists Radix for its dev setup only. Needs `@livekit/components-react` and `livekit-client`.

@@ -41,4 +41,5 @@ Checked against `claude-agent-acp` 0.100.0 (`dist/acp-agent.js` in the mise inst
 Checked in adapter 0.100.0 (`dist/acp-agent.js`), 2026-11-03.
 
 - `claudeCliPath()` returns `CLAUDE_CODE_EXECUTABLE` when set, before looking for the SDK's bundled binary (`@anthropic-ai/claude-agent-sdk-<platform>/claude`, 305 MB on darwin-arm64). Session start passes it as `pathToClaudeCodeExecutable`. So a packaged adapter can run the user's own `claude`.
-- After `initialize` the adapter probes the CLI's login in the background and pushes `_auth/status_update` (`{authStatus}`) as an ext notification; it sends again only when the status changes. The client learns sign-in without asking. Shapes are in `dist/auth-status.js`.
+- After `initialize` the adapter probes the CLI's login in the background and pushes `_auth/status_update` (`{authStatus}`) as an ext notification; it sends again only when the status changes. The client learns sign-in without asking. Shapes are in `dist/auth-status.js`; seen: `{'authStatus': {'kind': 'account', 'label': 'Claude Max', 'account': {'plan': 'max', ...}}}`.
+- The Python SDK strips the leading underscore before calling `Client.ext_notification` / `ext_method` (`acp/router.py`: `method[1:]`), so match `auth/status_update`, not `_auth/status_update` (checked in `agent-client-protocol` 0.12.1, 2026-11-04).

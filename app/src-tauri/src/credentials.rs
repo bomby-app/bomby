@@ -1,24 +1,43 @@
-//! LiveKit credentials (server URL, API key, API secret), kept in the OS secure store:
-//! Keychain on macOS, Credential Manager on Windows, Secret Service on Linux.
+//! The keys the user brings (docs/decisions/users-bring-their-own-keys-and-claude.md), kept
+//! in the OS secure store: Keychain on macOS, Credential Manager on Windows, Secret Service
+//! on Linux.
 //!
-//! All three live in one entry as JSON, so the OS asks for access once. The secret never goes
-//! back to the page: the page sees whether one is saved, and the core will use it to mint
-//! call tokens.
+//! All of them live in one entry (service: the app identifier, account `credentials`) as
+//! JSON, and the core reads it once per run and keeps it in memory (`Vault`). On macOS each
+//! read of a keychain item by a binary the item doesn't trust yet asks the user, and a
+//! rebuilt dev binary is never trusted yet, so one item read once means one prompt per run,
+//! not one per screen.
+//!
+//! Secrets never go back to the page: it sees whether one is saved. The core uses them to
+//! mint call tokens and passes them to the agent when it starts one.
+
+use std::sync::Mutex;
 
 use keyring::Entry;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Runtime};
+use tauri::{AppHandle, Runtime, State};
 
 use crate::error::{Error, Result};
 
-/// The entry's account name; the service is the app identifier (tauri.conf.json).
-const ACCOUNT: &str = "livekit";
+/// The entry's account; the service is the app identifier (tauri.conf.json).
+const ACCOUNT: &str = "credentials";
+/// Entries from before 2026-11-04, one per provider. Read once, merged, then deleted.
+const LEGACY_LIVEKIT: &str = "livekit";
+const LEGACY_GEMINI: &str = "gemini";
 
-#[derive(Serialize, Deserialize)]
-struct Stored {
-    url: String,
-    api_key: String,
-    api_secret: String,
+/// The LiveKit keys. The core uses them for tokens and the agent's environment.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct LiveKitKeys {
+    pub url: String,
+    pub api_key: String,
+    pub api_secret: String,
+}
+
+/// Everything in the keychain entry.
+#[derive(Clone, Default, Serialize, Deserialize)]
+struct Keys {
+    livekit: Option<LiveKitKeys>,
+    gemini_key: Option<String>,
 }
 
 /// What the page may see.
@@ -39,22 +58,105 @@ pub struct CredentialsInput {
     api_secret: Option<String>,
 }
 
-fn entry<R: Runtime>(app: &AppHandle<R>) -> Result<Entry> {
-    Ok(Entry::new(&app.config().identifier, ACCOUNT)?)
+fn entry<R: Runtime>(app: &AppHandle<R>, account: &str) -> Result<Entry> {
+    Ok(Entry::new(&app.config().identifier, account)?)
 }
 
-fn load(entry: &Entry) -> Result<Option<Stored>> {
+/// The entry's value, or `None` when nothing is saved.
+fn read(entry: &Entry) -> Result<Option<String>> {
     match entry.get_password() {
-        Ok(json) => Ok(Some(serde_json::from_str(&json)?)),
+        Ok(value) => Ok(Some(value)),
         Err(keyring::Error::NoEntry) => Ok(None),
         Err(e) => Err(e.into()),
     }
 }
 
-/// The saved credentials without the secret, or `None` when nothing is saved.
+fn remove(entry: &Entry) -> Result<()> {
+    match entry.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(e.into()),
+    }
+}
+
+fn write<R: Runtime>(app: &AppHandle<R>, keys: &Keys) -> Result<()> {
+    let entry = entry(app, ACCOUNT)?;
+    if keys.livekit.is_none() && keys.gemini_key.is_none() {
+        return remove(&entry);
+    }
+    entry.set_password(&serde_json::to_string(keys)?)?;
+    Ok(())
+}
+
+/// Reads the entry, moving the older per-provider entries into it the first time.
+fn read_keychain<R: Runtime>(app: &AppHandle<R>) -> Result<Keys> {
+    if let Some(json) = read(&entry(app, ACCOUNT)?)? {
+        return Ok(serde_json::from_str(&json)?);
+    }
+    let livekit_entry = entry(app, LEGACY_LIVEKIT)?;
+    let gemini_entry = entry(app, LEGACY_GEMINI)?;
+    let keys = Keys {
+        livekit: read(&livekit_entry)?
+            .map(|json| serde_json::from_str(&json))
+            .transpose()?,
+        gemini_key: read(&gemini_entry)?.filter(|key| !key.is_empty()),
+    };
+    if keys.livekit.is_some() || keys.gemini_key.is_some() {
+        write(app, &keys)?;
+        remove(&livekit_entry)?;
+        remove(&gemini_entry)?;
+    }
+    Ok(keys)
+}
+
+/// The keychain entry, read on first use and kept for the run. Tauri state.
+#[derive(Default)]
+pub struct Vault(Mutex<Option<Keys>>);
+
+impl Vault {
+    fn keys<R: Runtime>(&self, app: &AppHandle<R>) -> Result<Keys> {
+        let mut cached = self.0.lock().unwrap_or_else(|p| p.into_inner());
+        if cached.is_none() {
+            *cached = Some(read_keychain(app)?);
+        }
+        Ok(cached.clone().unwrap_or_default())
+    }
+
+    /// Changes the keys and writes them back, under one lock.
+    fn update<R: Runtime>(
+        &self,
+        app: &AppHandle<R>,
+        change: impl FnOnce(&mut Keys) -> Result<()>,
+    ) -> Result<()> {
+        let mut cached = self.0.lock().unwrap_or_else(|p| p.into_inner());
+        let mut keys = match cached.take() {
+            Some(keys) => keys,
+            None => read_keychain(app)?,
+        };
+        let before = keys.clone();
+        if let Err(e) = change(&mut keys).and_then(|()| write(app, &keys)) {
+            *cached = Some(before);
+            return Err(e);
+        }
+        *cached = Some(keys);
+        Ok(())
+    }
+
+    pub fn livekit<R: Runtime>(&self, app: &AppHandle<R>) -> Result<Option<LiveKitKeys>> {
+        Ok(self.keys(app)?.livekit)
+    }
+
+    pub fn gemini_key<R: Runtime>(&self, app: &AppHandle<R>) -> Result<Option<String>> {
+        Ok(self.keys(app)?.gemini_key)
+    }
+}
+
+/// The saved LiveKit keys without the secret, or `None` when nothing is saved.
 #[tauri::command(async)]
-pub fn credentials_info<R: Runtime>(app: AppHandle<R>) -> Result<Option<CredentialsInfo>> {
-    Ok(load(&entry(&app)?)?.map(|s| CredentialsInfo {
+pub fn credentials_info<R: Runtime>(
+    app: AppHandle<R>,
+    vault: State<'_, Vault>,
+) -> Result<Option<CredentialsInfo>> {
+    Ok(vault.livekit(&app)?.map(|s| CredentialsInfo {
         url: s.url,
         api_key: s.api_key,
         has_secret: !s.api_secret.is_empty(),
@@ -63,7 +165,7 @@ pub fn credentials_info<R: Runtime>(app: AppHandle<R>) -> Result<Option<Credenti
 
 /// Merges the page's input with what is saved: trims, checks, and keeps the saved secret
 /// when the input has none.
-fn merge(input: CredentialsInput, saved: Option<Stored>) -> Result<Stored> {
+fn merge(input: CredentialsInput, saved: Option<LiveKitKeys>) -> Result<LiveKitKeys> {
     let url = input.url.trim();
     let api_key = input.api_key.trim();
     let new_secret = input
@@ -86,7 +188,7 @@ fn merge(input: CredentialsInput, saved: Option<Stored>) -> Result<Stored> {
         (secret, _) => secret.to_owned(),
     };
 
-    Ok(Stored {
+    Ok(LiveKitKeys {
         url: url.to_owned(),
         api_key: api_key.to_owned(),
         api_secret,
@@ -94,19 +196,53 @@ fn merge(input: CredentialsInput, saved: Option<Stored>) -> Result<Stored> {
 }
 
 #[tauri::command(async)]
-pub fn save_credentials<R: Runtime>(app: AppHandle<R>, input: CredentialsInput) -> Result<()> {
-    let entry = entry(&app)?;
-    let stored = merge(input, load(&entry)?)?;
-    entry.set_password(&serde_json::to_string(&stored)?)?;
-    Ok(())
+pub fn save_credentials<R: Runtime>(
+    app: AppHandle<R>,
+    vault: State<'_, Vault>,
+    input: CredentialsInput,
+) -> Result<()> {
+    vault.update(&app, |keys| {
+        keys.livekit = Some(merge(input, keys.livekit.take())?);
+        Ok(())
+    })
 }
 
 #[tauri::command(async)]
-pub fn clear_credentials<R: Runtime>(app: AppHandle<R>) -> Result<()> {
-    match entry(&app)?.delete_credential() {
-        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-        Err(e) => Err(e.into()),
+pub fn clear_credentials<R: Runtime>(app: AppHandle<R>, vault: State<'_, Vault>) -> Result<()> {
+    vault.update(&app, |keys| {
+        keys.livekit = None;
+        Ok(())
+    })
+}
+
+/// Whether a Gemini key is saved. The key itself stays in the core.
+#[tauri::command(async)]
+pub fn has_gemini_key<R: Runtime>(app: AppHandle<R>, vault: State<'_, Vault>) -> Result<bool> {
+    Ok(vault.gemini_key(&app)?.is_some())
+}
+
+#[tauri::command(async)]
+pub fn save_gemini_key<R: Runtime>(
+    app: AppHandle<R>,
+    vault: State<'_, Vault>,
+    key: String,
+) -> Result<()> {
+    let key = key.trim();
+    if key.is_empty() || key.contains(char::is_whitespace) {
+        return Err(Error::Invalid("Paste the whole Gemini API key.".into()));
     }
+    vault.update(&app, |keys| {
+        keys.gemini_key = Some(key.to_owned());
+        Ok(())
+    })
+}
+
+#[tauri::command(async)]
+pub fn clear_gemini_key<R: Runtime>(app: AppHandle<R>, vault: State<'_, Vault>) -> Result<()> {
+    vault.update(&app, |keys| {
+        keys.gemini_key = None;
+        Ok(())
+    })
 }
 
 #[cfg(test)]
@@ -121,8 +257,8 @@ mod tests {
         }
     }
 
-    fn saved() -> Option<Stored> {
-        Some(Stored {
+    fn saved() -> Option<LiveKitKeys> {
+        Some(LiveKitKeys {
             url: "wss://old.livekit.cloud".into(),
             api_key: "OLD".into(),
             api_secret: "old-secret".into(),

@@ -5,9 +5,12 @@ from typing import override
 
 from dotenv import load_dotenv
 from google.genai import types
+from livekit import rtc
 from livekit.agents import NOT_GIVEN, Agent, AgentServer, AgentSession, JobContext, cli
 from livekit.plugins import google
 
+import lifeline
+from call_options import CallOptions, call_options
 from tools import ALL_TOOLS
 from tools.claude import ClaudeRunner
 
@@ -40,21 +43,42 @@ THINKING_CONFIG = (
 
 INSTRUCTIONS = (Path(__file__).resolve().parent / "prompts" / "voice.md").read_text()
 
+# The language the user speaks. Gemini's native-audio models pick their spoken language
+# themselves (no language code), so the prompt holds them to it; the transcription takes a
+# hint, which stops noise being written down as Portuguese or Russian (2026-11-04).
+LANGUAGE_CODES = ["en-US"]
+
 
 class Assistant(Agent):
-    def __init__(self) -> None:
+    def __init__(self, options: CallOptions) -> None:
+        self._resumed: bool = options.resumed
         # LiveKit's own signatures are partially untyped; the ignores below are theirs.
-        super().__init__(instructions=INSTRUCTIONS, tools=ALL_TOOLS)  # pyright: ignore[reportUnknownMemberType]
+        super().__init__(  # pyright: ignore[reportUnknownMemberType]
+            instructions=options.instructions(INSTRUCTIONS), tools=ALL_TOOLS
+        )
 
     @override
     async def on_enter(self) -> None:
-        _ = self.session.generate_reply(instructions="Greet the user briefly.")  # pyright: ignore[reportUnknownMemberType]
+        greeting = (
+            "Welcome the user back in a few words and pick up where you left off."
+            if self._resumed
+            else "Greet the user briefly."
+        )
+        _ = self.session.generate_reply(instructions=greeting)  # pyright: ignore[reportUnknownMemberType]
 
 
-server = AgentServer()
+# One user, one call at a time: keep one job process warm instead of the default pool
+# (livekit-agents warms several in production mode; 17 on this Mac, each a full Python).
+# Its health check server listens on this machine only, on any free port, so it never
+# clashes with another worker or shows up on the network.
+server = AgentServer(num_idle_processes=1, host="127.0.0.1", port=0)
+
+# Explicit dispatch: the app names this agent in each call's token, with the project in
+# the dispatch metadata. Rooms without it get no agent.
+AGENT_NAME = "claudible"
 
 
-@server.rtc_session()
+@server.rtc_session(agent_name=AGENT_NAME)
 async def entrypoint(ctx: JobContext) -> None:
     ctx.log_context_fields = {"room": ctx.room.name, "model": MODEL}
     logger.info("using model %s", MODEL)
@@ -63,12 +87,32 @@ async def entrypoint(ctx: JobContext) -> None:
     # claude-agent-acp process per call, started on the first task, runs the named Claude
     # sessions. Shutting the job down closes every session and the process.
     claude = ClaudeRunner.from_env(ctx.job.metadata)
+    # The voice and, on a resumed call, the conversation so far.
+    options = call_options(ctx.job.metadata)
     logger.info(
-        "project %s in %s",
+        "project %s in %s, voice %s, %d earlier lines",
         claude.project.name,
         ", ".join(str(f) for f in claude.project.folders),
+        options.voice,
+        len(options.history),
     )
     ctx.add_shutdown_callback(claude.aclose)
+
+    # Which audio the agent gets, from whom: the first thing to check on an audio problem.
+    def on_track_subscribed(
+        track: rtc.Track,
+        publication: rtc.RemoteTrackPublication,
+        participant: rtc.RemoteParticipant,
+    ) -> None:
+        logger.info(
+            "subscribed to %s (%s) from %s, kind %s",
+            publication.source,
+            track.kind,
+            participant.identity,
+            participant.kind,
+        )
+
+    _ = ctx.room.on("track_subscribed", on_track_subscribed)  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
 
     # Everything Gemini gets at connect time is final for the session. The plugin reconnects
     # on a tool change and can only inject later instructions as a conversation turn.
@@ -76,15 +120,18 @@ async def entrypoint(ctx: JobContext) -> None:
         userdata=claude,
         llm=google.realtime.RealtimeModel(
             model=MODEL,
-            voice=os.getenv("GEMINI_VOICE", "Charon"),
-            input_audio_transcription=types.AudioTranscriptionConfig(),
+            voice=options.voice,
+            input_audio_transcription=types.AudioTranscriptionConfig(
+                language_codes=LANGUAGE_CODES
+            ),
             output_audio_transcription=types.AudioTranscriptionConfig(),
             thinking_config=THINKING_CONFIG,
         ),
     )
 
-    await session.start(agent=Assistant(), room=ctx.room)  # pyright: ignore[reportUnknownMemberType]
+    await session.start(agent=Assistant(options), room=ctx.room)  # pyright: ignore[reportUnknownMemberType]
 
 
 if __name__ == "__main__":
+    lifeline.exit_with_app()
     cli.run_app(server)

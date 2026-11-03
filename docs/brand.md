@@ -41,6 +41,13 @@ UI mapping onto the shadcn variables (board "07 Colour in UI"), light / dark:
 | `--sidebar-accent` / `-foreground` | `#E8E8E4` / `#121212` | `#242424` / `#F5F5F2` | Sidebar row hover and selection: a lighter (or darker) grey than the sidebar, as in other desktop apps |
 | `--claude` (new) | `#FF9BD2` | `#FF9BD2` | Claude sessions, working indicators. Fill only, ink text on it |
 | `--destructive` | `#D92D20` | `#F97066` | End call, delete. Not for the mascot |
+| `--highlighter` (new) | `#E8FF3A` | `#E8FF3A` | Good-news marks (a requirement is ready): a disc with an ink icon on it, never a bare lime icon or text |
+
+Transcript bubbles (owner, 2026-11-04, after the Paper board "In use / the conversation"): Claudible speaks in highlighter with ink text, the user in ink with white text (a raised grey in dark). Bubblegum is kept for Claude's own messages when they show in the call.
+
+Resume buttons are bubblegum with ink text: resuming brings a conversation back (owner, 2026-11-04). The sidebar shows a small outlined **Beta** badge after the wordmark while the app is in beta.
+
+Status marks pair up: ready is an ink thumbs-up on a highlighter disc, missing an ink cross on a bubblegum disc (Settings > Setup).
 
 Contrast: ink on highlighter 16.8:1 and ink on bubblegum 9.7:1 are always fine. Highlighter on white (1.1:1) and bubblegum on white (1.9:1) are never text or icons. Links are ink text with a 3px highlighter underline; in dark mode highlighter text is fine.
 
@@ -52,6 +59,7 @@ Contrast: ink on highlighter 16.8:1 and ink on bubblegum 9.7:1 are always fine. 
 ## Mascot states and motion
 
 - Only the eyes change: never the bubble shape or its colours. States follow LiveKit's agent state (`useAgent()`): waking (connecting, initializing: closed lines), idle (blinks), listening (eyes wide, bubble breathes with mic level), thinking (eyes drift up-right), speaking (oval eyes, bubble pulses with the voice), asleep (disconnected: closed, greyed), failed (crossed bubblegum eyes). Ours on top: working (a Claude session runs: eyes scan left and right, a layer over any live state) and done (smiling arcs for 1.2s when a result arrives).
+- Built as `app/src/components/mascot.tsx` (`<Mascot state level size />`, plus `mascotState(agentState)`): every state except working and done, which need Claude's status events. It sits inside the highlighter Aura on the call screen, replaces the folder icon of a project on a call, and is the icon on Start a call.
 - Motion: eyes lead, the bubble only scales with sound; driven by audio level, not timers; ease-out for changes, sine for loops, no bounce, 120 to 400ms one-offs. One SVG component: `<Mascot state working done level />`, CSS transforms only. Reduced motion: no loops, instant swaps, blink stays. Under 32px nothing loops.
 
 ## Voice
@@ -71,6 +79,8 @@ Contrast: ink on highlighter 16.8:1 and ink on bubblegum 9.7:1 are always fine. 
 | Call failed | Lost the connection. Try again? |
 | No mic access | Claudible needs your mic. Turn it on in System Settings. |
 | Call ended | Talk soon. |
+
+The agent's spoken persona follows this voice: `agent/prompts/voice.md` opens with Claudible as a friendly, sharp, slightly witty senior engineer who names who's acting and stays calm when things break.
 
 ## App assets
 

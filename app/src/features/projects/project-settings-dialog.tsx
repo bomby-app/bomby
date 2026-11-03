@@ -1,6 +1,5 @@
-import { Phone, Trash2 } from "lucide-react"
+import { Trash2 } from "lucide-react"
 import { type KeyboardEvent, useState } from "react"
-
 import {
   AlertDialog,
   AlertDialogAction,
@@ -13,6 +12,14 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import {
   Field,
   FieldDescription,
@@ -27,12 +34,19 @@ import type { Project } from "./api"
 import { FolderList } from "./folder-list"
 import { useProjects } from "./projects-provider"
 
-/** A project in the main panel: its name, its folders, the call, and delete. */
-export function ProjectView({
+/**
+ * A project's settings, opened from the header: its name, its folders, and delete. Each
+ * change is saved as it is made.
+ */
+export function ProjectSettingsDialog({
   project,
+  open,
+  onOpenChange,
   onDeleted,
 }: {
   project: Project
+  open: boolean
+  onOpenChange: (open: boolean) => void
   onDeleted: () => void
 }) {
   const { update, remove } = useProjects()
@@ -53,43 +67,45 @@ export function ProjectView({
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-xl flex-col gap-10 px-6 py-8">
-      <FieldGroup>
-        {/* Remount on outside changes so the field shows the saved name. */}
-        <NameField key={project.name} name={project.name} onSave={save} />
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Project settings</DialogTitle>
+          <DialogDescription>
+            Changes are saved as you make them.
+          </DialogDescription>
+        </DialogHeader>
 
-        <FieldSet>
-          <FieldLegend variant="label">Folders</FieldLegend>
-          <FieldDescription>
-            Claude works in the first one and can reach the rest.
-          </FieldDescription>
-          <FolderList
-            folders={project.folders}
-            onChange={(folders) => void save({ folders })}
+        <FieldGroup>
+          {/* Remount on outside changes so the field shows the saved name. */}
+          <NameField key={project.name} name={project.name} onSave={save} />
+
+          <FieldSet>
+            <FieldLegend variant="label">Folders</FieldLegend>
+            <FieldDescription>
+              Claude works in the first one and can reach the rest.
+            </FieldDescription>
+            <FolderList
+              folders={project.folders}
+              onChange={(folders) => void save({ folders })}
+            />
+          </FieldSet>
+
+          {error && <FieldError>{error}</FieldError>}
+        </FieldGroup>
+
+        <DialogFooter className="sm:justify-start">
+          <DeleteProject
+            name={project.name}
+            onConfirm={async () => {
+              await remove(project.id)
+              onOpenChange(false)
+              onDeleted()
+            }}
           />
-        </FieldSet>
-
-        {error && <FieldError>{error}</FieldError>}
-      </FieldGroup>
-
-      <Field>
-        <div>
-          <Button disabled>
-            <Phone />
-            Start a call
-          </Button>
-        </div>
-        <FieldDescription>Calls arrive in the next build.</FieldDescription>
-      </Field>
-
-      <DeleteProject
-        name={project.name}
-        onConfirm={async () => {
-          await remove(project.id)
-          onDeleted()
-        }}
-      />
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 

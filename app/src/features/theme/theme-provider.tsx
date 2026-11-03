@@ -16,6 +16,8 @@ const DARK_QUERY = "(prefers-color-scheme: dark)"
 
 type ThemeState = {
   theme: Theme
+  /** What the page shows right now: the choice, or the OS's when it is "system". */
+  resolved: "light" | "dark"
   setTheme: (theme: Theme) => void
 }
 
@@ -37,8 +39,14 @@ function applyScheme(dark: boolean) {
   root.style.colorScheme = dark ? "dark" : "light"
 }
 
+function shownDark(): boolean {
+  return document.documentElement.classList.contains("dark")
+}
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(storedTheme)
+  // boot.js applied the scheme before first paint; start from what it chose.
+  const [dark, setDark] = useState(shownDark)
 
   // Another window changed the theme.
   useEffect(() => {
@@ -55,12 +63,16 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     // null hands it back to the OS. Needs core:window:allow-set-theme.
     void getCurrentWindow().setTheme(theme === "system" ? null : theme)
 
+    const show = (next: boolean) => {
+      applyScheme(next)
+      setDark(next)
+    }
     if (theme !== "system") {
-      applyScheme(theme === "dark")
+      show(theme === "dark")
       return
     }
     const media = window.matchMedia(DARK_QUERY)
-    const sync = () => applyScheme(media.matches)
+    const sync = () => show(media.matches)
     sync()
     media.addEventListener("change", sync)
     return () => media.removeEventListener("change", sync)
@@ -72,7 +84,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     void emit(THEME_EVENT, next)
   }
 
-  return <ThemeContext value={{ theme, setTheme }}>{children}</ThemeContext>
+  return (
+    <ThemeContext
+      value={{ theme, resolved: dark ? "dark" : "light", setTheme }}
+    >
+      {children}
+    </ThemeContext>
+  )
 }
 
 export function useTheme(): ThemeState {

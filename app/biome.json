@@ -42,7 +42,12 @@
   },
   "overrides": [
     {
-      "includes": ["src/components/ui/**", "src/hooks/use-mobile.ts"],
+      "includes": [
+        "src/components/ui/**",
+        "src/components/agents-ui/**",
+        "src/hooks/agents-ui/**",
+        "src/hooks/use-mobile.ts"
+      ],
       "linter": {
         "enabled": false
       }

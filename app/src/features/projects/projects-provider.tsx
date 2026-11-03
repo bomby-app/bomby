@@ -22,6 +22,8 @@ type ProjectsState = {
   create: (input: ProjectInput) => Promise<Project>
   update: (id: number, input: ProjectInput) => Promise<Project>
   remove: (id: number) => Promise<void>
+  /** Reloads the tree, after something outside this provider changed it (a call). */
+  refresh: () => Promise<void>
 }
 
 const ProjectsContext = createContext<ProjectsState | null>(null)
@@ -57,6 +59,7 @@ export function ProjectsProvider({ children }: { children: ReactNode }) {
       await deleteProject(id)
       await reload()
     },
+    refresh: reload,
   }
 
   return <ProjectsContext value={state}>{children}</ProjectsContext>

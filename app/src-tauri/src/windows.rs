@@ -30,6 +30,8 @@ pub async fn open_settings<R: Runtime>(app: AppHandle<R>) -> Result<()> {
             .resizable(false)
             .minimizable(false)
             .maximizable(false)
+            // Cmd/Ctrl + = - 0 zoom, like the main window (tauri.conf.json).
+            .zoom_hotkeys_enabled(true)
             // Placed before it is shown, so it never flashes on another monitor.
             .visible(false);
 

@@ -21,6 +21,7 @@ Claudible is a voice agent that runs Claude Code. The agent (LiveKit Agents, Pyt
 - **`just check` must pass** (lint, types with 0 errors and 0 warnings, tests) before a change is done. Fix any lint, type or test failure you see, related or not.
 - **Don't run dev servers, `lk agent console` or the app (`just app dev`).** Builds and checks are fine. Report what to run; the owner tests first.
 - **Frontend code follows `app/README.md`**: shadcn components via `just app add`, never hand-written copies; generated `components/ui/` is styled from outside.
+- **Call UI is LiveKit's.** Anything in a call (session, transcript, controls, visualizers, devices) uses LiveKit Agents UI (`just app add @agents-ui/...`) and `@livekit/components-react`, following LiveKit's agent starter (`livekit-examples/agent-starter-react`). Check what LiveKit ships before building anything; brand it from outside (props, `className`, `data-slot` styles in `index.css`), never by hand-rolling a replacement.
 - **Only `uv` for Python deps.** Pin new tools in `mise.toml`. No system-level installs.
 - **Never trust memory for LiveKit, Gemini, ACP or Tauri APIs.** They move fast. Check the installed source and current docs, and record what you found in the matching `docs/*-notes.md` with source and version.
 - **Never name a file `claude.md`.** macOS is case-insensitive, so it is `CLAUDE.md`, which Claude Code loads as instructions.

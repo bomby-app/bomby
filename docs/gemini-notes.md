@@ -45,3 +45,15 @@ Sources:
 
 - Proactive audio means the model may stay silent on input it judges irrelevant (background speech, noise). Address it directly if it doesn't respond.
 - On Extended Thinking, expect spoken progress updates while it works and longer time to the tool call. Per the LiveKit demo, the server sends `turnComplete` after each progress segment, then more audio, then the tool call.
+
+## Voices
+
+Checked 2026-11-04.
+
+- Live (native audio) takes any TTS voice by name (`speech_config.voice_config.prebuilt_voice_config.voice_name`; the plugin's `RealtimeModel(voice=...)`). The app offers Gemini's 30 prebuilt voices, with style and pitch from the speech generation docs and AI Studio (`app/src-tauri/src/settings.rs`); Charon is the default.
+- `GET /v1beta/voices` (`x-goog-api-key`, `page_size` up to 1000) lists far more: the user's own designed voices (`type: "prompted"`, ids like `voice_...`) first, then a catalog of about a thousand prebuilt voices per page (ids like `achernar` or `ar-001-advisor-1`, with `language_code`, `accent`, `gender`, `pitch`, `persona`, `description`) and a `next_page_token`. The owner chose the 30 default voices only; whether Live accepts catalog or custom ids is unchecked.
+
+## Language
+
+- Native-audio Live models choose their spoken language themselves and take no language code (Live API capabilities, "Change voice and language"); "you can restrict the languages it speaks in by specifying it in the system instructions". `prompts/voice.md` holds the agent to English unless the user switches.
+- Input transcription takes `AudioTranscriptionConfig(language_codes=[...])` as BCP-47 hints (google-genai types). `agent.py` passes `["en-US"]`: noisy audio had been transcribed as Portuguese and answered in Russian (2026-11-04).

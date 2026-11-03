@@ -34,3 +34,13 @@ export function callLabel(startedAt: number, now = new Date()): string {
 function startOfDay(date: Date): number {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
 }
+
+/** How long a call ran: "Under a minute", "4 min", "1 hr 12 min". */
+export function callLength(startedAt: number, endedAt: number): string {
+  const minutes = Math.floor((endedAt - startedAt) / 60_000)
+  if (minutes < 1) return "Under a minute"
+  if (minutes < 60) return `${minutes} min`
+  const hours = Math.floor(minutes / 60)
+  const rest = minutes % 60
+  return rest ? `${hours} hr ${rest} min` : `${hours} hr`
+}

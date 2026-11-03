@@ -44,6 +44,19 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX messages_by_call ON messages(call_id, created_at);
     ",
+    // 2: a transcript line's LiveKit segment id, so a line that grows while it is spoken is
+    // saved once and updated in place.
+    "
+    ALTER TABLE messages ADD COLUMN segment_id TEXT;
+    CREATE UNIQUE INDEX messages_by_segment ON messages(call_id, segment_id);
+    ",
+    // 3: app settings that aren't secrets (the agent's voice), one row per key.
+    "
+    CREATE TABLE settings (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+    ",
 ];
 
 /// The open database, shared by every command through Tauri state.

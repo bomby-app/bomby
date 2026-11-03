@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
+import { CallProvider } from "@/features/call/call-provider"
 import { NewProjectDialog } from "@/features/projects/new-project-dialog"
 import { ProjectsProvider } from "@/features/projects/projects-provider"
 import type { Selection } from "@/features/projects/selection"
@@ -30,23 +31,25 @@ export function MainWindow() {
 
   return (
     <ProjectsProvider>
-      <SidebarProvider className="h-svh">
-        <AppSidebar
-          selection={selection}
-          onSelect={setSelection}
-          onNewProject={() => setCreating(true)}
+      <CallProvider>
+        <SidebarProvider className="h-svh">
+          <AppSidebar
+            selection={selection}
+            onSelect={setSelection}
+            onNewProject={() => setCreating(true)}
+          />
+          <SidebarInset className="overflow-hidden">
+            <MainPanel selection={selection} onSelect={setSelection} />
+          </SidebarInset>
+        </SidebarProvider>
+        <NewProjectDialog
+          open={creating}
+          onOpenChange={setCreating}
+          onCreated={(project) =>
+            setSelection({ kind: "project", projectId: project.id })
+          }
         />
-        <SidebarInset className="overflow-hidden">
-          <MainPanel selection={selection} onSelect={setSelection} />
-        </SidebarInset>
-      </SidebarProvider>
-      <NewProjectDialog
-        open={creating}
-        onOpenChange={setCreating}
-        onCreated={(project) =>
-          setSelection({ kind: "project", projectId: project.id })
-        }
-      />
+      </CallProvider>
     </ProjectsProvider>
   )
 }

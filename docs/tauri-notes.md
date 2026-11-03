@@ -30,6 +30,8 @@ Checked against Tauri 2.12.5 (`tauri` crate; CLI and `@tauri-apps/cli` 2.12.x, r
 
 - **More windows.** `main` comes from `tauri.conf.json`; others are built in Rust (`src/windows.rs`, `WebviewWindowBuilder`) so the core owns their size and look. Each loads its own Vite page (`WebviewUrl::App("settings.html")`); `vite.config.ts` lists every page under `build.rolldownOptions.input` (Vite 8's name for `rollupOptions`).
 - **Place a window before showing it.** `open_settings` builds the window hidden, moves it to the center of the main window in physical pixels (global across monitors), then shows it. `center()` alone centers on whatever monitor the OS picks.
+- **Zoom.** `zoomHotkeysEnabled` (`tauri.conf.json`, and `zoom_hotkeys_enabled(true)` for windows built in Rust) adds Cmd/Ctrl + = - 0 zoom; on macOS and Linux Tauri injects it as a script, which needs `core:webview:allow-set-webview-zoom` (`tauri` 2.12.5 `webview_window.rs`).
+- **No web context menu.** Debug builds have devtools on, so WebKit's right-click menu offers Reload and Inspect Element. `windows/mount.tsx` cancels `contextmenu` everywhere except text fields and selected text, which keep the system's Cut, Copy and Paste.
 - **Closing from the page** (`getCurrentWindow().close()`, Esc in Settings) needs `core:window:allow-close`.
 - **Build windows from async commands.** A sync command runs on the main thread, and building a window there deadlocks on Windows (Tauri docs), so `open_settings` is `async`.
 - **Blocking work off the main thread.** A sync `#[tauri::command]` runs on the main thread (`tauri-macros` 2.7.4 `ExecutionContext::Blocking`); `#[tauri::command(async)]` moves it to the async runtime. The keychain commands use it.
@@ -37,11 +39,27 @@ Checked against Tauri 2.12.5 (`tauri` crate; CLI and `@tauri-apps/cli` 2.12.x, r
 - **Events reach every window.** `emit` from `@tauri-apps/api/event` broadcasts to all webviews (`core:event:default`). The theme uses it to keep windows in step.
 - **Errors.** Commands return `Result<T, error::Error>`; the error serializes as its message, which the page gets as the rejected promise.
 
+## The agent worker
+
+- `src-tauri/src/agent.rs` keeps one agent worker per app run: started by the first `open_call`, restarted when the LiveKit keys, the Gemini key or the `claude` path change or when it died, stopped on `RunEvent::Exit` (`lib.rs` builds the app and handles run events, instead of a bare `.run()`).
+- Debug builds run it from source: `uv run python agent.py start` in `agent/` (found at build time from `CARGO_MANIFEST_DIR`). Release builds say there is no agent until the sidecar lands.
+- Its environment carries `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `GOOGLE_API_KEY` and `CLAUDE_CODE_EXECUTABLE`; the agent's `child_environment` strips the first four before Claude runs, so Claude never sees them.
+- It runs in its own process group (`CommandExt::process_group(0)`), so `killpg` stops uv, Python and the job processes together: SIGTERM, five seconds, then SIGKILL.
+- **It can't outlive the app.** Its own group also means Ctrl-C on `just app dev` never reaches it, and a killed app never runs its exit handler: on 2026-11-04 a worker from an earlier run kept port 8081 and the next one failed (`Errno 48 address already in use`). So the core starts it with `CLAUDIBLE_EXIT_WITH_APP=1` and a pipe on its stdin that it holds for the worker's life; `agent/lifeline.py` reads that pipe and, at end of file (the OS closes it however the app ends), stops the group: SIGTERM, three seconds, SIGKILL. `uv run` passes stdin through (checked).
+- The page writes facts only it can see to `app.log` in the same folder (the `app_log` command): which mic the webview opened, with what settings.
+- When it fails to start, the error names the last error it logged (`agent::last_error`, from its JSON log lines).
+- Its stdout and stderr go to `agent.log` in `app.path().app_log_dir()` (`~/Library/Logs/com.aburady.claudible/` on macOS), rewritten on each start.
+
+## Finding Claude Code
+
+- An app opened from Finder gets launchd's PATH, not the user's shell PATH, so `claude` on PATH isn't enough. `src-tauri/src/claude.rs` asks the login shell (`$SHELL -ilc 'command -v claude'`, last line of output, eight-second timeout), then tries `~/.local/bin`, `~/.claude/local`, `/opt/homebrew/bin` and `/usr/local/bin`.
+- Sign-in comes from `claude auth status --json` (`loggedIn`, `subscriptionType`, also `authMethod`, `orgName`, `email`); the version from `claude --version` ("2.1.317 (Claude Code)"). Checked 2026-11-04.
+
 ## Credentials
 
 - `keyring` 4.2 with its default `v1` feature keeps the v1 API (`Entry::new(service, user)`, `get_password`, `set_password`, `delete_credential`, `Error::NoEntry`) and picks the OS store: Keychain (`apple-native-keyring-store`), Windows Credential Manager, or Secret Service over zbus (`keyring` 4.2.0 `src/v1.rs`).
-- One entry: service = the app identifier, account `livekit`, value = JSON `{url, api_key, api_secret}`. The page gets `{url, apiKey, hasSecret}` back, never the secret.
-- Expected, not yet confirmed: on macOS a rebuilt dev binary may get a keychain prompt ("wants to use your confidential information") the first time it reads the entry, because its code signature changed. Choose Always Allow; a signed release keeps one identity.
+- One entry: service = the app identifier, account `credentials`, value JSON `{livekit: {url, api_key, api_secret}, gemini_key}`. The core reads it once per run and keeps it in memory (`credentials::Vault`, Tauri state), so the OS is asked at most once per run. Older builds kept two entries (`livekit`, `gemini`); the first read moves them into the new one and deletes them. The page gets `{url, apiKey, hasSecret}` and whether a Gemini key exists, never a secret.
+- **Seen 2026-11-04:** macOS asks "claudible wants to access key com.aburady.claudible in your keychain" (legacy login keychain, the `keyring` crate's `keychain` store). An item trusts specific apps by code signature; every rebuild is ad-hoc signed afresh, so each new dev binary is a stranger and is asked again. Allow covers one read, Always Allow covers that binary until the next rebuild. A Developer ID signed release keeps one identity, so it is asked once. Reading once per run (above) keeps it to one prompt per run.
 
 ## Storage
 
@@ -54,6 +72,10 @@ Checked against Tauri 2.12.5 (`tauri` crate; CLI and `@tauri-apps/cli` 2.12.x, r
 ## Dialogs
 
 - `tauri-plugin-dialog` 2.8, added with `tauri add dialog` (crate, npm package, `.plugin(...)` in lib.rs). It does not add a capability: we grant only `dialog:allow-open` to the main window, for the folder picker (`open({ directory: true, multiple: true })`, which resolves to `string[] | null`).
+
+## Clipboard
+
+- "Paste all" in Settings > Credentials reads the clipboard through `tauri-plugin-clipboard-manager` 2 (`readText()`), granted to the settings window only (`clipboard-manager:allow-read-text`). A web clipboard read (`navigator.clipboard.readText()`) in WKWebView can pop macOS's own Paste prompt; the plugin reads in the core without one. Pasting into a field uses the paste event's own data and needs no permission.
 
 ## Icons
 

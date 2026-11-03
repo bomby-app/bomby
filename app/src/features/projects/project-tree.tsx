@@ -1,6 +1,8 @@
 import { ChevronRight, Folder } from "lucide-react"
 import { useState } from "react"
 
+import { Mascot } from "@/components/mascot"
+
 import {
   Collapsible,
   CollapsibleContent,
@@ -18,6 +20,7 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar"
+import { useCall } from "../call/call-provider"
 import type { Project } from "./api"
 import { callLabel } from "./names"
 import { useProjects } from "./projects-provider"
@@ -63,6 +66,8 @@ function ProjectNode({
   selection,
   onSelect,
 }: TreeProps & { project: Project }) {
+  const { active } = useCall()
+  const onCall = active?.projectId === project.id
   const holdsSelection = selection?.projectId === project.id
   // Starts open when it holds the selection (the project or one of its calls).
   const [open, setOpen] = useState(holdsSelection)
@@ -80,7 +85,8 @@ function ProjectNode({
           setOpen(true)
         }}
       >
-        <Folder />
+        {/* On a call, Dot Dot takes the folder's place. */}
+        {onCall ? <Mascot state="listening" size={16} /> : <Folder />}
         <span>{project.name}</span>
       </SidebarMenuButton>
       <CollapsibleTrigger

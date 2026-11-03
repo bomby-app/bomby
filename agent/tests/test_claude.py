@@ -303,6 +303,22 @@ def test_child_environment_drops_dotenv_secrets_and_api_keys() -> None:
     }
 
 
+def test_child_environment_drops_the_keys_the_app_passes() -> None:
+    environ = {
+        "PATH": "/bin",
+        "LIVEKIT_URL": "wss://x",
+        "LIVEKIT_API_KEY": "k",
+        "LIVEKIT_API_SECRET": "s",
+        "GOOGLE_API_KEY": "g",
+        "CLAUDE_CODE_EXECUTABLE": "/usr/local/bin/claude",
+    }
+
+    assert child_environment(environ, set()) == {
+        "PATH": "/bin",
+        "CLAUDE_CODE_EXECUTABLE": "/usr/local/bin/claude",
+    }
+
+
 def test_pick_allow_prefers_allow_once() -> None:
     options = [
         PermissionOption(option_id="a", name="Always", kind="allow_always"),

@@ -9,9 +9,17 @@
     "core:default",
     "core:window:allow-start-dragging",
     "core:window:allow-set-theme",
+    "core:webview:allow-set-webview-zoom",
     "core:window:allow-close",
+    "clipboard-manager:allow-read-text",
     "allow-credentials-info",
     "allow-save-credentials",
-    "allow-clear-credentials"
+    "allow-clear-credentials",
+    "allow-has-gemini-key",
+    "allow-save-gemini-key",
+    "allow-clear-gemini-key",
+    "allow-claude-status",
+    "allow-voice-settings",
+    "allow-set-voice"
   ]
 }
