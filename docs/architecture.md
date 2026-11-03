@@ -8,14 +8,14 @@ claude-livekit lets you talk to Claude Code. A desktop app holds your projects; 
 | --- | --- | --- |
 | Voice agent | `agent/` (Python, LiveKit Agents, Gemini 3.8 Live) | Built |
 | Claude runner | `agent/tools/claude.py` (ACP client driving `claude-agent-acp`) | Built |
-| Desktop app | `app/` (Tauri v2, React, LiveKit Agents UI) | Scaffolded, see [roadmap](roadmap.md) and [tauri-notes.md](tauri-notes.md) |
+| Desktop app | `app/` (Tauri v2, React, LiveKit Agents UI) | Shell, settings window (appearance, LiveKit credentials in the OS keychain) built; projects and the call are next. See [roadmap](roadmap.md), [app/README.md](../app/README.md) |
 | LiveKit server | LiveKit Cloud or self-hosted; not needed for `just agent console` | External |
 
 ```mermaid
 flowchart LR
-  subgraph App["Desktop app (planned)"]
+  subgraph App["Desktop app (in progress)"]
     UI["React UI: projects, call, Claude panel"]
-    Core["Tauri core: project store, LiveKit tokens"]
+    Core["Tauri core: credentials (keychain), project store, LiveKit tokens"]
   end
   subgraph Agent["Voice agent (agent/)"]
     Gemini["Gemini 3.8 Live session"]

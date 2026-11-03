@@ -1,32 +1,35 @@
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
-// @ts-expect-error type error without @types/node package
-import process from "node:process";
-const host = process.env.TAURI_DEV_HOST;
+import path from "node:path"
+import process from "node:process"
+import tailwindcss from "@tailwindcss/vite"
+import react from "@vitejs/plugin-react"
+import { defineConfig } from "vite"
 
-// https://vite.dev/config/
-export default defineConfig(() => ({
-  plugins: [react()],
+// Set by `tauri dev` when the app runs on a device over the network (mobile); unset on desktop.
+const host = process.env.TAURI_DEV_HOST
 
-  // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
-  //
-  // 1. prevent Vite from obscuring rust errors
+// https://vite.dev/config/ and https://v2.tauri.app/start/frontend/vite/
+export default defineConfig({
+  plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: { "@": path.resolve(import.meta.dirname, "./src") },
+  },
+  // One HTML page per window (src-tauri/src/windows.rs opens the others by file name).
+  build: {
+    rolldownOptions: {
+      input: {
+        main: path.resolve(import.meta.dirname, "index.html"),
+        settings: path.resolve(import.meta.dirname, "settings.html"),
+      },
+    },
+  },
+  // Keep Rust errors visible in the terminal.
   clearScreen: false,
-  // 2. tauri expects a fixed port, fail if that port is not available
   server: {
+    // Tauri loads devUrl (tauri.conf.json), so the port is fixed.
     port: 1420,
     strictPort: true,
     host: host || false,
-    hmr: host
-      ? {
-          protocol: "ws",
-          host,
-          port: 1421,
-        }
-      : undefined,
-    watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
-    },
+    hmr: host ? { protocol: "ws", host, port: 1421 } : undefined,
+    watch: { ignored: ["**/src-tauri/**"] },
   },
-}));
+})

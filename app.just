@@ -34,19 +34,33 @@ build:
 typecheck:
     bun x tsc --noEmit
 
-# Lint the Rust core (warnings fail) and check its formatting
+# Lint and format-check the frontend (Biome) and the Rust core (clippy, rustfmt); warnings fail
 [group('check')]
-[working-directory: 'app/src-tauri']
+[working-directory: 'app']
 lint:
-    cargo clippy --all-targets -- -D warnings
-    cargo fmt --check
+    bun x biome check .
+    cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+    cargo fmt --manifest-path src-tauri/Cargo.toml --check
 
-# Format the Rust core
+# Format the frontend and the Rust core, and apply Biome's safe fixes (import order)
 [group('check')]
-[working-directory: 'app/src-tauri']
+[working-directory: 'app']
 fmt:
-    cargo fmt
+    bun x biome check --write .
+    cargo fmt --manifest-path src-tauri/Cargo.toml
 
-# Everything a change must pass: frontend types, Rust lint and format
+# Add shadcn components, e.g. `just app add dialog`. components/ui is generated: existing files are refreshed from the registry
+[working-directory: 'app']
+add +components:
+    bun x shadcn add --yes --overwrite {{components}}
+    bun x biome check --write src/components/ui src/hooks
+
+# Run the Rust core's unit tests
 [group('check')]
-check: typecheck lint
+[working-directory: 'app']
+test:
+    cargo test --manifest-path src-tauri/Cargo.toml
+
+# Everything a change must pass: frontend types, lint and format for both halves, tests
+[group('check')]
+check: typecheck lint test
