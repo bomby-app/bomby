@@ -9,6 +9,7 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
 } from "@/components/ui/sidebar"
+import { Wordmark } from "@/components/wordmark"
 import { SettingsButton } from "./settings-button"
 
 /** The left column: brand, projects, settings. */
@@ -20,7 +21,7 @@ export function AppSidebar() {
       <SidebarHeader>
         <div className="flex items-center gap-2 px-1">
           <AppLogo />
-          <span className="truncate text-sm font-semibold">Claude LiveKit</span>
+          <Wordmark />
         </div>
       </SidebarHeader>
 

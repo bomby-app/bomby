@@ -1,4 +1,4 @@
-# claude-livekit
+# Claudible
 
 Talk to Claude Code. You speak to a voice agent (LiveKit Agents and Gemini 3.8 Live); it hands real work to a Claude Code session on your machine over ACP and tells you the result when Claude is done. A call works on one project and can run several Claude sessions in parallel, one per piece of work; each remembers what it did during the call.
 

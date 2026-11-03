@@ -10,7 +10,7 @@ Checked against Tauri 2.12.5 (`tauri` crate; CLI and `@tauri-apps/cli` 2.12.x, r
 - **Plugins** add features on both sides at once (a Rust crate plus an npm package), such as `opener`, `store`, `sql`, `shell` (sidecars).
 - **Config** is `src-tauri/tauri.conf.json`: app name, identifier, window, the dev server URL, the built frontend folder, bundling.
 - **Dev vs build.** `tauri dev` runs Vite (`beforeDevCommand`, port 1420) and a debug binary that loads `devUrl`. `tauri build` builds the frontend into `dist/`, embeds it in a release binary, and bundles it (`.app` and `.dmg` on macOS).
-- **Rust layout.** `main.rs` only calls `claude_livekit_lib::run()` in `lib.rs`; the lib split exists for mobile targets.
+- **Rust layout.** `main.rs` only calls `claudible_lib::run()` in `lib.rs`; the lib split exists for mobile targets.
 
 ## Microphone
 
@@ -42,6 +42,11 @@ Checked against Tauri 2.12.5 (`tauri` crate; CLI and `@tauri-apps/cli` 2.12.x, r
 - `keyring` 4.2 with its default `v1` feature keeps the v1 API (`Entry::new(service, user)`, `get_password`, `set_password`, `delete_credential`, `Error::NoEntry`) and picks the OS store: Keychain (`apple-native-keyring-store`), Windows Credential Manager, or Secret Service over zbus (`keyring` 4.2.0 `src/v1.rs`).
 - One entry: service = the app identifier, account `livekit`, value = JSON `{url, api_key, api_secret}`. The page gets `{url, apiKey, hasSecret}` back, never the secret.
 - Expected, not yet confirmed: on macOS a rebuilt dev binary may get a keychain prompt ("wants to use your confidential information") the first time it reads the entry, because its code signature changed. Choose Always Allow; a signed release keeps one identity.
+
+## Icons
+
+- `just app icons` runs `tauri icon` on `src-tauri/icons/app-icon.png` (the Paper `app-icon` artboard, 1024 with an 824 tile). With CLI 2.12 it writes icon.icns, icon.ico, the PNG sizes (now including 64x64), the Square*Logo files, and also `android/` and `ios/` sets, which the recipe deletes (desktop only). Seen 2026-11-03.
+- macOS 26 light, dark, clear and tinted icons come from an Icon Composer `Claudible.icon` listed in `bundle.icon`, compiled to Assets.car by `actool` from Xcode 26 or newer; without it Tauri warns and ships only icon.icns, and older macOS uses icon.icns anyway. This Mac has only the Command Line Tools, so the `.icon` waits. Source: the Paper board "Handoff / Tauri asset map" (tauri PR #14671, issues #14207, #15315, #16386); re-check against the pinned Tauri before adding it.
 
 ## Toolchain
 

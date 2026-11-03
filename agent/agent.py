@@ -13,7 +13,7 @@ from tools.claude import ClaudeRunner
 
 _ = load_dotenv()
 
-logger = logging.getLogger("claude-livekit")
+logger = logging.getLogger("claudible")
 
 MODELS = {
     "fast": "gemini-3.8-live",

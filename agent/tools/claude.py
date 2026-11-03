@@ -49,7 +49,7 @@ from dotenv import dotenv_values
 from livekit.agents import RunContext
 from livekit.agents.llm import ToolError, ToolFlag, function_tool
 
-logger = logging.getLogger("claude-livekit.tools.claude")
+logger = logging.getLogger("claudible.tools.claude")
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SYSTEM_PROMPT = (PROJECT_ROOT / "prompts" / "claude-system-prompt.md").read_text()
@@ -548,7 +548,7 @@ class ClaudeRunner:
                 init = await conn.initialize(
                     protocol_version=PROTOCOL_VERSION,
                     client_capabilities=ClientCapabilities(),
-                    client_info=Implementation(name="claude-livekit", version="0.1.0"),
+                    client_info=Implementation(name="claudible", version="0.1.0"),
                 )
             except BaseException:
                 await self._cancel_stderr_task()

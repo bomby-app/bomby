@@ -35,3 +35,10 @@ Checked against `claude-agent-acp` 0.100.0 (`dist/acp-agent.js` in the mise inst
 ## Billing
 
 - Claude Code signs in with the user's Claude plan login. `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` in its environment would bill the API instead, so the runner strips them. It also strips `CLAUDECODE`, which Claude Code sets in its own shells and refuses to start under.
+
+## Which claude it runs, and sign-in status
+
+Checked in adapter 0.100.0 (`dist/acp-agent.js`), 2026-11-03.
+
+- `claudeCliPath()` returns `CLAUDE_CODE_EXECUTABLE` when set, before looking for the SDK's bundled binary (`@anthropic-ai/claude-agent-sdk-<platform>/claude`, 305 MB on darwin-arm64). Session start passes it as `pathToClaudeCodeExecutable`. So a packaged adapter can run the user's own `claude`.
+- After `initialize` the adapter probes the CLI's login in the background and pushes `_auth/status_update` (`{authStatus}`) as an ext notification; it sends again only when the status changes. The client learns sign-in without asking. Shapes are in `dist/auth-status.js`.

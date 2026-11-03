@@ -1,5 +1,5 @@
 [project]
-name = "claude-livekit"
+name = "claudible-agent"
 version = "0.1.0"
 description = "Voice agent on LiveKit + Gemini 3.8 Live that runs Claude Code sessions over ACP in the background"
 authors = [

@@ -1,4 +1,4 @@
-# claude-livekit: the voice agent (agent/) and the desktop app (app/).
+# Claudible: the voice agent (agent/) and the desktop app (app/).
 # Each part has its own module: `just agent` and `just app` list their recipes.
 # See docs/README.md.
 

@@ -1,6 +1,6 @@
 # Architecture
 
-claude-livekit lets you talk to Claude Code. A desktop app holds your projects; you start a call on one, talk to a voice model, and the voice model hands real work to a Claude Code session that runs on your machine.
+Claudible lets you talk to Claude Code. A desktop app holds your projects; you start a call on one, talk to a voice model, and the voice model hands real work to a Claude Code session that runs on your machine. The user brings their own LiveKit keys, Gemini key and signed-in Claude Code ([decision](decisions/users-bring-their-own-keys-and-claude.md)).
 
 ## The pieces
 
@@ -9,13 +9,15 @@ claude-livekit lets you talk to Claude Code. A desktop app holds your projects; 
 | Voice agent | `agent/` (Python, LiveKit Agents, Gemini 3.8 Live) | Built |
 | Claude runner | `agent/tools/claude.py` (ACP client driving `claude-agent-acp`) | Built |
 | Desktop app | `app/` (Tauri v2, React, LiveKit Agents UI) | Shell, settings window (appearance, LiveKit credentials in the OS keychain) built; projects and the call are next. See [roadmap](roadmap.md), [app/README.md](../app/README.md) |
+| App data | One SQLite db in the app data folder, owned by the core: projects, calls, messages | Decided, see [decision](decisions/app-data-in-one-sqlite-db.md) |
+| Packaging | The agent and the adapter as Tauri sidecars, run with the user's own `claude` | Proposed, prototypes first ([decision](decisions/ship-the-agent-and-adapter-as-sidecars.md)) |
 | LiveKit server | LiveKit Cloud or self-hosted; not needed for `just agent console` | External |
 
 ```mermaid
 flowchart LR
   subgraph App["Desktop app (in progress)"]
-    UI["React UI: projects, call, Claude panel"]
-    Core["Tauri core: credentials (keychain), project store, LiveKit tokens"]
+    UI["React UI: project and call tree, call, Claude panel"]
+    Core["Tauri core: keychain, SQLite (projects, calls, messages), LiveKit tokens, starts the sidecars"]
   end
   subgraph Agent["Voice agent (agent/)"]
     Gemini["Gemini 3.8 Live session"]
@@ -26,6 +28,7 @@ flowchart LR
   Claude["Claude Code sessions, in parallel"]
 
   Core -- "token with dispatch metadata" --> UI
+  UI -- "transcript lines, saved as they arrive" --> Core
   UI <-- "WebRTC audio, transcripts" --> Gemini
   Gemini -- "tool call" --> Tool
   Tool --> Runner
@@ -42,6 +45,14 @@ flowchart LR
 4. **Claude.** `ClaudeRunner` starts one `claude-agent-acp` process for the call, on the first task. Gemini names a session per piece of work: a new name opens a new Claude session, a known name continues it with its context. Sessions run in parallel.
 5. **Result.** When Claude's turn ends, its final message is the tool result. Gemini reads it out. Nothing else from Claude reaches the conversation.
 6. **End.** When the call ends, every session and the process are closed.
+
+## Data the app keeps
+
+Everything lives in the app data folder (`~/Library/Application Support/com.aburady.claudible` on macOS):
+
+- `claudible.db`, SQLite, owned by the core: `projects` (name, folders), `calls` (per project, start and end), `messages` (per call: who spoke, text, time; later Claude tasks and results). LiveKit keeps no transcripts, so the app writes each line as it arrives.
+- Secrets are not here: LiveKit URL, key and secret, and the Gemini key, sit in the OS keychain.
+- The sidebar is the tree of this data: projects, each with its calls ([decision](decisions/sidebar-tree-of-projects-and-calls.md)).
 
 ## Contracts
 

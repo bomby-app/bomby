@@ -1,13 +1,17 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+/* The wordmark and display headlines (docs/brand.md). Only Bold ships. */
+@import "@fontsource/bricolage-grotesque/700.css";
 
 @custom-variant dark (&:is(.dark *));
 /* index.html sets data-platform before first paint; macOS has the overlay title bar. */
 @custom-variant macos (&:is([data-platform="macos"] *));
 
 @theme inline {
-  --font-heading: var(--font-sans);
+  --font-heading: "Bricolage Grotesque", var(--font-sans);
+  --color-claude: var(--claude);
+  --color-claude-foreground: var(--claude-foreground);
   /* The OS font, as native apps use: SF Pro on macOS, Segoe UI on Windows. */
   --font-sans:
     system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, Cantarell, sans-serif;
@@ -55,72 +59,79 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  /* Claudible colours, from the Paper file (board "07 Colour in UI"); see docs/brand.md.
+     Ink carries the UI, highlighter is the one loud moment, bubblegum means Claude. */
+  --background: #ffffff;
+  --foreground: #121212;
+  --card: #ffffff;
+  --card-foreground: #121212;
+  --popover: #ffffff;
+  --popover-foreground: #121212;
+  --primary: #121212;
+  --primary-foreground: #e8ff3a;
+  --secondary: #f4f4f1;
+  --secondary-foreground: #121212;
+  --muted: #f4f4f1;
+  --muted-foreground: #6b6b6b;
+  --accent: #f6ffc2;
+  --accent-foreground: #121212;
+  --destructive: #d92d20;
+  --border: #e4e4e4;
+  --input: #e4e4e4;
+  --ring: #121212;
+  --chart-1: #121212;
+  --chart-2: #e8ff3a;
+  --chart-3: #ff9bd2;
+  --chart-4: #6b6b6b;
+  --chart-5: #a3a3a3;
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar: #f4f4f1;
+  --sidebar-foreground: #121212;
+  --sidebar-primary: #121212;
+  --sidebar-primary-foreground: #e8ff3a;
+  --sidebar-accent: #f6ffc2;
+  --sidebar-accent-foreground: #121212;
+  --sidebar-border: #e4e4e4;
+  --sidebar-ring: #121212;
+  /* Claude sessions and working indicators. A fill only; text on it is ink. */
+  --claude: #ff9bd2;
+  --claude-foreground: #121212;
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --background: #121212;
+  --foreground: #f5f5f2;
+  --card: #1a1a1a;
+  --card-foreground: #f5f5f2;
+  --popover: #1a1a1a;
+  --popover-foreground: #f5f5f2;
+  --primary: #e8ff3a;
+  --primary-foreground: #121212;
+  --secondary: #1f1f1f;
+  --secondary-foreground: #f5f5f2;
+  --muted: #1f1f1f;
+  --muted-foreground: #a3a3a3;
+  --accent: #272a12;
+  --accent-foreground: #e8ff3a;
+  --destructive: #f97066;
+  --border: #2a2a2a;
+  --input: #2a2a2a;
+  --ring: #e8ff3a;
+  --chart-1: #f5f5f2;
+  --chart-2: #e8ff3a;
+  --chart-3: #ff9bd2;
+  --chart-4: #a3a3a3;
+  --chart-5: #6b6b6b;
+  --sidebar: #161616;
+  --sidebar-foreground: #f5f5f2;
+  --sidebar-primary: #e8ff3a;
+  --sidebar-primary-foreground: #121212;
+  --sidebar-accent: #272a12;
+  --sidebar-accent-foreground: #e8ff3a;
+  --sidebar-border: #2a2a2a;
+  --sidebar-ring: #e8ff3a;
+  --claude: #ff9bd2;
+  --claude-foreground: #121212;
 }
 
 @layer base {

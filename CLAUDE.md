@@ -1,6 +1,6 @@
-# claude-livekit
+# Claudible
 
-Talk to Claude Code. A voice agent (LiveKit Agents, Python, Gemini 3.8 Live) hands real work to a Claude Code session over **ACP** and speaks Claude's result when it is done. A desktop app (Tauri v2, in progress) holds the projects and runs the call.
+Claudible is a voice agent that runs Claude Code. The agent (LiveKit Agents, Python, Gemini 3.8 Live) hands real work to a Claude Code session over **ACP** and speaks Claude's result when it is done. A desktop app (Tauri v2, in progress) holds the projects and runs the call.
 
 **Read [docs/README.md](docs/README.md) first**, then [docs/architecture.md](docs/architecture.md) and [docs/roadmap.md](docs/roadmap.md). Why things are the way they are is in [docs/decisions/](docs/decisions/).
 
@@ -16,6 +16,7 @@ Talk to Claude Code. A voice agent (LiveKit Agents, Python, Gemini 3.8 Live) han
 
 ## Rules
 
+- **The app is Claudible** (lowercase wordmark `claudible`). Never co-brand it with Claude or LiveKit ("Claude LiveKit", "Claude x LiveKit"); name them only for what the app uses. UI colours, logo and copy follow [docs/brand.md](docs/brand.md). The repo folder is still `claude-livekit`.
 - **Run commands through `just`** from the repo root. A new main command gets a recipe in its part's module (`agent.just`, `app.just`) with a doc comment, a group and `[working-directory: '...']`. A new part gets its own `<part>.just` and a `mod <part>` line in the `justfile`.
 - **`just check` must pass** (lint, types with 0 errors and 0 warnings, tests) before a change is done. Fix any lint, type or test failure you see, related or not.
 - **Don't run dev servers, `lk agent console` or the app (`just app dev`).** Builds and checks are fine. Report what to run; the owner tests first.

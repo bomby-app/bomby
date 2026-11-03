@@ -10,7 +10,8 @@ The app's web half (`app/src`). Checked against shadcn CLI 4.23.0, Tailwind CSS 
 - **`cn` is a package now.** Generated components `import { cn } from "cn"` (published by shadcn; replaces `clsx` plus `tailwind-merge`). `src/lib/utils.ts` re-exports it for older registry code that imports `@/lib/utils`. Pinned to an exact version because 0.5.x is new.
 - **Data variants.** shadcn's `data-active:` and friends (`shadcn/tailwind.css`) skip `data-active="false"`, so `isActive={false}` is safe.
 - **`init` with `--no-pointer`** keeps the default arrow cursor on buttons, as native apps do.
-- **Theme tokens** are CSS variables in `src/index.css` (`:root` light, `.dark` dark, mapped into Tailwind with `@theme inline`). Change colors there, not in components.
+- **Theme tokens** are CSS variables in `src/index.css` (`:root` light, `.dark` dark, mapped into Tailwind with `@theme inline`), set to the Claudible palette from [brand.md](brand.md). We added `--claude` / `--claude-foreground` (`bg-claude text-claude-foreground`) for anything that means Claude. Change colours there, not in components.
+- **Fonts.** UI text is the OS font (`font-sans`). `font-heading` is Bricolage Grotesque, Bold only (`@fontsource/bricolage-grotesque/700.css`, bundled, no network): the wordmark (`components/wordmark.tsx`) and headlines. shadcn's Empty and Sheet titles use `font-heading`, so they get it too.
 - **Sidebar** (`ui/sidebar.tsx`): `SidebarProvider` > `Sidebar` (`variant` sidebar, floating or inset; `collapsible` offcanvas, icon or none) + `SidebarInset`. Cmd+B toggles it. Below 768px it turns into a sheet; the window's `minWidth` (820) keeps us above that. Its open-state cookie is for server rendering and does nothing here.
 - **Dark mode on Vite** is a provider that toggles `.dark` on `<html>` (shadcn docs, `dark-mode/vite`). Ours also follows OS changes while on "system" and sets the native window theme; see [tauri-notes.md](tauri-notes.md#window).
 

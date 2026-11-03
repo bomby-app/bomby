@@ -526,7 +526,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "claude-livekit"
+name = "claudible"
 version = "0.1.0"
 dependencies = [
  "keyring",

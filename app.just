@@ -49,6 +49,12 @@ fmt:
     bun x biome check --write .
     cargo fmt --manifest-path src-tauri/Cargo.toml
 
+# Regenerate the desktop app icons from src-tauri/icons/app-icon.png (see docs/brand.md)
+[working-directory: 'app']
+icons:
+    bun tauri icon src-tauri/icons/app-icon.png
+    rm -rf src-tauri/icons/android src-tauri/icons/ios
+
 # Add shadcn components, e.g. `just app add dialog`. components/ui is generated: existing files are refreshed from the registry
 [working-directory: 'app']
 add +components:

@@ -4,6 +4,6 @@
 <dict>
   <!-- Merged into the app's Info.plist by the Tauri CLI. macOS shows this text when it asks for the mic. -->
   <key>NSMicrophoneUsageDescription</key>
-  <string>Claude LiveKit uses the microphone so you can talk to the voice agent.</string>
+  <string>Claudible needs your mic so you can talk to it.</string>
 </dict>
 </plist>

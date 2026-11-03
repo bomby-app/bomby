@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Claude LiveKit",
+  "productName": "Claudible",
   "version": "0.1.0",
-  "identifier": "com.aburady.claude-livekit",
+  "identifier": "com.aburady.claudible",
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Claude LiveKit",
+        "title": "Claudible",
         "width": 1100,
         "height": 720,
         "minWidth": 820,

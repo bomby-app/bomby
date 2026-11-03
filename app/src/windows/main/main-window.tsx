@@ -36,10 +36,9 @@ export function MainWindow() {
               <EmptyMedia variant="icon">
                 <FolderOpen />
               </EmptyMedia>
-              <EmptyTitle>No project open</EmptyTitle>
+              <EmptyTitle>No projects yet</EmptyTitle>
               <EmptyDescription>
-                A project is a name and the folders Claude can work in. Open one
-                to start a call.
+                Add a folder and start talking.
               </EmptyDescription>
             </EmptyHeader>
           </Empty>
