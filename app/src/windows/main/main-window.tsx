@@ -1,49 +1,52 @@
-import { FolderOpen } from "lucide-react"
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
+import { NewProjectDialog } from "@/features/projects/new-project-dialog"
+import { ProjectsProvider } from "@/features/projects/projects-provider"
+import type { Selection } from "@/features/projects/selection"
 import { openSettings, SETTINGS_SHORTCUT } from "../settings/open-settings"
-import { AppHeader } from "./app-header"
 import { AppSidebar } from "./app-sidebar"
+import { MainPanel } from "./main-panel"
+import { NEW_PROJECT_SHORTCUT } from "./new-project-row"
 
-/** The main window: sidebar on the left, the main panel on the right. */
+/** The main window: the project tree on the left, the selected item on the right. */
 export function MainWindow() {
+  const [selection, setSelection] = useState<Selection>(null)
+  const [creating, setCreating] = useState(false)
+
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (!SETTINGS_SHORTCUT.matches(event)) return
-      event.preventDefault()
-      void openSettings()
+      if (SETTINGS_SHORTCUT.matches(event)) {
+        event.preventDefault()
+        void openSettings()
+      } else if (NEW_PROJECT_SHORTCUT.matches(event)) {
+        event.preventDefault()
+        setCreating(true)
+      }
     }
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
   }, [])
 
   return (
-    <SidebarProvider className="h-svh">
-      <AppSidebar />
-      <SidebarInset className="overflow-hidden">
-        <AppHeader title="Projects" />
-        <div className="flex min-h-0 flex-1 overflow-auto">
-          <Empty>
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <FolderOpen />
-              </EmptyMedia>
-              <EmptyTitle>No projects yet</EmptyTitle>
-              <EmptyDescription>
-                Add a folder and start talking.
-              </EmptyDescription>
-            </EmptyHeader>
-          </Empty>
-        </div>
-      </SidebarInset>
-    </SidebarProvider>
+    <ProjectsProvider>
+      <SidebarProvider className="h-svh">
+        <AppSidebar
+          selection={selection}
+          onSelect={setSelection}
+          onNewProject={() => setCreating(true)}
+        />
+        <SidebarInset className="overflow-hidden">
+          <MainPanel selection={selection} onSelect={setSelection} />
+        </SidebarInset>
+      </SidebarProvider>
+      <NewProjectDialog
+        open={creating}
+        onOpenChange={setCreating}
+        onCreated={(project) =>
+          setSelection({ kind: "project", projectId: project.id })
+        }
+      />
+    </ProjectsProvider>
   )
 }

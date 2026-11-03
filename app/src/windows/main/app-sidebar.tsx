@@ -5,15 +5,24 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
 } from "@/components/ui/sidebar"
 import { Wordmark } from "@/components/wordmark"
+import { ProjectTree } from "@/features/projects/project-tree"
+import type { Selection } from "@/features/projects/selection"
+import { NewProjectRow } from "./new-project-row"
 import { SettingsButton } from "./settings-button"
 
-/** The left column: brand, projects, settings. */
-export function AppSidebar() {
+/** The left column: brand, New project, the project and call tree, settings. */
+export function AppSidebar({
+  selection,
+  onSelect,
+  onNewProject,
+}: {
+  selection: Selection
+  onSelect: (selection: Selection) => void
+  onNewProject: () => void
+}) {
   return (
     <Sidebar variant="inset">
       <TitlebarSpacer />
@@ -27,13 +36,9 @@ export function AppSidebar() {
 
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Projects</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <p className="px-2 py-1 text-sm text-muted-foreground">
-              No projects yet
-            </p>
-          </SidebarGroupContent>
+          <NewProjectRow onClick={onNewProject} />
         </SidebarGroup>
+        <ProjectTree selection={selection} onSelect={onSelect} />
       </SidebarContent>
 
       <SidebarFooter>

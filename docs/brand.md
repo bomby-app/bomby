@@ -34,10 +34,11 @@ UI mapping onto the shadcn variables (board "07 Colour in UI"), light / dark:
 | `--foreground` | `#121212` | `#F5F5F2` | Body text |
 | `--muted` / `-foreground` | `#F4F4F1` / `#6B6B6B` | `#1F1F1F` / `#A3A3A3` | Quiet surfaces, secondary text |
 | `--primary` / `-foreground` | `#121212` / `#E8FF3A` | `#E8FF3A` / `#121212` | Main action: ink with highlighter text, flipped in dark |
-| `--accent` / `-foreground` | `#F6FFC2` / `#121212` | `#272A12` / `#E8FF3A` | Hover, selected row, active project |
+| `--accent` / `-foreground` | `#F4F4F1` / `#121212` | `#1F1F1F` / `#F5F5F2` | Hover, selected row, active project. Owner's change, 2026-11-03: neutral grey, not the board's tinted highlighter, so hover stays quiet. |
 | `--border` / `--input` | `#E4E4E4` | `#2A2A2A` | Dividers, fields |
 | `--ring` | `#121212` | `#E8FF3A` | Focus rings |
 | `--sidebar` / `-primary` | `#F4F4F1` / `#121212` | `#161616` / `#E8FF3A` | Sidebar and its logo tile |
+| `--sidebar-accent` / `-foreground` | `#E8E8E4` / `#121212` | `#242424` / `#F5F5F2` | Sidebar row hover and selection: a lighter (or darker) grey than the sidebar, as in other desktop apps |
 | `--claude` (new) | `#FF9BD2` | `#FF9BD2` | Claude sessions, working indicators. Fill only, ink text on it |
 | `--destructive` | `#D92D20` | `#F97066` | End call, delete. Not for the mascot |
 
@@ -46,7 +47,7 @@ Contrast: ink on highlighter 16.8:1 and ink on bubblegum 9.7:1 are always fine. 
 ## Type
 
 - **Bricolage Grotesque Bold**: the wordmark (lowercase, -0.02em) and display headlines.
-- Interface text: the OS font in the app (the Paper app previews use Inter as its stand-in); Bricolage Regular and Medium for body on the web.
+- Interface text: the OS font in the app (owner confirmed 2026-11-03; the Paper app previews use Inter as its stand-in). Bricolage Regular and Medium are for body text on the web.
 
 ## Mascot states and motion
 

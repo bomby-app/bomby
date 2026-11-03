@@ -73,7 +73,9 @@
   --secondary-foreground: #121212;
   --muted: #f4f4f1;
   --muted-foreground: #6b6b6b;
-  --accent: #f6ffc2;
+  /* Hover and selection are a quiet grey (owner's call, 2026-11-03): the highlighter
+     stays the one loud moment, on primary actions. */
+  --accent: #f4f4f1;
   --accent-foreground: #121212;
   --destructive: #d92d20;
   --border: #e4e4e4;
@@ -89,7 +91,7 @@
   --sidebar-foreground: #121212;
   --sidebar-primary: #121212;
   --sidebar-primary-foreground: #e8ff3a;
-  --sidebar-accent: #f6ffc2;
+  --sidebar-accent: #e8e8e4;
   --sidebar-accent-foreground: #121212;
   --sidebar-border: #e4e4e4;
   --sidebar-ring: #121212;
@@ -111,8 +113,8 @@
   --secondary-foreground: #f5f5f2;
   --muted: #1f1f1f;
   --muted-foreground: #a3a3a3;
-  --accent: #272a12;
-  --accent-foreground: #e8ff3a;
+  --accent: #1f1f1f;
+  --accent-foreground: #f5f5f2;
   --destructive: #f97066;
   --border: #2a2a2a;
   --input: #2a2a2a;
@@ -126,8 +128,8 @@
   --sidebar-foreground: #f5f5f2;
   --sidebar-primary: #e8ff3a;
   --sidebar-primary-foreground: #121212;
-  --sidebar-accent: #272a12;
-  --sidebar-accent-foreground: #e8ff3a;
+  --sidebar-accent: #242424;
+  --sidebar-accent-foreground: #f5f5f2;
   --sidebar-border: #2a2a2a;
   --sidebar-ring: #e8ff3a;
   --claude: #ff9bd2;

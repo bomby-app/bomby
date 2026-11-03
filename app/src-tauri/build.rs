@@ -6,6 +6,10 @@ const COMMANDS: &[&str] = &[
     "credentials_info",
     "save_credentials",
     "clear_credentials",
+    "list_projects",
+    "create_project",
+    "update_project",
+    "delete_project",
 ];
 
 fn main() {

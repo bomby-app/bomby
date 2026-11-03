@@ -7,12 +7,19 @@ pub enum Error {
     /// Input the user can fix; the message is shown as is.
     #[error("{0}")]
     Invalid(String),
+    /// The thing the page asked for is gone (deleted in another window, say).
+    #[error("{0} not found")]
+    NotFound(&'static str),
+    #[error("database: {0}")]
+    Database(#[from] rusqlite::Error),
     #[error("keychain: {0}")]
     Keychain(#[from] keyring::Error),
     #[error("stored credentials are unreadable: {0}")]
     Corrupt(#[from] serde_json::Error),
     #[error(transparent)]
     Tauri(#[from] tauri::Error),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
 }
 
 impl Serialize for Error {

@@ -43,10 +43,27 @@ Checked against Tauri 2.12.5 (`tauri` crate; CLI and `@tauri-apps/cli` 2.12.x, r
 - One entry: service = the app identifier, account `livekit`, value = JSON `{url, api_key, api_secret}`. The page gets `{url, apiKey, hasSecret}` back, never the secret.
 - Expected, not yet confirmed: on macOS a rebuilt dev binary may get a keychain prompt ("wants to use your confidential information") the first time it reads the entry, because its code signature changed. Choose Always Allow; a signed release keeps one identity.
 
+## Storage
+
+- `rusqlite` 0.41 with `bundled` (SQLite compiled in, no system library), behind a `Mutex<Connection>` in Tauri state (`src/db.rs`). The file is `claudible.db` in `app.path().app_data_dir()`, created in `Builder::setup`.
+- Migrations are a list of SQL strings; `PRAGMA user_version` counts how many ran, each runs in its own transaction. Never edit a shipped one; append.
+- `PRAGMA foreign_keys = ON` per connection (SQLite's default is off), so `ON DELETE CASCADE` removes a project's folders, calls and messages. `journal_mode = WAL` for reads during writes.
+- rusqlite 0.41 has no `ToSql`/`FromSql` for `usize`; use `i64` for integers.
+- Timestamps are `INTEGER` milliseconds since the epoch (`db::now_ms`), which JS reads as `new Date(ms)`.
+
+## Dialogs
+
+- `tauri-plugin-dialog` 2.8, added with `tauri add dialog` (crate, npm package, `.plugin(...)` in lib.rs). It does not add a capability: we grant only `dialog:allow-open` to the main window, for the folder picker (`open({ directory: true, multiple: true })`, which resolves to `string[] | null`).
+
 ## Icons
 
 - `just app icons` runs `tauri icon` on `src-tauri/icons/app-icon.png` (the Paper `app-icon` artboard, 1024 with an 824 tile). With CLI 2.12 it writes icon.icns, icon.ico, the PNG sizes (now including 64x64), the Square*Logo files, and also `android/` and `ios/` sets, which the recipe deletes (desktop only). Seen 2026-11-03.
 - macOS 26 light, dark, clear and tinted icons come from an Icon Composer `Claudible.icon` listed in `bundle.icon`, compiled to Assets.car by `actool` from Xcode 26 or newer; without it Tauri warns and ships only icon.icns, and older macOS uses icon.icns anyway. This Mac has only the Command Line Tools, so the `.icon` waits. Source: the Paper board "Handoff / Tauri asset map" (tauri PR #14671, issues #14207, #15315, #16386); re-check against the pinned Tauri before adding it.
+
+## Dock icon in dev
+
+- `tauri dev` has no app bundle, so on macOS Tauri sets the Dock icon at startup with `NSApplication.setApplicationIconImage`, from the first `.icns` in `bundle.icon` (else `icons/icon.png`) (`tauri` 2.12.5 `app.rs`, `RunEvent::Ready`; `tauri-codegen` 2.7.4 `context.rs`).
+- On macOS 26 the Dock showed our icon on a light rounded plate (owner, 2026-11-03). That matches macOS 26 putting older-format icons whose shape doesn't match its mask on a plate. The fix is the Icon Composer `Claudible.icon` compiled by Xcode 26's `actool` (see Icons). Not yet confirmed whether the bundled `.app` shows the same plate.
 
 ## Toolchain
 
