@@ -77,6 +77,6 @@ Contrast: ink on highlighter 16.8:1 and ink on bubblegum 9.7:1 are always fine. 
 Board "Handoff / Tauri asset map" on the `app assets` page. Each artboard is named after the file it exports to:
 
 - `app-icon.png` (1024, 824 tile): the `tauri icon` source for icon.icns, icon.ico and all PNGs. Required.
-- `Claudible.icon`: built in Icon Composer from `icon-composer-1-bubble.svg` and `icon-composer-2-eyes.svg` for macOS 26 light, dark, clear and tinted; Tauri compiles it to Assets.car. Needs `actool` from Xcode 26, which this Mac doesn't have (Command Line Tools only), so it waits.
-- `app-icon-dark.png` (reference), `app-icon-flat.png` (optional, ico and Linux), `dmg-background.png` (660 x 400, optional), `tray-icon-template.png` (22 and 44, with the tray).
+- `Claudible.icon` (in `app/src-tauri/icons/`): the two layers above with light (ink bubble, highlighter eyes on highlighter), dark (highlighter bubble, ink eyes on ink) and tinted looks. Glossy, as the owner asked (2026-11-03): top-to-bottom gradients on the tile, bubble and eyes, Liquid Glass with specular on both groups, a chromatic shadow under the bubble. Fine-tune in Icon Composer; compiled to Assets.car by `just app icon` (see [tauri-notes.md](tauri-notes.md#icons)).
+- `app-icon-dark.png` (reference), `app-icon-flat.png` (optional, ico and Linux), `dmg-background.png` (660 x 400, exported at 1x and 2x into `app/src-tauri/icons/`, combined into the DMG's TIFF), `tray-icon-template.png` (22 and 44, with the tray).
 - `app-logo-light` / `-dark` (28px SVG): `app-logo.tsx`.
