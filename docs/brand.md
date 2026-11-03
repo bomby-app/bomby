@@ -45,7 +45,7 @@ UI mapping onto the shadcn variables (board "07 Colour in UI"), light / dark:
 
 Transcript bubbles (owner, 2026-11-04, after the Paper board "In use / the conversation"): Claudible speaks in highlighter with ink text, the user in ink with white text (a raised grey in dark). Bubblegum is kept for Claude's own messages when they show in the call.
 
-Resume buttons are bubblegum with ink text: resuming brings a conversation back (owner, 2026-11-04). The sidebar shows a small outlined **Beta** badge after the wordmark while the app is in beta.
+Resume buttons are bubblegum with ink text: resuming brings a conversation back (owner, 2026-11-04). The sidebar shows a small bubblegum **Beta** badge (ink text) after the wordmark while the app is in beta (owner, 2026-11-04).
 
 Status marks pair up: ready is an ink thumbs-up on a highlighter disc, missing an ink cross on a bubblegum disc (Settings > Setup).
 
@@ -58,8 +58,8 @@ Contrast: ink on highlighter 16.8:1 and ink on bubblegum 9.7:1 are always fine. 
 
 ## Mascot states and motion
 
-- Only the eyes change: never the bubble shape or its colours. States follow LiveKit's agent state (`useAgent()`): waking (connecting, initializing: closed lines), idle (blinks), listening (eyes wide, bubble breathes with mic level), thinking (eyes drift up-right), speaking (oval eyes, bubble pulses with the voice), asleep (disconnected: closed, greyed), failed (crossed bubblegum eyes). Ours on top: working (a Claude session runs: eyes scan left and right, a layer over any live state) and done (smiling arcs for 1.2s when a result arrives).
-- Built as `app/src/components/mascot.tsx` (`<Mascot state level size />`, plus `mascotState(agentState)`): every state except working and done, which need Claude's status events. It sits inside the highlighter Aura on the call screen, replaces the folder icon of a project on a call, and is the icon on Start a call.
+- Only the eyes change: never the bubble shape or its colours. States follow LiveKit's agent state (`useAgent()`): waking (connecting, initializing: closed lines), idle (blinks), listening (eyes wide, bubble breathes with mic level), thinking (eyes drift up-right), speaking (round eyes that glance left and right every 1 to 2.5 s and blink every 2 to 4 s, now and then twice, opening a little on loud syllables; bubble pulses with the voice. Owner, 2026-11-04: no squint, it should feel alive), asleep (disconnected: closed, greyed), failed (crossed bubblegum eyes). Ours on top: working (a Claude session runs: eyes scan left and right, a layer over any live state) and done (smiling arcs for 1.2s when a result arrives).
+- Built as `app/src/components/mascot.tsx` (`<Mascot state level size />`, plus `mascotState(agentState)`): every state except working and done, which need Claude's status events. It sits over LiveKit's bar visualizer on the call screen (bars in `--primary`: highlighter in dark, ink in light; owner, 2026-11-04), replaces the folder icon of a project on a call, and is the icon on Start a call.
 - Motion: eyes lead, the bubble only scales with sound; driven by audio level, not timers; ease-out for changes, sine for loops, no bounce, 120 to 400ms one-offs. One SVG component: `<Mascot state working done level />`, CSS transforms only. Reduced motion: no loops, instant swaps, blink stays. Under 32px nothing loops.
 
 ## Voice

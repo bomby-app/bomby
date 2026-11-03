@@ -3,6 +3,17 @@ import type { Participant } from "livekit-client"
 
 import type { SavedMessage } from "./api"
 
+/**
+ * A live line's lasting id. LiveKit sends each spoken segment as an interim stream, then a
+ * final one, sharing `lk.segment_id` (`ParticipantAgentAttributes.TranscriptionSegmentId` in
+ * `@livekit/components-core`). Its merged message takes the latest stream's `id`, so `id`
+ * changes as the line settles: keyed on this, a line is saved once and keeps its row in the
+ * transcript (docs/livekit-notes.md).
+ */
+export function lineId(message: ReceivedMessage): string {
+  return message.attributes?.["lk.segment_id"] ?? message.id
+}
+
 /** "user" or "agent" for a live transcript line; null for anything else (chat). */
 export function roleOf(message: ReceivedMessage): "user" | "agent" | null {
   if (message.type === "userTranscript") return "user"

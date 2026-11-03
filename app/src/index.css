@@ -245,3 +245,11 @@
 .call-transcript [data-slot="bubble-content"] :is(p, ul, ol) {
   margin: 0;
 }
+
+/* The call's control bar (Agents UI's AgentControlBar, as generated). LiveKit colours the
+   open transcript toggle blue; ours is a quiet grey press, like a selected sidebar row. */
+.call-controls [aria-label="Toggle transcript"][data-state="on"] {
+  background: var(--sidebar-accent);
+  color: var(--foreground);
+  border-color: var(--border);
+}

@@ -57,12 +57,10 @@ icon:
     rm -rf src-tauri/icons/android src-tauri/icons/ios
     tiffutil -cathidpicheck src-tauri/icons/dmg-background.png src-tauri/icons/dmg-background@2x.png -out src-tauri/icons/dmg-background.tiff
 
-# Add shadcn components, e.g. `just app add dialog`. components/ui is generated: existing files are refreshed from the registry
+# Add shadcn or Agents UI components, e.g. `just app add dialog`. Vendor code, kept as installed: existing files are refreshed from the registry
 [working-directory: 'app']
 add +components:
     bun x shadcn add --yes --overwrite {{components}}
-    scripts/clean-generated.sh
-    bun x biome check --write src/components/ui src/hooks
 
 # Run the Rust core's unit tests
 [group('check')]

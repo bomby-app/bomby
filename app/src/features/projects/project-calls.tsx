@@ -163,21 +163,17 @@ export function DeleteCallButton({
   return (
     <AlertDialog>
       <Tooltip>
-        <TooltipTrigger
-          render={
-            <AlertDialogTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="Delete call"
-                  disabled={active?.callId === call.id}
-                />
-              }
-            />
-          }
-        >
-          <Trash2 />
+        <TooltipTrigger asChild>
+          <AlertDialogTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Delete call"
+              disabled={active?.callId === call.id}
+            >
+              <Trash2 />
+            </Button>
+          </AlertDialogTrigger>
         </TooltipTrigger>
         <TooltipContent>Delete call</TooltipContent>
       </Tooltip>

@@ -19,7 +19,7 @@ export function mountWindow(content: ReactNode) {
     <StrictMode>
       <ThemeProvider>
         {/* Native tooltips wait before showing; shadcn's default of 0 feels like a web page. */}
-        <TooltipProvider delay={500}>{content}</TooltipProvider>
+        <TooltipProvider delayDuration={500}>{content}</TooltipProvider>
       </ThemeProvider>
     </StrictMode>
   )

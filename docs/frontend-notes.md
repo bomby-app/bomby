@@ -1,12 +1,12 @@
 # Frontend notes
 
-The app's web half (`app/src`). Checked against shadcn CLI 4.23.0, Tailwind CSS 4.3.4, Biome 2.6.4, `@base-ui/react` 1.9.0, `cn` 0.5.2, React 19 and Vite 8 (installed in `app/node_modules`), ui.shadcn.com docs (sources in `shadcn-ui/ui` `apps/v4/content/docs`), and docs.livekit.io, 2026-11-03.
+The app's web half (`app/src`). Checked against shadcn CLI 4.23.0, Tailwind CSS 4.3.4, Biome 2.6.4, `radix-ui` 1.8.1, `cn` 0.5.2, React 19 and Vite 8 (installed in `app/node_modules`), ui.shadcn.com docs (sources in `shadcn-ui/ui` `apps/v4/content/docs`), and docs.livekit.io, 2026-11-03; moved to Radix 2026-11-04.
 
 ## shadcn
 
-- **Components are copied in, not installed.** `just app add <name>` runs the shadcn CLI, which writes the source to `src/components/ui/`. We treat it as generated: style it through props and `className` from our components. The recipe passes `--overwrite` (otherwise the CLI stops to ask about any file Biome reformatted), so `add` refreshes shared files like `separator.tsx` from the registry, and a hand edit there would be lost.
-- **Base and style.** `components.json` has `style: base-nova`: Base UI primitives (`@base-ui/react`), the Nova look, neutral colors, lucide icons. Base UI is the CLI default (`--base base`); it also offers Radix and React Aria. See [decision](decisions/app-ui-on-shadcn-base-ui.md).
-- **Changing base.** Set `style` in `components.json`, then `just app add` every component in `components/ui` to regenerate them. The CLI may not add the new primitive package when it only overwrites files; add it with `bun add`.
+- **Components are copied in, not installed.** `just app add <name>` runs the shadcn CLI, which writes the source to `src/components/ui/`. We treat it as generated: style it through props and `className` from our components. The recipe passes `--overwrite`, so `add` refreshes shared files like `separator.tsx` from the registry, and a hand edit there would be lost.
+- **Base and style.** `components.json` has `style: radix-nova`: Radix primitives (the unified `radix-ui` package), the Nova look, neutral colors, lucide icons. The CLI's default base is Base UI (`--base base`); it also offers Radix (`--base radix`) and React Aria. See [decision](decisions/app-ui-back-on-shadcn-radix.md).
+- **Changing base.** Set `style` in `components.json`, then `just app add` every component in `components/ui` and `components/agents-ui` to regenerate them. The CLI did not add the new primitive package when it only overwrote files (4.23.0, Base UI to Radix): add it with `bun add`, and remove the old one. `shadcn apply` and `init --base` would also rewrite the theme in `index.css`; `shadcn migrate radix` only moves `@radix-ui/react-*` imports to `radix-ui`.
 - **`cn` is a package now.** Generated components `import { cn } from "cn"` (published by shadcn; replaces `clsx` plus `tailwind-merge`). `src/lib/utils.ts` re-exports it for older registry code that imports `@/lib/utils`. Pinned to an exact version because 0.5.x is new.
 - **Data variants.** shadcn's `data-active:` and friends (`shadcn/tailwind.css`) skip `data-active="false"`, so `isActive={false}` is safe.
 - **`init` with `--no-pointer`** keeps the default arrow cursor on buttons, as native apps do.
@@ -15,11 +15,13 @@ The app's web half (`app/src`). Checked against shadcn CLI 4.23.0, Tailwind CSS 
 - **Sidebar** (`ui/sidebar.tsx`): `SidebarProvider` > `Sidebar` (`variant` sidebar, floating or inset; `collapsible` offcanvas, icon or none) + `SidebarInset`. Cmd+B toggles it. Below 768px it turns into a sheet; the window's `minWidth` (820) keeps us above that. Its open-state cookie is for server rendering and does nothing here.
 - **Dark mode on Vite** is a provider that toggles `.dark` on `<html>` (shadcn docs, `dark-mode/vite`). Ours also follows OS changes while on "system" and sets the native window theme; see [tauri-notes.md](tauri-notes.md#window).
 
-## Base UI
+## Radix
 
-- Composition uses `render`, not `asChild`: `<TooltipTrigger render={<Button variant="ghost" />}>`.
-- `TooltipProvider` takes `delay` (ms), not `delayDuration`.
-- `ToggleGroup` has `value` and `onValueChange` as arrays (`multiple` for more than one); a single choice is `value={[theme]}`, and pressing the selected item again empties the array.
+- Composition uses `asChild`: `<TooltipTrigger asChild><Button variant="ghost">...</Button></TooltipTrigger>`. Triggers nest the same way (a tooltip on an alert dialog's trigger button).
+- `TooltipProvider` takes `delayDuration` (ms).
+- `ToggleGroup type="single"` has a string `value`; pressing the selected item again gives `""`.
+- `Select` `value` is a string or `undefined` (never null); `SelectContent position="popper"` drops it below the trigger instead of over the chosen item.
+- State attributes are `data-state` (`open`/`closed`, `on`/`off`), which Agents UI's toggles and the sidebar's collapsible rows style against.
 - `Kbd` inside `TooltipContent` is styled by the tooltip itself (`**:data-[slot=kbd]`); group keys with `KbdGroup` (shadcn docs, `components/base/kbd`, example `kbd-tooltip`).
 
 ## Tailwind v4
@@ -30,16 +32,15 @@ The app's web half (`app/src`). Checked against shadcn CLI 4.23.0, Tailwind CSS 
 
 ## Biome
 
-- One tool for format, lint and import order (`biome.json`, `just app lint` / `just app fmt`). Its formatter is set to match shadcn's output (double quotes, no semicolons, ES5 trailing commas, 80 columns), so formatting generated files only reorders imports.
-- Linting is off for `src/components/ui/**` and `src/hooks/use-mobile.ts` (generated); formatting still applies.
+- One tool for format, lint and import order (`biome.json`, `just app lint` / `just app fmt`), set to match shadcn's style (double quotes, no semicolons, ES5 trailing commas, 80 columns).
+- **Vendor code is kept as installed.** Biome skips `src/components/ui`, `src/components/agents-ui`, `src/hooks/agents-ui` and `src/hooks/use-mobile.ts` entirely (`files.includes` with `!!`): no lint, no format, nothing changed after `just app add`.
+- `tsconfig.json` keeps `noUnusedLocals` and `noUnusedParameters`, which vendor code also passes as installed (2026-11-04). The Aura visualizer did not (an unused `import React`); if another registry file fails them, move the unused-code check to Biome (`noUnusedImports`, `noUnusedVariables`) rather than editing the file.
 - Tailwind class sorting (`useTailwindSortedClasses`) is a nursery rule in 2.6, so it's off.
 
 ## Agents UI
 
-- Installed with `just app add @agents-ui/<name>`: `agent-session-provider`, `agent-control-bar`, `agent-chat-transcript`, `agent-audio-visualizer-bar` and what they pull in. Files land in `src/components/agents-ui/` and `src/hooks/agents-ui/`; like `components/ui`, they are generated (Biome lints them off).
-- **Two hand fixes for Base UI**, marked `// Base UI:` in the files, needed because Agents UI was written against Radix's Select and Toggle: `agent-track-control.tsx` (`onValueChange` gets `string | null`; `SelectContent` has no `position="popper"`, use `alignItemWithTrigger={false}`) and `agent-track-toggle.tsx` (its props omit the button's `value`). Any `just app add` that pulls these in (the control bar, the session view block) overwrites them; redo the fixes after.
-- **Unused `React` imports.** Registry code writes `import React, { ... }` without using `React`, which `noUnusedLocals` rejects. `app/scripts/clean-generated.sh` (run by `just app add`) drops that default import from generated files that never say `React.`.
-- **The call screen** (`features/call/call-view.tsx`) follows the official `agent-session-view-01` block from LiveKit's agent starter (`livekit-examples/agent-starter-react`, cloned for reference into `.scratch/`, gitignored): agent visual in the middle, a transcript that opens over it, a status line and `AgentControlBar variant="livekit"` (mic with its device menu, transcript toggle, leave) at the bottom, `StartAudioButton` for blocked playback. We compose it from the block's parts instead of using the block, so the centre can be ours: `AgentAudioVisualizerAura` in highlighter (`color`, `themeMode`, `audioTrack={useAgent().microphoneTrack}`) with Dot Dot inside. The block and the grid, radial and wave visualizers were removed after.
+- Installed with `just app add @agents-ui/<name>`: `agent-session-provider`, `agent-control-bar`, `agent-chat-transcript`, `agent-audio-visualizer-bar` and what they pull in. Files land in `src/components/agents-ui/` and `src/hooks/agents-ui/`; like `components/ui`, they are vendor code, kept as installed.
+- **The call screen** (`features/call/call-view.tsx`) follows the official `agent-session-view-01` block from LiveKit's agent starter (`livekit-examples/agent-starter-react`, cloned for reference into `.scratch/`, gitignored): agent visual in the middle, a transcript that opens over it, a status line and `AgentControlBar variant="livekit"` (mic with its device menu, transcript toggle, leave) at the bottom, `StartAudioButton` for blocked playback. We compose it from the block's parts instead of using the block, so the centre can be ours: Dot Dot over `AgentAudioVisualizerBar` (5 bars, `size` `sm`, `icon` while the transcript is open; `audioTrack={agent.microphoneTrack}`; coloured with `className="text-primary"`, since the bars draw in `currentColor`). While the transcript is open a fade from solid background sits behind the agent at the top, so bubbles scroll under it. The Aura visualizer was removed at the owner's request (2026-11-04).
 - **Devices follow the system.** `AgentControlBar` remembers a chosen device in local storage unless `saveUserChoices={false}`; we pass false. livekit-client captures `deviceId: { ideal: "default" }` with `echoCancellation`, `noiseSuppression`, `autoGainControl` and `voiceIsolation` on by default (`audioDefaults` in livekit-client 2.23.0).
 - **Levels.** `useTrackVolume(track)` (0 to 1) on `useAgent().microphoneTrack` (the agent's voice) and `useLocalParticipant().microphoneTrack.audioTrack` (the user's mic) drive the mascot.
 

@@ -1,23 +1,23 @@
-"use client"
+'use client';
 
+import React, {
+  type CSSProperties,
+  Children,
+  type ComponentProps,
+  type ReactNode,
+  cloneElement,
+  isValidElement,
+  useMemo,
+} from 'react';
+import { type VariantProps, cva } from 'class-variance-authority';
+import { type LocalAudioTrack, type RemoteAudioTrack } from 'livekit-client';
 import {
   type AgentState,
   type TrackReferenceOrPlaceholder,
   useMultibandTrackVolume,
-} from "@livekit/components-react"
-import { cva, type VariantProps } from "class-variance-authority"
-import { type LocalAudioTrack, type RemoteAudioTrack } from "livekit-client"
-import React, {
-  Children,
-  type ComponentProps,
-  type CSSProperties,
-  cloneElement,
-  isValidElement,
-  type ReactNode,
-  useMemo,
-} from "react"
-import { useAgentAudioVisualizerBarAnimator } from "@/hooks/agents-ui/use-agent-audio-visualizer-bar"
-import { cn } from "@/lib/utils"
+} from '@livekit/components-react';
+import { useAgentAudioVisualizerBarAnimator } from '@/hooks/agents-ui/use-agent-audio-visualizer-bar';
+import { cn } from '@/lib/utils';
 
 /**
  * Resizes an array of per-band volume values to exactly `count` entries.
@@ -25,80 +25,71 @@ import { cn } from "@/lib/utils"
  * value is duplicated to fill the remainder. An empty array is padded with 0s.
  */
 export function normalizeVolumeBands(bands: number[], count: number): number[] {
-  if (bands.length === count) return bands
-  if (bands.length > count) return bands.slice(0, count)
-  const lastValue = bands[bands.length - 1] ?? 0
-  return [...bands, ...new Array(count - bands.length).fill(lastValue)]
+  if (bands.length === count) return bands;
+  if (bands.length > count) return bands.slice(0, count);
+  const lastValue = bands[bands.length - 1] ?? 0;
+  return [...bands, ...new Array(count - bands.length).fill(lastValue)];
 }
 
 function cloneSingleChild(
   children: ReactNode | ReactNode[],
   props?: Record<string, unknown>,
-  key?: unknown
+  key?: unknown,
 ) {
   return Children.map(children, (child) => {
     // Checking isValidElement is the safe way and avoids a typescript error too.
     if (isValidElement(child) && Children.only(children)) {
-      const childProps = child.props as Record<string, unknown>
+      const childProps = child.props as Record<string, unknown>;
       if (childProps.className) {
         // make sure we retain classnames of both passed props and child
-        props ??= {}
-        props.className = cn(
-          childProps.className as string,
-          props.className as string
-        )
+        props ??= {};
+        props.className = cn(childProps.className as string, props.className as string);
         props.style = {
           ...(childProps.style as CSSProperties),
           ...(props.style as CSSProperties),
-        }
+        };
       }
-      return cloneElement(child, {
-        ...props,
-        key: key ? String(key) : undefined,
-      })
+      return cloneElement(child, { ...props, key: key ? String(key) : undefined });
     }
-    return child
-  })
+    return child;
+  });
 }
 
 export const AgentAudioVisualizerBarElementVariants = cva(
   [
-    "rounded-full transition-colors duration-250 ease-linear",
-    "bg-current/10 data-[lk-highlighted=true]:bg-current",
+    'rounded-full transition-colors duration-250 ease-linear',
+    'bg-current/10 data-[lk-highlighted=true]:bg-current',
   ],
   {
     variants: {
       size: {
-        icon: "w-[4px] min-h-[4px]",
-        sm: "w-[8px] min-h-[8px]",
-        md: "w-[16px] min-h-[16px]",
-        lg: "w-[32px] min-h-[32px]",
-        xl: "w-[64px] min-h-[64px]",
+        icon: 'w-[4px] min-h-[4px]',
+        sm: 'w-[8px] min-h-[8px]',
+        md: 'w-[16px] min-h-[16px]',
+        lg: 'w-[32px] min-h-[32px]',
+        xl: 'w-[64px] min-h-[64px]',
       },
     },
     defaultVariants: {
-      size: "md",
+      size: 'md',
     },
-  }
-)
+  },
+);
 
-export const AgentAudioVisualizerBarVariants = cva(
-  "relative flex items-center justify-center",
-  {
-    variants: {
-      size: {
-        icon: "h-[24px] gap-[2px]",
-        sm: "h-[56px] gap-[4px]",
-        md: "h-[112px] gap-[8px]",
-        lg: "h-[224px] gap-[16px]",
-        xl: "h-[448px] gap-[32px]",
-      },
+export const AgentAudioVisualizerBarVariants = cva('relative flex items-center justify-center', {
+  variants: {
+    size: {
+      icon: 'h-[24px] gap-[2px]',
+      sm: 'h-[56px] gap-[4px]',
+      md: 'h-[112px] gap-[8px]',
+      lg: 'h-[224px] gap-[16px]',
+      xl: 'h-[448px] gap-[32px]',
     },
-    defaultVariants: {
-      size: "md",
-    },
-  }
-)
+  },
+  defaultVariants: {
+    size: 'md',
+  },
+});
 
 /**
  * Props for the AgentAudioVisualizerBar component.
@@ -108,39 +99,39 @@ export interface AgentAudioVisualizerBarProps {
    * The size of the visualizer.
    * @defaultValue 'md'
    */
-  size?: "icon" | "sm" | "md" | "lg" | "xl"
+  size?: 'icon' | 'sm' | 'md' | 'lg' | 'xl';
   /**
    * The current state of the agent. Determines the animation pattern.
    * @defaultValue 'connecting'
    */
-  state?: AgentState
+  state?: AgentState;
   /**
    * The color of the bars in hexidecimal format.
    */
-  color?: `#${string}`
+  color?: `#${string}`;
   /**
    * The number of bars to display in the visualizer.
    * If not provided, defaults based on size: 3 for 'icon'/'sm', 5 for others.
    */
-  barCount?: number
+  barCount?: number;
   /**
    * The audio track to visualize. Can be a local/remote audio track or a track reference.
    */
-  audioTrack?: LocalAudioTrack | RemoteAudioTrack | TrackReferenceOrPlaceholder
+  audioTrack?: LocalAudioTrack | RemoteAudioTrack | TrackReferenceOrPlaceholder;
   /**
    * Volume values (0-1) to use instead of the values computed from the audioTrack.
    * The volumeBands.length should match barCount.
    */
-  volumeBands?: number[]
+  volumeBands?: number[];
   /**
    * Additional CSS class names to apply to the container.
    */
-  className?: string
+  className?: string;
   /**
    * Custom div element to render as grid cells. Each child receives data-lk-index,
    * data-lk-highlighted props and style props for height. Must be a single div element.
    */
-  children?: ReactNode
+  children?: ReactNode;
 }
 
 /**
@@ -160,8 +151,8 @@ export interface AgentAudioVisualizerBarProps {
  * ```
  */
 export function AgentAudioVisualizerBar({
-  size = "md",
-  state = "connecting",
+  size = 'md',
+  state = 'connecting',
   color,
   barCount,
   audioTrack,
@@ -172,60 +163,57 @@ export function AgentAudioVisualizerBar({
   ...props
 }: AgentAudioVisualizerBarProps &
   VariantProps<typeof AgentAudioVisualizerBarVariants> &
-  ComponentProps<"div">) {
+  ComponentProps<'div'>) {
   const _barCount = useMemo(() => {
     if (barCount) {
-      return barCount
+      return barCount;
     }
     switch (size) {
-      case "icon":
-      case "sm":
-        return 3
+      case 'icon':
+      case 'sm':
+        return 3;
       default:
-        return 5
+        return 5;
     }
-  }, [barCount, size])
+  }, [barCount, size]);
 
   const multibandVolume = useMultibandTrackVolume(audioTrack, {
     bands: _barCount,
     loPass: 100,
     hiPass: 200,
-  })
+  });
   const resolvedVolumeBands = volumeBands
     ? normalizeVolumeBands(volumeBands, _barCount)
-    : multibandVolume
+    : multibandVolume;
 
   const sequencerInterval = useMemo(() => {
     switch (state) {
-      case "connecting":
-        return 2000 / _barCount
-      case "initializing":
-        return 2000
-      case "listening":
-        return 500
-      case "thinking":
-        return 150
+      case 'connecting':
+        return 2000 / _barCount;
+      case 'initializing':
+        return 2000;
+      case 'listening':
+        return 500;
+      case 'thinking':
+        return 150;
       default:
-        return 1000
+        return 1000;
     }
-  }, [state, _barCount])
+  }, [state, _barCount]);
 
   const highlightedIndices = useAgentAudioVisualizerBarAnimator(
     state,
     _barCount,
-    sequencerInterval
-  )
+    sequencerInterval,
+  );
 
   const bands = useMemo(
-    () =>
-      state === "speaking" ? resolvedVolumeBands : new Array(_barCount).fill(0),
-    [state, resolvedVolumeBands, _barCount]
-  )
+    () => (state === 'speaking' ? resolvedVolumeBands : new Array(_barCount).fill(0)),
+    [state, resolvedVolumeBands, _barCount],
+  );
 
   if (children && Array.isArray(children)) {
-    throw new Error(
-      "AgentAudioVisualizerBar children must be a single element."
-    )
+    throw new Error('AgentAudioVisualizerBar children must be a single element.');
   }
 
   return (
@@ -239,8 +227,8 @@ export function AgentAudioVisualizerBar({
         children ? (
           <React.Fragment key={idx}>
             {cloneSingleChild(children, {
-              "data-lk-index": idx,
-              "data-lk-highlighted": highlightedIndices.includes(idx),
+              'data-lk-index': idx,
+              'data-lk-highlighted': highlightedIndices.includes(idx),
               style: { height: `${band * 100}%` },
             })}
           </React.Fragment>
@@ -252,8 +240,8 @@ export function AgentAudioVisualizerBar({
             style={{ height: `${band * 100}%` }}
             className={cn(AgentAudioVisualizerBarElementVariants({ size }))}
           />
-        )
+        ),
       )}
     </div>
-  )
+  );
 }

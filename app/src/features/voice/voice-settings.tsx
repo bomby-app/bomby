@@ -44,14 +44,14 @@ export function VoiceSettings() {
     <Field>
       <FieldLabel htmlFor="voice">Voice</FieldLabel>
       <Select
-        value={settings?.voice ?? null}
+        value={settings?.voice}
         onValueChange={(name) => void choose(name)}
         disabled={!settings}
       >
         <SelectTrigger id="voice" className="w-64">
           <SelectValue placeholder="Loading voices..." />
         </SelectTrigger>
-        <SelectContent alignItemWithTrigger={false} className="max-h-80">
+        <SelectContent position="popper" className="max-h-80">
           {settings?.voices.map((voice) => (
             <SelectItem key={voice.name} value={voice.name}>
               <span className="font-medium">{voice.name}</span>

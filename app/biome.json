@@ -6,7 +6,15 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!!**/dist", "!!src-tauri"]
+    "includes": [
+      "**",
+      "!!**/dist",
+      "!!src-tauri",
+      "!!src/components/ui",
+      "!!src/components/agents-ui",
+      "!!src/hooks/agents-ui",
+      "!!src/hooks/use-mobile.ts"
+    ]
   },
   "formatter": {
     "enabled": true,
@@ -39,18 +47,5 @@
         "organizeImports": "on"
       }
     }
-  },
-  "overrides": [
-    {
-      "includes": [
-        "src/components/ui/**",
-        "src/components/agents-ui/**",
-        "src/hooks/agents-ui/**",
-        "src/hooks/use-mobile.ts"
-      ],
-      "linter": {
-        "enabled": false
-      }
-    }
-  ]
+  }
 }

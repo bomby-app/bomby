@@ -1,6 +1,6 @@
 # App UI on shadcn with Base UI
 
-Status: accepted, 2026-11-03. Supersedes [app-ui-on-shadcn-radix.md](app-ui-on-shadcn-radix.md).
+Status: superseded by [app-ui-back-on-shadcn-radix.md](app-ui-back-on-shadcn-radix.md), 2026-11-04: Agents UI styles our toggle through Radix's `data-state`, which Base UI never sets. Accepted 2026-11-03, superseding [app-ui-on-shadcn-radix.md](app-ui-on-shadcn-radix.md).
 
 ## Context
 

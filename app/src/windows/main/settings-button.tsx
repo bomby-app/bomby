@@ -13,17 +13,15 @@ import { openSettings, SETTINGS_SHORTCUT } from "../settings/open-settings"
 export function SettingsButton() {
   return (
     <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Settings"
-            onClick={() => void openSettings()}
-          />
-        }
-      >
-        <Settings />
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Settings"
+          onClick={() => void openSettings()}
+        >
+          <Settings />
+        </Button>
       </TooltipTrigger>
       <TooltipContent side="top">
         Settings

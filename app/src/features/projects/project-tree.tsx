@@ -73,61 +73,63 @@ function ProjectNode({
   const [open, setOpen] = useState(holdsSelection)
 
   return (
-    <Collapsible
-      open={open}
-      onOpenChange={setOpen}
-      render={<SidebarMenuItem />}
-    >
-      <SidebarMenuButton
-        isActive={selection?.kind === "project" && holdsSelection}
-        onClick={() => {
-          onSelect({ kind: "project", projectId: project.id })
-          setOpen(true)
-        }}
-      >
-        {/* On a call, Dot Dot takes the folder's place. */}
-        {onCall ? <Mascot state="listening" size={16} /> : <Folder />}
-        <span>{project.name}</span>
-      </SidebarMenuButton>
-      <CollapsibleTrigger
-        render={
-          <SidebarMenuAction className="data-panel-open:[&>svg]:rotate-90 [&>svg]:transition-transform" />
-        }
-      >
-        <ChevronRight />
-        <span className="sr-only">{open ? "Hide calls" : "Show calls"}</span>
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <SidebarMenuSub>
-          {project.calls.length === 0 ? (
-            <SidebarMenuSubItem>
-              <span className="block px-2 py-1 text-xs text-muted-foreground">
-                No calls yet
-              </span>
-            </SidebarMenuSubItem>
-          ) : (
-            project.calls.map((call) => (
-              <SidebarMenuSubItem key={call.id}>
-                <SidebarMenuSubButton
-                  render={<button type="button" />}
-                  isActive={
-                    selection?.kind === "call" && selection.callId === call.id
-                  }
-                  onClick={() =>
-                    onSelect({
-                      kind: "call",
-                      projectId: project.id,
-                      callId: call.id,
-                    })
-                  }
-                >
-                  <span>{callLabel(call.startedAt)}</span>
-                </SidebarMenuSubButton>
+    <Collapsible asChild open={open} onOpenChange={setOpen}>
+      <SidebarMenuItem>
+        <SidebarMenuButton
+          isActive={selection?.kind === "project" && holdsSelection}
+          onClick={() => {
+            onSelect({ kind: "project", projectId: project.id })
+            setOpen(true)
+          }}
+        >
+          {/* On a call, Dot Dot takes the folder's place. */}
+          {onCall ? <Mascot state="listening" size={16} /> : <Folder />}
+          <span>{project.name}</span>
+        </SidebarMenuButton>
+        <CollapsibleTrigger asChild>
+          <SidebarMenuAction className="data-[state=open]:[&>svg]:rotate-90 [&>svg]:transition-transform">
+            <ChevronRight />
+            <span className="sr-only">
+              {open ? "Hide calls" : "Show calls"}
+            </span>
+          </SidebarMenuAction>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <SidebarMenuSub>
+            {project.calls.length === 0 ? (
+              <SidebarMenuSubItem>
+                <span className="block px-2 py-1 text-xs text-muted-foreground">
+                  No calls yet
+                </span>
               </SidebarMenuSubItem>
-            ))
-          )}
-        </SidebarMenuSub>
-      </CollapsibleContent>
+            ) : (
+              project.calls.map((call) => (
+                <SidebarMenuSubItem key={call.id}>
+                  <SidebarMenuSubButton
+                    asChild
+                    isActive={
+                      selection?.kind === "call" && selection.callId === call.id
+                    }
+                  >
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onSelect({
+                          kind: "call",
+                          projectId: project.id,
+                          callId: call.id,
+                        })
+                      }
+                    >
+                      <span>{callLabel(call.startedAt)}</span>
+                    </button>
+                  </SidebarMenuSubButton>
+                </SidebarMenuSubItem>
+              ))
+            )}
+          </SidebarMenuSub>
+        </CollapsibleContent>
+      </SidebarMenuItem>
     </Collapsible>
   )
 }

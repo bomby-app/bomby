@@ -1,3 +1,4 @@
+import { useReducedMotion } from "motion/react"
 import { useEffect, useState } from "react"
 
 import { cn } from "@/lib/utils"
@@ -25,28 +26,64 @@ const BUBBLE =
 const EYES = [47, 73] as const
 const EYE_Y = 58
 
-/** Blinks every 3 to 6 seconds (140 ms), as the motion board says. */
-function useBlink(enabled: boolean) {
+/**
+ * Blinks (140 ms) at a random moment in [min, max] ms: every 3 to 6 seconds at rest, as
+ * the motion board says, more often while talking. Now and then it blinks twice.
+ */
+function useBlink(enabled: boolean, [min, max] = [3000, 6000]) {
   const [closed, setClosed] = useState(false)
+  useEffect(() => {
+    if (!enabled) return
+    let timer: number
+    const blink = (then: () => void) => {
+      setClosed(true)
+      timer = window.setTimeout(() => {
+        setClosed(false)
+        then()
+      }, 140)
+    }
+    const schedule = () => {
+      timer = window.setTimeout(
+        () =>
+          blink(() => {
+            if (Math.random() < 0.2) {
+              timer = window.setTimeout(() => blink(schedule), 120)
+            } else schedule()
+          }),
+        min + Math.random() * (max - min)
+      )
+    }
+    schedule()
+    return () => window.clearTimeout(timer)
+  }, [enabled, min, max])
+  return enabled && closed
+}
+
+// Where the eyes look while talking, in viewBox units: left, right, or at you.
+const GLANCES = [-4, -2.5, 0, 2.5, 4] as const
+
+/** While talking, the eyes glance somewhere new every 1 to 2.5 seconds. */
+function useGlance(enabled: boolean) {
+  const [x, setX] = useState(0)
   useEffect(() => {
     if (!enabled) return
     let timer: number
     const schedule = () => {
       timer = window.setTimeout(
         () => {
-          setClosed(true)
-          timer = window.setTimeout(() => {
-            setClosed(false)
-            schedule()
-          }, 140)
+          setX((current) => {
+            const others = GLANCES.filter((g) => g !== current)
+            return others[Math.floor(Math.random() * others.length)] ?? 0
+          })
+          schedule()
         },
-        3000 + Math.random() * 3000
+        1000 + Math.random() * 1500
       )
     }
     schedule()
     return () => window.clearTimeout(timer)
   }, [enabled])
-  return enabled && closed
+  return enabled ? x : 0
 }
 
 export function Mascot({
@@ -66,7 +103,13 @@ export function Mascot({
   eyes?: string
   className?: string
 }) {
-  const blinking = useBlink(state === "idle" || state === "listening")
+  // Reduced motion and small sizes: no loops (the blink stays).
+  const still = useReducedMotion() === true || size < 32
+  const blinking = useBlink(
+    state === "idle" || state === "listening" || state === "speaking",
+    state === "speaking" ? [1800, 4000] : undefined
+  )
+  const glance = useGlance(state === "speaking" && !still)
   const sound = Math.min(1, Math.max(0, level))
   // Listen breathe: up to 1.06; speak pulse: up to 1.05. Silence means stillness.
   const scale =
@@ -112,7 +155,9 @@ export function Mascot({
               ? "translate(5px, -6px)"
               : state === "listening"
                 ? "translate(0, -3px)"
-                : undefined,
+                : state === "speaking"
+                  ? `translate(${glance}px, -1px)`
+                  : undefined,
         }}
       >
         {EYES.map((cx) => (
@@ -168,16 +213,15 @@ function Eye({
       />
     )
   }
-  // Talking: ovals that open a little on loud syllables.
-  const rx = state === "listening" ? 10.5 : 7
-  const ry =
-    state === "speaking" ? 4.5 + 1.5 * level : state === "listening" ? 10.5 : 7
+  // Listening: wide open. Talking: round, a little bigger on loud syllables.
+  const r =
+    state === "listening" ? 10.5 : state === "speaking" ? 7 + 1.2 * level : 7
   return (
     <ellipse
       cx={cx}
       cy={EYE_Y}
-      rx={rx}
-      ry={ry}
+      rx={r}
+      ry={r}
       fill={fill}
       style={{
         transform: blinking ? "scaleY(0.1)" : "scaleY(1)",

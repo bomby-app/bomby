@@ -28,7 +28,7 @@ import {
   type SavedMessage,
   saveMessage,
 } from "./api"
-import { roleOf } from "./transcript"
+import { lineId, roleOf } from "./transcript"
 
 export type ActiveCall = {
   projectId: number
@@ -197,9 +197,10 @@ function CallRecorder({ call }: { call: ActiveCall }) {
       const role = roleOf(message)
       const text = message.message.trim()
       if (!role || !text || message.timestamp < call.startedAt) continue
-      if (saved.current.get(message.id) === text) continue
-      saved.current.set(message.id, text)
-      void saveMessage(call.callId, { segmentId: message.id, role, text })
+      const id = lineId(message)
+      if (saved.current.get(id) === text) continue
+      saved.current.set(id, text)
+      void saveMessage(call.callId, { segmentId: id, role, text })
     }
   }, [messages, call])
   return null

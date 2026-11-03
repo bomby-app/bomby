@@ -160,9 +160,11 @@ function DeleteProject({
   return (
     <AlertDialog>
       <div>
-        <AlertDialogTrigger render={<Button variant="destructive" />}>
-          <Trash2 />
-          Delete project
+        <AlertDialogTrigger asChild>
+          <Button variant="destructive">
+            <Trash2 />
+            Delete project
+          </Button>
         </AlertDialogTrigger>
       </div>
       <AlertDialogContent>

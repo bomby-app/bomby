@@ -29,17 +29,15 @@ export function ProjectActions({
   return (
     <div className="flex items-center gap-1.5">
       <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Project settings"
-              onClick={() => setSettingsOpen(true)}
-            />
-          }
-        >
-          <Settings2 />
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Project settings"
+            onClick={() => setSettingsOpen(true)}
+          >
+            <Settings2 />
+          </Button>
         </TooltipTrigger>
         <TooltipContent side="bottom">Project settings</TooltipContent>
       </Tooltip>

@@ -24,12 +24,13 @@ export function AppearanceSettings() {
       <Field>
         <FieldLabel id="theme-label">Theme</FieldLabel>
         <ToggleGroup
+          type="single"
           variant="outline"
           aria-labelledby="theme-label"
-          value={[theme]}
-          // A single-choice group: pressing the current theme again would empty the
-          // value, so only a press on another theme changes it.
-          onValueChange={([next]) => {
+          value={theme}
+          // Pressing the current theme again gives an empty value, so only a press on
+          // another theme changes it.
+          onValueChange={(next) => {
             if (isTheme(next)) setTheme(next)
           }}
         >

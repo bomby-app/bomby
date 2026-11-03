@@ -32,10 +32,7 @@ export function AppSidebar({
         <div className="flex items-center gap-2 px-1">
           <AppLogo />
           <Wordmark />
-          <Badge
-            variant="outline"
-            className="h-4 px-1.5 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
-          >
+          <Badge className="h-4 bg-claude px-1.5 text-[10px] font-semibold tracking-wider text-claude-foreground uppercase">
             Beta
           </Badge>
         </div>
