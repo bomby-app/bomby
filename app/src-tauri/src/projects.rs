@@ -104,13 +104,6 @@ pub(crate) struct CallProject {
     pub(crate) folders: Vec<String>,
 }
 
-/// `NotFound` unless the project exists.
-pub(crate) fn exists(conn: &Connection, id: i64) -> Result<()> {
-    conn.query_row("SELECT 1 FROM projects WHERE id = ?1", [id], |_| Ok(()))
-        .optional()?
-        .ok_or(Error::NotFound("project"))
-}
-
 /// The project's name and folders, without its calls.
 pub(crate) fn for_call(conn: &Connection, id: i64) -> Result<CallProject> {
     let name = conn
