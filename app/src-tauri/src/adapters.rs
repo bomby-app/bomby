@@ -13,8 +13,7 @@ use std::process::{Command, Stdio};
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
-use serde::Serialize;
-use tauri::{AppHandle, Emitter, Runtime};
+use tauri::{AppHandle, Runtime};
 
 use crate::agents;
 use crate::error::{Error, Result};
@@ -43,21 +42,6 @@ const BUN: &[(&str, &str, &str)] = &[
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(300);
 const STEP_TIMEOUT: Duration = Duration::from_secs(300);
 
-/// The event the page follows an install with.
-pub const PROGRESS: &str = "adapters-progress";
-
-#[derive(Debug, Clone, Copy, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum Step {
-    /// Downloading bun, the first time only.
-    Runtime,
-    /// Downloading the adapters from npm.
-    Packages,
-    /// Compiling each into one program.
-    Build,
-    Done,
-}
-
 static DIR: OnceLock<PathBuf> = OnceLock::new();
 static INSTALLING: Mutex<()> = Mutex::new(());
 
@@ -85,7 +69,7 @@ pub fn update_in_background<R: Runtime>(app: &AppHandle<R>) {
     let app = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let _one = sync::lock(&INSTALLING);
-        if install(&dir, |_| {}).is_err() {
+        if install(&dir).is_err() {
             // A half-updated set must not run; Settings offers Set up again.
             let _ = fs::remove_dir_all(dir.join("bin"));
         }
@@ -101,25 +85,22 @@ pub async fn install_adapters<R: Runtime>(app: AppHandle<R>) -> Result<()> {
         .get()
         .cloned()
         .ok_or_else(|| Error::Invalid("The app isn't ready yet.".into()))?;
-    let reporter = app.clone();
     tauri::async_runtime::spawn_blocking(move || -> Result<()> {
         let _one = sync::lock(&INSTALLING);
-        install(&dir, |step| {
-            let _ = reporter.emit(PROGRESS, step);
-        })?;
+        install(&dir)?;
         agents::refresh_after_change(&app);
-        let _ = app.emit(PROGRESS, Step::Done);
         Ok(())
     })
     .await?
 }
 
-fn install(dir: &Path, report: impl Fn(Step)) -> Result<()> {
+/// Downloads bun the first time, then the adapters from npm, and compiles each into one
+/// program.
+fn install(dir: &Path) -> Result<()> {
     fs::create_dir_all(dir)?;
     let log = dir.join("install.log");
-    let bun = runtime(dir, &log, &report)?;
+    let bun = runtime(dir, &log)?;
 
-    report(Step::Packages);
     let work = dir.join("packages");
     let _ = fs::remove_dir_all(&work);
     fs::create_dir_all(&work)?;
@@ -133,7 +114,6 @@ fn install(dir: &Path, report: impl Fn(Step)) -> Result<()> {
         .env("BUN_INSTALL_CACHE_DIR", dir.join("cache"));
     run(packages, &log, "Downloading the adapters")?;
 
-    report(Step::Build);
     let staging = dir.join("bin.new");
     let _ = fs::remove_dir_all(&staging);
     fs::create_dir_all(&staging)?;
@@ -158,7 +138,7 @@ fn install(dir: &Path, report: impl Fn(Step)) -> Result<()> {
 }
 
 /// The bun in `<dir>/runtime`, downloaded and checked against its SHA-256 the first time.
-fn runtime(dir: &Path, log: &Path, report: &impl Fn(Step)) -> Result<PathBuf> {
+fn runtime(dir: &Path, log: &Path) -> Result<PathBuf> {
     let bun = dir.join("runtime").join("bun");
     let mut version = Command::new(&bun);
     version.arg("--version");
@@ -170,7 +150,6 @@ fn runtime(dir: &Path, log: &Path, report: &impl Fn(Step)) -> Result<PathBuf> {
         return Ok(bun);
     }
 
-    report(Step::Runtime);
     let (_, asset, sha256) = BUN
         .iter()
         .find(|(arch, _, _)| *arch == std::env::consts::ARCH)
