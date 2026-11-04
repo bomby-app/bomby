@@ -78,7 +78,7 @@ The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS)
 
 **Briefing.** Each session receives `prompts/harness-briefing.md` plus the project name and folders once: through the system prompt when supported, otherwise before its first task. It requires a short, plain-text, outcome-first final report for speech.
 
-**Agent errors.** A harness that can't start, refuses a session, needs a sign-in or crashes fails the task with a sentence for the voice model: what happened and how to fix it, from the agent's own ACP error and `authMethods` (`agent/acp_client/problems.py`). Settings shows the same problems before a call, from the setup probe ([decision](decisions/check-agent-setup-with-an-acp-probe.md)).
+**Agent errors.** A harness that fails fails the task with one short line for the voice model, "<agent> isn't ready right now" or "<agent> stopped before finishing", plus an instruction to say sorry and offer another agent (`not_ready` and `stopped` in `agent/acp_client/runner.py`, owner's choice, 2026-11-04). The details go to `agent.log`; Settings shows what to fix, from the setup probe ([decision](decisions/check-agent-setup-with-an-acp-probe.md)).
 
 **Claude's environment.** The runner removes `agent/.env` keys, `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` and `CLAUDECODE`, so Claude uses its plan login. Sessions run in `bypassPermissions` with the user's settings, hooks and `CLAUDE.md` files.
 

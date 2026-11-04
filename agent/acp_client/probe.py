@@ -6,8 +6,9 @@ session in an empty folder and look at what comes back, without sending a prompt
 import asyncio
 import contextlib
 import logging
+import re
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -15,17 +16,19 @@ from acp import PROTOCOL_VERSION, RequestError, spawn_agent_process
 from acp.client.connection import ClientSideConnection
 from acp.schema import (
     AgentCapabilities,
+    AuthMethodAgent,
     ClientCapabilities,
+    EnvVarAuthMethod,
     InitializeResponse,
     NewSessionResponse,
     SessionConfigOptionSelect,
     SessionConfigSelectGroup,
+    TerminalAuthMethod,
 )
 
 from harnesses.harness import Harness
 
 from .client import HarnessClient
-from .problems import detail, setup_command
 from .runner import CLIENT_INFO, STDIO_LIMIT, launch
 
 logger = logging.getLogger("bomby.acp_client.probe")
@@ -34,6 +37,8 @@ TIMEOUT_S = 30
 # claude-agent-acp gives its own `claude auth status` run 5 s (`dist/auth-status.d.ts`).
 AUTH_WAIT_S = 6
 FOLDER = Path(tempfile.gettempdir()) / "bomby-probe"
+_COMMAND = re.compile(r"`([^`]+)`")
+_MAX_DETAIL = 300
 
 
 @dataclass(frozen=True)
@@ -175,3 +180,38 @@ async def _discard(
 async def _drain(stream: asyncio.StreamReader | None) -> None:
     while stream is not None and await stream.readline():
         pass
+
+
+def detail(error: BaseException) -> str:
+    """The agent's own words for `error`. A JSON-RPC error's message is generic ("Internal
+    error"); what the agent said is in its `data` (docs/acp-notes.md#setup-signals)."""
+    text = ""
+    if isinstance(error, RequestError):
+        data: object = error.data
+        if isinstance(data, dict):
+            fields: dict[str, object] = data  # pyright: ignore[reportUnknownVariableType]
+            data = next(
+                (fields[k] for k in ("details", "message", "error") if k in fields),
+                None,
+            )
+        if isinstance(data, str):
+            text = data
+    elif isinstance(error, OSError):
+        text = error.strerror or ""
+    text = (text or str(error) or type(error).__name__).strip().rstrip(".")
+    return text if len(text) <= _MAX_DETAIL else text[: _MAX_DETAIL - 3] + "..."
+
+
+def setup_command(
+    harness: Harness,
+    auth_methods: Sequence[AuthMethodAgent | EnvVarAuthMethod | TerminalAuthMethod],
+) -> str | None:
+    """What the user runs in Terminal to set the agent up: the harness's own, or the first
+    command an auth method names ("Run `goose configure` to set up ...")."""
+    if harness.setup_command:
+        return harness.setup_command
+    for method in auth_methods:
+        found = _COMMAND.search(method.description or "")
+        if found:
+            return found.group(1)
+    return None
