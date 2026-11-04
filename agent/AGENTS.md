@@ -4,7 +4,7 @@ A LiveKit Agents worker on Gemini 3.8 Live. It talks with the user, hands work t
 
 ## Where things are
 
-- `agent.py`: the entrypoint.
+- `agent.py`: the entrypoint. `probe.py`: checks whether the agents the app found are set up, for Settings (`acp_client/probe.py`, [decision](../docs/decisions/check-agent-setup-with-an-acp-probe.md)).
 - `harnesses/`: one definition per coding agent. To add one, follow [these steps](../docs/decisions/detect-acp-native-agents.md#adding-an-agent).
 - `acp_client/`: the ACP client and runner every harness shares (sessions, steering, the briefing). `problems.py` turns a harness's errors into sentences the voice can say: what happened and how to fix it.
 - `tools/start_task.py`: the voice model's one tool. `task_board.py`: the call's tasks, sent to the app.

@@ -34,3 +34,4 @@ A one-file build unpacks to a new temp folder on every start, so macOS checks ev
 
 - One app download per platform, no runtimes to install.
 - The agent's `agent/.env` stays a dev-only path; in the app, keys come from the keychain.
+- The frozen agent has two entries: the worker (`agent.py start`) and the setup probe (`probe.py`, [decision](check-agent-setup-with-an-acp-probe.md)). The bundle's entry script dispatches on its first argument, and the core runs it with `probe` for Settings.

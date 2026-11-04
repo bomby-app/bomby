@@ -71,6 +71,17 @@ def child_environment(
     }
 
 
+def launch(
+    harness: Harness, program: Path, environ: Mapping[str, str]
+) -> tuple[str, tuple[str, ...], dict[str, str]]:
+    """How to start `harness` from `program`, with this agent's environment minus its
+    secrets."""
+    dotenv_keys = set(dotenv_values(AGENT_ROOT / ".env"))
+    return harness.launch(
+        str(program), child_environment(environ, dotenv_keys, harness), environ
+    )
+
+
 def briefing(project: Project) -> str:
     """What a harness is told once per session: how its result is used, and the folders
     it works in. Every harness gets it, whether or not it reads ACP's
@@ -469,7 +480,6 @@ class CallRunners:
         self._project = project
         self._installed = dict(installed)
         self._environ = dict(environ)
-        self._dotenv_keys = set(dotenv_values(AGENT_ROOT / ".env"))
         self._runners: dict[str, AcpRunner] = {}
 
     @classmethod
@@ -498,11 +508,7 @@ class CallRunners:
         program = self._installed.get(harness.id)
         if program is None:
             raise ToolError(f"{harness.short_name} isn't installed on this computer.")
-        command, args, env = harness.launch(
-            str(program),
-            child_environment(self._environ, self._dotenv_keys, harness),
-            self._environ,
-        )
+        command, args, env = launch(harness, program, self._environ)
         runner = self._runners[harness.id] = AcpRunner(
             harness=harness, project=self._project, env=env, command=command, args=args
         )

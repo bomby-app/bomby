@@ -5,7 +5,7 @@ Checked 2026-11-03/04 against `claude-agent-acp` 0.100.0 (`dist/acp-agent.js` in
 ## Protocol
 
 - The SDK speaks ACP v1 (`PROTOCOL_VERSION = 1`); adapter v2 is a draft.
-- Methods used: `initialize`, `new_session`, `set_session_mode`, `prompt`, `cancel`, `close_session`, `ext_method`. `resume_session` and `load_session` are available for roadmap step 4.
+- Methods used: `initialize`, `new_session`, `set_session_mode`, `prompt`, `cancel`, `close_session`, `ext_method`, and `session/delete` through the connection's raw `send_request` (the probe; no SDK method). `resume_session` and `load_session` are available for roadmap step 4.
 - `spawn_agent_process(client, cmd, *args, env=, cwd=, transport_kwargs=)` merges `env` with a minimal default environment, so the runner passes the full filtered environment. `transport_kwargs={"limit": ...}` tunes line-buffer round trips; longer lines still reassemble.
 - Drain adapter stderr or it blocks. Unimplemented client methods (fs, terminal, elicitation) return method-not-found; Claude Code does its own file and shell work.
 

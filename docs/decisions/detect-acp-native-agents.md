@@ -17,7 +17,7 @@ People use more than Claude Code, and many agents speak ACP. Bomby should work w
 ## Adding an agent
 
 1. A row in `KNOWN` in `agents.rs`: id, name, program, usual install places, optional sign-in check.
-2. A `Harness` in `agent/harnesses/` with the same id: `program` and `args` for a native agent, or `adapter` and `program_env` for one behind an adapter. List it in `HARNESSES` and add its id to `AgentName`.
+2. A `Harness` in `agent/harnesses/` with the same id: `program` and `args` for a native agent, or `adapter` and `program_env` for one behind an adapter, and `setup_command` if its ACP `authMethods` name no command to set it up. List it in `HARNESSES` and add its id to `AgentName`. Its setup check and error messages need nothing more ([probe](check-agent-setup-with-an-acp-probe.md)).
 3. Optionally a logo in `app/src/features/agents/agent-logos.tsx`.
 
 ## Consequences
