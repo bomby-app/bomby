@@ -11,7 +11,7 @@ Every doc has one job; keep it that way.
 | [acp-notes.md](acp-notes.md) | ACP and `claude-agent-acp` facts, checked against the installed source. |
 | [livekit-notes.md](livekit-notes.md) | LiveKit Agents facts we rely on (async tools, dispatch, data to the frontend). |
 | [tauri-notes.md](tauri-notes.md) | How a Tauri app fits together, and the Tauri facts we rely on (mic permissions, window). |
-| [frontend-notes.md](frontend-notes.md) | The app's web half: shadcn, Tailwind v4, Biome, Agents UI. |
+| [frontend-notes.md](frontend-notes.md) | The app's web half: shadcn, Tailwind v4, Vite+, React Compiler, Agents UI. |
 | [gemini-notes.md](gemini-notes.md) | Gemini 3.8 Live facts and caveats, checked against the plugin. |
 
 ## How we document

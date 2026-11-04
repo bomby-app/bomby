@@ -11,6 +11,7 @@ import {
 import { Wordmark } from "@/components/wordmark"
 import { ProjectTree } from "@/features/projects/project-tree"
 import type { Selection } from "@/features/projects/selection"
+
 import { NewProjectRow } from "./new-project-row"
 import { SettingsButton } from "./settings-button"
 

@@ -20,6 +20,7 @@ import {
 } from "@/features/projects/project-calls"
 import { useProjects } from "@/features/projects/projects-provider"
 import type { Selection } from "@/features/projects/selection"
+
 import { AppHeader } from "./app-header"
 
 /** The right side: whatever the sidebar has selected, under the header. */

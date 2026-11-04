@@ -1,20 +1,23 @@
-import { LoaderCircle, ThumbsUp, X } from "lucide-react"
+import { LoaderCircle, Minus, ThumbsUp, X } from "lucide-react"
 import type { ReactNode } from "react"
 
 /**
  * One row of a settings checklist (Setup, Agents): a logo, what it is and its state, then
- * the status mark at the end. `ready` undefined or null means still checking.
+ * the status mark at the end. `ready` undefined or null means still checking. When it isn't
+ * ready, `action` (what to do about it, like a button to add a key) takes the mark's place.
  */
 export function StatusRow({
   logo,
   name,
   ready,
   detail,
+  action,
 }: {
   logo: ReactNode
   name: string
   ready: boolean | null | undefined
   detail: ReactNode
+  action?: ReactNode
 }) {
   const checking = ready === undefined || ready === null
   return (
@@ -28,24 +31,39 @@ export function StatusRow({
           {checking ? "Checking..." : detail}
         </span>
       </div>
-      <StatusMark state={checking ? "checking" : ready ? "ready" : "missing"} />
+      {!checking && !ready && action !== undefined ? (
+        action
+      ) : (
+        <StatusMark
+          state={checking ? "checking" : ready ? "ready" : "missing"}
+        />
+      )}
     </li>
   )
 }
 
 /**
  * Ready is an ink thumbs-up on a highlighter disc, missing an ink cross on bubblegum (the
- * brand's colour for problems). Both fills hold ink at full contrast in light and dark.
+ * brand's colour for problems). Both fills hold ink at full contrast in light and dark. Off
+ * is a quiet dash on muted, for something optional that just isn't there.
  */
 export function StatusMark({
   state,
 }: {
-  state: "checking" | "ready" | "missing"
+  state: "checking" | "ready" | "missing" | "off"
 }) {
   if (state === "checking") {
     return (
       <span className="flex size-6 shrink-0 items-center justify-center">
         <LoaderCircle className="size-4 animate-spin text-muted-foreground" />
+      </span>
+    )
+  }
+  if (state === "off") {
+    return (
+      <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+        <Minus className="size-3.5" strokeWidth={2.5} />
+        <span className="sr-only">Not installed</span>
       </span>
     )
   }

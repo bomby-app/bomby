@@ -17,6 +17,7 @@ import {
   FieldLabel,
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+
 import {
   type CredentialsInfo,
   clearCredentials,
@@ -24,6 +25,7 @@ import {
   saveCredentials,
 } from "./api"
 import { type LiveKitEnv, parseLiveKitEnv } from "./livekit-env"
+import { checkKeysAgain } from "./use-saved-keys"
 
 // Typed keys, not prose: no spell check, autocorrect or autofill.
 const KEY_INPUT = {
@@ -47,8 +49,18 @@ function fieldsFrom(info: CredentialsInfo | null): Fields {
   return { url: info?.url ?? "", apiKey: info?.apiKey ?? "", apiSecret: "" }
 }
 
-/** The LiveKit server and its API key and secret. */
-export function LiveKitForm() {
+/** The first field still to fill in, for `focus`. */
+function firstEmpty(info: CredentialsInfo | null): string {
+  if (!info?.url) return "livekit-url"
+  if (!info.apiKey) return "livekit-api-key"
+  return "livekit-api-secret"
+}
+
+/**
+ * The LiveKit server and its API key and secret. With `focus`, the first field still to
+ * fill in takes focus once the saved values load.
+ */
+export function LiveKitForm({ focus = false }: { focus?: boolean }) {
   const [saved, setSaved] = useState<CredentialsInfo | null>(null)
   const [fields, setFields] = useState<Fields>(fieldsFrom(null))
   const [status, setStatus] = useState<Status>({ kind: "idle" })
@@ -58,16 +70,17 @@ export function LiveKitForm() {
     setFields(fieldsFrom(info))
   }
 
-  // Load once when the section opens. Setters are stable, so this needs no dependencies.
+  // Load once when the section opens (it remounts to focus again). Setters are stable.
   useEffect(() => {
     credentialsInfo().then(
       (info) => {
         setSaved(info)
         setFields(fieldsFrom(info))
+        if (focus) document.getElementById(firstEmpty(info))?.focus()
       },
       (error: unknown) => setStatus({ kind: "error", message: String(error) })
     )
-  }, [])
+  }, [focus])
 
   async function save(event: FormEvent) {
     event.preventDefault()
@@ -80,6 +93,7 @@ export function LiveKitForm() {
       })
       show(await credentialsInfo())
       setStatus({ kind: "saved" })
+      void checkKeysAgain()
     } catch (error) {
       setStatus({ kind: "error", message: String(error) })
     }
@@ -90,6 +104,7 @@ export function LiveKitForm() {
       await clearCredentials()
       show(null)
       setStatus({ kind: "idle" })
+      void checkKeysAgain()
     } catch (error) {
       setStatus({ kind: "error", message: String(error) })
     }

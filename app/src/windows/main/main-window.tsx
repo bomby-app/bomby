@@ -5,6 +5,7 @@ import { CallProvider } from "@/features/call/call-provider"
 import { NewProjectDialog } from "@/features/projects/new-project-dialog"
 import { ProjectsProvider } from "@/features/projects/projects-provider"
 import type { Selection } from "@/features/projects/selection"
+
 import { openSettings, SETTINGS_SHORTCUT } from "../settings/open-settings"
 import { AppSidebar } from "./app-sidebar"
 import { MainPanel } from "./main-panel"

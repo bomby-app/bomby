@@ -45,7 +45,9 @@ Checked 2026-11-03/04 against Tauri 2.12.5, `tauri-codegen` 2.7.4, `wry` 0.57.1,
 ## Finding agents
 
 - Finder launches provide launchd's PATH, not the shell's. `src-tauri/src/agents.rs` queries the login shell once (`$SHELL -ilc`, eight-second timeout), ignores rc-file noise, then checks known install locations.
-- Settings strips version prefixes from `opencode --version` and `omp --version`. Claude sign-in comes from `claude auth status --json`; version from `claude --version`.
+- Settings strips version prefixes from `opencode --version` and `omp --version`. Claude sign-in comes from `claude auth status --json`; version from `claude --version`. Each agent's checks run on their own thread.
+- `agents::Agents` in Tauri state keeps the last look. `setup` starts the first one on `tauri::async_runtime::spawn_blocking`; only one look runs at a time, and callers during it wait on a `Condvar` instead of starting another. `open_call` looks up only the programs (`installed_now`: shell and install places, no version or sign-in checks) and starts a full look in the background when they differ from what Settings shows. That look starts after any running one (which began before the programs were found) and starts from them, so a login shell that fails then still keeps them. A changed result goes to every window as the `agents-changed` event (`Emitter::emit`; `core:default` includes `core:event:default`, which allows `listen`).
+- A sync `#[tauri::command(async)]` runs inside `async_runtime::spawn` on a tokio worker, not on a blocking thread (`tauri` 2.12.5 `src/ipc/mod.rs`, `respond_async`). The agent commands are `async fn` and move the look to `spawn_blocking`; its `JoinHandle` resolves to `tauri::Result<T>`.
 - See [detection decision](decisions/detect-acp-native-agents.md).
 
 ## Credentials
@@ -80,7 +82,8 @@ Checked 2026-11-03/04 against Tauri 2.12.5, `tauri-codegen` 2.7.4, `wry` 0.57.1,
 
 - `bundle.macOS.dmg` configures background, 660 x 400 window, app at (180, 200) and Applications at (480, 200).
 - `just app icon` combines 1x/2x backgrounds into `dmg-background.tiff` with `tiffutil -cathidpicheck`. The bundler copies it and writes `.DS_Store`.
-- Check icon-label contrast in Finder's dark mode; Finder chooses the label color.
+- Finder colours icon labels by the system appearance, not the picture, and the DMG script (`bundle_dmg.sh`) only sets icon and text size: no label colour, no hiding. A dark background left black labels on ink in light mode, so the owner chose the light one (2026-11-04); its labels are white in dark mode.
+- One background for both appearances: Finder shows a DMG window's background picture as is in light and dark mode, with no per-appearance variant ([c-command forum](https://forum.c-command.com/t/light-and-dark-mode-background-images/11916), checked 2026-11-04). The art is exported from Paper `app assets` / `dmg-background` at 1x and 2x; `dmg-background-dark` there is the unused dark version.
 
 ## Dock icon in dev
 
@@ -88,4 +91,4 @@ Without a bundle, Tauri sets the Dock icon from the first ICNS in `bundle.icon` 
 
 ## Toolchain
 
-Rust 1.99.1 and bun 1.4.4 are pinned in `mise.toml`; macOS also needs Xcode Command Line Tools. `just app check` runs Clippy, fmt, TypeScript and Biome ([frontend notes](frontend-notes.md)).
+Rust 1.99.1 and bun 1.4.4 are pinned in `mise.toml`; macOS also needs Xcode Command Line Tools. `just app check` runs Clippy, rustfmt, `vp check` (Oxfmt, Oxlint, types) and the Rust tests ([frontend notes](frontend-notes.md)).

@@ -12,13 +12,13 @@ import {
   use,
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from "react"
 
 import { AgentSessionProvider } from "@/components/agents-ui/agent-session-provider"
 import { StartAudioButton } from "@/components/agents-ui/start-audio-button"
+
 import { useProjects } from "../projects/projects-provider"
 import {
   callMessages,
@@ -59,6 +59,29 @@ function log(line: string) {
 }
 
 /**
+ * LiveKit fetches a token whenever it likes: on mount, on each start, and on end and
+ * disconnects to have the next one ready. So the source only asks the core for a token for
+ * the current call, and never opens one. A function, not `TokenSource.custom`, which caches
+ * the token fetched at the end and would join the next call with the last call's metadata
+ * (docs/livekit-notes.md).
+ */
+function callTokens() {
+  // The call the session joins (and last joined: LiveKit may fetch a token after the end).
+  let callId: number | null = null
+  return {
+    source: TokenSource.literal(async () => {
+      if (callId === null) throw new Error("No call to join yet")
+      return callToken(callId)
+    }),
+    /** Points the next tokens at this call. */
+    join(id: number) {
+      callId = id
+    },
+    current: () => callId,
+  }
+}
+
+/**
  * The app's one LiveKit session, set up the way LiveKit's agent starter does: created once
  * at the top, started from the user's click, ended by the control bar (`session.end`). The
  * session context wraps the whole window, so the call screen and the sidebar can read it
@@ -72,23 +95,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const [active, setActive] = useState<ActiveCall | null>(null)
   const [starting, setStarting] = useState<CallRequest | null>(null)
   const [error, setError] = useState<CallState["error"]>(null)
-  // The call the session joins (and last joined: LiveKit may fetch a token after the end).
-  const callId = useRef<number | null>(null)
-
-  // LiveKit fetches a token whenever it likes: on mount, on each start, and on end and
-  // disconnects to have the next one ready. So the source only asks the core for a token
-  // for the current call, and never opens one. A function, not `TokenSource.custom`, which
-  // caches the token fetched at the end and would join the next call with the last call's
-  // metadata (docs/livekit-notes.md).
-  const tokenSource = useMemo(
-    () =>
-      TokenSource.literal(async () => {
-        if (callId.current === null) throw new Error("No call to join yet")
-        return callToken(callId.current)
-      }),
-    []
-  )
-  const session = useSession(tokenSource, {
+  // One token source for the provider's life: the session must keep the same one.
+  const [tokens] = useState(callTokens)
+  const session = useSession(tokens.source, {
     agentConnectTimeoutMilliseconds: 30_000,
   })
 
@@ -105,13 +114,14 @@ export function CallProvider({ children }: { children: ReactNode }) {
   // disconnects once: that closes the call.
   useEffect(() => {
     const onDisconnected = () => {
-      if (callId.current !== null) void finish(callId.current)
+      const id = tokens.current()
+      if (id !== null) void finish(id)
     }
     session.room.on(RoomEvent.Disconnected, onDisconnected)
     return () => {
       session.room.off(RoomEvent.Disconnected, onDisconnected)
     }
-  }, [session.room, finish])
+  }, [session.room, finish, tokens])
 
   async function start(projectId: number, resumeCallId?: number) {
     setError(null)
@@ -119,7 +129,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     let opened: number | null = null
     try {
       opened = await openCall(projectId, resumeCallId)
-      callId.current = opened
+      tokens.join(opened)
       const history = resumeCallId ? await callMessages(opened) : []
       setActive({ projectId, callId: opened, startedAt: Date.now(), history })
       await session.start()

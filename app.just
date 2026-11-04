@@ -4,7 +4,7 @@
 # Typical use:
 #     just app install          resolve the frontend dependencies (bun)
 #     just app dev              run the app with hot reload
-#     just app check            types, Rust lint and format, before every commit
+#     just app check            format, lint, types and tests for both halves, before every commit
 #     just app build            build the installable app bundle
 
 # List the app recipes
@@ -28,25 +28,19 @@ dev:
 build:
     bun run tauri build
 
-# Type-check the frontend
-[group('check')]
-[working-directory: 'app']
-typecheck:
-    bun x tsc --noEmit
-
-# Lint and format-check the frontend (Biome) and the Rust core (clippy, rustfmt); warnings fail
+# Format-check, lint and type-check the frontend (Vite+: Oxfmt, Oxlint, tsgolint) and the Rust core (clippy, rustfmt); warnings fail
 [group('check')]
 [working-directory: 'app']
 lint:
-    bun x biome check .
+    bun x vp check --deny-warnings
     cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
     cargo fmt --manifest-path src-tauri/Cargo.toml --check
 
-# Format the frontend and the Rust core, and apply Biome's safe fixes (import order)
+# Format both halves and apply the frontend's safe lint fixes (Vite+), then rustfmt
 [group('check')]
 [working-directory: 'app']
 fmt:
-    bun x biome check --write .
+    bun x vp check --fix
     cargo fmt --manifest-path src-tauri/Cargo.toml
 
 # Rebuild the app icons and the DMG background from the files in src-tauri/icons (see docs/tauri-notes.md#icons)
@@ -68,6 +62,6 @@ add +components:
 test:
     cargo test --manifest-path src-tauri/Cargo.toml
 
-# Everything a change must pass: frontend types, lint and format for both halves, tests
+# Everything a change must pass: format, lint and types for both halves, tests
 [group('check')]
-check: typecheck lint test
+check: lint test

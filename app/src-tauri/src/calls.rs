@@ -4,6 +4,7 @@
 //! (docs/decisions/app-data-in-one-sqlite-db.md).
 
 use std::path::PathBuf;
+use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use livekit_api::access_token::{AccessToken, VideoGrants};
@@ -23,6 +24,33 @@ const AGENT_NAME: &str = "bomby";
 const TOKEN_TTL: Duration = Duration::from_secs(10 * 60);
 /// How much of a resumed call the agent is told: the last this many lines.
 const RESUME_LINES: i64 = 50;
+
+/// The agents the current call opened with. Every token for that call carries the same
+/// ones, so a reconnect mid-call never hands the voice agent a different list, whatever
+/// looking for agents finds meanwhile (`agents::Agents`). The app runs one call at a time
+/// (one LiveKit session), so opening the next one replaces it.
+#[derive(Default)]
+pub struct CallAgents(Mutex<Option<CurrentCall>>);
+
+/// A call id and the agents, by id with their programs, it opened with.
+type CurrentCall = (i64, Vec<(String, PathBuf)>);
+
+impl CallAgents {
+    fn set(&self, call_id: i64, agents: Vec<(String, PathBuf)>) {
+        *self.lock() = Some((call_id, agents));
+    }
+
+    fn get(&self, call_id: i64) -> Option<Vec<(String, PathBuf)>> {
+        self.lock()
+            .as_ref()
+            .filter(|(id, _)| *id == call_id)
+            .map(|(_, agents)| agents.clone())
+    }
+
+    fn lock(&self) -> MutexGuard<'_, Option<CurrentCall>> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
 
 /// What the page needs to join the call.
 #[derive(Serialize)]
@@ -156,7 +184,7 @@ pub fn open_call<R: Runtime>(
     db: State<'_, Db>,
     worker: State<'_, AgentWorker>,
     vault: State<'_, credentials::Vault>,
-    found: State<'_, agents::Found>,
+    call_agents: State<'_, CallAgents>,
     project_id: i64,
     resume_call_id: Option<i64>,
 ) -> Result<i64> {
@@ -165,7 +193,10 @@ pub fn open_call<R: Runtime>(
     let gemini = vault
         .gemini_key(&app)?
         .ok_or_else(|| Error::Invalid("Add your Gemini API key in Settings first.".into()))?;
-    if found.refresh().is_empty() {
+    // Looks again, so an agent installed since launch is picked up; only where the programs
+    // are, not their versions or sign-in.
+    let found = agents::installed_now(&app);
+    if found.is_empty() {
         return Err(Error::Invalid(
             "Bomby can't find an agent to work with. See Settings, Agents.".into(),
         ));
@@ -174,19 +205,21 @@ pub fn open_call<R: Runtime>(
     worker.ensure(WorkerConfig::new(keys, gemini), &log_dir)?;
 
     let conn = db.conn();
-    match resume_call_id {
+    let call_id = match resume_call_id {
         Some(call_id) => {
             reopen(&conn, project_id, call_id)?;
-            Ok(call_id)
+            call_id
         }
         None => {
             conn.execute(
                 "INSERT INTO calls (project_id, started_at) VALUES (?1, ?2)",
                 params![project_id, now_ms()],
             )?;
-            Ok(conn.last_insert_rowid())
+            conn.last_insert_rowid()
         }
-    }
+    };
+    call_agents.set(call_id, found);
+    Ok(call_id)
 }
 
 /// A token for a new room on the call, dispatching the agent with the project, the voice and
@@ -198,7 +231,8 @@ pub fn call_token<R: Runtime>(
     app: AppHandle<R>,
     db: State<'_, Db>,
     vault: State<'_, credentials::Vault>,
-    found: State<'_, agents::Found>,
+    found: State<'_, agents::Agents>,
+    call_agents: State<'_, CallAgents>,
     call_id: i64,
 ) -> Result<CallToken> {
     let keys = livekit_keys(&app, &vault)?;
@@ -221,7 +255,11 @@ pub fn call_token<R: Runtime>(
     // A new room every time, also when resuming. Unique across reinstalls too, since row
     // ids start over with a new database.
     let room = format!("bomby-{call_id}-{}", now_ms());
-    let metadata = dispatch_metadata(&project, &found.get(), &voice, &history);
+    // A call opened in this run has its own list; any other gets the last one found.
+    let agents = call_agents
+        .get(call_id)
+        .unwrap_or_else(|| agents::installed(&found.cached().unwrap_or_default()));
+    let metadata = dispatch_metadata(&project, &agents, &voice, &history);
     Ok(CallToken {
         participant_token: token(&keys, &room, metadata)?,
         server_url: keys.url,
@@ -293,6 +331,22 @@ pub fn call_messages(db: State<'_, Db>, call_id: i64) -> Result<Vec<Message>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_current_call_keeps_its_agents_until_the_next_one_opens() {
+        let agents = CallAgents::default();
+        let claude = vec![(
+            "claude".to_owned(),
+            PathBuf::from("/Users/me/.local/bin/claude"),
+        )];
+        agents.set(1, claude.clone());
+        assert_eq!(agents.get(1), Some(claude));
+        assert_eq!(agents.get(2), None);
+
+        agents.set(2, vec![]);
+        assert_eq!(agents.get(1), None);
+        assert_eq!(agents.get(2), Some(vec![]));
+    }
     use livekit_api::access_token::TokenVerifier;
 
     fn call(conn: &Connection) -> i64 {

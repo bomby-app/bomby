@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useState } from "react"
+import { type FormEvent, useEffect, useRef, useState } from "react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -9,7 +9,9 @@ import {
   FieldLabel,
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+
 import { clearGeminiKey, hasGeminiKey, saveGeminiKey } from "./api"
+import { checkKeysAgain } from "./use-saved-keys"
 
 type Status =
   | { kind: "idle" }
@@ -17,11 +19,19 @@ type Status =
   | { kind: "saved" }
   | { kind: "error"; message: string }
 
-/** The Gemini API key the voice runs on. Write-only: the page never sees it again. */
-export function GeminiForm() {
+/**
+ * The Gemini API key the voice runs on. Write-only: the page never sees it again. With
+ * `focus`, the key field takes focus when the form opens.
+ */
+export function GeminiForm({ focus = false }: { focus?: boolean }) {
   const [saved, setSaved] = useState(false)
   const [key, setKey] = useState("")
   const [status, setStatus] = useState<Status>({ kind: "idle" })
+  const input = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (focus) input.current?.focus()
+  }, [focus])
 
   useEffect(() => {
     hasGeminiKey().then(setSaved, (error: unknown) =>
@@ -37,6 +47,7 @@ export function GeminiForm() {
       setSaved(true)
       setKey("")
       setStatus({ kind: "saved" })
+      void checkKeysAgain()
     } catch (error) {
       setStatus({ kind: "error", message: String(error) })
     }
@@ -47,6 +58,7 @@ export function GeminiForm() {
       await clearGeminiKey()
       setSaved(false)
       setStatus({ kind: "idle" })
+      void checkKeysAgain()
     } catch (error) {
       setStatus({ kind: "error", message: String(error) })
     }
@@ -61,6 +73,7 @@ export function GeminiForm() {
         <Field>
           <FieldLabel htmlFor="gemini-api-key">API key</FieldLabel>
           <Input
+            ref={input}
             id="gemini-api-key"
             type="password"
             placeholder={saved ? "Saved. Type a new one to replace it." : ""}

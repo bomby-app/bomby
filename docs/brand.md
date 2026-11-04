@@ -1,6 +1,6 @@
 # Brand
 
-The source of truth is the Paper file **claudible** (the old app name), pages `branding` and `app assets`. This is the implementation summary. Read 2026-11-03; updated for Bomby on 2026-11-04.
+The source of truth is the Paper file **bomby**, pages `branding` and `app assets`. This is the implementation summary. Read 2026-11-03; updated for Bomby on 2026-11-04.
 
 ## Name
 
@@ -51,7 +51,7 @@ Owner's choices, 2026-11-04:
 - Resume buttons are bubblegum with ink text: resuming brings a conversation back.
 - A small bubblegum **Beta** badge (ink text) follows the wordmark in the sidebar while the app is in beta.
 
-Ready and missing setup marks use an ink thumbs-up on highlighter and an ink cross on bubblegum. Running tasks spin in `--primary`; failed tasks use `--destructive`.
+Ready setup marks are an ink thumbs-up on highlighter. A missing item in Setup is a bubblegum button with ink text that goes to where it is added (Add key, Set up); the ink cross on bubblegum remains for a missing item without an action. Running tasks spin in `--primary`; failed tasks use `--destructive`.
 
 Ink on highlighter (16.8:1) and bubblegum (9.7:1) is readable. Highlighter on white (1.1:1) and bubblegum on white (1.9:1) are never text or icons. Links use ink with a 3px highlighter underline; dark-mode links may use highlighter text.
 
@@ -100,5 +100,5 @@ Paper board `Handoff / Tauri asset map`, page `app assets`. Artboard names match
 
 - `app-icon.png` (1024 canvas, 824 tile): required `tauri icon` source for ICNS, ICO and PNGs.
 - `Bomby.icon` (macOS 26+, `app/src-tauri/icons/`): light (ink bubble, highlighter eyes, on highlighter), dark (highlighter bubble, ink eyes, on ink) and tinted. Glossy, as the owner asked (2026-11-03): top-to-bottom gradients on tile, bubble and eyes, Liquid Glass with specular, a chromatic shadow under the bubble. Edit in Icon Composer and compile with `just app icon` ([details](tauri-notes.md#icons)).
-- `app-icon-dark.png` (reference), `app-icon-flat.png` (optional ICO/Linux), `dmg-background.png` (660 x 400 at 1x and 2x), `tray-icon-template.png` (22 and 44).
+- `app-icon-dark.png` (reference), `app-icon-flat.png` (optional ICO/Linux), `dmg-background.png` (660 x 400 at 1x and 2x, from the light `dmg-background` artboard; Finder's labels can't follow a dark one, see [Tauri notes](tauri-notes.md#dmg-window)), `tray-icon-template.png` (22 and 44).
 - `app-logo-light` / `-dark` (28px SVG): `app-logo.tsx`.

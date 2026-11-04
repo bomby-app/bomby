@@ -13,7 +13,7 @@ It is in beta and runs from source; packaging comes later. The owner designs and
 ## Stack
 
 - **Voice agent**, `agent/`: Python on uv, LiveKit Agents, Gemini 3.8 Live, and an ACP client that drives the coding agents. See [agent/AGENTS.md](agent/AGENTS.md).
-- **Desktop app**, `app/`: Tauri v2. A Rust core (SQLite, keychain, finding the agents, running the voice agent) and a React frontend (Vite, bun, shadcn on Radix, Tailwind v4, LiveKit Agents UI). See [app/AGENTS.md](app/AGENTS.md).
+- **Desktop app**, `app/`: Tauri v2. A Rust core (SQLite, keychain, finding the agents, running the voice agent) and a React frontend (Vite+ with React Compiler, bun, shadcn on Radix, Tailwind v4, LiveKit Agents UI). See [app/AGENTS.md](app/AGENTS.md).
 - **Tooling**: `just` for every command, `mise` for pinned tools.
 
 ## Where to find things

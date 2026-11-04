@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core"
+import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 
 // The core's view of the agents on this computer (src-tauri/src/agents.rs).
 
@@ -18,8 +19,23 @@ export type AgentStatus = {
   } | null
 }
 
+/** What the core found last: instant, except right after launch while it first looks. */
 export function agentsStatus(): Promise<AgentStatus[]> {
   return invoke("agents_status")
+}
+
+/** Asks the core to look again; resolves with what it found. */
+export function refreshAgents(): Promise<AgentStatus[]> {
+  return invoke("refresh_agents")
+}
+
+/** Calls `handler` with the new list whenever a look finds something different. */
+export function onAgentsChanged(
+  handler: (agents: AgentStatus[]) => void
+): Promise<UnlistenFn> {
+  return listen<AgentStatus[]>("agents-changed", (event) =>
+    handler(event.payload)
+  )
 }
 
 /** The bare version number from whatever `--version` printed ("omp/18.16.0" -> "18.16.0"). */

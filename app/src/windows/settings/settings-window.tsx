@@ -12,12 +12,22 @@ import {
   SidebarMenuItem,
   SidebarProvider,
 } from "@/components/ui/sidebar"
-import { SECTIONS, type SectionId } from "./sections"
+import {
+  SettingsNavigationContext,
+  type SettingsPlace,
+} from "@/lib/settings-navigation"
 
-/** Settings: sections on the left, the chosen one on the right. */
+import { SECTIONS } from "./sections"
+
+/**
+ * Settings: sections on the left, the chosen one on the right. A section can send the user
+ * to another, and to a field there (`useSettingsNavigation`).
+ */
 export function SettingsWindow() {
-  const [active, setActive] = useState<SectionId>(SECTIONS[0].id)
-  const section = SECTIONS.find((s) => s.id === active) ?? SECTIONS[0]
+  const [place, setPlace] = useState<SettingsPlace>({
+    section: SECTIONS[0].id,
+  })
+  const section = SECTIONS.find((s) => s.id === place.section) ?? SECTIONS[0]
   const Content = section.component
 
   // Esc closes the window, unless something inside (a menu, a popup) handled it first.
@@ -44,8 +54,12 @@ export function SettingsWindow() {
                 {SECTIONS.map(({ id, label, icon: Icon }) => (
                   <SidebarMenuItem key={id}>
                     <SidebarMenuButton
-                      isActive={id === active}
-                      onClick={() => setActive(id)}
+                      isActive={id === section.id}
+                      // The open section stays as it is: rebuilding it would drop
+                      // what the user typed there.
+                      onClick={() => {
+                        if (id !== section.id) setPlace({ section: id })
+                      }}
                     >
                       <Icon />
                       <span>{label}</span>
@@ -69,7 +83,10 @@ export function SettingsWindow() {
         </header>
         <div className="min-h-0 flex-1 overflow-auto px-6 pt-2 pb-6">
           <div className="max-w-md">
-            <Content />
+            <SettingsNavigationContext value={{ place, go: setPlace }}>
+              {/* Keyed by section, so going to the open one again runs its focus anew. */}
+              <Content key={`${place.section}:${place.field ?? ""}`} />
+            </SettingsNavigationContext>
           </div>
         </div>
       </main>

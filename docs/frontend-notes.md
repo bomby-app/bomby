@@ -1,6 +1,6 @@
 # Frontend notes
 
-The app's web half is `app/src`. Checked 2026-11-03/04 against installed shadcn CLI 4.23.0, Tailwind CSS 4.3.4, Biome 2.6.4, `radix-ui` 1.8.1, `cn` 0.5.2, React 19, Vite 8, shadcn docs and LiveKit docs.
+The app's web half is `app/src`. Checked 2026-11-03/04 against installed shadcn CLI 4.23.0, Tailwind CSS 4.3.4, Vite+ 1.5.0, `radix-ui` 1.8.1, `cn` 0.5.2, React 19.3.1, Vite 8.3.5, shadcn docs and LiveKit docs.
 
 ## shadcn
 
@@ -27,12 +27,37 @@ The app's web half is `app/src`. Checked 2026-11-03/04 against installed shadcn 
 - `@theme` spacing tokens create utilities, for example `--spacing-titlebar` -> `h-titlebar`.
 - `@custom-variant` defines `dark` and `macos`, the latter keyed on `data-platform` in `index.html`.
 
-## Biome
+## Vite+
 
-- `biome.json`, `just app lint` and `just app fmt` cover format, lint and import order in shadcn style.
-- Vendor directories (`components/ui`, `components/agents-ui`, `hooks/agents-ui`, `hooks/use-mobile.ts`) are excluded from lint and formatting.
-- `tsconfig.json` enables unused-local and unused-parameter checks. If generated code fails them, move unused-code checks to Biome rather than editing vendor files.
-- Tailwind class sorting remains off because Biome 2.6's rule is nursery.
+Checked 2026-11-04 against `vite-plus` 1.5.0 (`node_modules/vite-plus/docs`, [viteplus.dev/guide](https://viteplus.dev/guide/)), which bundles Vite 8.3.5, Rolldown 1.2.16, Oxlint 1.91.0, Oxfmt 0.76.0 and `oxlint-tsgolint` ([decision](decisions/frontend-toolchain-on-vite-plus.md)).
+
+- Project-local only: `vp` runs from `node_modules/.bin` (`bun x vp`, or `vp` inside `package.json` scripts). The global CLI is not needed and not installed.
+- `app/package.json` `overrides` alias `vite` to `@voidzero-dev/vite-plus-core@<vite-plus version>` and pin `vitest` to the bundled version, so plugins share Vite+'s copies. Bump them with `vite-plus`; `bun x vp toolchain` shows the versions.
+- All config is in `vite.config.ts` (`import { defineConfig } from "vite-plus"`): `lint` (Oxlint), `fmt` (Oxfmt) and the Vite build. No `.oxlintrc.json` or `.oxfmtrc.json`.
+- `vp check` formats-checks, lints and type-checks (`typeAware` + `typeCheck`, through tsgolint, replacing `tsc --noEmit`; it covers `src/` and `vite.config.ts`). `just app lint` runs it with `--deny-warnings`; `just app fmt` runs `vp check --fix`.
+- Lint: the `react` plugin's correctness category carries React Compiler's recommended rules (`set-state-in-effect`, `refs`, `immutability`, `preserve-manual-memoization`, ...); `react/no-deriving-state-in-effects`, `react/exhaustive-deps` and `react/rules-of-hooks` are on as errors. Disable a rule for one line with `// oxlint-disable-next-line <plugin>/<rule>` and a reason (`mascot.tsx`).
+- Format: double quotes, no semicolons, ES5 trailing commas, width 80; imports sorted, Tailwind classes sorted against `src/index.css` in `cn()`/`cva()`.
+- Vendor directories (`components/ui`, `components/agents-ui`, `hooks/agents-ui`, `hooks/use-mobile.ts`), `src-tauri`, `dist` and Markdown are ignored by both.
+- `tsconfig.json` enables unused-local and unused-parameter checks. If generated code fails them, turn those off and use Oxlint's `no-unused-vars` instead of editing vendor files.
+
+## React patterns
+
+Checked 2026-11-04 against [react.dev](https://react.dev/reference/react) for React 19.3.1.
+
+- Core data that changes by event is an external store read with `useSyncExternalStore`, with `subscribe` declared outside components and immutable snapshots (`features/agents/use-agents.ts`, `features/credentials/use-saved-keys.ts`, which holds only whether each key exists). Stores are per page: each window is its own page; the core stays the source of truth.
+- Prefer such a store over a promise read with `use()` for data a section shows each time it opens: a section remounts on every visit, a new promise suspends it again, and React holds a shown Suspense fallback for at least 300ms (`FALLBACK_THROTTLE_MS` in `react-dom` 19.3.1), so it flashes even when the core answers at once (`features/credentials/use-saved-keys.ts`). A store keeps the last answer.
+- Pending states come from `useTransition` with an async action, not hand-kept `loading` flags. A `set` call after an `await` inside an action needs its own `startTransition`; store updates are synchronous anyway.
+- Effects only synchronize with something outside React. Never set state synchronously in an effect (`react/set-state-in-effect`), and don't read `ref.current` during render, or pass a ref to a function during render: a closure-held value works where a value must outlive renders but not drive them (`callTokens` in `call-provider.tsx`).
+
+## React Compiler
+
+Checked 2026-11-04 against `@vitejs/plugin-react` 6.2.1 (installed README), `oxc-transform-react` 0.156.0, [oxc.rs/blog/2026-08-18-react-compiler-support](https://oxc.rs/blog/2026-08-18-react-compiler-support) and [react.dev/learn/react-compiler](https://react.dev/learn/react-compiler/introduction).
+
+- `react({ compiler: true })` in `vite.config.ts` runs Oxc's Rust port of React Compiler through the optional peer `oxc-transform-react`; no Babel. Plugin 6.2.1 accepts `oxc-transform-react` `>=0.152.0 <0.157.0`; move both together.
+- The plugin still labels the Rust integration experimental. Oxc reports output identical to `babel-plugin-react-compiler` across 100k+ files and about 10x faster compiles. The owner chose it over Babel (2026-11-04).
+- Check it works: compiled modules contain `memo_cache_sentinel` in `dist/assets/*.js`. Opt a component out with `"use no memo"`.
+- New code relies on the compiler, not `useMemo`/`useCallback`. Keep manual memoization where identity matters to an effect (React's guidance for existing code), like `finish` in `call-provider.tsx`; a value a library needs to stay the same object, like the LiveKit token source, is created once with `useState(init)`.
+- A component the compiler can't optimize fails `vp check` (the rules above), so none is skipped silently.
 
 ## Agents UI
 

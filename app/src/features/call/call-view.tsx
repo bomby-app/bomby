@@ -14,6 +14,7 @@ import { AgentChatTranscript } from "@/components/agents-ui/agent-chat-transcrip
 import { AgentControlBar } from "@/components/agents-ui/agent-control-bar"
 import { Mascot, mascotState } from "@/components/mascot"
 import { cn } from "@/lib/utils"
+
 import { agentStatus } from "./agent-status"
 import type { ActiveCall } from "./call-provider"
 import { lineId, toReceived } from "./transcript"
@@ -75,9 +76,8 @@ export function CallView({ call }: { call: ActiveCall }) {
 
       <div className="absolute inset-x-6 bottom-0 z-20">
         <AnimatePresence mode="wait">
-          <motion.p
+          <motion.output
             key={agent.state}
-            role="status"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -92,7 +92,7 @@ export function CallView({ call }: { call: ActiveCall }) {
             )}
           >
             {agentStatus(agent.state)}
-          </motion.p>
+          </motion.output>
         </AnimatePresence>
         <div className="call-controls mx-auto max-w-2xl bg-background pb-6">
           <AgentControlBar

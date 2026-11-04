@@ -1,81 +1,113 @@
-import { useCallback, useEffect, useState } from "react"
+import { SquareTerminal } from "lucide-react"
+import { useTransition } from "react"
 
+import { CheckAgainButton } from "@/components/check-again-button"
 import { StatusRow } from "@/components/status-row"
 import { Button } from "@/components/ui/button"
-import { credentialsInfo, hasGeminiKey } from "../credentials/api"
+import { useSettingsNavigation } from "@/lib/settings-navigation"
+
+import type { AgentStatus } from "../agents/api"
+import { checkAgentsAgain, isReady, useAgents } from "../agents/use-agents"
+import { checkKeysAgain, useSavedKeys } from "../credentials/use-saved-keys"
 import { GeminiLogo, LiveKitLogo } from "./provider-logos"
 
-type Checks = {
-  livekit: boolean
-  gemini: boolean
-}
-
 /**
- * The Setup section of the settings window: the keys a call needs, each ready or missing,
- * with what to do about it (docs/decisions/users-bring-their-own-keys-and-claude.md). The
- * agents that do the work have their own section.
+ * The Setup section of the settings window: what a call needs (the user's keys and an
+ * agent), each ready or a button to where it is fixed
+ * (docs/decisions/users-bring-their-own-keys-and-claude.md). Both come from stores the
+ * page keeps, so the rows show at once each time the section opens.
  */
 export function SetupSettings() {
-  const [checks, setChecks] = useState<Checks | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  const check = useCallback(async () => {
-    setChecks(null)
-    setError(null)
-    try {
-      const [livekit, gemini] = await Promise.all([
-        credentialsInfo(),
-        hasGeminiKey(),
-      ])
-      setChecks({ livekit: !!livekit?.hasSecret, gemini })
-    } catch (e) {
-      setError(String(e))
-    }
-  }, [])
-
-  useEffect(() => {
-    void check()
-  }, [check])
-
-  if (error) return <p className="text-sm text-destructive">{error}</p>
+  const { keys, error: keysError } = useSavedKeys()
+  const { agents, error: agentsError } = useAgents()
+  const [checking, startChecking] = useTransition()
+  const error = keysError ?? agentsError
 
   return (
     <div className="flex flex-col gap-6">
       <p className="text-sm text-muted-foreground">
-        A call needs these two and an agent from Agents. Bomby uses your own
-        accounts.
+        A call needs these three. Bomby uses your own accounts.
       </p>
+      {error && <p className="text-sm text-destructive">{error}</p>}
       <ul className="flex flex-col divide-y rounded-lg border">
         <StatusRow
           logo={<LiveKitLogo />}
           name="LiveKit keys"
-          ready={checks?.livekit}
-          detail={
-            checks?.livekit
-              ? "Saved in your keychain."
-              : "Add them in Credentials."
+          ready={keys?.livekit}
+          detail={keys?.livekit ? "Saved in your keychain." : "Not added yet."}
+          action={
+            <GoButton to={{ section: "credentials", field: "livekit" }}>
+              Add keys
+            </GoButton>
           }
         />
         <StatusRow
           logo={<GeminiLogo />}
           name="Gemini API key"
-          ready={checks?.gemini}
-          detail={
-            checks?.gemini
-              ? "Saved in your keychain."
-              : "Add it in Credentials."
+          ready={keys?.gemini}
+          detail={keys?.gemini ? "Saved in your keychain." : "Not added yet."}
+          action={
+            <GoButton to={{ section: "credentials", field: "gemini" }}>
+              Add key
+            </GoButton>
           }
+        />
+        <StatusRow
+          logo={<SquareTerminal />}
+          name="Coding agent"
+          ready={agents ? agents.some(isReady) : null}
+          detail={agents ? agentDetail(agents) : null}
+          action={<GoButton to={{ section: "agents" }}>Set up</GoButton>}
         />
       </ul>
       <div>
-        <Button
-          variant="outline"
-          disabled={!checks}
-          onClick={() => void check()}
-        >
-          Check again
-        </Button>
+        <CheckAgainButton
+          checking={checking}
+          onClick={() =>
+            startChecking(async () => {
+              await Promise.all([checkKeysAgain(), checkAgentsAgain()])
+            })
+          }
+        />
       </div>
     </div>
   )
+}
+
+/** A row's way to where its item is fixed, in bubblegum: something a call still needs. */
+function GoButton({
+  to,
+  children,
+}: {
+  to: { section: string; field?: string }
+  children: string
+}) {
+  const { go } = useSettingsNavigation()
+  return (
+    <Button
+      size="sm"
+      // Bubblegum marks what is missing (docs/brand.md).
+      className="bg-claude text-claude-foreground hover:bg-claude/85"
+      onClick={() => go(to)}
+    >
+      {children}
+    </Button>
+  )
+}
+
+/** "Claude Code and omp are ready.", or what stands in the way. */
+function agentDetail(agents: AgentStatus[]): string {
+  const ready = agents.filter(isReady).map((agent) => agent.name)
+  if (ready.length > 0)
+    return `${list(ready)} ${ready.length === 1 ? "is" : "are"} ready.`
+  const installed = agents.filter((agent) => agent.path !== null)
+  if (installed.length > 0)
+    return `${list(installed.map((agent) => agent.name))} ${installed.length === 1 ? "needs" : "need"} signing in.`
+  return "None installed yet."
+}
+
+/** "a", "a and b", "a, b and c". */
+function list(names: string[]): string {
+  if (names.length <= 1) return names.join("")
+  return `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`
 }
