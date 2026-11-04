@@ -17,8 +17,8 @@ const MAX_NAME_LEN: usize = 80;
 #[serde(rename_all = "camelCase")]
 pub struct Project {
     id: i64,
-    pub(crate) name: String,
-    pub(crate) folders: Vec<String>,
+    name: String,
+    folders: Vec<String>,
     created_at: i64,
     /// Newest first.
     calls: Vec<CallSummary>,
@@ -40,7 +40,7 @@ pub struct ProjectInput {
 }
 
 /// Trims and checks what the page sent. The folder rules match the agent's
-/// (`agent/tools/claude.py`, `Project.from_job`): absolute paths to existing folders.
+/// (`agent/project.py`, `Project.from_job`): absolute paths to existing folders.
 fn validate(input: ProjectInput) -> Result<(String, Vec<String>)> {
     let name = input.name.trim().to_owned();
     if name.is_empty() {
@@ -98,7 +98,41 @@ fn write_folders(conn: &Connection, project_id: i64, folders: &[String]) -> Resu
     Ok(())
 }
 
-pub(crate) fn load(conn: &Connection, id: i64) -> Result<Project> {
+/// What a call needs of a project: what it's called and where it lives.
+pub(crate) struct CallProject {
+    pub(crate) name: String,
+    pub(crate) folders: Vec<String>,
+}
+
+/// `NotFound` unless the project exists.
+pub(crate) fn exists(conn: &Connection, id: i64) -> Result<()> {
+    conn.query_row("SELECT 1 FROM projects WHERE id = ?1", [id], |_| Ok(()))
+        .optional()?
+        .ok_or(Error::NotFound("project"))
+}
+
+/// The project's name and folders, without its calls.
+pub(crate) fn for_call(conn: &Connection, id: i64) -> Result<CallProject> {
+    let name = conn
+        .query_row("SELECT name FROM projects WHERE id = ?1", [id], |row| {
+            row.get(0)
+        })
+        .optional()?
+        .ok_or(Error::NotFound("project"))?;
+    Ok(CallProject {
+        name,
+        folders: folders(conn, id)?,
+    })
+}
+
+fn folders(conn: &Connection, id: i64) -> Result<Vec<String>> {
+    Ok(conn
+        .prepare("SELECT path FROM project_folders WHERE project_id = ?1 ORDER BY position")?
+        .query_map([id], |row| row.get(0))?
+        .collect::<rusqlite::Result<_>>()?)
+}
+
+fn load(conn: &Connection, id: i64) -> Result<Project> {
     let (name, created_at) = conn
         .query_row(
             "SELECT name, created_at FROM projects WHERE id = ?1",
@@ -108,10 +142,7 @@ pub(crate) fn load(conn: &Connection, id: i64) -> Result<Project> {
         .optional()?
         .ok_or(Error::NotFound("project"))?;
 
-    let folders = conn
-        .prepare("SELECT path FROM project_folders WHERE project_id = ?1 ORDER BY position")?
-        .query_map([id], |row| row.get(0))?
-        .collect::<rusqlite::Result<_>>()?;
+    let folders = folders(conn, id)?;
 
     let calls = conn
         .prepare(

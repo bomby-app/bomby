@@ -92,7 +92,7 @@ struct HistoryLine {
 /// voice and, on a resumed call, the conversation so far (`CallOptions.from_job` in
 /// `agent/call_options.py`).
 fn dispatch_metadata(
-    project: &projects::Project,
+    project: &projects::CallProject,
     agents: &[(String, PathBuf)],
     voice: &str,
     history: &[HistoryLine],
@@ -189,7 +189,7 @@ pub fn open_call<R: Runtime>(
     project_id: i64,
     resume_call_id: Option<i64>,
 ) -> Result<i64> {
-    projects::load(&db.conn(), project_id)?;
+    projects::exists(&db.conn(), project_id)?;
     let keys = livekit_keys(&app, &vault)?;
     let gemini = vault
         .gemini_key(&app)?
@@ -203,7 +203,13 @@ pub fn open_call<R: Runtime>(
         ));
     }
     let log_dir = app.path().app_log_dir()?;
-    worker.ensure(WorkerConfig::new(keys, gemini), &log_dir)?;
+    worker.ensure(
+        WorkerConfig {
+            livekit: keys,
+            gemini_key: gemini,
+        },
+        &log_dir,
+    )?;
 
     let conn = db.conn();
     let call_id = match resume_call_id {
@@ -248,7 +254,7 @@ pub fn call_token<R: Runtime>(
             .optional()?
             .ok_or(Error::NotFound("call"))?;
         (
-            projects::load(&conn, project_id)?,
+            projects::for_call(&conn, project_id)?,
             recent_lines(&conn, call_id)?,
             settings::voice(&conn)?,
         )
@@ -466,7 +472,7 @@ mod tests {
             [],
         )
         .unwrap();
-        let project = projects::load(&conn, 1).unwrap();
+        let project = projects::for_call(&conn, 1).unwrap();
         let history = [HistoryLine {
             role: "agent".into(),
             text: "Hi.".into(),

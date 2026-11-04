@@ -30,7 +30,7 @@ const LEGACY_LIVEKIT: &str = "livekit";
 const LEGACY_GEMINI: &str = "gemini";
 
 /// The LiveKit keys. The core uses them for tokens and the agent's environment.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LiveKitKeys {
     pub url: String,
     pub api_key: String,
