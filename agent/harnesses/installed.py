@@ -2,12 +2,13 @@
 in the job metadata (`"agents": {"claude": "/abs/path/claude", ...}`). Console runs have
 no metadata, so each known agent's program is looked up on PATH instead."""
 
-import json
 import logging
 import shutil
 from collections.abc import Mapping
 from pathlib import Path
 from typing import cast
+
+from job import JobFields
 
 from .harness import Harness
 
@@ -15,16 +16,15 @@ logger = logging.getLogger("bomby.harnesses")
 
 
 def installed(
-    metadata: str, known: Mapping[str, Harness], environ: Mapping[str, str]
+    fields: JobFields, known: Mapping[str, Harness], environ: Mapping[str, str]
 ) -> dict[str, Path]:
-    """The known agents that are installed, by id, with their programs."""
-    if not metadata.strip():
+    """The known agents that are installed, by id, with their programs, from the job's
+    metadata (`job.py`)."""
+    if fields is None:
         path = environ.get("PATH")
         found = {id: shutil.which(h.program, path=path) for id, h in known.items()}
         return {id: Path(p) for id, p in found.items() if p}
 
-    data = cast(object, json.loads(metadata))
-    fields = cast(dict[str, object], data) if isinstance(data, dict) else {}
     raw: object = fields.get("agents") or {}
     items = cast(dict[str, object], raw) if isinstance(raw, dict) else None
     if items is None:

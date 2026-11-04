@@ -1,11 +1,12 @@
 """What one call works on: a project name and its folders, from the job's dispatch metadata."""
 
-import json
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
+
+from job import JobFields
 
 DEFAULT_PROJECT = "home"
 
@@ -31,20 +32,16 @@ class Project:
         return [str(folder) for folder in self.folders[1:]]
 
     @classmethod
-    def from_job(cls, metadata: str, environ: Mapping[str, str]) -> "Project":
-        """The project from the job's dispatch metadata, else from the environment.
+    def from_job(cls, fields: JobFields, environ: Mapping[str, str]) -> "Project":
+        """The project from the job's metadata (`job.py`), else from the environment.
 
-        Metadata is JSON, `{"project": "samba", "folders": ["/abs/path", ...]}`. Console
+        The metadata has `{"project": "samba", "folders": ["/abs/path", ...]}`. Console
         runs have no metadata, so `CLAUDE_PROJECT` and `CLAUDE_FOLDERS` (separated by
         `os.pathsep`) stand in. Without folders, the project is the home folder.
         """
         name: object
         folders: object
-        if metadata.strip():
-            data = cast(object, json.loads(metadata))
-            if not isinstance(data, dict):
-                raise ValueError("job metadata must be a JSON object")
-            fields = cast(dict[str, object], data)
+        if fields is not None:
             name, folders = fields.get("project"), fields.get("folders")
             if folders is None:
                 folders = []

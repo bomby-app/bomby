@@ -16,12 +16,15 @@ from dotenv import load_dotenv
 
 from acp_client.probe import probe_all
 from harnesses import HARNESSES, installed
+from job import read_metadata
 
 
 def main(metadata: str) -> str:
     agents = {
         id: (HARNESSES[id], program)
-        for id, program in installed(metadata, HARNESSES, os.environ).items()
+        for id, program in installed(
+            read_metadata(metadata), HARNESSES, os.environ
+        ).items()
     }
     setups = asyncio.run(probe_all(agents, os.environ))
     return json.dumps({id: dataclasses.asdict(s) for id, s in setups.items()})
