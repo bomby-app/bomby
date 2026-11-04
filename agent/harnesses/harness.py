@@ -6,7 +6,11 @@ for any agent that speaks ACP, and lives in `acp_client/`.
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
+
+# Where `just agent install` builds the adapters (agent/adapters/).
+ADAPTERS = Path(__file__).resolve().parent.parent / "adapters" / "bin"
 
 
 @dataclass(frozen=True)
@@ -27,7 +31,8 @@ class Harness:
     """Arguments that start ACP over stdio, for an agent that speaks it natively: ("acp",)."""
     adapter: str | None = None
     """An ACP adapter to start instead of the program, for an agent that doesn't speak ACP
-    itself ("claude-agent-acp"). The program's path is handed to it in `program_env`."""
+    itself: its name in `ADAPTERS` ("claude-agent-acp"). The program's path is handed to it
+    in `program_env`."""
     adapter_env: str | None = None
     """An environment variable that points at another adapter binary."""
     program_env: str | None = None
@@ -61,7 +66,7 @@ class Harness:
             return program, self.args, env
         if self.program_env is not None:
             env[self.program_env] = program
-        adapter = (
-            settings.get(self.adapter_env) if self.adapter_env else None
-        ) or self.adapter
+        adapter = (settings.get(self.adapter_env) if self.adapter_env else None) or str(
+            ADAPTERS / self.adapter
+        )
         return adapter, self.args, env

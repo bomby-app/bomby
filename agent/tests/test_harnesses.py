@@ -8,6 +8,7 @@ from livekit.agents.llm import ToolError
 
 from acp_client import CallRunners
 from harnesses import CLAUDE_CODE, CODEX, HARNESSES, OMP, OPENCODE, installed
+from harnesses.harness import ADAPTERS
 from project import Project
 
 
@@ -58,14 +59,14 @@ def test_a_native_agent_runs_its_own_program() -> None:
 def test_an_adapter_gets_the_agents_program_in_its_environment() -> None:
     command, args, env = CLAUDE_CODE.launch("/bin/claude", {"PATH": "/bin"}, {})
 
-    assert (command, args) == ("claude-agent-acp", ())
+    assert (command, args) == (str(ADAPTERS / "claude-agent-acp"), ())
     assert env == {"PATH": "/bin", "CLAUDE_CODE_EXECUTABLE": "/bin/claude"}
 
 
 def test_codex_runs_through_its_adapter_on_the_users_codex() -> None:
     command, args, env = CODEX.launch("/bin/codex", {"PATH": "/bin"}, {})
 
-    assert (command, args) == ("codex-acp", ())
+    assert (command, args) == (str(ADAPTERS / "codex-acp"), ())
     assert env == {"PATH": "/bin", "CODEX_PATH": "/bin/codex"}
     assert CODEX.launch("/bin/codex", {}, {"CODEX_ACP_BIN": "/x/codex-acp"})[0] == (
         "/x/codex-acp"

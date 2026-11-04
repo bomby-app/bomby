@@ -11,10 +11,22 @@
 default:
     @just --unsorted --list agent
 
-# Install the Python dependencies
+# Install the Python dependencies and build the ACP adapters
 [working-directory: 'agent']
-install:
+install: adapters
     uv sync
+
+# Build each ACP adapter into one program in adapters/bin, run by path so it never depends
+# on PATH or a JS runtime. Optional packages hold the agents' own bundled binaries, which
+# the adapters don't need: they run the user's install.
+[working-directory: 'agent/adapters']
+adapters:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bun install --frozen-lockfile --omit optional
+    for adapter in claude-agent-acp codex-acp; do
+      bun build --compile --minify "node_modules/@agentclientprotocol/$adapter/dist/index.js" --outfile "bin/$adapter"
+    done
 
 # Talk to the agent by voice in the terminal (no app or LiveKit server needed)
 [group('run')]

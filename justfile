@@ -12,7 +12,7 @@ mod app
 default:
     @just --list --unsorted
 
-# Install the tools pinned in mise.toml (lk, claude-agent-acp, rust, bun) and every part's dependencies
+# Install the tools pinned in mise.toml (lk, rust, bun) and every part's dependencies, the ACP adapters included
 install: tools agent::install app::install
 
 # Install the tools pinned in mise.toml

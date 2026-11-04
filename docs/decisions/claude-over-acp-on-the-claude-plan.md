@@ -8,7 +8,7 @@ We need full Claude Code (shell, files, git, web, the user's settings and hooks)
 
 ## Decision
 
-Run `claude-agent-acp` as a child process (pinned in `mise.toml`) and drive it over ACP v1 from `ClaudeRunner`. Pass Claude the shell environment minus the agent's `.env` keys, `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` and `CLAUDECODE`, so it signs in with the user's Claude plan login rather than billing an API key.
+Run `claude-agent-acp` as a child process (pinned in `agent/adapters/`) and drive it over ACP v1 from `ClaudeRunner`. Pass Claude the shell environment minus the agent's `.env` keys, `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` and `CLAUDECODE`, so it signs in with the user's Claude plan login rather than billing an API key.
 
 ## Consequences
 

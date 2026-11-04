@@ -1,6 +1,11 @@
 # ACP and claude-agent-acp notes
 
-Checked 2026-11-03/04 against `claude-agent-acp` 0.100.0 (`dist/acp-agent.js` in `~/.local/share/mise/installs/npm-agentclientprotocol-claude-agent-acp/0.100.0/`) and Python SDK `agent-client-protocol` 0.12.1 (`agent/.venv/lib/python3.13/site-packages/acp/`). Read source for behavior, not memory.
+Checked 2026-11-03/04 against `claude-agent-acp` 0.100.0 and `codex-acp` 2.2.2 (`dist/` in `agent/adapters/node_modules/@agentclientprotocol/<adapter>/`) and Python SDK `agent-client-protocol` 0.12.1 (`agent/.venv/lib/python3.13/site-packages/acp/`). Read source for behavior, not memory.
+
+## Adapters
+
+- `agent/adapters/package.json` pins them; `just agent install` installs them with bun (`--omit optional`) and compiles each into one program in `agent/adapters/bin` (`bun build --compile`, 90 MB each, mostly the bun runtime). Harnesses start them by that path, so neither PATH nor Node matters, and the agents' own bundled binaries (optional packages) are never installed.
+- Not through mise: its npm backend puts the package's `node_modules/.bin` on PATH, and `codex-acp` ships a `codex` (0.160.1 with 2.2.2) that then shadowed the user's own in the repo; it clashed with their Codex background server's feature settings (2026-11-04).
 
 ## Protocol
 
