@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react"
+import { createStore, useStore } from "@/lib/store"
 
 import {
   type AgentStatus,
@@ -18,42 +18,20 @@ type Agents = {
   error: string | null
 }
 
-let snapshot: Agents = { agents: null, error: null }
-const listeners = new Set<() => void>()
-let started = false
-
-function set(next: Agents) {
-  snapshot = next
-  for (const listener of listeners) listener()
-}
-
-/** Starts mirroring the core, on the first subscriber. */
-function start() {
-  if (started) return
-  started = true
-  void onAgentsChanged((agents) => set({ agents, error: null }))
+// Starts mirroring the core on the first subscriber.
+const store = createStore<Agents>({ agents: null, error: null }, () => {
+  void onAgentsChanged((agents) => store.set({ agents, error: null }))
   agentsStatus().then(
     // An event may have brought a newer list already.
-    (agents) => set({ agents: snapshot.agents ?? agents, error: null }),
-    (e: unknown) => set({ ...snapshot, error: String(e) })
+    (agents) =>
+      store.set({ agents: store.get().agents ?? agents, error: null }),
+    (e: unknown) => store.set({ ...store.get(), error: String(e) })
   )
-}
-
-function subscribe(listener: () => void) {
-  start()
-  listeners.add(listener)
-  return () => {
-    listeners.delete(listener)
-  }
-}
-
-function getSnapshot() {
-  return snapshot
-}
+})
 
 /** The agents on this computer, kept current; re-renders when they change. */
 export function useAgents(): Agents {
-  return useSyncExternalStore(subscribe, getSnapshot)
+  return useStore(store)
 }
 
 /**
@@ -62,9 +40,9 @@ export function useAgents(): Agents {
  */
 export async function checkAgentsAgain(): Promise<void> {
   try {
-    set({ agents: await refreshAgents(), error: null })
+    store.set({ agents: await refreshAgents(), error: null })
   } catch (e) {
-    set({ ...snapshot, error: String(e) })
+    store.set({ ...store.get(), error: String(e) })
   }
 }
 

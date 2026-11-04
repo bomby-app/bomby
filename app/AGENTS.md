@@ -16,7 +16,7 @@ src/
   components/               shared components of our own (app-logo, wordmark, mascot, titlebar-spacer)
   components/ui/            shadcn components, from shadcn's registry
   components/agents-ui/     LiveKit Agents UI components, from LiveKit's registry
-  hooks/, lib/              shared hooks and helpers (lib/utils.ts: cn)
+  hooks/, lib/              shared hooks and helpers (lib/utils.ts: cn; lib/store.ts: page-wide stores that mirror the core)
 src-tauri/src/              the Rust core: lib.rs (wiring), db.rs (SQLite, migrations), projects.rs, calls.rs, settings.rs, agents.rs (finding the agents), setup.rs (probing their setup), adapters.rs (installing ACP adapters), agent.rs (the worker), credentials.rs, windows.rs, tray.rs (the menu bar icon), notifications.rs, process.rs (waiting on child programs), sync.rs (locks that outlive a panic), app_log.rs, error.rs
 src-tauri/icons/tray/       the menu bar templates, one per mascot state
 src-tauri/capabilities/     what each window may call: main.json, settings.json

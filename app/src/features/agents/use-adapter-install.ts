@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react"
+import { createStore, useStore } from "@/lib/store"
 
 import { type InstallStep, installAdapters, onInstallProgress } from "./api"
 
@@ -9,41 +9,25 @@ import { type InstallStep, installAdapters, onInstallProgress } from "./api"
  */
 type Install = { step: InstallStep | "starting" | null; error: string | null }
 
-let snapshot: Install = { step: null, error: null }
-const listeners = new Set<() => void>()
-let following = false
-
-function set(next: Install) {
-  snapshot = next
-  for (const listener of listeners) listener()
-}
-
-function subscribe(listener: () => void) {
-  if (!following) {
-    following = true
-    void onInstallProgress((step) => {
-      if (snapshot.step !== null) set({ step, error: null })
-    })
-  }
-  listeners.add(listener)
-  return () => {
-    listeners.delete(listener)
-  }
-}
+const store = createStore<Install>({ step: null, error: null }, () => {
+  void onInstallProgress((step) => {
+    if (store.get().step !== null) store.set({ step, error: null })
+  })
+})
 
 export function useAdapterInstall(): Install {
-  return useSyncExternalStore(subscribe, () => snapshot)
+  return useStore(store)
 }
 
 /** Installs the adapters. Never rejects: a failure shows as the store's error. */
 export async function installAdaptersNow(): Promise<void> {
-  if (snapshot.step !== null) return
-  set({ step: "starting", error: null })
+  if (store.get().step !== null) return
+  store.set({ step: "starting", error: null })
   try {
     await installAdapters()
-    set({ step: null, error: null })
+    store.set({ step: null, error: null })
   } catch (e) {
-    set({ step: null, error: String(e) })
+    store.set({ step: null, error: String(e) })
   }
 }
 
