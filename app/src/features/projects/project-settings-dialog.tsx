@@ -52,23 +52,30 @@ export function ProjectSettingsDialog({
   const { update, remove } = useProjects()
   const [error, setError] = useState<string | null>(null)
 
-  // The project as this dialog last changed it. Each save sends the whole draft, and saves
-  // run one after another, so a rename followed quickly by a folder change can't write the
-  // old name back (the prop only catches up once the core has answered).
-  const draft = useRef({ ...project })
+  // Each save sends the whole draft and saves run one after another, so a rename followed
+  // quickly by a folder change can't write the old name back (the prop only catches up
+  // once the core has answered). `stored` is what the core last confirmed: a failed save
+  // falls back to it, never to the prop, which may still predate an earlier save.
+  const draft = useRef(project)
+  const stored = useRef(project)
   const saving = useRef<Promise<unknown>>(Promise.resolve())
 
   function save(changes: Partial<Pick<Project, "name" | "folders">>) {
     setError(null)
-    const base = draft.current.id === project.id ? draft.current : project
-    draft.current = { ...base, ...changes }
+    if (draft.current.id !== project.id) {
+      draft.current = project
+      stored.current = project
+    }
+    draft.current = { ...draft.current, ...changes }
     const { name, folders } = draft.current
     const done = saving.current.then(() =>
       update(project.id, { name, folders }).then(
-        () => true,
+        (confirmed) => {
+          stored.current = confirmed
+          return true
+        },
         (e: unknown) => {
-          // Back to what the core has, so the next save doesn't resend the failed change.
-          draft.current = { ...project }
+          draft.current = stored.current
           setError(String(e))
           return false
         }
