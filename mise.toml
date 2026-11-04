@@ -1,0 +1,5 @@
+[tools]
+# LiveKit CLI (`lk`), 2.18.8+ for `lk agent console` / `lk agent debugger`
+"github:livekit/livekit-cli" = "2.18.8"
+# Claude Code's ACP adapter, the process agent/tools/claude.py drives (`claude-agent-acp`)
+"npm:@agentclientprotocol/claude-agent-acp" = "0.100.0"

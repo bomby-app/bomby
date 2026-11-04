@@ -1,0 +1,30 @@
+[project]
+name = "claude-livekit"
+version = "0.1.0"
+description = "Voice agent on LiveKit + Gemini 3.8 Live that runs Claude Code sessions over ACP in the background"
+authors = [
+    { name = "Ahmed Aburady", email = "accounts@aburady.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "agent-client-protocol>=0.12.1",
+    "google-genai>=2.34.0",
+    "livekit-agents>=1.8.10",
+    "livekit-plugins-google>=1.8.10",
+    "python-dotenv>=1.2.4",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.basedpyright]
+# The ACP SDK's Client and Agent interfaces take and return `Any` (`**kwargs: Any`,
+# extension params), so implementing them can't avoid it. Everything else stays strict.
+reportAny = false
+reportExplicitAny = false
