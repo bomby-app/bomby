@@ -21,4 +21,3 @@ An installed agent can still be unusable: goose with no provider, omp with no mo
 - A look takes about as long as the slowest agent's start, 2 to 3 s, in the background.
 - omp without a model isn't caught before a call; the call says it isn't ready.
 - A setup that changes while the app runs shows after Check again; until then a call says sorry and offers another agent.
-- Release builds can't probe until the agent ships as a sidecar ([roadmap step 7](../roadmap.md)); Settings then shows agents as installed, as before.

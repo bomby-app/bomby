@@ -43,7 +43,8 @@
     ],
     "macOS": {
       "files": {
-        "Resources/Assets.car": "icons/Assets.car"
+        "Resources/Assets.car": "icons/Assets.car",
+        "Resources/agent": "../../agent/dist/bomby-agent"
       },
       "dmg": {
         "background": "icons/dmg-background.tiff",

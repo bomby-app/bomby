@@ -22,10 +22,12 @@ install:
 dev:
     bun run tauri dev
 
-# Build the release app bundle (.app and .dmg on macOS) into app/src-tauri/target/release/bundle
+# Build the release app bundle (.app and .dmg on macOS) into app/src-tauri/target/release/bundle,
+# with the voice agent frozen first (`just agent freeze`), which the bundle ships
 [group('run')]
 [working-directory: 'app']
 build:
+    {{ just_executable() }} --justfile {{ justfile_directory() }}/justfile agent freeze
     bun run tauri build
 
 # Format-check, lint and type-check the frontend (Vite+: Oxfmt, Oxlint, tsgolint) and the Rust core (clippy, rustfmt); warnings fail
