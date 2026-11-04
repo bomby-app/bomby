@@ -126,5 +126,17 @@ def test_the_command_line_answers_by_agent_id(
             "fix": None,
             "account": None,
             "model": "/bin/goose",
+            "adapter": None,
         }
     }
+
+
+def test_an_agent_without_its_adapter_asks_for_it(tmp_path: Path) -> None:
+    harness = dataclasses.replace(FAKE, adapter="fake-acp", adapter_env="FAKE_ACP_BIN")
+    environ = {**os.environ, "FAKE_ACP_BIN": str(tmp_path / "missing")}
+
+    setup = asyncio.run(probe(harness, Path(sys.executable), environ))
+
+    assert setup == Setup(
+        ready=False, problem="Its ACP adapter isn't set up", adapter="fake-acp"
+    )

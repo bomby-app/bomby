@@ -24,6 +24,8 @@ export type Setup = {
   /** Who it runs as: "Claude Max". */
   account: string | null
   model: string | null
+  /** The ACP adapter it still needs ("codex-acp"); Set up installs it. */
+  adapter: string | null
 }
 
 /** What the core found last: instant, except right after launch while it first looks. */
@@ -34,6 +36,22 @@ export function agentsStatus(): Promise<AgentStatus[]> {
 /** Asks the core to look again, setup included; resolves with what it found. */
 export function refreshAgents(): Promise<AgentStatus[]> {
   return invoke("refresh_agents")
+}
+
+/** Where an adapter install is (src-tauri/src/adapters.rs). */
+export type InstallStep = "runtime" | "packages" | "build" | "done"
+
+/** Installs every ACP adapter into the app's folder; resolves once the agents are rechecked. */
+export function installAdapters(): Promise<void> {
+  return invoke("install_adapters")
+}
+
+export function onInstallProgress(
+  handler: (step: InstallStep) => void
+): Promise<UnlistenFn> {
+  return listen<InstallStep>("adapters-progress", (event) =>
+    handler(event.payload)
+  )
 }
 
 /** Calls `handler` with the new list whenever a look finds something different. */

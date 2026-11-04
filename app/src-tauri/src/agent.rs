@@ -105,6 +105,10 @@ pub fn command(args: &[&str]) -> Result<Command> {
             .args(["run", "python"])
             .args(args)
             .current_dir(agent_dir);
+        // The adapters the app installed (adapters.rs), not the repo's.
+        if let Some(adapters) = crate::adapters::bin_dir() {
+            command.env("BOMBY_ADAPTERS", adapters);
+        }
         Ok(command)
     } else {
         Err(Error::Invalid(

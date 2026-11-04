@@ -54,10 +54,17 @@ class Setup:
     """Who it runs as, as the agent labels it: "Claude Max"."""
     model: str | None = None
     """The model a new session uses, by its display name."""
+    adapter: str | None = None
+    """The ACP adapter it needs and doesn't have yet, which the app installs: "codex-acp"."""
 
 
 async def probe(harness: Harness, program: Path, environ: Mapping[str, str]) -> Setup:
     """Checks `harness`, started from `program` the way a call would start it."""
+    adapter = harness.adapter_path(environ)
+    if adapter is not None and not Path(adapter).is_file():
+        return Setup(
+            ready=False, problem="Its ACP adapter isn't set up", adapter=harness.adapter
+        )
     command, args, env = launch(harness, program, environ)
     client = HarnessClient(harness)
     FOLDER.mkdir(exist_ok=True)

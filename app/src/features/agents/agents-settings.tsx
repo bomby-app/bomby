@@ -8,6 +8,8 @@ import { AgentLogo } from "./agent-logos"
 import { type AgentStatus, versionNumber } from "./api"
 import { CopyButton } from "./copy-button"
 import { InstallFirstAgent } from "./install-first-agent"
+import { SetUpButton } from "./set-up-button"
+import { useAdapterInstall } from "./use-adapter-install"
 import { checkAgentsAgain, isReady, useAgents } from "./use-agents"
 
 /**
@@ -19,6 +21,7 @@ import { checkAgentsAgain, isReady, useAgents } from "./use-agents"
  */
 export function AgentsSettings() {
   const { agents, error } = useAgents()
+  const install = useAdapterInstall()
   const [checking, startChecking] = useTransition()
 
   return (
@@ -28,6 +31,9 @@ export function AgentsSettings() {
         one.
       </p>
       {error && <p className="text-sm text-destructive">{error}</p>}
+      {install.error && (
+        <p className="text-sm text-destructive">{install.error}</p>
+      )}
       {agents?.every((agent) => agent.path === null) ? (
         <InstallFirstAgent />
       ) : (
@@ -63,9 +69,13 @@ export function AgentsSettings() {
   )
 }
 
-/** What to do about an agent that isn't ready: the command that sets it up, if it has one. */
+/**
+ * What to do about an agent that isn't ready: install its adapter, or the command that sets
+ * it up, if it has one.
+ */
 function action({ path, setup }: AgentStatus): ReactNode {
   if (!path) return <StatusMark state="off" />
+  if (setup?.adapter) return <SetUpButton />
   if (setup && !setup.ready && setup.fix)
     return (
       <CopyButton text={setup.fix} variant="outline" size="sm">
@@ -77,6 +87,8 @@ function action({ path, setup }: AgentStatus): ReactNode {
 
 function detail({ name, path, version, setup }: AgentStatus): ReactNode {
   if (!path) return `Not installed. Install ${name}, then check again.`
+  if (setup?.adapter)
+    return `Found on this Mac. Set up connects Bomby to ${name}.`
   if (setup && !setup.ready) {
     const problem = setup.problem && (
       <span className="select-text">{setup.problem}. </span>

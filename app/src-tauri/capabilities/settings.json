@@ -21,6 +21,7 @@
     "allow-clear-gemini-key",
     "allow-agents-status",
     "allow-refresh-agents",
+    "allow-install-adapters",
     "allow-voice-settings",
     "allow-set-voice"
   ]

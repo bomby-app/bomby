@@ -51,6 +51,12 @@ Checked 2026-11-03/04 against Tauri 2.12.5, `tauri-codegen` 2.7.4, `wry` 0.57.1,
 - A sync `#[tauri::command(async)]` runs inside `async_runtime::spawn` on a tokio worker, not on a blocking thread (`tauri` 2.12.5 `src/ipc/mod.rs`, `respond_async`). The agent commands are `async fn` and move the look to `spawn_blocking`; its `JoinHandle` resolves to `tauri::Result<T>`.
 - See [detection decision](decisions/detect-acp-native-agents.md).
 
+## Installing adapters
+
+- `src-tauri/src/adapters.rs` installs the ACP adapters into `app_data_dir()/adapters` ([decision](decisions/install-adapters-on-setup.md)): bun 1.4.4 from its GitHub release zip (`curl`, checked with `shasum -a 256` against the release's SHASUMS256.txt, unpacked with `ditto -x -k`), then `bun install --frozen-lockfile --omit optional` on the embedded `agent/adapters/` lockfile (`include_str!`) and `bun build --compile` per package `bin`. Output goes to `install.log` there; each step has a five-minute limit. Measured 2026-11-04: 6 s end to end on a fast connection.
+- A file `curl` downloads gets `com.apple.provenance` but no `com.apple.quarantine`, so Gatekeeper doesn't stop it, and the downloaded bun runs (macOS 27, 2026-11-04, from a terminal; recheck from the packaged app in step 7).
+- `install_adapters` runs one install at a time, sends `adapters-progress` (`runtime`, `packages`, `build`, `done`) and looks for the agents again. `agent::command` passes `BOMBY_ADAPTERS` to the worker and the probe.
+
 ## Credentials
 
 - `keyring` 4.2.0 with `v1` uses Keychain, Windows Credential Manager or Secret Service. One entry (service = app identifier, account `credentials`) stores JSON for LiveKit and Gemini.

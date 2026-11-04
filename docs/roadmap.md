@@ -15,7 +15,7 @@ Status: `done`, `in progress`, `next`, `later`. Update this file whenever a step
 | 4 | Resume a project's agent sessions in a later call | later | [#15](https://github.com/bomby-app/bomby/issues/15) |
 | 5 | Permission layers | later | [#16](https://github.com/bomby-app/bomby/issues/16). Folders are a scope, not a fence ([decision](decisions/bypass-permissions-for-now.md)). |
 | 6 | Packaging prototypes | done | Compiled adapter passes. PyInstaller folder starts in 0.8 s; one-file starts too slowly and Nuitka builds too slowly ([decision](decisions/ship-the-agent-and-adapter-as-sidecars.md)). |
-| 7 | Ship the sidecars | later | [#2](https://github.com/bomby-app/bomby/issues/2). Release builds have no agent until then. |
+| 7 | Ship the sidecars | later | [#2](https://github.com/bomby-app/bomby/issues/2). Release builds have no agent until then. Adapters aren't shipped: Set up installs them ([decision](decisions/install-adapters-on-setup.md)). |
 
 ## Deliberately not handled yet
 

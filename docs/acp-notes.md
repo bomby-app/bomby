@@ -4,7 +4,8 @@ Checked 2026-11-03/04 against `claude-agent-acp` 0.100.0 and `codex-acp` 2.2.2 (
 
 ## Adapters
 
-- `agent/adapters/package.json` pins them; `just agent install` installs them with bun (`--omit optional`) and compiles each into one program in `agent/adapters/bin` (`bun build --compile`, 90 MB each, mostly the bun runtime). Harnesses start them by that path, so neither PATH nor Node matters, and the agents' own bundled binaries (optional packages) are never installed.
+- `agent/adapters/package.json` pins them. The app installs them on Set up into its own folder ([decision](decisions/install-adapters-on-setup.md)); `just agent install` builds the repo's copy for console runs. Both install with bun (`--omit optional`) and compile each into one program (`bun build --compile`, 90 MB each, mostly the bun runtime). Harnesses start them by path, `BOMBY_ADAPTERS` or `agent/adapters/bin`, so neither PATH nor Node matters, and the agents' own bundled binaries (optional packages) are never installed.
+- ACP Registry v1 (`cdn.agentclientprotocol.com/registry/v1/latest/registry.json`, 2026-11-04): 44 agents; `distribution` is `binary` (per-platform archive, `cmd`, `sha256`), `npx` or `uvx`. Claude's adapter (`claude-acp`, license `proprietary`) and Codex's (`codex-acp`, Apache-2.0) are `npx` only.
 - Not through mise: its npm backend puts the package's `node_modules/.bin` on PATH, and `codex-acp` ships a `codex` (0.160.1 with 2.2.2) that then shadowed the user's own in the repo; it clashed with their Codex background server's feature settings (2026-11-04).
 
 ## Protocol

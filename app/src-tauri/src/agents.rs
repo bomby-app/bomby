@@ -428,6 +428,11 @@ fn refresh<R: Runtime>(
     found
 }
 
+/// [`refresh`] for callers already on a blocking thread.
+pub fn refresh_blocking<R: Runtime>(app: &AppHandle<R>) {
+    refresh(app, None);
+}
+
 /// [`refresh`] on a blocking thread, for async callers.
 pub async fn refresh_in_background<R: Runtime>(app: AppHandle<R>) -> Result<Vec<AgentStatus>> {
     Ok(tauri::async_runtime::spawn_blocking(move || refresh(&app, None)).await?)
@@ -679,6 +684,7 @@ mod tests {
             fix: None,
             account: None,
             model: Some(model.into()),
+            adapter: None,
         }
     }
 
@@ -689,6 +695,7 @@ mod tests {
             fix: None,
             account: None,
             model: None,
+            adapter: None,
         }
     }
 

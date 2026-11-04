@@ -4,13 +4,18 @@ Everything else, from spawning the adapter to sessions, steering and results, is
 for any agent that speaks ACP, and lives in `acp_client/`.
 """
 
+import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-# Where `just agent install` builds the adapters (agent/adapters/).
-ADAPTERS = Path(__file__).resolve().parent.parent / "adapters" / "bin"
+# Where the adapters are built: by the app, into its own folder (BOMBY_ADAPTERS), or by
+# `just agent install` (agent/adapters/bin) for console runs.
+ADAPTERS = Path(
+    os.environ.get("BOMBY_ADAPTERS")
+    or Path(__file__).resolve().parent.parent / "adapters" / "bin"
+)
 
 
 @dataclass(frozen=True)
@@ -54,6 +59,14 @@ class Harness:
     """The extension method that adds a message to a running turn, if the adapter has one.
     Used only when `initialize` advertises it in `_meta.steering.supported`."""
 
+    def adapter_path(self, settings: Mapping[str, str]) -> str | None:
+        """The adapter to start, if this agent needs one: an override like
+        `CLAUDE_ACP_BIN` from `settings`, or its build in `ADAPTERS`."""
+        if self.adapter is None:
+            return None
+        override = settings.get(self.adapter_env) if self.adapter_env else None
+        return override or str(ADAPTERS / self.adapter)
+
     def launch(
         self, program: str, child_env: Mapping[str, str], settings: Mapping[str, str]
     ) -> tuple[str, tuple[str, ...], dict[str, str]]:
@@ -62,11 +75,9 @@ class Harness:
         and the agent's own settings (`settings`: the full environment, `agent/.env`
         included), where an adapter override like `CLAUDE_ACP_BIN` lives."""
         env = dict(child_env)
-        if self.adapter is None:
+        adapter = self.adapter_path(settings)
+        if adapter is None:
             return program, self.args, env
         if self.program_env is not None:
             env[self.program_env] = program
-        adapter = (settings.get(self.adapter_env) if self.adapter_env else None) or str(
-            ADAPTERS / self.adapter
-        )
         return adapter, self.args, env

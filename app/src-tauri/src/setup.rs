@@ -27,6 +27,8 @@ pub struct Setup {
     /// Who it runs as: "Claude Max".
     pub account: Option<String>,
     pub model: Option<String>,
+    /// The ACP adapter it needs and doesn't have yet (`adapters.rs` installs it).
+    pub adapter: Option<String>,
 }
 
 /// Probes `agents` (id and program), all at once. `None` when the probe couldn't run: a
@@ -51,7 +53,7 @@ mod tests {
 
     #[test]
     fn reads_the_probes_answer() {
-        let out = r#"{"goose": {"ready": false, "problem": "No provider", "fix": "goose configure", "account": null, "model": null}}"#;
+        let out = r#"{"goose": {"ready": false, "problem": "No provider", "fix": "goose configure", "account": null, "model": null, "adapter": null}}"#;
         let setups: HashMap<String, Setup> = serde_json::from_str(out).unwrap();
         assert_eq!(
             setups["goose"],
@@ -61,6 +63,7 @@ mod tests {
                 fix: Some("goose configure".into()),
                 account: None,
                 model: None,
+                adapter: None,
             }
         );
     }

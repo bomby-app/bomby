@@ -17,7 +17,7 @@ src/
   components/ui/            shadcn components, from shadcn's registry
   components/agents-ui/     LiveKit Agents UI components, from LiveKit's registry
   hooks/, lib/              shared hooks and helpers (lib/utils.ts: cn)
-src-tauri/src/              the Rust core: lib.rs (wiring), db.rs (SQLite, migrations), projects.rs, calls.rs, settings.rs, agents.rs (finding the agents), setup.rs (probing their setup), agent.rs (the worker), credentials.rs, windows.rs, app_log.rs, error.rs
+src-tauri/src/              the Rust core: lib.rs (wiring), db.rs (SQLite, migrations), projects.rs, calls.rs, settings.rs, agents.rs (finding the agents), setup.rs (probing their setup), adapters.rs (installing ACP adapters), agent.rs (the worker), credentials.rs, windows.rs, app_log.rs, error.rs
 src-tauri/capabilities/     what each window may call: main.json, settings.json
 ```
 
