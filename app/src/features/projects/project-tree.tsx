@@ -69,13 +69,15 @@ function ProjectNode({
   const { active } = useCall()
   const onCall = active?.projectId === project.id
   const holdsSelection = selection?.projectId === project.id
-  // Open while it holds the selection (the project or one of its calls), also when that is
-  // set from elsewhere: the projects home, the menu bar or a notification. Adjusted during
-  // render, not in an Effect (react.dev, "Adjusting some state when a prop changes").
+  // Opens whenever it gets a new selection (the project or one of its calls), also one set
+  // from elsewhere: the projects home, the menu bar or a notification, even after the user
+  // collapsed it. Each selection is a new object, so this compares the selection itself.
+  // Adjusted during render, not in an Effect (react.dev, "Adjusting some state when a prop
+  // changes").
   const [open, setOpen] = useState(holdsSelection)
-  const [held, setHeld] = useState(holdsSelection)
-  if (held !== holdsSelection) {
-    setHeld(holdsSelection)
+  const [seen, setSeen] = useState(selection)
+  if (seen !== selection) {
+    setSeen(selection)
     if (holdsSelection) setOpen(true)
   }
 
@@ -84,10 +86,7 @@ function ProjectNode({
       <SidebarMenuItem>
         <SidebarMenuButton
           isActive={selection?.kind === "project" && holdsSelection}
-          onClick={() => {
-            onSelect({ kind: "project", projectId: project.id })
-            setOpen(true)
-          }}
+          onClick={() => onSelect({ kind: "project", projectId: project.id })}
         >
           {/* On a call, Dot Dot takes the folder's place. */}
           {onCall ? <Mascot state="listening" size={16} /> : <Folder />}
