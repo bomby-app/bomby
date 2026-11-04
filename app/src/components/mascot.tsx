@@ -277,6 +277,8 @@ function Eye({
     state === "listening" ? 10.5 : state === "speaking" ? 7 + 1.2 * level : 7
   return (
     <g
+      // With depth, the eyes open slowly when they first appear (waking up).
+      className={lit ? "motion-safe:animate-dotdot-open" : undefined}
       style={{
         transform: blinking ? "scaleY(0.1)" : "scaleY(1)",
         transformBox: "fill-box",

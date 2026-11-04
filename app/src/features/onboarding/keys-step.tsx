@@ -82,7 +82,7 @@ export function KeysStep({
   const error = livekitError ?? geminiError
 
   return (
-    <div className="mt-2.5 flex flex-col items-center">
+    <div className="flex flex-col items-center">
       <StepHeading
         title="Just one more step"
         body="I talk through your own LiveKit and Gemini, so nothing goes through us. Paste your keys and we're ready."

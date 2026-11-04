@@ -105,7 +105,7 @@ export function FirstAgent({
   const others = agents?.filter((other) => other.id !== agent?.id) ?? []
 
   return (
-    <div className="mt-2.5 flex flex-col items-center">
+    <div className="flex flex-col items-center">
       <StepHeading title={title} body={body} />
 
       <AgentCard agent={agent} phase={phase} />

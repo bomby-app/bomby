@@ -24,6 +24,15 @@
      one fail shake. Sine for loops, ease-out for one-offs, nothing overshoots. */
   --animate-dotdot-wander: dotdot-wander 2.4s ease-in-out infinite;
   --animate-dotdot-shake: dotdot-shake 300ms ease-out 1;
+  --animate-dotdot-open: dotdot-open 520ms cubic-bezier(0.37, 0, 0.63, 1) 1;
+  @keyframes dotdot-open {
+    from {
+      transform: scaleY(0.1);
+    }
+    to {
+      transform: scaleY(1);
+    }
+  }
   @keyframes dotdot-wander {
     0%,
     100% {
