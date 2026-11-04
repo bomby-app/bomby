@@ -3,11 +3,7 @@ import type { ComponentProps } from "react"
 
 import { Button } from "@/components/ui/button"
 
-import {
-  installAdaptersNow,
-  installLabel,
-  useAdapterInstall,
-} from "./use-adapter-install"
+import { installAdaptersNow, useAdapterInstall } from "./use-adapter-install"
 
 /**
  * Installs the ACP adapter an agent needs (docs/decisions/install-adapters-on-setup.md).
@@ -17,8 +13,7 @@ export function SetUpButton({
   children = "Set up",
   ...props
 }: Omit<ComponentProps<typeof Button>, "onClick">) {
-  const { step } = useAdapterInstall()
-  const working = step !== null
+  const { installing: working } = useAdapterInstall()
   return (
     <Button
       size="sm"
@@ -28,7 +23,8 @@ export function SetUpButton({
       onClick={() => void installAdaptersNow()}
     >
       {working && <LoaderCircle className="animate-spin" />}
-      {working ? installLabel(step) : children}
+      {/* One label for the whole install, however many steps it takes (owner, 2026-11-05). */}
+      {working ? "Setting up..." : children}
     </Button>
   )
 }

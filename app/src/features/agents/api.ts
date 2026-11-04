@@ -38,20 +38,9 @@ export function refreshAgents(): Promise<AgentStatus[]> {
   return invoke("refresh_agents")
 }
 
-/** Where an adapter install is (src-tauri/src/adapters.rs). */
-export type InstallStep = "runtime" | "packages" | "build" | "done"
-
 /** Installs every ACP adapter into the app's folder; resolves once the agents are rechecked. */
 export function installAdapters(): Promise<void> {
   return invoke("install_adapters")
-}
-
-export function onInstallProgress(
-  handler: (step: InstallStep) => void
-): Promise<UnlistenFn> {
-  return listen<InstallStep>("adapters-progress", (event) =>
-    handler(event.payload)
-  )
 }
 
 /** Calls `handler` with the new list whenever a look finds something different. */
