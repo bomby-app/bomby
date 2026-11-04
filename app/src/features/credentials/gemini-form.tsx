@@ -24,8 +24,10 @@ type Status =
  * `focus`, the key field takes focus when the form opens.
  */
 export function GeminiForm({ focus = false }: { focus?: boolean }) {
-  // Shared with every window: saving or removing it anywhere updates it here.
-  const saved = useSavedKeys().keys?.gemini ?? false
+  // Shared with every window: saving or removing it anywhere updates it here. `saved` is
+  // null until the core answers, or when it couldn't read the keychain (`readError`).
+  const { keys, error: readError } = useSavedKeys()
+  const saved = keys?.gemini ?? null
   const [key, setKey] = useState("")
   const [status, setStatus] = useState<Status>({ kind: "idle" })
   const input = useRef<HTMLInputElement>(null)
@@ -77,7 +79,11 @@ export function GeminiForm({ focus = false }: { focus?: boolean }) {
             }}
           />
         </Field>
-        {status.kind === "error" && <FieldError>{status.message}</FieldError>}
+        {status.kind === "error" ? (
+          <FieldError>{status.message}</FieldError>
+        ) : (
+          readError && <FieldError>{readError}</FieldError>
+        )}
         <div className="flex items-center gap-2">
           <Button
             type="submit"
@@ -85,7 +91,7 @@ export function GeminiForm({ focus = false }: { focus?: boolean }) {
           >
             {status.kind === "saving" ? "Saving..." : "Save"}
           </Button>
-          {saved && (
+          {saved === true && (
             <Button type="button" variant="ghost" onClick={remove}>
               Remove
             </Button>
