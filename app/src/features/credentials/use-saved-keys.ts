@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react"
+import { createStore, useStore } from "@/lib/store"
 
 import { credentialsInfo, hasGeminiKey, onKeysChanged } from "./api"
 
@@ -14,34 +14,14 @@ type SavedKeys = {
   error: string | null
 }
 
-let snapshot: SavedKeys = { keys: null, error: null }
-const listeners = new Set<() => void>()
-let started = false
-
-function set(next: SavedKeys) {
-  snapshot = next
-  for (const listener of listeners) listener()
-}
-
-function subscribe(listener: () => void) {
-  if (!started) {
-    started = true
-    void onKeysChanged(() => void checkKeysAgain())
-    void checkKeysAgain()
-  }
-  listeners.add(listener)
-  return () => {
-    listeners.delete(listener)
-  }
-}
-
-function getSnapshot() {
-  return snapshot
-}
+const store = createStore<SavedKeys>({ keys: null, error: null }, () => {
+  void onKeysChanged(() => void checkKeysAgain())
+  void checkKeysAgain()
+})
 
 /** Whether the LiveKit keys (with their secret) and the Gemini key are saved. */
 export function useSavedKeys(): SavedKeys {
-  return useSyncExternalStore(subscribe, getSnapshot)
+  return useStore(store)
 }
 
 /**
@@ -54,8 +34,8 @@ export async function checkKeysAgain(): Promise<void> {
       credentialsInfo(),
       hasGeminiKey(),
     ])
-    set({ keys: { livekit: !!livekit?.hasSecret, gemini }, error: null })
+    store.set({ keys: { livekit: !!livekit?.hasSecret, gemini }, error: null })
   } catch (e) {
-    set({ ...snapshot, error: String(e) })
+    store.set({ ...store.get(), error: String(e) })
   }
 }
