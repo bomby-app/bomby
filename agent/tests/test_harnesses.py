@@ -93,6 +93,6 @@ def test_only_installed_agents_are_available(tmp_path: Path) -> None:
 
     assert runners.available == [OPENCODE]
     assert runners.get(OPENCODE) is runners.get(OPENCODE)
-    with pytest.raises(ToolError, match="Claude isn't installed"):
+    with pytest.raises(ToolError, match="Claude isn't ready right now"):
         _ = runners.get(CLAUDE_CODE)
     asyncio.run(runners.aclose())

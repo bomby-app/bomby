@@ -10,7 +10,7 @@ export type AgentStatus = {
   /** Where its program is, or null when it isn't installed. */
   path: string | null
   version: string | null
-  /** Null until the core has probed this program and version, or when it can't. */
+  /** Null when the core couldn't probe it. */
   setup: Setup | null
 }
 
@@ -31,12 +31,9 @@ export function agentsStatus(): Promise<AgentStatus[]> {
   return invoke("agents_status")
 }
 
-/**
- * Asks the core to look again; resolves with what it found. `recheck` probes every
- * installed agent's setup again, not only the ones that changed.
- */
-export function refreshAgents(recheck: boolean): Promise<AgentStatus[]> {
-  return invoke("refresh_agents", { recheck })
+/** Asks the core to look again, setup included; resolves with what it found. */
+export function refreshAgents(): Promise<AgentStatus[]> {
+  return invoke("refresh_agents")
 }
 
 /** Calls `handler` with the new list whenever a look finds something different. */

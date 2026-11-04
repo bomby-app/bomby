@@ -8,14 +8,17 @@ An installed agent can still be unusable: goose with no provider, omp with no mo
 
 ## Decision
 
-- **One generic probe** (`agent/acp_client/probe.py`), the same for every harness: `initialize`, `session/new` in an empty folder, no prompt. An agent needs setup when the session is refused, when it reports `authStatus` kind `none`, or when it offers config options but none in the `model` category. The agent's own words say what's wrong; its `authMethods`, or the harness's `setup_command`, say how to fix it. The probe deletes its session where the agent supports `session/delete`, and closes it otherwise.
-- **The harness is defined once, in Python.** The core runs the probe as the agent's subcommand (`probe.py`; in the packaged app, the frozen agent with a `probe` argument) with the programs it found, and reads JSON back. Rust keeps only how to find a program; Claude's `claude auth status` check is gone, since the probe reads the same account from the adapter.
-- **When it runs.** In the background, after a look, for agents with no stored result, a changed path or version, or a last result that wasn't ready; and for every installed agent on Check again. Results are kept in the app's database, so a launch doesn't probe agents that were fine. A call never waits for it.
-- **Errors during a call stay short.** The voice model gets one friendly line, that the agent isn't ready (it couldn't start or open a session) or stopped before finishing, and is told to say sorry and offer another agent. What to fix lives in Settings, not in the call (owner, 2026-11-04).
+- **One generic probe** (`agent/acp_client/probe.py`), the same for every harness: `initialize`, then `session/new` in an empty folder, no prompt. An agent needs setup when the session is refused, when it reports `authStatus` kind `none`, or when it offers config options but none in the `model` category. The agent's own words say what's wrong; its `authMethods`, or the harness's `setup_command`, say how to fix it.
+- **No leftovers.** A session lands in the agent's history, so the probe opens one only when the agent advertises `session/delete`, and deletes it. An agent without it gets `initialize` only: a rule on the capability, not a list of agents. Today that is omp, which also ignores `--no-session` in ACP mode.
+- **The harness is defined once, in Python.** The core runs the probe as the agent's subcommand (`probe.py`; in the packaged app, the frozen agent with a `probe` argument) with the programs it found, and reads JSON back. Rust keeps only how to find a program.
+- **Part of every look.** The probe runs beside the version checks in each look: at launch, in the background, and on Check again (owner, 2026-11-04). Nothing is stored; the result lives with the rest of the look.
+- **Calls only get agents that are set up.** `open_call` leaves out an agent the last look found not set up; one the probe couldn't check stays in.
+- **Errors during a call stay short.** The voice model gets one friendly line, that the agent isn't ready or stopped before finishing, and is told to say sorry and offer another agent. What to fix lives in Settings, not in the call (owner, 2026-11-04).
 
 ## Consequences
 
 - A new ACP agent gets setup checks and friendly errors with no code of its own; a harness adds `setup_command` only when its `authMethods` don't name one.
-- omp can't delete sessions, so each omp probe leaves an empty session in its history. Probing only when something changed keeps that rare.
-- A setup that breaks after a probe still shows as ready until Check again; in a call, the voice says sorry and offers another agent.
+- A look takes about as long as the slowest agent's start, 2 to 3 s, in the background.
+- omp without a model isn't caught before a call; the call says it isn't ready.
+- A setup that changes while the app runs shows after Check again; until then a call says sorry and offers another agent.
 - Release builds can't probe until the agent ships as a sidecar ([roadmap step 7](../roadmap.md)); Settings then shows agents as installed, as before.

@@ -1,6 +1,7 @@
 """Whether a harness is set up, checked the same way for every agent: start it, open a
 session in an empty folder and look at what comes back, without sending a prompt
-(docs/decisions/check-agent-setup-with-an-acp-probe.md).
+(docs/decisions/check-agent-setup-with-an-acp-probe.md). A session lands in the agent's
+history, so it's only opened when the agent can delete it again.
 """
 
 import asyncio
@@ -19,7 +20,6 @@ from acp.schema import (
     AuthMethodAgent,
     ClientCapabilities,
     EnvVarAuthMethod,
-    InitializeResponse,
     NewSessionResponse,
     SessionConfigOptionSelect,
     SessionConfigSelectGroup,
@@ -104,27 +104,32 @@ async def _check(
         client_info=CLIENT_INFO,
     )
     fix = setup_command(harness, init.auth_methods or [])
-    try:
-        session = await conn.new_session(cwd=str(FOLDER), mcp_servers=[])
-    except RequestError as e:
-        return Setup(ready=False, problem=detail(e), fix=fix)
+    session = None
+    if _can_delete(init.agent_capabilities):
+        try:
+            session = await conn.new_session(cwd=str(FOLDER), mcp_servers=[])
+        except RequestError as e:
+            return Setup(ready=False, problem=detail(e), fix=fix)
     try:
         if _reports_auth(init.agent_capabilities):
             with contextlib.suppress(TimeoutError):
                 _ = await asyncio.wait_for(client.auth_reported.wait(), AUTH_WAIT_S)
         return _judge(session, client.auth_status, fix)
     finally:
-        await _discard(conn, init, session.session_id)
+        if session is not None:
+            await _delete(conn, session.session_id)
 
 
 def _judge(
-    session: NewSessionResponse, auth: Mapping[str, object] | None, fix: str | None
+    session: NewSessionResponse | None,
+    auth: Mapping[str, object] | None,
+    fix: str | None,
 ) -> Setup:
     account = auth.get("label") if auth else None
     account = account if isinstance(account, str) else None
     if auth and auth.get("kind") == "none":
         return Setup(ready=False, problem="Not signed in", fix=fix)
-    options = session.config_options
+    options = session.config_options if session else None
     model = next(
         (
             o
@@ -159,22 +164,19 @@ def _reports_auth(capabilities: AgentCapabilities | None) -> bool:
     return bool(meta) and "authStatus" in (meta or {})
 
 
-async def _discard(
-    conn: ClientSideConnection, init: InitializeResponse, session_id: str
-) -> None:
-    """Removes the probe's session from the agent's history, or at least closes it."""
-    capabilities = init.agent_capabilities
+def _can_delete(capabilities: AgentCapabilities | None) -> bool:
     sessions = capabilities.session_capabilities if capabilities else None
+    return sessions is not None and sessions.delete is not None
+
+
+async def _delete(conn: ClientSideConnection, session_id: str) -> None:
     try:
-        if sessions and sessions.delete is not None:
-            # SDK 0.12.1 has the schema but no method for it (docs/acp-notes.md).
-            _ = await conn._conn.send_request(  # pyright: ignore[reportPrivateUsage]
-                "session/delete", {"sessionId": session_id}
-            )
-        elif sessions and sessions.close is not None:
-            _ = await conn.close_session(session_id=session_id)
+        # SDK 0.12.1 has the schema but no method for it (docs/acp-notes.md).
+        _ = await conn._conn.send_request(  # pyright: ignore[reportPrivateUsage]
+            "session/delete", {"sessionId": session_id}
+        )
     except (RequestError, ConnectionError) as e:
-        logger.warning("discarding probe session %s failed: %s", session_id, e)
+        logger.warning("deleting probe session %s failed: %s", session_id, e)
 
 
 async def _drain(stream: asyncio.StreamReader | None) -> None:

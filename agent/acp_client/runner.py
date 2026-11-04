@@ -499,7 +499,7 @@ class CallRunners:
             return runner
         program = self._installed.get(harness.id)
         if program is None:
-            raise ToolError(f"{harness.short_name} isn't installed on this computer.")
+            raise ToolError(not_ready(harness))
         command, args, env = launch(harness, program, self._environ)
         runner = self._runners[harness.id] = AcpRunner(
             harness=harness, project=self._project, env=env, command=command, args=args

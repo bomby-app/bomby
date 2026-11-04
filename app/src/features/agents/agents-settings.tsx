@@ -14,7 +14,7 @@ import { checkAgentsAgain, isReady, useAgents } from "./use-agents"
  * The Agents section of the settings window: the agents Bomby can hand work to, as the
  * core last found them on this computer (docs/decisions/detect-acp-native-agents.md), with
  * what their setup probe found (docs/decisions/check-agent-setup-with-an-acp-probe.md). The
- * core looks at launch and again when Settings opens, so the list shows at once. Whatever
+ * core looks at launch, so the list shows at once, and again on Check again. Whatever
  * the core reports is listed; a new agent needs no change here.
  */
 export function AgentsSettings() {

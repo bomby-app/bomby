@@ -34,15 +34,13 @@ pub fn run() {
             // ~/Library/Application Support/app.bomby.desktop on macOS.
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
-            let db = db::Db::open(&dir.join(db::FILE_NAME))?;
-            let checked = setup::load(&db.conn());
-            app.manage(db);
+            app.manage(db::Db::open(&dir.join(db::FILE_NAME))?);
             app.manage(agent::AgentWorker::default());
             app.manage(credentials::Vault::default());
-            app.manage(agents::Agents::new(checked));
+            app.manage(agents::Agents::default());
             app.manage(calls::CallAgents::default());
             // Look for the agents now, so Settings and the first call find them ready.
-            tauri::async_runtime::spawn(agents::refresh_in_background(app.handle().clone(), false));
+            tauri::async_runtime::spawn(agents::refresh_in_background(app.handle().clone()));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

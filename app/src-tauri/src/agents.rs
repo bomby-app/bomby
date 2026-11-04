@@ -8,9 +8,9 @@
 //!
 //! Finding them runs the user's login shell and each agent's own program, which takes
 //! seconds, so the core does it once at launch, in the background, and keeps the result in
-//! [`Agents`]. Settings shows what is kept and asks for a fresh look without waiting on it;
-//! each call looks again before it opens. After a look, agents whose setup isn't known yet
-//! are probed, and Settings gets the answer as another change.
+//! [`Agents`]. Each look also probes the installed agents' setup. Settings shows what is
+//! kept and looks again on Check again; each call looks up the programs again before it
+//! opens.
 
 use std::collections::HashMap;
 use std::panic::{self, AssertUnwindSafe};
@@ -23,9 +23,8 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
-use crate::db::Db;
 use crate::error::Result;
-use crate::setup::{self, Checked, Setup};
+use crate::setup::{self, Setup};
 
 /// The event every window gets with the new list when a look finds something different.
 pub const CHANGED: &str = "agents-changed";
@@ -98,7 +97,7 @@ pub struct AgentStatus {
     /// Where its program is, or `None` when it isn't installed (or can't be found).
     path: Option<String>,
     version: Option<String>,
-    /// `None` until the probe has checked this program and version, or when it can't run.
+    /// `None` when the probe couldn't run.
     setup: Option<Setup>,
 }
 
@@ -222,19 +221,26 @@ fn status_of(known: &'static Known, path: Option<PathBuf>) -> AgentStatus {
     }
 }
 
-/// Every known agent with its status. Each agent's own checks run side by side, so a look
-/// takes about as long as the shell and the slowest agent.
+/// Every known agent with its status and setup. The probe and each agent's own checks run
+/// side by side, so a look takes about as long as the shell and the slowest of them.
 fn detect_all(previous: &HashMap<String, PathBuf>) -> Vec<AgentStatus> {
     let found = find_all(previous);
+    let installed = programs(found.clone());
     thread::scope(|scope| {
+        let probe = scope.spawn(|| setup::probe(&installed).unwrap_or_default());
         let checks: Vec<_> = found
             .into_iter()
             .map(|(known, path)| (known, scope.spawn(move || status_of(known, path))))
             .collect();
-        checks
+        let mut agents: Vec<_> = checks
             .into_iter()
             .map(|(known, check)| check.join().unwrap_or_else(|_| status_of(known, None)))
-            .collect()
+            .collect();
+        let setups = probe.join().unwrap_or_default();
+        for agent in &mut agents {
+            agent.setup = setups.get(agent.id).cloned();
+        }
+        agents
     })
 }
 
@@ -267,33 +273,9 @@ struct Detection {
     /// Programs a call found that the next look starts from, so a login shell that fails
     /// then doesn't lose them.
     seen: HashMap<String, PathBuf>,
-    /// What the probe found, by agent id.
-    checked: HashMap<String, Checked>,
-    probing: bool,
-}
-
-/// Fills in each agent's setup from what the probe found for that same program and version.
-fn with_setups(found: &mut [AgentStatus], checked: &HashMap<String, Checked>) {
-    for agent in found {
-        agent.setup = checked
-            .get(agent.id)
-            .filter(|c| Some(&c.path) == agent.path.as_ref() && c.version == agent.version)
-            .map(|c| c.setup.clone());
-    }
 }
 
 impl Agents {
-    /// Starts from what earlier probes found.
-    pub fn new(checked: HashMap<String, Checked>) -> Self {
-        Self {
-            state: Mutex::new(Detection {
-                checked,
-                ..Detection::default()
-            }),
-            finished: Condvar::new(),
-        }
-    }
-
     fn lock(&self) -> MutexGuard<'_, Detection> {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
@@ -352,8 +334,7 @@ impl Agents {
 
         let mut state = self.lock();
         let changed = match found {
-            Ok(mut found) => {
-                with_setups(&mut found, &state.checked);
+            Ok(found) => {
                 let changed = state.found.as_ref() != Some(&found);
                 state.found = Some(found);
                 changed
@@ -373,74 +354,44 @@ impl Agents {
     }
 }
 
-impl Agents {
-    /// The installed agents in `found` the probe should check: all of them on `recheck`,
-    /// otherwise those never checked at this program and version, or not ready last time.
-    /// Empty while a probe runs, which reports when it is done.
-    fn due(&self, found: &[AgentStatus], recheck: bool) -> Vec<AgentStatus> {
-        let mut state = self.lock();
-        if state.probing {
-            return Vec::new();
-        }
-        let due: Vec<_> = found
-            .iter()
-            .filter(|a| a.path.is_some() && (recheck || a.setup.as_ref().is_none_or(|s| !s.ready)))
-            .cloned()
-            .collect();
-        state.probing = !due.is_empty();
-        due
-    }
-
-    /// Keeps what the probe found for `due` (nothing when it couldn't run), and returns the
-    /// agents with it, whether that changed them, and every result to save.
-    fn record(
-        &self,
-        due: &[AgentStatus],
-        mut setups: HashMap<String, Setup>,
-    ) -> (Vec<AgentStatus>, bool, HashMap<String, Checked>) {
-        let mut state = self.lock();
-        state.probing = false;
-        for agent in due {
-            let (Some(setup), Some(path)) = (setups.remove(agent.id), agent.path.clone()) else {
-                continue;
-            };
-            let version = agent.version.clone();
-            state.checked.insert(
-                agent.id.to_owned(),
-                Checked {
-                    path,
-                    version,
-                    setup,
-                },
-            );
-        }
-        let Some(before) = state.found.clone() else {
-            return (Vec::new(), false, state.checked.clone());
-        };
-        let mut after = before.clone();
-        with_setups(&mut after, &state.checked);
-        let changed = after != before;
-        state.found = Some(after.clone());
-        (after, changed, state.checked.clone())
-    }
+/// The installed ones among `agents` a call can use: all but those the probe found not set
+/// up. One not probed yet stays, so a probe that can't run never hides an agent.
+pub fn usable(agents: &[AgentStatus]) -> Vec<(String, PathBuf)> {
+    let ready: Vec<_> = agents
+        .iter()
+        .filter(|a| a.setup.as_ref().is_none_or(|s| s.ready))
+        .cloned()
+        .collect();
+    installed(&ready)
 }
 
-/// The installed agents' programs, looked up now: the shell and the install places only,
-/// without the version and sign-in checks, which a call doesn't need. Blocks for the shell
-/// lookup. When they differ from what Settings shows, a full look starting from them
-/// follows in the background, so Settings catches up.
-pub fn installed_now<R: Runtime>(app: &AppHandle<R>) -> Vec<(String, PathBuf)> {
-    let shown = app
-        .state::<Agents>()
-        .cached()
-        .map(|found| installed(&found));
-    let previous: HashMap<_, _> = shown.clone().unwrap_or_default().into_iter().collect();
+/// The agents a call can use, looked up now: the shell and the install places only, without
+/// the version checks, which a call doesn't need, minus those Settings shows as not set up
+/// at the same program. Blocks for the shell lookup. When the programs differ from what
+/// Settings shows, a full look starting from them follows in the background, so Settings
+/// catches up.
+pub fn usable_now<R: Runtime>(app: &AppHandle<R>) -> Vec<(String, PathBuf)> {
+    let shown = app.state::<Agents>().cached().unwrap_or_default();
+    let previous: HashMap<_, _> = installed(&shown).into_iter().collect();
     let found = programs(find_all(&previous));
-    if shown.as_ref() != Some(&found) {
+    if installed(&shown) != found {
         let (app, seen) = (app.clone(), found.clone());
-        tauri::async_runtime::spawn_blocking(move || refresh(&app, Some(seen), false));
+        tauri::async_runtime::spawn_blocking(move || refresh(&app, Some(seen)));
     }
+    without_unready(found, &shown)
+}
+
+/// `found` minus the programs `shown` has as not set up.
+fn without_unready(found: Vec<(String, PathBuf)>, shown: &[AgentStatus]) -> Vec<(String, PathBuf)> {
+    let set_up = usable(shown);
+    let unready: Vec<_> = installed(shown)
+        .into_iter()
+        .filter(|program| !set_up.contains(program))
+        .collect();
     found
+        .into_iter()
+        .filter(|program| !unready.contains(program))
+        .collect()
 }
 
 /// The ones `find_all` found, by id with their programs, in `KNOWN` order like
@@ -452,42 +403,24 @@ fn programs(found: Vec<(&'static Known, Option<PathBuf>)>) -> Vec<(String, PathB
         .collect()
 }
 
-/// Looks for the agents (blocking), starting from what a call has `seen`, then probes the
-/// ones due (all of them on `recheck`), and tells every window each time they change.
+/// Looks for the agents (blocking), starting from what a call has `seen`, and tells every
+/// window when they changed.
 fn refresh<R: Runtime>(
     app: &AppHandle<R>,
     seen: Option<Vec<(String, PathBuf)>>,
-    recheck: bool,
 ) -> Vec<AgentStatus> {
-    let agents = app.state::<Agents>();
-    let (found, changed) = agents.detect(seen);
+    let (found, changed) = app.state::<Agents>().detect(seen);
     if changed {
         // Only fails for an invalid event name or payload; a window that misses it still
         // gets the list when it asks.
         let _ = app.emit(CHANGED, &found);
     }
-    let due = agents.due(&found, recheck);
-    if due.is_empty() {
-        return found;
-    }
-    let setups = panic::catch_unwind(|| setup::probe(&installed(&due)))
-        .ok()
-        .flatten()
-        .unwrap_or_default();
-    let (found, changed, checked) = agents.record(&due, setups);
-    if changed {
-        let _ = app.emit(CHANGED, &found);
-        let _ = setup::save(&app.state::<Db>().conn(), &checked);
-    }
     found
 }
 
 /// [`refresh`] on a blocking thread, for async callers.
-pub async fn refresh_in_background<R: Runtime>(
-    app: AppHandle<R>,
-    recheck: bool,
-) -> Result<Vec<AgentStatus>> {
-    Ok(tauri::async_runtime::spawn_blocking(move || refresh(&app, None, recheck)).await?)
+pub async fn refresh_in_background<R: Runtime>(app: AppHandle<R>) -> Result<Vec<AgentStatus>> {
+    Ok(tauri::async_runtime::spawn_blocking(move || refresh(&app, None)).await?)
 }
 
 /// Every known agent: installed or not, its version, and its setup once probed.
@@ -497,18 +430,14 @@ pub async fn refresh_in_background<R: Runtime>(
 pub async fn agents_status<R: Runtime>(app: AppHandle<R>) -> Result<Vec<AgentStatus>> {
     match app.state::<Agents>().cached() {
         Some(found) => Ok(found),
-        None => refresh_in_background(app, false).await,
+        None => refresh_in_background(app).await,
     }
 }
 
-/// Looks for the agents again and returns what it found: quietly when Settings opens, and
-/// with every installed agent probed again on Check again (`recheck`).
+/// Looks for the agents again (Check again) and returns what it found.
 #[tauri::command]
-pub async fn refresh_agents<R: Runtime>(
-    app: AppHandle<R>,
-    recheck: bool,
-) -> Result<Vec<AgentStatus>> {
-    refresh_in_background(app, recheck).await
+pub async fn refresh_agents<R: Runtime>(app: AppHandle<R>) -> Result<Vec<AgentStatus>> {
+    refresh_in_background(app).await
 }
 
 #[cfg(test)]
@@ -753,102 +682,34 @@ mod tests {
         }
     }
 
-    fn checked(path: &str, version: &str, setup: Setup) -> Checked {
-        Checked {
-            path: path.into(),
-            version: Some(version.into()),
+    #[test]
+    fn calls_leave_out_only_programs_the_probe_found_not_set_up() {
+        let goose = |setup| AgentStatus {
             setup,
-        }
-    }
-
-    fn versioned(id: &'static str, path: &str, version: &str) -> AgentStatus {
-        AgentStatus {
-            version: Some(version.into()),
-            ..status(id, Some(path))
-        }
-    }
-
-    #[test]
-    fn a_setup_applies_only_to_the_program_and_version_it_was_probed_at() {
-        let stored = HashMap::from([(
-            "omp".to_owned(),
-            checked("/Users/me/.local/bin/omp", "18.16.0", ready("K3.1 Pro")),
-        )]);
-        let mut found = vec![
-            versioned("omp", "/Users/me/.local/bin/omp", "18.16.0"),
-            versioned("goose", "/Users/me/.local/bin/goose", "1.57.0"),
-        ];
-        with_setups(&mut found, &stored);
-        assert_eq!(found[0].setup, Some(ready("K3.1 Pro")));
-        assert_eq!(found[1].setup, None);
-
-        let mut upgraded = vec![versioned("omp", "/Users/me/.local/bin/omp", "18.17.0")];
-        with_setups(&mut upgraded, &stored);
-        assert_eq!(upgraded[0].setup, None);
-    }
-
-    #[test]
-    fn probes_what_is_unknown_or_not_ready_and_everything_on_recheck() {
-        let agents = Agents::new(HashMap::from([
-            (
-                "claude".to_owned(),
-                checked("/Users/me/.local/bin/claude", "2.1.317", ready("Opus 5.5")),
-            ),
-            (
-                "goose".to_owned(),
-                checked("/Users/me/.local/bin/goose", "1.57.0", needs_setup()),
-            ),
-        ]));
-        let (found, _) = agents.detect_with(None, |_| {
-            vec![
-                versioned("claude", "/Users/me/.local/bin/claude", "2.1.317"),
-                versioned("goose", "/Users/me/.local/bin/goose", "1.57.0"),
-                versioned("omp", "/Users/me/.local/bin/omp", "18.16.0"),
-                status("opencode", None),
-            ]
-        });
-        let ids = |due: Vec<AgentStatus>| due.iter().map(|a| a.id).collect::<Vec<_>>();
-
-        assert_eq!(ids(agents.due(&found, false)), ["goose", "omp"]);
-        // One probe at a time; the running one reports when it's done.
-        assert!(agents.due(&found, true).is_empty());
-        agents.record(&[], HashMap::new());
-        assert_eq!(ids(agents.due(&found, true)), ["claude", "goose", "omp"]);
-    }
-
-    #[test]
-    fn a_probe_result_updates_the_shown_agents_and_is_kept() {
-        let agents = Agents::default();
-        let omp = versioned("omp", "/Users/me/.local/bin/omp", "18.16.0");
-        let (found, _) = agents.detect_with(None, |_| vec![omp.clone()]);
-        let due = agents.due(&found, false);
-
-        let (found, changed, kept) =
-            agents.record(&due, HashMap::from([("omp".to_owned(), ready("K3.1 Pro"))]));
-        assert!(changed);
-        assert_eq!(found[0].setup, Some(ready("K3.1 Pro")));
-        assert_eq!(agents.cached(), Some(found));
+            ..status("goose", Some("/Users/me/.local/bin/goose"))
+        };
+        let omp = status("omp", Some("/Users/me/.local/bin/omp"));
+        let shown = [goose(Some(needs_setup())), omp];
         assert_eq!(
-            kept["omp"],
-            checked("/Users/me/.local/bin/omp", "18.16.0", ready("K3.1 Pro"))
+            usable(&shown),
+            vec![("omp".to_owned(), PathBuf::from("/Users/me/.local/bin/omp"))]
         );
 
-        // The next look shows it at once, and the probe has nothing left to do.
-        let (found, changed) = agents.detect_with(None, |_| vec![omp.clone()]);
-        assert!(!changed);
-        assert!(agents.due(&found, false).is_empty());
-    }
-
-    #[test]
-    fn a_probe_that_couldnt_run_changes_nothing() {
-        let agents = Agents::default();
-        let (found, _) = agents.detect_with(None, |_| {
-            vec![versioned("omp", "/Users/me/.local/bin/omp", "18.16.0")]
-        });
-        let due = agents.due(&found, false);
-        let (after, changed, kept) = agents.record(&due, HashMap::new());
-        assert_eq!((after, changed), (found, false));
-        assert!(kept.is_empty());
+        let found = vec![
+            (
+                "goose".to_owned(),
+                PathBuf::from("/Users/me/.local/bin/goose"),
+            ),
+            ("omp".to_owned(), PathBuf::from("/Users/me/.local/bin/omp")),
+        ];
+        assert_eq!(without_unready(found.clone(), &shown), found[1..]);
+        // A goose moved or reinstalled elsewhere hasn't been probed there yet.
+        let moved = vec![("goose".to_owned(), PathBuf::from("/opt/homebrew/bin/goose"))];
+        assert_eq!(without_unready(moved.clone(), &shown), moved);
+        assert_eq!(
+            without_unready(found.clone(), &[goose(Some(ready("x")))]),
+            found
+        );
     }
 
     #[test]

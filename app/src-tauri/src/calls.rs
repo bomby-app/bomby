@@ -194,11 +194,11 @@ pub fn open_call<R: Runtime>(
         .gemini_key(&app)?
         .ok_or_else(|| Error::Invalid("Add your Gemini API key in Settings first.".into()))?;
     // Looks again, so an agent installed since launch is picked up; only where the programs
-    // are, not their versions or sign-in.
-    let found = agents::installed_now(&app);
+    // are, not their versions or setup.
+    let found = agents::usable_now(&app);
     if found.is_empty() {
         return Err(Error::Invalid(
-            "Bomby can't find an agent to work with. See Settings, Agents.".into(),
+            "Bomby can't find an agent that's ready to work. See Settings, Agents.".into(),
         ));
     }
     let log_dir = app.path().app_log_dir()?;
@@ -258,7 +258,7 @@ pub fn call_token<R: Runtime>(
     // A call opened in this run has its own list; any other gets the last one found.
     let agents = call_agents
         .get(call_id)
-        .unwrap_or_else(|| agents::installed(&found.cached().unwrap_or_default()));
+        .unwrap_or_else(|| agents::usable(&found.cached().unwrap_or_default()));
     let metadata = dispatch_metadata(&project, &agents, &voice, &history);
     Ok(CallToken {
         participant_token: token(&keys, &room, metadata)?,

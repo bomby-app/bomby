@@ -8,7 +8,9 @@ initialize, like an adapter without it. Setup scenarios, by environment variable
 - FAKE_ACP_AUTH_REQUIRED=1: `session/new` fails with `auth_required`
 - FAKE_ACP_AUTH_METHODS=<description>: initialize offers one auth method with it
 - FAKE_ACP_MODEL=<model>: sessions offer a model option set to it; `none` leaves it out
-- FAKE_ACP_AUTH_STATUS=<kind>: advertise `authStatus` and push that kind on `session/new`
+- FAKE_ACP_AUTH_STATUS=<kind>: advertise `authStatus` and push that kind after initialize
+- FAKE_ACP_CAN_DELETE=1: advertise `session/delete` (the SDK routes no such method, so it
+  fails; only the advertisement matters)
 
 Prompts:
 
@@ -52,6 +54,7 @@ from acp.schema import (
     SessionConfigOptionBoolean,
     SessionConfigOptionSelect,
     SessionConfigSelectOption,
+    SessionDeleteCapabilities,
     SessionMode,
     SessionModeState,
     SetSessionModeResponse,
@@ -111,9 +114,17 @@ class FakeClaude:
     def __init__(self) -> None:
         self._client: Client | None = None
         self._sessions: dict[str, _Session] = {}
+        self._push: asyncio.Task[None] | None = None
 
     def on_connect(self, conn: Client) -> None:
         self._client = conn
+
+    async def _push_auth(self, kind: str) -> None:
+        await asyncio.sleep(0.05)
+        assert self._client is not None
+        await self._client.ext_notification(
+            "auth/status_update", {"authStatus": {"kind": kind, "label": "Fake Pro"}}
+        )
 
     async def initialize(
         self, protocol_version: int, **_kwargs: Any
@@ -121,10 +132,17 @@ class FakeClaude:
         log("initialize", protocol_version=protocol_version)
         # claude-agent-acp advertises session/close and steering the same way.
         capabilities = AgentCapabilities(
-            session_capabilities=SessionCapabilities(close=SessionCloseCapabilities())
+            session_capabilities=SessionCapabilities(
+                close=SessionCloseCapabilities(),
+                delete=SessionDeleteCapabilities()
+                if os.getenv("FAKE_ACP_CAN_DELETE")
+                else None,
+            )
         )
-        if os.getenv("FAKE_ACP_AUTH_STATUS"):
+        if kind := os.getenv("FAKE_ACP_AUTH_STATUS"):
             capabilities.field_meta = {"authStatus": {}}
+            # Like claude-agent-acp: pushed once the initialize response is out.
+            self._push = asyncio.create_task(self._push_auth(kind))
         meta = (
             None
             if os.getenv("FAKE_ACP_NO_STEERING")
@@ -150,12 +168,6 @@ class FakeClaude:
             raise RequestError(-32603, "Internal error", refused)
         if os.getenv("FAKE_ACP_AUTH_REQUIRED"):
             raise RequestError.auth_required()
-        if kind := os.getenv("FAKE_ACP_AUTH_STATUS"):
-            assert self._client is not None
-            await self._client.ext_notification(
-                "auth/status_update",
-                {"authStatus": {"kind": kind, "label": "Fake Pro"}},
-            )
         session_id = f"s{len(self._sessions) + 1}"
         self._sessions[session_id] = _Session()
         log(

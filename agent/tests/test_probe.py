@@ -33,19 +33,31 @@ def run_probe(
     return setup, [e["event"] for e in events]
 
 
-def test_an_agent_with_a_model_is_ready_and_its_session_is_discarded(
-    tmp_path: Path,
-) -> None:
-    setup, events = run_probe(tmp_path, {"FAKE_ACP_MODEL": "m1"})
+CAN_DELETE = {"FAKE_ACP_CAN_DELETE": "1"}
+
+
+def test_an_agent_with_a_model_is_ready(tmp_path: Path) -> None:
+    setup, events = run_probe(tmp_path, {**CAN_DELETE, "FAKE_ACP_MODEL": "m1"})
 
     assert setup == Setup(ready=True, model="Fake m1")
-    assert events == ["initialize", "new_session", "close_session"]
+    assert events == ["initialize", "new_session"]
+
+
+def test_no_session_is_opened_in_an_agent_that_cant_delete_it(tmp_path: Path) -> None:
+    setup, events = run_probe(tmp_path, {"FAKE_ACP_MODEL": "none"})
+
+    assert setup == Setup(ready=True)
+    assert events == ["initialize"]
 
 
 def test_an_agent_without_a_model_needs_setup(tmp_path: Path) -> None:
     setup, _ = run_probe(
         tmp_path,
-        {"FAKE_ACP_MODEL": "none", "FAKE_ACP_AUTH_METHODS": "Run `fake login` first"},
+        {
+            **CAN_DELETE,
+            "FAKE_ACP_MODEL": "none",
+            "FAKE_ACP_AUTH_METHODS": "Run `fake login` first",
+        },
     )
 
     assert setup == Setup(ready=False, problem="No model is set", fix="fake login")
@@ -55,6 +67,7 @@ def test_a_refused_session_gives_the_agents_reason_and_fix(tmp_path: Path) -> No
     setup, _ = run_probe(
         tmp_path,
         {
+            **CAN_DELETE,
             "FAKE_ACP_REFUSE_SESSION": "Configuration value not found: GOOSE_PROVIDER",
             "FAKE_ACP_AUTH_METHODS": "Run `goose configure` to set up your provider",
         },

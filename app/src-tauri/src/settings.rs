@@ -1,6 +1,5 @@
-//! App settings that aren't secrets, kept in the database's `settings` table: the agent's
-//! voice, sent with every call (`calls::call_token`). The agents' probed setups share the
-//! table (`setup.rs`).
+//! App settings that aren't secrets, kept in the database's `settings` table. For now the
+//! agent's voice, sent with every call (`calls::call_token`).
 
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
