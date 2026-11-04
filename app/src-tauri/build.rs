@@ -10,7 +10,7 @@ const COMMANDS: &[&str] = &[
     "has_gemini_key",
     "save_gemini_key",
     "clear_gemini_key",
-    "claude_status",
+    "agents_status",
     "open_call",
     "call_token",
     "end_call",

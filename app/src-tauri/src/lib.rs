@@ -3,9 +3,9 @@
 //! capabilities/ grants them.
 
 mod agent;
+mod agents;
 mod app_log;
 mod calls;
-mod claude;
 mod credentials;
 mod db;
 mod error;
@@ -30,12 +30,13 @@ pub fn run() {
             _ => PermissionResponse::Default,
         })
         .setup(|app| {
-            // ~/Library/Application Support/com.aburady.claudible on macOS.
+            // ~/Library/Application Support/com.aburady.bomby on macOS.
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
             app.manage(db::Db::open(&dir.join(db::FILE_NAME))?);
             app.manage(agent::AgentWorker::default());
             app.manage(credentials::Vault::default());
+            app.manage(agents::Found::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -47,7 +48,7 @@ pub fn run() {
             credentials::has_gemini_key,
             credentials::save_gemini_key,
             credentials::clear_gemini_key,
-            claude::claude_status,
+            agents::agents_status,
             calls::open_call,
             calls::call_token,
             calls::end_call,

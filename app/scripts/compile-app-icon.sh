@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Compile src-tauri/icons/Claudible.icon (Icon Composer: light, dark, clear and tinted) into
+# Compile src-tauri/icons/Bomby.icon (Icon Composer: light, dark, clear and tinted) into
 # src-tauri/icons/Assets.car, which the bundle ships via bundle.macOS.files with
-# CFBundleIconName=Claudible (src-tauri/Info.plist). macOS 26+ reads Assets.car; older macOS
+# CFBundleIconName=Bomby (src-tauri/Info.plist). macOS 26+ reads Assets.car; older macOS
 # uses icon.icns.
 #
 # Why not let `tauri build` do it: with Xcode 27, actool hands the work to a persistent
@@ -12,7 +12,7 @@
 set -euo pipefail
 
 ICONS="$(cd "$(dirname "$0")/../src-tauri/icons" && pwd)"
-NAME=Claudible
+NAME=Bomby
 
 [[ "$(uname -s)" == Darwin ]] || { echo "Assets.car needs macOS and Xcode" >&2; exit 1; }
 

@@ -354,6 +354,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "bomby"
+version = "0.1.0"
+dependencies = [
+ "keyring",
+ "libc",
+ "livekit-api",
+ "livekit-protocol",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-clipboard-manager",
+ "tauri-plugin-dialog",
+ "tauri-plugin-opener",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "brotli"
 version = "9.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -556,25 +575,6 @@ checksum = "e8cf2a2c93cd704877c0858356ed03480ff301ee950b43f1cbe4573b088bfa6c"
 dependencies = [
  "crypto-common 0.2.2",
  "inout",
-]
-
-[[package]]
-name = "claudible"
-version = "0.1.0"
-dependencies = [
- "keyring",
- "libc",
- "livekit-api",
- "livekit-protocol",
- "rusqlite",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-clipboard-manager",
- "tauri-plugin-dialog",
- "tauri-plugin-opener",
- "thiserror 2.0.21",
 ]
 
 [[package]]

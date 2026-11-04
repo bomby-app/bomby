@@ -1,4 +1,4 @@
-"""What the app sends with a call besides the project (`tools/claude.py`, `Project`): the
+"""What the app sends with a call besides the project (`project.py`, `Project`): the
 voice to speak in and, when the user resumes an earlier call, its last lines.
 
 Metadata is the job's JSON, `{"voice": "Kore", "history": [{"role": "user", "text": "..."}]}`
@@ -44,7 +44,7 @@ class CallOptions:
         if voice is not None and (not isinstance(voice, str) or not voice.strip()):
             raise ValueError("the voice must be a voice name")
 
-        raw = fields.get("history") or []
+        raw: object = fields.get("history") or []
         items = cast(list[object], raw) if isinstance(raw, list) else None
         if items is None:
             raise ValueError("history must be a list of lines")
@@ -55,7 +55,7 @@ class CallOptions:
             if role not in SPEAKER_LABEL or not isinstance(text, str):
                 raise ValueError(f"not a history line: {item!r}")
             if text.strip():
-                history.append(Line(cast(Speaker, role), text.strip()))
+                history.append(Line(role, text.strip()))
 
         return cls(voice=voice.strip() if voice else fallback, history=tuple(history))
 
@@ -70,10 +70,10 @@ class CallOptions:
         lines = "\n".join(f"{SPEAKER_LABEL[l.speaker]}: {l.text}" for l in self.history)
         return (
             f"{base}\n\n## Previous conversation\n\n"
-            "This call picks up an earlier one with the user. Its last lines are below. "
-            "Carry on from them as if the conversation never stopped. The Claude sessions "
-            "from that call are closed: work they did is on disk, but a follow-up starts a "
-            "new session, so pass on what Claude needs to know.\n\n"
+            "You're picking up an earlier conversation with the user; its last lines are "
+            "below. Carry on as if it never stopped. Claude doesn't remember it, though "
+            "anything Claude did then is still done, so when you hand off a follow-up, tell "
+            "Claude what it needs to know.\n\n"
             f"{lines}"
         )
 

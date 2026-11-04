@@ -10,13 +10,13 @@ from livekit.agents import NOT_GIVEN, Agent, AgentServer, AgentSession, JobConte
 from livekit.plugins import google
 
 import lifeline
+from acp_client import CallRunners
 from call_options import CallOptions, call_options
-from tools import ALL_TOOLS
-from tools.claude import ClaudeRunner
+from tools import ALL_TOOLS, agents_note
 
 _ = load_dotenv()
 
-logger = logging.getLogger("claudible")
+logger = logging.getLogger("bomby")
 
 MODELS = {
     "fast": "gemini-3.8-live",
@@ -50,11 +50,12 @@ LANGUAGE_CODES = ["en-US"]
 
 
 class Assistant(Agent):
-    def __init__(self, options: CallOptions) -> None:
+    def __init__(self, options: CallOptions, runners: CallRunners) -> None:
         self._resumed: bool = options.resumed
+        base = f"{INSTRUCTIONS.rstrip()}\n\n{agents_note(runners.available)}"
         # LiveKit's own signatures are partially untyped; the ignores below are theirs.
         super().__init__(  # pyright: ignore[reportUnknownMemberType]
-            instructions=options.instructions(INSTRUCTIONS), tools=ALL_TOOLS
+            instructions=options.instructions(base), tools=ALL_TOOLS
         )
 
     @override
@@ -75,7 +76,7 @@ server = AgentServer(num_idle_processes=1, host="127.0.0.1", port=0)
 
 # Explicit dispatch: the app names this agent in each call's token, with the project in
 # the dispatch metadata. Rooms without it get no agent.
-AGENT_NAME = "claudible"
+AGENT_NAME = "bomby"
 
 
 @server.rtc_session(agent_name=AGENT_NAME)
@@ -83,20 +84,21 @@ async def entrypoint(ctx: JobContext) -> None:
     ctx.log_context_fields = {"room": ctx.room.name, "model": MODEL}
     logger.info("using model %s", MODEL)
 
-    # A call works on one project, set in the dispatch metadata by the app. One
-    # claude-agent-acp process per call, started on the first task, runs the named Claude
-    # sessions. Shutting the job down closes every session and the process.
-    claude = ClaudeRunner.from_env(ctx.job.metadata)
+    # A call works on one project, set in the dispatch metadata by the app. Each harness
+    # the app found gets one ACP process per call, started on its first task, to
+    # run its named sessions. Shutting the job down closes every session and process.
+    runners = CallRunners.for_job(ctx.job.metadata)
     # The voice and, on a resumed call, the conversation so far.
     options = call_options(ctx.job.metadata)
     logger.info(
-        "project %s in %s, voice %s, %d earlier lines",
-        claude.project.name,
-        ", ".join(str(f) for f in claude.project.folders),
+        "project %s in %s, agents %s, voice %s, %d earlier lines",
+        runners.project.name,
+        ", ".join(str(f) for f in runners.project.folders),
+        ", ".join(h.id for h in runners.available) or "none",
         options.voice,
         len(options.history),
     )
-    ctx.add_shutdown_callback(claude.aclose)
+    ctx.add_shutdown_callback(runners.aclose)
 
     # Which audio the agent gets, from whom: the first thing to check on an audio problem.
     def on_track_subscribed(
@@ -116,8 +118,8 @@ async def entrypoint(ctx: JobContext) -> None:
 
     # Everything Gemini gets at connect time is final for the session. The plugin reconnects
     # on a tool change and can only inject later instructions as a conversation turn.
-    session: AgentSession[ClaudeRunner] = AgentSession(
-        userdata=claude,
+    session: AgentSession[CallRunners] = AgentSession(
+        userdata=runners,
         llm=google.realtime.RealtimeModel(
             model=MODEL,
             voice=options.voice,
@@ -129,7 +131,7 @@ async def entrypoint(ctx: JobContext) -> None:
         ),
     )
 
-    await session.start(agent=Assistant(options), room=ctx.room)  # pyright: ignore[reportUnknownMemberType]
+    await session.start(agent=Assistant(options, runners), room=ctx.room)  # pyright: ignore[reportUnknownMemberType]
 
 
 if __name__ == "__main__":

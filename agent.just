@@ -65,7 +65,7 @@ fmt:
 [group('check')]
 [working-directory: 'agent']
 typecheck:
-    uvx basedpyright agent.py tools tests
+    uvx basedpyright .
 
 # Everything a change must pass: lint, types, tests
 [group('check')]

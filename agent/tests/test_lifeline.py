@@ -19,9 +19,9 @@ SCRIPT = textwrap.dedent(
 
 
 def _start(env_value: str | None) -> subprocess.Popen[str]:
-    env = {k: v for k, v in os.environ.items() if k != "CLAUDIBLE_EXIT_WITH_APP"}
+    env = {k: v for k, v in os.environ.items() if k != "BOMBY_EXIT_WITH_APP"}
     if env_value is not None:
-        env["CLAUDIBLE_EXIT_WITH_APP"] = env_value
+        env["BOMBY_EXIT_WITH_APP"] = env_value
     proc = subprocess.Popen(
         [sys.executable, "-c", SCRIPT],
         cwd=AGENT_DIR,

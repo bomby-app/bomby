@@ -1,6 +1,6 @@
-# Claudible
+# Bomby
 
-Claudible is a voice agent that runs Claude Code. The agent (LiveKit Agents, Python, Gemini 3.8 Live) hands real work to a Claude Code session over **ACP** and speaks Claude's result when it is done. A desktop app (Tauri v2, in progress) holds the projects and runs the call.
+Bomby lets you talk to your agents. The voice agent (LiveKit Agents, Python, Gemini 3.8 Live) hands real work to an agent over **ACP** (Claude Code today; more ACP harnesses later) and speaks its result when it is done. A desktop app (Tauri v2, in progress) holds the projects and runs the call.
 
 **Read [docs/README.md](docs/README.md) first**, then [docs/architecture.md](docs/architecture.md) and [docs/roadmap.md](docs/roadmap.md). Why things are the way they are is in [docs/decisions/](docs/decisions/).
 
@@ -8,7 +8,7 @@ Claudible is a voice agent that runs Claude Code. The agent (LiveKit Agents, Pyt
 
 | Path | What |
 | --- | --- |
-| `agent/` | The voice agent (uv project). `agent.py` entrypoint, `tools/claude.py` the Claude runner and tool, `prompts/` the two prompts, `tests/` with a fake ACP agent. |
+| `agent/` | The voice agent (uv project). `agent.py` entrypoint, `harnesses/` one definition per agent (`claude.py`), `acp_client/` the ACP client and runner shared by all of them, `tools/` the voice model's tools, `prompts/` the prompts, `tests/` with a fake ACP agent. |
 | `app/` | The desktop app: Tauri v2, React frontend in `src/` (layout and conventions in `app/README.md`), Rust core in `src-tauri/`. See `docs/tauri-notes.md` and `docs/frontend-notes.md`. |
 | `docs/` | Architecture, roadmap, decisions, library notes. |
 | `justfile`, `agent.just`, `app.just` | Every main command, run from the repo root. The root `justfile` has repo-wide recipes and one `mod` per part: `just agent console`, `just app build`. `just` lists them. |
@@ -16,7 +16,7 @@ Claudible is a voice agent that runs Claude Code. The agent (LiveKit Agents, Pyt
 
 ## Rules
 
-- **The app is Claudible** (lowercase wordmark `claudible`). Never co-brand it with Claude or LiveKit ("Claude LiveKit", "Claude x LiveKit"); name them only for what the app uses. UI colours, logo and copy follow [docs/brand.md](docs/brand.md). The repo folder is still `claude-livekit`.
+- **The app is Bomby** (lowercase wordmark `bomby`). Never co-brand it with Claude, LiveKit or Gemini ("Claude LiveKit", "Claude x LiveKit"); name them only for what the app uses. UI colours, logo and copy follow [docs/brand.md](docs/brand.md). The repo folder is still `claude-livekit`.
 - **Run commands through `just`** from the repo root. A new main command gets a recipe in its part's module (`agent.just`, `app.just`) with a doc comment, a group and `[working-directory: '...']`. A new part gets its own `<part>.just` and a `mod <part>` line in the `justfile`.
 - **`just check` must pass** (lint, types with 0 errors and 0 warnings, tests) before a change is done. Fix any lint, type or test failure you see, related or not.
 - **Don't run dev servers, `lk agent console` or the app (`just app dev`).** Builds and checks are fine. Report what to run; the owner tests first.

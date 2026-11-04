@@ -4,11 +4,11 @@
 <dict>
   <!-- Merged into the app's Info.plist by the Tauri CLI. macOS shows this text when it asks for the mic. -->
   <key>NSMicrophoneUsageDescription</key>
-  <string>Claudible needs your mic so you can talk to it.</string>
+  <string>Bomby needs your mic so you can talk to it.</string>
   <!-- macOS 26+ takes the app icon (light, dark, clear, tinted) from Resources/Assets.car,
-       compiled from icons/Claudible.icon by `just app icon`. Older macOS keeps using
+       compiled from icons/Bomby.icon by `just app icon`. Older macOS keeps using
        CFBundleIconFile (icon.icns), which Tauri sets. -->
   <key>CFBundleIconName</key>
-  <string>Claudible</string>
+  <string>Bomby</string>
 </dict>
 </plist>

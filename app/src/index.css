@@ -95,7 +95,7 @@
 }
 
 :root {
-  /* Claudible colours, from the Paper file (board "07 Colour in UI"); see docs/brand.md.
+  /* Bomby colours, from the Paper file (board "07 Colour in UI"); see docs/brand.md.
      Ink carries the UI, highlighter is the one loud moment, bubblegum means Claude. */
   --background: #ffffff;
   --foreground: #121212;
@@ -205,7 +205,7 @@
 
 /* The call transcript: LiveKit Agents UI's AgentChatTranscript, styled from outside through
    its data-slot hooks (components/agents-ui stays as generated). Like the Paper board
-   "In use / the conversation": Claudible speaks in highlighter with ink text, the user in
+   "In use / the conversation": Bomby speaks in highlighter with ink text, the user in
    ink. Bubblegum is kept for Claude's own messages. Unlayered, so it wins over the
    component's utility classes. */
 .call-transcript [data-slot="message-scroller-content"] {

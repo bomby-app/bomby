@@ -1,6 +1,6 @@
 """Exit when the desktop app does.
 
-The app starts the worker with `CLAUDIBLE_EXIT_WITH_APP=1` and keeps a pipe to its stdin.
+The app starts the worker with `BOMBY_EXIT_WITH_APP=1` and keeps a pipe to its stdin.
 When the app's process ends for any reason (quit, crash, Ctrl-C on `just app dev`), the OS
 closes that pipe; reading it hits end of file, and the worker stops its whole process group
 (uv, this process, the job processes). Without it, a worker outlived the app (2026-11-04).
@@ -12,7 +12,7 @@ import sys
 import threading
 import time
 
-ENV = "CLAUDIBLE_EXIT_WITH_APP"
+ENV = "BOMBY_EXIT_WITH_APP"
 # livekit-agents drains on SIGTERM and can wait for jobs; the app is gone, so don't.
 GRACE_S = 3
 

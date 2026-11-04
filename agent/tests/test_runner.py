@@ -1,4 +1,5 @@
 import asyncio
+import dataclasses
 import json
 import os
 import sys
@@ -10,28 +11,27 @@ import pytest
 from acp.schema import PermissionOption
 from livekit.agents.llm import ToolError
 
-from tools.claude import (
-    STEERED,
-    SYSTEM_PROMPT,
-    ClaudeRunner,
-    Project,
-    child_environment,
-    pick_allow,
-)
+from acp_client import AcpRunner
+from acp_client.client import pick_allow
+from acp_client.runner import briefing, child_environment, steered_note
+from harnesses import CLAUDE_CODE, Harness
+from project import Project
 
 FAKE_AGENT = Path(__file__).resolve().parent / "fake_claude_acp.py"
 
 
 def run_with_fake(
     tmp_path: Path,
-    scenario: Callable[[ClaudeRunner], Awaitable[Any]],
+    scenario: Callable[[AcpRunner], Awaitable[Any]],
     *,
     folders: tuple[Path, ...] | None = None,
     env: Mapping[str, str] | None = None,
+    harness: Harness = CLAUDE_CODE,
 ) -> tuple[Any, list[dict[str, Any]]]:
     """Run `scenario` against the fake ACP agent; return its result and the agent's log."""
     log = tmp_path / "acp.jsonl"
-    runner = ClaudeRunner(
+    runner = AcpRunner(
+        harness=harness,
         command=sys.executable,
         args=[str(FAKE_AGENT)],
         project=Project(name="test", folders=folders or (tmp_path,)),
@@ -54,7 +54,7 @@ def names(events: list[dict[str, Any]]) -> list[str]:
 
 
 async def until_prompted(
-    runner: ClaudeRunner, task: str, session: str = "main"
+    runner: AcpRunner, task: str, session: str = "main"
 ) -> asyncio.Task[str]:
     """Start `task` in `session` and return once its turn is running."""
     running = asyncio.create_task(runner.run(task, session))
@@ -85,7 +85,11 @@ def test_new_session_appends_system_prompt_and_bypasses_permissions(
     _, events = run_with_fake(tmp_path, lambda r: r.run("reply ok"))
 
     new_session = next(e for e in events if e["event"] == "new_session")
-    assert new_session["system_prompt"] == {"append": SYSTEM_PROMPT}
+    assert new_session["system_prompt"] == {
+        "append": briefing(Project(name="test", folders=(tmp_path,)))
+    }
+    prompt = next(e for e in events if e["event"] == "prompt")
+    assert prompt["blocks"] == ["reply ok"]  # already in the system prompt
     mode = next(e for e in events if e["event"] == "set_session_mode")
     assert mode["mode_id"] == "bypassPermissions"
 
@@ -104,8 +108,29 @@ def test_project_folders_become_cwd_and_extra_directories(tmp_path: Path) -> Non
     assert new_session["additional_directories"] == [str(other)]
 
 
+def test_without_a_system_prompt_the_briefing_goes_with_the_first_task(
+    tmp_path: Path,
+) -> None:
+    main, other = tmp_path / "main", tmp_path / "other"
+    main.mkdir()
+    other.mkdir()
+    plain = dataclasses.replace(CLAUDE_CODE, id="plain", system_prompt_append=False)
+
+    async def scenario(runner: AcpRunner) -> list[str]:
+        return [await runner.run("turns"), await runner.run("turns")]
+
+    _, events = run_with_fake(tmp_path, scenario, folders=(main, other), harness=plain)
+
+    first, second = [e["blocks"] for e in events if e["event"] == "prompt"]
+    assert first[1:] == ["turns"] and second == ["turns"]
+    assert f"You're working in {main}" in first[0]
+    assert f"also includes {other}" in first[0]
+    new_session = next(e for e in events if e["event"] == "new_session")
+    assert new_session["system_prompt"] is None
+
+
 def test_follow_ups_continue_the_same_session(tmp_path: Path) -> None:
-    async def scenario(runner: ClaudeRunner) -> list[str]:
+    async def scenario(runner: AcpRunner) -> list[str]:
         return [await runner.run("turns"), await runner.run("turns")]
 
     result, events = run_with_fake(tmp_path, scenario)
@@ -119,7 +144,7 @@ def test_follow_ups_continue_the_same_session(tmp_path: Path) -> None:
 def test_sessions_run_in_parallel_and_each_keeps_its_context(
     tmp_path: Path,
 ) -> None:
-    async def scenario(runner: ClaudeRunner) -> list[str]:
+    async def scenario(runner: AcpRunner) -> list[str]:
         page = await until_prompted(runner, "hang", "page")
         # "page" is still working; "api" opens its own session and runs alongside it.
         api = [await runner.run("turns", "api"), await runner.run("turns", "api")]
@@ -139,7 +164,7 @@ def test_sessions_run_in_parallel_and_each_keeps_its_context(
 
 
 def test_session_names_ignore_case_and_spacing(tmp_path: Path) -> None:
-    async def scenario(runner: ClaudeRunner) -> list[str]:
+    async def scenario(runner: AcpRunner) -> list[str]:
         return [
             await runner.run("turns", "Landing page"),
             await runner.run("turns", "landing-page"),
@@ -152,7 +177,7 @@ def test_session_names_ignore_case_and_spacing(tmp_path: Path) -> None:
 
 
 def test_a_request_mid_turn_is_steered_into_it(tmp_path: Path) -> None:
-    async def scenario(runner: ClaudeRunner) -> tuple[str, str]:
+    async def scenario(runner: AcpRunner) -> tuple[str, str]:
         first = await until_prompted(runner, "wait landing page", "page")
         steered = await runner.run("make the header blue", "page")
         return await first, steered
@@ -160,7 +185,7 @@ def test_a_request_mid_turn_is_steered_into_it(tmp_path: Path) -> None:
     (first, steered), events = run_with_fake(tmp_path, scenario)
 
     assert first == "Done: landing page + make the header blue"
-    assert steered == STEERED
+    assert steered == steered_note(CLAUDE_CODE)
     steer = next(e for e in events if e["event"] == "steer")
     assert steer["idle_behavior"] == "promptRequired"
     assert steer["injected"] is True
@@ -170,7 +195,7 @@ def test_a_request_mid_turn_is_steered_into_it(tmp_path: Path) -> None:
 def test_without_steering_a_request_waits_for_the_running_turn(
     tmp_path: Path,
 ) -> None:
-    async def scenario(runner: ClaudeRunner) -> list[str]:
+    async def scenario(runner: AcpRunner) -> list[str]:
         first = await until_prompted(runner, "hang")
         second = asyncio.create_task(runner.run("turns"))
         await asyncio.sleep(0.5)
@@ -188,8 +213,30 @@ def test_without_steering_a_request_waits_for_the_running_turn(
     assert "steer" not in names(events)
 
 
+def test_a_harness_without_steering_or_bypass_mode_skips_both(tmp_path: Path) -> None:
+    plain = dataclasses.replace(
+        CLAUDE_CODE, id="plain", steer_method=None, bypass_mode=None
+    )
+
+    async def scenario(runner: AcpRunner) -> list[str]:
+        first = await until_prompted(runner, "hang")
+        second = asyncio.create_task(runner.run("turns"))
+        await asyncio.sleep(0.5)
+        assert not second.done()  # no steering: queued behind the running turn
+        _ = first.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await first
+        return [await second]
+
+    result, events = run_with_fake(tmp_path, scenario, harness=plain)
+
+    assert result == ["turn 2"]
+    assert "steer" not in names(events)
+    assert "set_session_mode" not in names(events)
+
+
 def test_cancelling_stops_the_turn_and_keeps_the_session(tmp_path: Path) -> None:
-    async def scenario(runner: ClaudeRunner) -> str:
+    async def scenario(runner: AcpRunner) -> str:
         task = await until_prompted(runner, "hang")
         _ = task.cancel()
         with pytest.raises(asyncio.CancelledError):
@@ -204,7 +251,7 @@ def test_cancelling_stops_the_turn_and_keeps_the_session(tmp_path: Path) -> None
 
 
 def test_aclose_closes_a_session_still_running(tmp_path: Path) -> None:
-    async def scenario(runner: ClaudeRunner) -> None:
+    async def scenario(runner: AcpRunner) -> None:
         task = await until_prompted(runner, "hang")
         await runner.aclose()
         _ = task.cancel()
@@ -217,7 +264,7 @@ def test_aclose_closes_a_session_still_running(tmp_path: Path) -> None:
 
 
 def test_no_new_work_after_the_call_ends(tmp_path: Path) -> None:
-    async def scenario(runner: ClaudeRunner) -> None:
+    async def scenario(runner: AcpRunner) -> None:
         _ = await runner.run("turns")
         await runner.aclose()
         with pytest.raises(ToolError, match="call is ending"):
@@ -235,7 +282,8 @@ def test_permission_requests_are_approved_once(tmp_path: Path) -> None:
 
 
 def test_a_missing_adapter_is_reported_to_the_model(tmp_path: Path) -> None:
-    runner = ClaudeRunner(
+    runner = AcpRunner(
+        harness=CLAUDE_CODE,
         command=str(tmp_path / "missing"),
         project=Project(name="test", folders=(tmp_path,)),
         env=os.environ,
@@ -243,49 +291,6 @@ def test_a_missing_adapter_is_reported_to_the_model(tmp_path: Path) -> None:
 
     with pytest.raises(ToolError, match="could not start"):
         _ = asyncio.run(runner.run("reply ok"))
-
-
-def test_project_comes_from_job_metadata(tmp_path: Path) -> None:
-    metadata = json.dumps({"project": "samba", "folders": [str(tmp_path)]})
-
-    project = Project.from_job(metadata, {})
-
-    assert project == Project(name="samba", folders=(tmp_path,))
-
-
-def test_project_falls_back_to_the_environment(tmp_path: Path) -> None:
-    other = tmp_path / "other"
-    other.mkdir()
-    environ = {
-        "CLAUDE_PROJECT": "console",
-        "CLAUDE_FOLDERS": os.pathsep.join([str(tmp_path), str(other)]),
-    }
-
-    project = Project.from_job("", environ)
-
-    assert project.name == "console"
-    assert project.cwd == tmp_path
-    assert project.extra_folders == [str(other)]
-
-
-def test_project_defaults_to_the_home_folder() -> None:
-    assert Project.from_job("", {}) == Project(name="home", folders=(Path.home(),))
-
-
-@pytest.mark.parametrize(
-    ("metadata", "error"),
-    [
-        ("[]", "JSON object"),
-        ('{"folders": "/tmp"}', "list of paths"),
-        ('{"folders": ""}', "list of paths"),
-        ('{"folders": ["relative/path"]}', "absolute path"),
-        ('{"folders": ["~/Dev"]}', "absolute path"),
-        ('{"folders": ["/no/such/folder"]}', "does not exist"),
-    ],
-)
-def test_bad_project_metadata_is_rejected(metadata: str, error: str) -> None:
-    with pytest.raises(ValueError, match=error):
-        _ = Project.from_job(metadata, {})
 
 
 def test_child_environment_drops_dotenv_secrets_and_api_keys() -> None:
@@ -297,7 +302,7 @@ def test_child_environment_drops_dotenv_secrets_and_api_keys() -> None:
         "CLAUDECODE": "1",
     }
 
-    assert child_environment(environ, {"GOOGLE_API_KEY"}) == {
+    assert child_environment(environ, {"GOOGLE_API_KEY"}, CLAUDE_CODE) == {
         "PATH": "/bin",
         "SSH_AUTH_SOCK": "/tmp/agent",
     }
@@ -313,7 +318,7 @@ def test_child_environment_drops_the_keys_the_app_passes() -> None:
         "CLAUDE_CODE_EXECUTABLE": "/usr/local/bin/claude",
     }
 
-    assert child_environment(environ, set()) == {
+    assert child_environment(environ, set(), CLAUDE_CODE) == {
         "PATH": "/bin",
         "CLAUDE_CODE_EXECUTABLE": "/usr/local/bin/claude",
     }

@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils"
 
-/** The `claudible` wordmark: always lowercase Bricolage Grotesque Bold (docs/brand.md). */
+/** The `bomby` wordmark: always lowercase Bricolage Grotesque Bold (docs/brand.md). */
 export function Wordmark({ className }: { className?: string }) {
   return (
     <span
@@ -9,7 +9,7 @@ export function Wordmark({ className }: { className?: string }) {
         className
       )}
     >
-      claudible
+      bomby
     </span>
   )
 }

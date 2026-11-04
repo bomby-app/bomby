@@ -1,12 +1,12 @@
 # Brand
 
-The source of truth is the Paper file **claudible** (pages `branding` and `app assets`). This page is the short version for building the app. Read 2026-11-03.
+The source of truth is the Paper file **claudible** (the app's old name; see [name-bomby.md](decisions/name-bomby.md)) (pages `branding` and `app assets`). This page is the short version for building the app. Read 2026-11-03.
 
 ## Name
 
-- Claudible. Wordmark lowercase `claudible`; in sentences "Claudible". Website `claudible.app`.
-- Tagline: "A voice agent that runs Claude Code. Built on LiveKit."
-- Never co-brand with Claude or LiveKit ("Claude x LiveKit", "Claude LiveKit"). See [name-claudible.md](decisions/name-claudible.md).
+- Bomby. Wordmark lowercase `bomby`; in sentences "Bomby". Website `bomby.app`. Renamed from Claudible on 2026-11-04 ([name-bomby.md](decisions/name-bomby.md)).
+- Tagline: open (the old one, "A voice agent that runs Claude Code. Built on LiveKit.", is retired).
+- Never co-brand with Claude, LiveKit or Gemini ("Claude x LiveKit", "Claude LiveKit"); name them only for what Bomby uses. Their logos appear only where Bomby says what it needs (Settings > Setup), in `currentColor` like text.
 
 ## Mark: Dot Dot
 
@@ -43,7 +43,7 @@ UI mapping onto the shadcn variables (board "07 Colour in UI"), light / dark:
 | `--destructive` | `#D92D20` | `#F97066` | End call, delete. Not for the mascot |
 | `--highlighter` (new) | `#E8FF3A` | `#E8FF3A` | Good-news marks (a requirement is ready): a disc with an ink icon on it, never a bare lime icon or text |
 
-Transcript bubbles (owner, 2026-11-04, after the Paper board "In use / the conversation"): Claudible speaks in highlighter with ink text, the user in ink with white text (a raised grey in dark). Bubblegum is kept for Claude's own messages when they show in the call.
+Transcript bubbles (owner, 2026-11-04, after the Paper board "In use / the conversation"): Bomby speaks in highlighter with ink text, the user in ink with white text (a raised grey in dark). Bubblegum is kept for Claude's own messages when they show in the call.
 
 Resume buttons are bubblegum with ink text: resuming brings a conversation back (owner, 2026-11-04). The sidebar shows a small bubblegum **Beta** badge (ink text) after the wordmark while the app is in beta (owner, 2026-11-04).
 
@@ -65,7 +65,7 @@ Contrast: ink on highlighter 16.8:1 and ink on bubblegum 9.7:1 are always fine. 
 ## Voice
 
 - Say it out loud: short sentences, everyday words, contractions.
-- Name who's acting: Claude does the work, Claudible talks. "Claude's on it", not "Task running".
+- Name who's acting: Claude does the work, Bomby talks. "Claude's on it", not "Task running". Bomby says Claude, never "Claude Code" (owner, 2026-11-04).
 - Calm when it breaks: what happened, then what to do. No codes up front, no exclamation marks.
 - UI text in sentence case.
 
@@ -77,16 +77,16 @@ Contrast: ink on highlighter 16.8:1 and ink on bubblegum 9.7:1 are always fine. 
 | Claude working | Claude's on it · fix-login |
 | Claude done | Done. Claude changed 2 files. |
 | Call failed | Lost the connection. Try again? |
-| No mic access | Claudible needs your mic. Turn it on in System Settings. |
+| No mic access | Bomby needs your mic. Turn it on in System Settings. |
 | Call ended | Talk soon. |
 
-The agent's spoken persona follows this voice: `agent/prompts/voice.md` opens with Claudible as a friendly, sharp, slightly witty senior engineer who names who's acting and stays calm when things break.
+The agent's spoken persona follows this voice, written as behaviour rather than adjectives (Gemini Live reads every word as an instruction; owner, 2026-11-04): `agent/prompts/voice.md` gives Bomby one-or-two-sentence replies that lead with the point, an even tone with no exclamation marks or hype words, humour only when the user is joking, silence while the user is quiet, and example lines.
 
 ## App assets
 
 Board "Handoff / Tauri asset map" on the `app assets` page. Each artboard is named after the file it exports to:
 
 - `app-icon.png` (1024, 824 tile): the `tauri icon` source for icon.icns, icon.ico and all PNGs. Required.
-- `Claudible.icon` (in `app/src-tauri/icons/`): the two layers above with light (ink bubble, highlighter eyes on highlighter), dark (highlighter bubble, ink eyes on ink) and tinted looks. Glossy, as the owner asked (2026-11-03): top-to-bottom gradients on the tile, bubble and eyes, Liquid Glass with specular on both groups, a chromatic shadow under the bubble. Fine-tune in Icon Composer; compiled to Assets.car by `just app icon` (see [tauri-notes.md](tauri-notes.md#icons)).
+- `Bomby.icon` (in `app/src-tauri/icons/`): the two layers above with light (ink bubble, highlighter eyes on highlighter), dark (highlighter bubble, ink eyes on ink) and tinted looks. Glossy, as the owner asked (2026-11-03): top-to-bottom gradients on the tile, bubble and eyes, Liquid Glass with specular on both groups, a chromatic shadow under the bubble. Fine-tune in Icon Composer; compiled to Assets.car by `just app icon` (see [tauri-notes.md](tauri-notes.md#icons)).
 - `app-icon-dark.png` (reference), `app-icon-flat.png` (optional, ico and Linux), `dmg-background.png` (660 x 400, exported at 1x and 2x into `app/src-tauri/icons/`, combined into the DMG's TIFF), `tray-icon-template.png` (22 and 44, with the tray).
 - `app-logo-light` / `-dark` (28px SVG): `app-logo.tsx`.

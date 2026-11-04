@@ -1,6 +1,6 @@
 # The name is Claudible
 
-Status: accepted, 2026-11-03
+Status: superseded by [name-bomby.md](name-bomby.md), 2026-11-04: the name leaned on Claude's. Accepted 2026-11-03.
 
 ## Context
 

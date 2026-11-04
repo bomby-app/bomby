@@ -126,7 +126,7 @@ export function Mascot({
       width={size}
       height={size}
       role="img"
-      aria-label={`Claudible, ${state}`}
+      aria-label={`Bomby, ${state}`}
       className={cn(
         "shrink-0 overflow-visible",
         state === "failed" && "motion-safe:animate-dotdot-shake",

@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/select"
 import { setVoice, type VoiceOptions, voiceOptions } from "./api"
 
-/** The Voice section of the settings window: which Gemini voice Claudible speaks in. */
+/** The Voice section of the settings window: which Gemini voice Bomby speaks in. */
 export function VoiceSettings() {
   const [settings, setSettings] = useState<VoiceOptions | null>(null)
   const [error, setError] = useState<string | null>(null)

@@ -1,5 +1,5 @@
 //! A plain log the page can write to, next to `agent.log` in the app's log folder
-//! (`~/Library/Logs/com.aburady.claudible/app.log` on macOS). For facts only the page sees,
+//! (`~/Library/Logs/com.aburady.bomby/app.log` on macOS). For facts only the page sees,
 //! like which microphone the webview actually opened and with what processing.
 
 use std::fs::OpenOptions;

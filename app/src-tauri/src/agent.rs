@@ -1,5 +1,5 @@
 //! The voice agent worker (`agent/`): one process for the app's lifetime, registered with
-//! the user's LiveKit project under the name `claudible`, so each call's token can dispatch
+//! the user's LiveKit project under the name `bomby`, so each call's token can dispatch
 //! it. The core starts it on the first call, restarts it when the keys change or it died,
 //! and stops it when the app quits.
 //!
@@ -14,7 +14,7 @@
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -38,17 +38,15 @@ pub struct WorkerConfig {
     pub livekit_api_key: String,
     pub livekit_api_secret: String,
     pub gemini_key: String,
-    pub claude: PathBuf,
 }
 
 impl WorkerConfig {
-    pub fn new(keys: LiveKitKeys, gemini_key: String, claude: PathBuf) -> Self {
+    pub fn new(keys: LiveKitKeys, gemini_key: String) -> Self {
         Self {
             livekit_url: keys.url,
             livekit_api_key: keys.api_key,
             livekit_api_secret: keys.api_secret,
             gemini_key,
-            claude,
         }
     }
 }
@@ -108,7 +106,7 @@ fn command() -> Result<Command> {
         Ok(command)
     } else {
         Err(Error::Invalid(
-            "This build doesn't include the agent yet. Run Claudible with `just app dev`.".into(),
+            "This build doesn't include the agent yet. Run Bomby with `just app dev`.".into(),
         ))
     }
 }
@@ -123,10 +121,8 @@ fn start(config: &WorkerConfig, log_dir: &Path) -> Result<(Child, ChildStdin)> {
         .env("LIVEKIT_API_KEY", &config.livekit_api_key)
         .env("LIVEKIT_API_SECRET", &config.livekit_api_secret)
         .env("GOOGLE_API_KEY", &config.gemini_key)
-        // The adapter runs the user's own Claude Code (adapter `claudeCliPath()`).
-        .env("CLAUDE_CODE_EXECUTABLE", &config.claude)
         // Exit when this app does, however it ends (`agent/lifeline.py`).
-        .env("CLAUDIBLE_EXIT_WITH_APP", "1")
+        .env("BOMBY_EXIT_WITH_APP", "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

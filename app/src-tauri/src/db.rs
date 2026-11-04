@@ -8,7 +8,7 @@ use rusqlite::Connection;
 
 use crate::error::Result;
 
-pub const FILE_NAME: &str = "claudible.db";
+pub const FILE_NAME: &str = "bomby.db";
 
 /// Schema changes, in order. Each runs once; `PRAGMA user_version` records how many have
 /// run. Never edit a shipped migration: add a new one.

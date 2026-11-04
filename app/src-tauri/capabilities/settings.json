@@ -12,13 +12,14 @@
     "core:webview:allow-set-webview-zoom",
     "core:window:allow-close",
     "clipboard-manager:allow-read-text",
+    "clipboard-manager:allow-write-text",
     "allow-credentials-info",
     "allow-save-credentials",
     "allow-clear-credentials",
     "allow-has-gemini-key",
     "allow-save-gemini-key",
     "allow-clear-gemini-key",
-    "allow-claude-status",
+    "allow-agents-status",
     "allow-voice-settings",
     "allow-set-voice"
   ]

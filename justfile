@@ -1,4 +1,4 @@
-# Claudible: the voice agent (agent/) and the desktop app (app/).
+# Bomby: the voice agent (agent/) and the desktop app (app/).
 # Each part has its own module: `just agent` and `just app` list their recipes.
 # See docs/README.md.
 
@@ -33,7 +33,7 @@ web-test:
     fi
     # Only the LiveKit keys from agent/.env, plus explicit dispatch to our agent.
     grep -E '^LIVEKIT_(URL|API_KEY|API_SECRET)=' agent/.env > "$starter/.env.local"
-    echo 'AGENT_NAME=claudible' >> "$starter/.env.local"
+    echo 'AGENT_NAME=bomby' >> "$starter/.env.local"
     (cd "$starter" && bun install --silent)
     # Both in this terminal's process group, so Ctrl-C stops both.
     trap 'kill 0' EXIT

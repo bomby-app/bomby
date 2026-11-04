@@ -3,6 +3,7 @@
 //! LiveKit keeps no transcripts, so the page sends each line here as it arrives
 //! (docs/decisions/app-data-in-one-sqlite-db.md).
 
+use std::path::PathBuf;
 use std::time::Duration;
 
 use livekit_api::access_token::{AccessToken, VideoGrants};
@@ -14,10 +15,10 @@ use tauri::{AppHandle, Manager, Runtime, State};
 use crate::agent::{AgentWorker, WorkerConfig};
 use crate::db::{Db, now_ms};
 use crate::error::{Error, Result};
-use crate::{claude, credentials, projects, settings};
+use crate::{agents, credentials, projects, settings};
 
 /// The agent's name in `agent/agent.py` (`AGENT_NAME`), which the token dispatches.
-const AGENT_NAME: &str = "claudible";
+const AGENT_NAME: &str = "bomby";
 /// Only for joining; a call outlives its token.
 const TOKEN_TTL: Duration = Duration::from_secs(10 * 60);
 /// How much of a resumed call the agent is told: the last this many lines.
@@ -58,12 +59,23 @@ struct HistoryLine {
 }
 
 /// The job metadata the agent reads: the project (`Project.from_job` in
-/// `agent/tools/claude.py`), the voice and, on a resumed call, the conversation so far
-/// (`CallOptions.from_job` in `agent/call_options.py`).
-fn dispatch_metadata(project: &projects::Project, voice: &str, history: &[HistoryLine]) -> String {
+/// `agent/project.py`), the agents found on this computer by id with their programs, the
+/// voice and, on a resumed call, the conversation so far (`CallOptions.from_job` in
+/// `agent/call_options.py`).
+fn dispatch_metadata(
+    project: &projects::Project,
+    agents: &[(String, PathBuf)],
+    voice: &str,
+    history: &[HistoryLine],
+) -> String {
+    let agents: serde_json::Map<_, _> = agents
+        .iter()
+        .map(|(id, path)| (id.clone(), path.display().to_string().into()))
+        .collect();
     serde_json::json!({
         "project": project.name,
         "folders": project.folders,
+        "agents": agents,
         "voice": voice,
         "history": history,
     })
@@ -144,6 +156,7 @@ pub fn open_call<R: Runtime>(
     db: State<'_, Db>,
     worker: State<'_, AgentWorker>,
     vault: State<'_, credentials::Vault>,
+    found: State<'_, agents::Found>,
     project_id: i64,
     resume_call_id: Option<i64>,
 ) -> Result<i64> {
@@ -152,11 +165,13 @@ pub fn open_call<R: Runtime>(
     let gemini = vault
         .gemini_key(&app)?
         .ok_or_else(|| Error::Invalid("Add your Gemini API key in Settings first.".into()))?;
-    let claude = claude::find().ok_or_else(|| {
-        Error::Invalid("Claudible can't find Claude Code. See Settings, Setup.".into())
-    })?;
+    if found.refresh().is_empty() {
+        return Err(Error::Invalid(
+            "Bomby can't find an agent to work with. See Settings, Agents.".into(),
+        ));
+    }
     let log_dir = app.path().app_log_dir()?;
-    worker.ensure(WorkerConfig::new(keys, gemini, claude), &log_dir)?;
+    worker.ensure(WorkerConfig::new(keys, gemini), &log_dir)?;
 
     let conn = db.conn();
     match resume_call_id {
@@ -183,6 +198,7 @@ pub fn call_token<R: Runtime>(
     app: AppHandle<R>,
     db: State<'_, Db>,
     vault: State<'_, credentials::Vault>,
+    found: State<'_, agents::Found>,
     call_id: i64,
 ) -> Result<CallToken> {
     let keys = livekit_keys(&app, &vault)?;
@@ -204,8 +220,8 @@ pub fn call_token<R: Runtime>(
     };
     // A new room every time, also when resuming. Unique across reinstalls too, since row
     // ids start over with a new database.
-    let room = format!("claudible-{call_id}-{}", now_ms());
-    let metadata = dispatch_metadata(&project, &voice, &history);
+    let room = format!("bomby-{call_id}-{}", now_ms());
+    let metadata = dispatch_metadata(&project, &found.get(), &voice, &history);
     Ok(CallToken {
         participant_token: token(&keys, &room, metadata)?,
         server_url: keys.url,
@@ -382,7 +398,7 @@ mod tests {
     }
 
     #[test]
-    fn the_metadata_carries_the_project_voice_and_history() {
+    fn the_metadata_carries_the_project_agents_voice_and_history() {
         let db = Db::in_memory().unwrap();
         let conn = db.conn();
         conn.execute(
@@ -400,13 +416,15 @@ mod tests {
             role: "agent".into(),
             text: "Hi.".into(),
         }];
+        let agents = [("claude".to_owned(), PathBuf::from("/usr/local/bin/claude"))];
         let metadata: serde_json::Value =
-            serde_json::from_str(&dispatch_metadata(&project, "Kore", &history)).unwrap();
+            serde_json::from_str(&dispatch_metadata(&project, &agents, "Kore", &history)).unwrap();
         assert_eq!(
             metadata,
             serde_json::json!({
                 "project": "samba",
                 "folders": ["/tmp"],
+                "agents": { "claude": "/usr/local/bin/claude" },
                 "voice": "Kore",
                 "history": [{ "role": "agent", "text": "Hi." }],
             })
@@ -420,12 +438,12 @@ mod tests {
             api_key: "key".into(),
             api_secret: "a-secret-long-enough-for-hs256-signing".into(),
         };
-        let jwt = token(&keys, "claudible-1-0", r#"{"project":"samba"}"#.into()).unwrap();
+        let jwt = token(&keys, "bomby-1-0", r#"{"project":"samba"}"#.into()).unwrap();
         let claims = TokenVerifier::with_api_key("key", &keys.api_secret)
             .verify(&jwt)
             .unwrap();
         assert!(claims.video.room_join);
-        assert_eq!(claims.video.room, "claudible-1-0");
+        assert_eq!(claims.video.room, "bomby-1-0");
         let config = claims.room_config.unwrap();
         assert_eq!(config.agents[0].agent_name, AGENT_NAME);
         assert_eq!(config.agents[0].metadata, r#"{"project":"samba"}"#);

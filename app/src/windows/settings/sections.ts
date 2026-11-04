@@ -1,5 +1,6 @@
 import {
   AudioLines,
+  Bot,
   KeyRound,
   ListChecks,
   type LucideIcon,
@@ -7,6 +8,7 @@ import {
 } from "lucide-react"
 import type { ComponentType } from "react"
 
+import { AgentsSettings } from "@/features/agents/agents-settings"
 import { CredentialsSettings } from "@/features/credentials/credentials-settings"
 import { SetupSettings } from "@/features/setup/setup-settings"
 import { AppearanceSettings } from "@/features/theme/appearance-settings"
@@ -22,6 +24,12 @@ export const SECTIONS = [
     label: "Setup",
     icon: ListChecks,
     component: SetupSettings,
+  },
+  {
+    id: "agents",
+    label: "Agents",
+    icon: Bot,
+    component: AgentsSettings,
   },
   {
     id: "voice",
