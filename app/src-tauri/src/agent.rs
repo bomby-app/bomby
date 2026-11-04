@@ -35,7 +35,8 @@ const READY_LINE: &str = "registered worker";
 /// How many of the worker's last lines to keep for a failure message.
 const RECENT_LINES: usize = 50;
 /// What livekit-agents logs when a job's entrypoint raises (1.8.10,
-/// `ipc/job_proc_lazy_main.py`, `_on_entry_done`), with the job's `room` and `exc_info`.
+/// `ipc/job_proc_lazy_main.py`, `_on_entry_done`), with the job's `room` and `exc_info`. In
+/// `start` mode the JSON line's `message` is this, a newline, then the traceback.
 const CRASH_LINE: &str = "unhandled exception while running the job task";
 
 /// A call's job that crashed: its room, and why, in one line.
@@ -227,7 +228,8 @@ fn last_error<'a>(lines: impl DoubleEndedIterator<Item = &'a str>) -> Option<Str
 /// the exception's type: "project folder does not exist: ...", not "ValueError: ...".
 fn job_crash(line: &str) -> Option<JobCrash> {
     let entry: serde_json::Value = serde_json::from_str(line).ok()?;
-    if entry.get("message")?.as_str()? != CRASH_LINE {
+    // The message is the line, then the traceback.
+    if !entry.get("message")?.as_str()?.starts_with(CRASH_LINE) {
         return None;
     }
     let text = error_text(&entry)?;
@@ -303,7 +305,7 @@ mod tests {
     #[test]
     fn reads_a_crashed_jobs_room_and_reason() {
         // As livekit-agents 1.8.10 logs it (agent.log, 2026-11-05), trimmed.
-        let line = r#"{"message": "unhandled exception while running the job task", "level": "ERROR", "name": "livekit.agents", "exc_info": "Traceback (most recent call last):\n  File \"agent.py\"\nValueError: project folder does not exist: /Users/me/gone", "job_id": "AJ_x", "room": "bomby-4-1793832334892"}"#;
+        let line = r#"{"message": "unhandled exception while running the job task\nTraceback (most recent call last):\n  File \"agent.py\"\nValueError: project folder does not exist: /Users/me/gone", "level": "ERROR", "name": "livekit.agents", "exc_info": "Traceback (most recent call last):\n  File \"agent.py\"\nValueError: project folder does not exist: /Users/me/gone", "job_id": "AJ_x", "room": "bomby-4-1793832334892"}"#;
         assert_eq!(
             job_crash(line),
             Some(JobCrash {
