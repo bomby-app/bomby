@@ -3,9 +3,8 @@
 //! LiveKit keeps no transcripts, so the page sends each line here as it arrives
 //! (docs/decisions/app-data-in-one-sqlite-db.md).
 
-use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use livekit_api::access_token::{AccessToken, VideoGrants};
@@ -26,26 +25,29 @@ const TOKEN_TTL: Duration = Duration::from_secs(10 * 60);
 /// How much of a resumed call the agent is told: the last this many lines.
 const RESUME_LINES: i64 = 50;
 
-/// The agents each call opened with, by call id. Every token for a call carries the same
+/// The agents the current call opened with. Every token for that call carries the same
 /// ones, so a reconnect mid-call never hands the voice agent a different list, whatever
-/// looking for agents finds meanwhile (`agents::Agents`).
+/// looking for agents finds meanwhile (`agents::Agents`). The app runs one call at a time
+/// (one LiveKit session), so opening the next one replaces it.
 #[derive(Default)]
-pub struct CallAgents(Mutex<HashMap<i64, Vec<(String, PathBuf)>>>);
+pub struct CallAgents(Mutex<Option<CurrentCall>>);
+
+/// A call id and the agents, by id with their programs, it opened with.
+type CurrentCall = (i64, Vec<(String, PathBuf)>);
 
 impl CallAgents {
     fn set(&self, call_id: i64, agents: Vec<(String, PathBuf)>) {
-        self.lock().insert(call_id, agents);
+        *self.lock() = Some((call_id, agents));
     }
 
     fn get(&self, call_id: i64) -> Option<Vec<(String, PathBuf)>> {
-        self.lock().get(&call_id).cloned()
+        self.lock()
+            .as_ref()
+            .filter(|(id, _)| *id == call_id)
+            .map(|(_, agents)| agents.clone())
     }
 
-    fn forget(&self, call_id: i64) {
-        self.lock().remove(&call_id);
-    }
-
-    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<i64, Vec<(String, PathBuf)>>> {
+    fn lock(&self) -> MutexGuard<'_, Option<CurrentCall>> {
         self.0.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
@@ -280,14 +282,8 @@ fn delete(conn: &Connection, call_id: i64) -> Result<()> {
 }
 
 #[tauri::command(async)]
-pub fn delete_call(
-    db: State<'_, Db>,
-    call_agents: State<'_, CallAgents>,
-    call_id: i64,
-) -> Result<()> {
-    delete(&db.conn(), call_id)?;
-    call_agents.forget(call_id);
-    Ok(())
+pub fn delete_call(db: State<'_, Db>, call_id: i64) -> Result<()> {
+    delete(&db.conn(), call_id)
 }
 
 fn save(conn: &Connection, call_id: i64, line: &MessageInput) -> Result<()> {
@@ -335,6 +331,22 @@ pub fn call_messages(db: State<'_, Db>, call_id: i64) -> Result<Vec<Message>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_current_call_keeps_its_agents_until_the_next_one_opens() {
+        let agents = CallAgents::default();
+        let claude = vec![(
+            "claude".to_owned(),
+            PathBuf::from("/Users/me/.local/bin/claude"),
+        )];
+        agents.set(1, claude.clone());
+        assert_eq!(agents.get(1), Some(claude));
+        assert_eq!(agents.get(2), None);
+
+        agents.set(2, vec![]);
+        assert_eq!(agents.get(1), None);
+        assert_eq!(agents.get(2), Some(vec![]));
+    }
     use livekit_api::access_token::TokenVerifier;
 
     fn call(conn: &Connection) -> i64 {
