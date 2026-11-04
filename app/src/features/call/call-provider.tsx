@@ -100,6 +100,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const session = useSession(tokens.source, {
     agentConnectTimeoutMilliseconds: 30_000,
   })
+  // Cancels the start in progress. With an agent in the token, `session.start` waits for the
+  // agent to join with no timeout of its own, so a call that ends first (End call, a failed
+  // or crashed agent) would leave it waiting, and the Call button disabled, for good
+  // (@livekit/components-react 2.9.24, `useSession`'s `start`; docs/livekit-notes.md).
+  const joining = useRef<AbortController | null>(null)
 
   const finish = useCallback(
     async (id: number) => {
@@ -114,6 +119,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   // disconnects once: that closes the call.
   useEffect(() => {
     const onDisconnected = () => {
+      joining.current?.abort()
       const id = tokens.current()
       if (id !== null) void finish(id)
     }
@@ -126,15 +132,20 @@ export function CallProvider({ children }: { children: ReactNode }) {
   async function start(projectId: number, resumeCallId?: number) {
     setError(null)
     setStarting({ projectId, resumeCallId })
+    const aborter = new AbortController()
+    joining.current = aborter
     let opened: number | null = null
     try {
       opened = await openCall(projectId, resumeCallId)
       tokens.join(opened)
       const history = resumeCallId ? await callMessages(opened) : []
       setActive({ projectId, callId: opened, startedAt: Date.now(), history })
-      await session.start()
+      await session.start({ signal: aborter.signal })
       await refresh() // the new call shows in the tree
     } catch (e) {
+      // Cancelled because the call already ended: the disconnect closed it, and whatever
+      // ended it said why.
+      if (aborter.signal.aborted) return
       setError({ projectId, message: String(e) })
       // Joining may have failed before the room connected, so no disconnect closes the call.
       if (opened !== null) {
@@ -142,6 +153,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         await finish(opened)
       }
     } finally {
+      if (joining.current === aborter) joining.current = null
       setStarting(null)
     }
   }
