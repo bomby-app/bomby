@@ -33,6 +33,39 @@ Checked 2026-11-03/04 against Tauri 2.12.5, `tauri-codegen` 2.7.4, `wry` 0.57.1,
 - `build.rs` lists app commands in `AppManifest::commands`, generating `allow-<command>` permissions. `main.json` grants `open_settings`; only `settings.json` grants credential commands.
 - `emit` broadcasts to every webview. Commands return `Result<T, error::Error>`; the page receives the error message as a rejected promise.
 
+## Menu bar icon
+
+Checked 2026-11-05 against `tauri` 2.12.5 (`src/tray/mod.rs`, `src/app.rs`), `tray-icon` 0.25.1, `tauri-macros` 2.7.4 and tauri-cli's `interface/rust/manifest.rs` (GitHub, `dev`).
+
+- The tray lives behind the `tauri` cargo feature `tray-icon`. tauri-cli rewrites the other config-driven features (`macos-private-api`, `protocol-asset`, `isolation`) from `tauri.conf.json` on every run, but leaves `tray-icon` alone, so it stays in `Cargo.toml` with no `app.trayIcon` entry. `src-tauri/src/tray.rs` builds the icon in code with `TrayIconBuilder::with_id`.
+- `include_image!("icons/tray/idle.png")` decodes the PNG at compile time, relative to `CARGO_MANIFEST_DIR`, so `Image::from_bytes` and the `image-png` feature aren't needed.
+- On macOS, tray-icon always draws the image 18 points tall (`platform_impl/macos/mod.rs`, `set_icon_for_ns_status_item_button`), so the templates are 36 px, 1:1 on Retina. `set_icon_with_as_template` swaps the image and template flag in one step; `set_icon` followed by `set_icon_as_template` flickers.
+- `show_menu_on_left_click(true)` opens the menu on a click, as macOS menu bar items do. `set_menu` replaces the whole menu, so `set_tray_status` rebuilds it only when what it lists changes, not on every voice state.
+- Menu clicks come to `on_menu_event` with the item's id. Call actions go to the main window with `emit_to("main", ...)`; the page listens with `getCurrentWindow().listen` (allowed by `core:default`). `PredefinedMenuItem::quit` quits through the normal exit, so `RunEvent::Exit` still stops the worker.
+- Closing the main window hides it (`WindowEvent::CloseRequested` and `api.prevent_close()` in `on_window_event`), so the page and its call keep running. `RunEvent::Reopen` (macOS, a Dock click; `#[non_exhaustive]`) shows it again. Cmd+Q quits as usual. Check in `just app dev` that a call keeps its audio while the window is hidden: WebKit may throttle timers in a hidden page.
+
+## Notifications
+
+Checked 2026-11-05 against the published sources of `tauri-plugin-notification` 2.8.0 (`src/desktop.rs`; its desktop code matches 2.7.0, and 2.8.0 only adds Android options), `notify-rust` 4.18.1 and `mac-notification-sys` 0.6.15 (`objc/notify.m`), and v2.tauri.app/plugin/notification.
+
+- The core alone uses it (`src-tauri/src/notifications.rs`, Rust API `app.notification().builder()`), so no window gets `notification:` permissions and the npm package isn't installed. The page reports finished tasks with `task_finished`.
+- macOS goes through the deprecated `NSUserNotificationCenter`: mac-notification-sys swaps the process's bundle identifier for the one it's given, if LaunchServices knows an app with it (`setApplication`, `LSCopyApplicationURLsForBundleIdentifier`).
+- **Dev and packaged differ.** Under `tauri dev`, `tauri::is_dev()` makes the plugin post as `com.apple.Terminal`: notifications show Terminal's name and icon and follow Terminal's setting in System Settings > Notifications, whichever terminal started the app. A built app (`just app build`, or `tauri build --debug`) posts as `app.bomby.desktop` once it has been opened from its bundle.
+- **Permission.** On desktop, `permission_state` and `request_permission` always answer `Granted` and never prompt; whether macOS asks the user, and where a refusal shows, is up to macOS. Check it on the packaged app.
+- **Clicks.** Once a Rust `on_action` handler is registered, each notification is shown "tracked": a thread waits for its response, and a click arrives as action `"tap"` with the notification's `extra` data (`projectId` here). Without a handler, `show()` doesn't wait.
+- "Bomby isn't focused" means no window's `is_focused()`, which on macOS is `NSWindow.isKeyWindow` (`tao` 0.37.2): false for a hidden window and for every window while another app is active.
+
+## Transparent windows and private APIs
+
+Researched 2026-11-05 for a floating mascot window (not built). Sources: `tauri` 2.12.5 `src/lib.rs` and v2.tauri.app/release/tauri (PR tauri-apps/tauri#16166), `wry` 0.57.1 `src/wkwebview/mod.rs`, `tao` 0.37.2, Apple's App Review Guidelines and "Notarizing macOS software before distribution", tauri-apps/tauri#13070 and #2090.
+
+- `transparent(true)` works on macOS with no flag: the `macos-private-api` feature and `macOSPrivateApi` config are no-ops since Tauri 2.12.1, because wry dropped its feature gates (#16166).
+- A transparent window (or one with `background_color`) makes wry set WebKit's private `drawsBackground` key through KVC (`setValue:forKey:`). Every webview already sets the private `allowsPictureInPictureMediaPlayback` key the same way, transparent or not (`mod.rs:386`), so Bomby uses private WebKit keys today. If a macOS update removes a key, KVC raises `NSUnknownKeyException` when the webview is created.
+- **Mac App Store**: guideline 2.5.1 allows only public APIs. Bomby can't go there anyway: 2.4.5(i) requires the App Sandbox, and 2.5.2 bans downloading, installing or running code, which is what Set up (bun, the adapters) and the call (the user's agents) do.
+- **Developer ID**: "Notarization of macOS software is not App Review": the notary service scans for malicious content and code-signing problems. Private API use isn't checked.
+- **Click-through**: a transparent webview window takes every click in its rectangle. Per-pixel pass-through won't be added (#13070, closed as a duplicate of #2090); the way is to switch `set_ignore_cursor_events` on demand. `AppHandle::cursor_position` reads `NSEvent.mouseLocation` (tao 0.37.2 `util/mod.rs`), a public API that needs no permission, so the core can poll it and turn ignoring off only over the visible shape.
+- **Shortcuts**: `tauri-plugin-global-shortcut` 2.4.1 uses `global-hotkey` 0.8, which registers ordinary shortcuts with Carbon's `RegisterEventHotKey` (no Accessibility permission); only media keys use an event tap.
+
 ## Agent worker
 
 - `src-tauri/src/agent.rs` keeps one worker per app run. The first `open_call` starts it; credential or `claude` path changes, or its death, restart it; app exit stops it.

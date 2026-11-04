@@ -53,6 +53,17 @@ pub async fn open_settings<R: Runtime>(app: AppHandle<R>) -> Result<()> {
     Ok(())
 }
 
+/// Brings the main window back: from the menu bar, the Dock, or a hidden window (closing it
+/// hides it, so the app and any call keep running; lib.rs).
+pub fn show_main<R: Runtime>(app: &AppHandle<R>) -> Result<()> {
+    if let Some(main) = app.get_webview_window(MAIN) {
+        main.unminimize()?;
+        main.show()?;
+        main.set_focus()?;
+    }
+    Ok(())
+}
+
 /// The top-left corner that centers `window` over `parent`, in physical pixels, which are
 /// global across monitors.
 fn centered_over<R: Runtime>(

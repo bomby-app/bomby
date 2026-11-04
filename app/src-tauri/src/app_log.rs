@@ -13,6 +13,11 @@ use crate::error::Result;
 /// Appends one line, stamped with the time in milliseconds since the epoch.
 #[tauri::command(async)]
 pub fn app_log<R: Runtime>(app: AppHandle<R>, line: String) -> Result<()> {
+    append(&app, &line)
+}
+
+/// Appends one line from the core: something that went wrong where no page can be told.
+pub fn append<R: Runtime>(app: &AppHandle<R>, line: &str) -> Result<()> {
     let dir = app.path().app_log_dir()?;
     std::fs::create_dir_all(&dir)?;
     let mut file = OpenOptions::new()

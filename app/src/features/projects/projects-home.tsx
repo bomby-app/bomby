@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 
 import type { Project } from "./api"
 import { shortPath, timeAgo } from "./names"
+import { lastCall, recentProjects } from "./recent"
 
 gsap.registerPlugin(useGSAP)
 
@@ -26,24 +27,10 @@ const GREETING: Record<Daypart, string> = {
 /** How many recent projects show before See all. */
 const RECENT = 3
 
-/** When a project's newest call started, or null before its first (calls are newest first). */
-function lastCall(project: Project): number | null {
-  return project.calls[0]?.startedAt ?? null
-}
-
 /** "2 hours ago" for the newest call, or that there's none yet. */
 function lastSeen(project: Project): string {
   const at = lastCall(project)
   return at === null ? "No calls yet" : timeAgo(at)
-}
-
-/** The newest call first; projects without one after, newest first. */
-function byNewestCall(a: Project, b: Project): number {
-  const [x, y] = [lastCall(a), lastCall(b)]
-  if (x !== null && y !== null) return y - x
-  if (x !== null) return -1
-  if (y !== null) return 1
-  return b.createdAt - a.createdAt
 }
 
 /**
@@ -78,7 +65,7 @@ export function ProjectsHome({
       { autoAlpha: 1, duration: 0.35, ease: "power1.out" }
     )
   })
-  const recent = [...projects].sort(byNewestCall)
+  const recent = recentProjects(projects)
   const shown = all ? recent : recent.slice(0, RECENT)
 
   return (

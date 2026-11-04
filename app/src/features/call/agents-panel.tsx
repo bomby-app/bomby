@@ -1,6 +1,4 @@
-import { useAgent, useSessionContext } from "@livekit/components-react"
 import { Check, CircleSlash, Inbox, LoaderCircle, Plus, X } from "lucide-react"
-import { useMemo } from "react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -14,34 +12,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { AgentLogo } from "@/features/agents/agent-logos"
 import { cn } from "@/lib/utils"
 
-/** What the voice agent publishes as `bomby.tasks` (agent/task_board.py). */
-type Task = {
-  id: string
-  agent: string
-  agentName: string
-  session: string
-  task: string
-  status: "working" | "added" | "done" | "failed" | "stopped"
-  startedAt: number
-  endedAt: number | null
-}
-
-const ATTRIBUTE = "bomby.tasks"
-
-/** The call's tasks, newest first, from the agent participant's attributes. */
-function useTasks(): Task[] {
-  const session = useSessionContext()
-  const { attributes } = useAgent(session)
-  const raw = attributes[ATTRIBUTE]
-  return useMemo(() => {
-    if (!raw) return []
-    try {
-      return (JSON.parse(raw) as Task[]).slice().reverse()
-    } catch {
-      return []
-    }
-  }, [raw])
-}
+import { type Task, useTasks } from "./tasks"
 
 /**
  * The agents panel in the call's header: a box icon with the number of running tasks,
