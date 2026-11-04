@@ -33,6 +33,17 @@ Checked 2026-11-03/04 against Tauri 2.12.5, `tauri-codegen` 2.7.4, `wry` 0.57.1,
 - `build.rs` lists app commands in `AppManifest::commands`, generating `allow-<command>` permissions. `main.json` grants `open_settings`; only `settings.json` grants credential commands.
 - `emit` broadcasts to every webview. Commands return `Result<T, error::Error>`; the page receives the error message as a rejected promise.
 
+## Menu bar icon
+
+Checked 2026-11-05 against `tauri` 2.12.5 (`src/tray/mod.rs`, `src/app.rs`), `tray-icon` 0.25.1, `tauri-macros` 2.7.4 and tauri-cli's `interface/rust/manifest.rs` (GitHub, `dev`).
+
+- The tray lives behind the `tauri` cargo feature `tray-icon`. tauri-cli rewrites the other config-driven features (`macos-private-api`, `protocol-asset`, `isolation`) from `tauri.conf.json` on every run, but leaves `tray-icon` alone, so it stays in `Cargo.toml` with no `app.trayIcon` entry. `src-tauri/src/tray.rs` builds the icon in code with `TrayIconBuilder::with_id`.
+- `include_image!("icons/tray/idle.png")` decodes the PNG at compile time, relative to `CARGO_MANIFEST_DIR`, so `Image::from_bytes` and the `image-png` feature aren't needed.
+- On macOS, tray-icon always draws the image 18 points tall (`platform_impl/macos/mod.rs`, `set_icon_for_ns_status_item_button`), so the templates are 36 px, 1:1 on Retina. `set_icon_with_as_template` swaps the image and template flag in one step; `set_icon` followed by `set_icon_as_template` flickers.
+- `show_menu_on_left_click(true)` opens the menu on a click, as macOS menu bar items do. `set_menu` replaces the whole menu, so `set_tray_status` rebuilds it only when what it lists changes, not on every voice state.
+- Menu clicks come to `on_menu_event` with the item's id. Call actions go to the main window with `emit_to("main", ...)`; the page listens with `getCurrentWindow().listen` (allowed by `core:default`). `PredefinedMenuItem::quit` quits through the normal exit, so `RunEvent::Exit` still stops the worker.
+- Closing the main window hides it (`WindowEvent::CloseRequested` and `api.prevent_close()` in `on_window_event`), so the page and its call keep running. `RunEvent::Reopen` (macOS, a Dock click; `#[non_exhaustive]`) shows it again. Cmd+Q quits as usual. Check in `just app dev` that a call keeps its audio while the window is hidden: WebKit may throttle timers in a hidden page.
+
 ## Agent worker
 
 - `src-tauri/src/agent.rs` keeps one worker per app run. The first `open_call` starts it; credential or `claude` path changes, or its death, restart it; app exit stops it.

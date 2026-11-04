@@ -3,6 +3,7 @@
 // sync with generate_handler! in lib.rs.
 const COMMANDS: &[&str] = &[
     "open_settings",
+    "set_tray_status",
     "app_log",
     "credentials_info",
     "save_credentials",

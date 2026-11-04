@@ -7,6 +7,7 @@ import { Splash } from "@/features/onboarding/splash"
 import { NewProjectDialog } from "@/features/projects/new-project-dialog"
 import { ProjectsProvider } from "@/features/projects/projects-provider"
 import type { Selection } from "@/features/projects/selection"
+import { TrayBridge } from "@/features/tray/tray-bridge"
 
 import { openSettings, SETTINGS_SHORTCUT } from "../settings/open-settings"
 import { AppSidebar } from "./app-sidebar"
@@ -69,6 +70,11 @@ function Workspace() {
           onOpenChange={setCreating}
           onCreated={(project) =>
             setSelection({ kind: "project", projectId: project.id })
+          }
+        />
+        <TrayBridge
+          onOpenProject={(projectId) =>
+            setSelection({ kind: "project", projectId })
           }
         />
       </CallProvider>

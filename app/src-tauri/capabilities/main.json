@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "The main window: projects and the call.",
+  "description": "The main window: projects and the call, which it reports to the menu bar icon.",
   "windows": [
     "main"
   ],
@@ -13,6 +13,7 @@
     "opener:default",
     "dialog:allow-open",
     "allow-open-settings",
+    "allow-set-tray-status",
     "allow-list-projects",
     "allow-create-project",
     "allow-update-project",

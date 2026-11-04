@@ -12,12 +12,13 @@ src/
   windows/                  one folder per window; mount.tsx wraps every window in the shared providers
     main/                   the main window: sidebar, header, main panel
     settings/               the settings window; sections.ts lists its sections
-  features/<feature>/       one folder per feature: theme, credentials, projects, call, agents, setup, voice, onboarding (the first-run splash)
+  features/<feature>/       one folder per feature: theme, credentials, projects, call, agents, setup, voice, onboarding (the first-run splash), tray (the menu bar icon's bridge to the call)
   components/               shared components of our own (app-logo, wordmark, mascot, titlebar-spacer)
   components/ui/            shadcn components, from shadcn's registry
   components/agents-ui/     LiveKit Agents UI components, from LiveKit's registry
   hooks/, lib/              shared hooks and helpers (lib/utils.ts: cn)
-src-tauri/src/              the Rust core: lib.rs (wiring), db.rs (SQLite, migrations), projects.rs, calls.rs, settings.rs, agents.rs (finding the agents), setup.rs (probing their setup), adapters.rs (installing ACP adapters), agent.rs (the worker), credentials.rs, windows.rs, app_log.rs, error.rs
+src-tauri/src/              the Rust core: lib.rs (wiring), db.rs (SQLite, migrations), projects.rs, calls.rs, settings.rs, agents.rs (finding the agents), setup.rs (probing their setup), adapters.rs (installing ACP adapters), agent.rs (the worker), credentials.rs, windows.rs, tray.rs (the menu bar icon), app_log.rs, error.rs
+src-tauri/icons/tray/       the menu bar templates, one per mascot state
 src-tauri/capabilities/     what each window may call: main.json, settings.json
 ```
 

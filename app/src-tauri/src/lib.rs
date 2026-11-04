@@ -1,4 +1,4 @@
-//! The Tauri core of the desktop app: windows, the permission prompt for the mic, the app's
+//! The Tauri core of the desktop app: windows, the menu bar icon, the permission prompt for the mic, the app's
 //! database, and the commands the page calls. Each command's module documents it;
 //! capabilities/ grants them.
 
@@ -13,6 +13,7 @@ mod error;
 mod projects;
 mod settings;
 mod setup;
+mod tray;
 mod windows;
 
 use tauri::Manager;
@@ -41,13 +42,25 @@ pub fn run() {
             app.manage(credentials::Vault::default());
             app.manage(agents::Agents::default());
             app.manage(calls::CallAgents::default());
+            tray::init(app.handle())?;
             // Look for the agents now, so Settings and the first call find them ready.
             tauri::async_runtime::spawn(agents::refresh_in_background(app.handle().clone()));
             adapters::update_in_background(app.handle());
             Ok(())
         })
+        // Closing the main window hides it: the app, and any call in it, keeps running in
+        // the menu bar until Quit (owner, 2026-11-05). The page, and so the call, lives on.
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event
+                && window.label() == windows::MAIN
+            {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             windows::open_settings,
+            tray::set_tray_status,
             app_log::app_log,
             credentials::credentials_info,
             credentials::save_credentials,
@@ -75,10 +88,14 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building the app")
-        .run(|app, event| {
+        .run(|app, event| match event {
             // The agent worker is ours to stop: it would outlive the app otherwise.
-            if let tauri::RunEvent::Exit = event {
-                app.state::<agent::AgentWorker>().shutdown();
+            tauri::RunEvent::Exit => app.state::<agent::AgentWorker>().shutdown(),
+            // A click on the Dock icon brings the (maybe hidden) main window back.
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen { .. } => {
+                let _ = windows::show_main(app);
             }
+            _ => {}
         });
 }

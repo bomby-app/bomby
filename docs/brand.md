@@ -73,6 +73,8 @@ Only the eyes change, never the bubble shape or colours. States follow `useAgent
 - **Failed**: crossed bubblegum eyes.
 - **Working** and **done**, not wired yet: scanning eyes while a task runs; smiling arcs for 1.2 s when a result arrives.
 
+In the menu bar, Dot Dot swaps one template image per state and never animates (Motion board): no call (dots), waking, listening, thinking, speaking, working (eyes to the left, while an agent works and the voice only listens) and failed (crossed, for five seconds after a call fails). Paper `app assets`, `tray-icon-template` and `tray-icon-<state>-template`, exported at 36 px to `app/src-tauri/icons/tray/` ([Tauri notes](tauri-notes.md#menu-bar-icon)). Its menu: the call's project, Open Bomby, Start a call on the three recent projects (or what's missing), End call, Settings, Quit Bomby.
+
 `app/src/components/mascot.tsx` exports `<Mascot state level size />` and `mascotState(agentState)`. Dot Dot sits over LiveKit's bar visualizer on the call screen, replaces a project's folder icon during a call and appears on Start a call. Visualizer bars use `--primary`: highlighter in dark, ink in light (owner, 2026-11-04).
 
 Motion uses CSS transforms on one SVG. Eyes lead; only sound scales the bubble. Use ease-out for changes, sine for loops, no bounce, and 120 to 400ms one-offs. Reduced motion removes loops and makes swaps instant, but keeps blinking. Below 32px nothing loops.
@@ -116,5 +118,5 @@ Paper board `Handoff / Tauri asset map`, page `app assets`. Artboard names match
 
 - `app-icon.png` (1024 canvas, 824 tile): required `tauri icon` source for ICNS, ICO and PNGs.
 - `Bomby.icon` (macOS 26+, `app/src-tauri/icons/`): light (ink bubble, highlighter eyes, on highlighter), dark (highlighter bubble, ink eyes, on ink) and tinted. Glossy, as the owner asked (2026-11-03): top-to-bottom gradients on tile, bubble and eyes, Liquid Glass with specular, a chromatic shadow under the bubble. Edit in Icon Composer and compile with `just app icon` ([details](tauri-notes.md#icons)).
-- `app-icon-dark.png` (reference), `app-icon-flat.png` (optional ICO/Linux), `dmg-background.png` (660 x 400 at 1x and 2x, from the light `dmg-background` artboard; Finder's labels can't follow a dark one, see [Tauri notes](tauri-notes.md#dmg-window)), `tray-icon-template.png` (22 and 44).
+- `app-icon-dark.png` (reference), `app-icon-flat.png` (optional ICO/Linux), `dmg-background.png` (660 x 400 at 1x and 2x, from the light `dmg-background` artboard; Finder's labels can't follow a dark one, see [Tauri notes](tauri-notes.md#dmg-window)), `tray-icon-template` and one `tray-icon-<state>-template` per mascot state (22 px artboards, transparent: macOS needs the alpha for a template), exported at 36 px to `app/src-tauri/icons/tray/<state>.png`.
 - `app-logo-light` / `-dark` (28px SVG): `app-logo.tsx`.
