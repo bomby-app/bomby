@@ -1,7 +1,8 @@
-import { useEffect, useEffectEvent, useRef } from "react"
+import { useEffect, useRef } from "react"
 
 import { useCall } from "@/features/call/call-provider"
 import { type Task, useTasks } from "@/features/call/tasks"
+import { useCoreEvent } from "@/hooks/use-core-event"
 
 import { onOpenProject, taskFinished } from "./api"
 
@@ -50,13 +51,7 @@ export function TaskNotifier({
     seen.current.status = now
   }, [tasks, active])
 
-  const open = useEffectEvent((projectId: number) => onOpen(projectId))
-  useEffect(() => {
-    const stop = onOpenProject((projectId) => open(projectId))
-    return () => {
-      void stop.then((unlisten) => unlisten())
-    }
-  }, [])
+  useCoreEvent(onOpenProject, onOpen)
 
   return null
 }

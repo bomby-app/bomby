@@ -2,6 +2,8 @@ import { emit, listen } from "@tauri-apps/api/event"
 import { getCurrentWindow } from "@tauri-apps/api/window"
 import { createContext, type ReactNode, use, useEffect, useState } from "react"
 
+import { useCoreEvent } from "@/hooks/use-core-event"
+
 // Light, dark, or follow the OS. The choice lives in localStorage under STORAGE_KEY;
 // public/boot.js reads the same key before first paint so a window never flashes the wrong
 // theme. A change is broadcast as THEME_EVENT so every open window follows at once.
@@ -37,18 +39,17 @@ function applyScheme(dark: boolean) {
   root.style.colorScheme = dark ? "dark" : "light"
 }
 
+/** Another window changed the theme. */
+function onThemeChanged(handler: (theme: Theme) => void) {
+  return listen<Theme>(THEME_EVENT, ({ payload }) => {
+    if (isTheme(payload)) handler(payload)
+  })
+}
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(storedTheme)
 
-  // Another window changed the theme.
-  useEffect(() => {
-    const unlisten = listen<Theme>(THEME_EVENT, ({ payload }) => {
-      if (isTheme(payload)) setThemeState(payload)
-    })
-    return () => {
-      void unlisten.then((stop) => stop())
-    }
-  }, [])
+  useCoreEvent(onThemeChanged, setThemeState)
 
   useEffect(() => {
     // The native window (title bar, traffic lights, scroll bars) follows the same choice;
