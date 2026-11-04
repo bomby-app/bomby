@@ -174,10 +174,12 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
   // The agent's job crashed: fail the call now with the agent's reason, rather than wait
   // out the join timeout (issue #14). Ending the session cancels a start in progress.
-  useCoreEvent(onAgentCrashed, ({ callId, reason }) => {
-    if (active?.callId !== callId) return
+  useCoreEvent(onAgentCrashed, ({ room, reason }) => {
+    // Only the room joined now: a resumed call has a new room, and the last one's job
+    // may crash late. The job only runs once the room is joined, so it has a name.
+    if (!active || session.room.name !== room) return
     // The reason is for us, not the user: it goes to app.log.
-    log(`call ${callId}: the agent's job crashed: ${reason}`)
+    log(`${room}: the agent's job crashed: ${reason}`)
     setError({
       projectId: active.projectId,
       message: "Bomby couldn't start the call. Try again?",

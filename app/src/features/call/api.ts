@@ -57,8 +57,8 @@ export function callMessages(callId: number): Promise<SavedMessage[]> {
   return invoke("call_messages", { callId })
 }
 
-/** A call's agent job crashed, with why (src-tauri/src/calls.rs, `AGENT_CRASHED`). */
-export type AgentCrashed = { callId: number; reason: string }
+/** A room's agent job crashed, with why (src-tauri/src/calls.rs, `AGENT_CRASHED`). */
+export type AgentCrashed = { room: string; reason: string }
 
 /** Calls `handler` when a call's agent job crashes. Returns the unlisten. */
 export function onAgentCrashed(handler: (crash: AgentCrashed) => void) {
