@@ -97,7 +97,7 @@ Paper page `projects view`, in `app/src/features/projects/projects-home.tsx`: th
 
 ## Voice
 
-Short, everyday sentences with contractions. Name the actor: Claude does the work, Bomby talks; say "Claude", not "Claude Code" (owner, 2026-11-04). When something breaks, state what happened and what to do, without leading error codes or exclamation marks. UI text uses sentence case.
+Short, everyday sentences with contractions. Name the actor: Claude does the work, Bomby talks; say "Claude", not "Claude Code" (owner, 2026-11-04). When something breaks, state what happened and what to do, without leading error codes or exclamation marks. On screen that's the error card: the failed mascot, what happened as its headline and what to do under it (`app/src/components/error-card.tsx`). UI text uses sentence case.
 
 | Moment | Say |
 | --- | --- |

@@ -13,7 +13,7 @@ src/
     main/                   the main window: sidebar, header, main panel
     settings/               the settings window; sections.ts lists its sections
   features/<feature>/       one folder per feature: theme, credentials, projects, call, agents, setup, voice, onboarding (the first-run splash), tray (the menu bar icon's bridge to the call), notifications (finished tasks)
-  components/               shared components of our own (app-logo, wordmark, mascot, titlebar-spacer, inline-link)
+  components/               shared components of our own (app-logo, wordmark, mascot, titlebar-spacer, inline-link, error-card)
   components/ui/            shadcn components, from shadcn's registry
   components/agents-ui/     LiveKit Agents UI components, from LiveKit's registry
   hooks/, lib/              shared hooks and helpers (lib/utils.ts: cn; lib/store.ts: page-wide stores that mirror the core; hooks/use-core-event.ts: follow a core event while mounted)
@@ -31,7 +31,7 @@ src-tauri/capabilities/     what each window may call: main.json, settings.json
 - **shadcn first.** Need a button, menu or dialog? Use shadcn's, then build ours on top.
 - **Colors come from tokens.** Use the semantic classes (`bg-background`, `text-muted-foreground`, `bg-sidebar`); new colors become variables in `index.css` with light and dark values. No raw hex in components.
 - **Native feel.** OS font, arrow cursor, chrome not selectable (opt in with `select-text`), tooltips after a delay, drag regions on bars. The macOS overlay title bar sets the height of the top rows: use `h-titlebar`.
-- **Brand.** Colours, type, logo rules and UI copy follow [docs/brand.md](../docs/brand.md). The mark is `components/app-logo.tsx`, the wordmark `components/wordmark.tsx`; nothing else draws them. Copy follows the voice table there ("Add a folder and start talking.", not "No projects found"). Bubblegum (`bg-claude`, `Button variant="claude"`) only means Claude or an error. Links inside a sentence are `components/inline-link.tsx`.
+- **Brand.** Colours, type, logo rules and UI copy follow [docs/brand.md](../docs/brand.md). The mark is `components/app-logo.tsx`, the wordmark `components/wordmark.tsx`; nothing else draws them. Copy follows the voice table there ("Add a folder and start talking.", not "No projects found"). Bubblegum (`bg-claude`, `Button variant="claude"`) only means Claude or an error. Links inside a sentence are `components/inline-link.tsx`. An error the user sees is `components/error-card.tsx` (the failed mascot, the message's first sentence as its headline); raw errors go to the log.
 - **Talk to the core in one place per feature.** `invoke()` calls sit in a small typed module in the feature (`features/credentials/api.ts`), not scattered through components. A new command goes in `generate_handler!` (lib.rs) and `COMMANDS` (build.rs), and is granted only to the windows that need it in `src-tauri/capabilities/`.
 - **Secrets stay in the core.** The page may send a secret to the core; the core never sends one back.
 - **Files and names.** Kebab-case file names (`app-sidebar.tsx`), named exports, `@/` imports across folders, relative imports within one. Vite+ (Oxfmt) formats and orders imports and Tailwind classes: run `just app fmt`. All frontend tooling is configured in `vite.config.ts`.

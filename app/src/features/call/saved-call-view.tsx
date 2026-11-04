@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 
 import { AgentChatTranscript } from "@/components/agents-ui/agent-chat-transcript"
+import { ErrorCard } from "@/components/error-card"
 
 import { callMessages, type SavedMessage } from "./api"
 import { toReceived } from "./transcript"
@@ -14,7 +15,7 @@ export function SavedCallView({ callId }: { callId: number }) {
     callMessages(callId).then(setSaved, (e: unknown) => setError(String(e)))
   }, [callId])
 
-  if (error) return <p className="p-6 text-sm text-destructive">{error}</p>
+  if (error) return <ErrorCard message={error} className="m-6" />
   if (saved?.length === 0)
     return (
       <p className="p-6 text-sm text-muted-foreground">

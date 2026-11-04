@@ -313,14 +313,14 @@ function Eye({
       />
     )
   }
-  // Failed: crossed eyes in bubblegum.
+  // Failed: crossed eyes in bubblegum (Paper "04 Mascot states", Failed: 10 wide, 4.5 thick).
   if (state === "failed") {
-    const d = 5.5
+    const d = 5
     return (
       <path
         d={`M${cx - d} ${EYE_Y - d} L${cx + d} ${EYE_Y + d} M${cx + d} ${EYE_Y - d} L${cx - d} ${EYE_Y + d}`}
         stroke="var(--claude)"
-        strokeWidth={3.5}
+        strokeWidth={4.5}
         strokeLinecap="round"
       />
     )
