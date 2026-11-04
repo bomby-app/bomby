@@ -1,6 +1,6 @@
 import { ArrowRight } from "lucide-react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { useEffect, useRef, useState, useTransition } from "react"
+import { useEffect, useEffectEvent, useState, useTransition } from "react"
 
 import music from "@/assets/splash-music.mp3"
 import { DayGlow, type Daypart, useDaypart } from "@/components/day-glow"
@@ -18,14 +18,23 @@ import { KeysStep } from "./keys-step"
  * keys. Steps already done are skipped. The round arrow to go on comes only once a call
  * has all three, and there is no way around it: the app can't work without them.
  */
-type Stage = "dawn" | "rise" | "awake" | "setup"
+type Stage = "night" | "dawn" | "rise" | "awake" | "setup"
 
-// When each stage starts, in ms (the Paper artboards' timings, with time to read hello).
+// When each stage starts (ms) and how long its glow and mascot take to get there: slow,
+// overlapping moves across the six seconds of the opening sound.
 const TIMELINE: [Stage, number][] = [
-  ["rise", 600],
-  ["awake", 1400],
-  ["setup", 2800],
+  ["dawn", 80],
+  ["rise", 1500],
+  ["awake", 3000],
+  ["setup", 5400],
 ]
+const TAKES: Record<Stage, number> = {
+  night: 0,
+  dawn: 1.4,
+  rise: 1.6,
+  awake: 1.8,
+  setup: 2.2,
+}
 
 const GREETING: Record<Daypart, string> = {
   morning: "Good morning",
@@ -34,21 +43,23 @@ const GREETING: Record<Daypart, string> = {
 }
 
 const MASCOT: Record<Stage, { size: number; state: MascotState }> = {
+  night: { size: 112, state: "waking" },
   dawn: { size: 112, state: "waking" },
   rise: { size: 112, state: "waking" },
   awake: { size: 120, state: "idle" },
   setup: { size: 60, state: "listening" },
 }
 
-const EASE = [0.22, 1, 0.36, 1] as const
+// Slow in and slow out (sine), like the glow (day-glow.css).
+const EASE = [0.37, 0, 0.63, 1] as const
 
 export function Splash({ onDone }: { onDone: () => void }) {
   const still = useReducedMotion() === true
   const daypart = useDaypart()
-  const [stage, setStage] = useState<Stage>(still ? "setup" : "dawn")
+  const [stage, setStage] = useState<Stage>(still ? "setup" : "night")
   const [leaving, startLeaving] = useTransition()
-  // Below the window at dawn, peeking up (Paper: 240 px down in a 520 px window).
-  const [dawnY] = useState(() => window.innerHeight / 2 - 20)
+  // Out of sight, then peeking up at dawn (Paper: 240 px down in a 520 px window).
+  const [below] = useState(() => window.innerHeight / 2)
   const { agents } = useAgents()
   const [chosen, setChosen] = useState<string | null>(null)
   const agent = firstAgent(agents, chosen)
@@ -58,7 +69,7 @@ export function Splash({ onDone }: { onDone: () => void }) {
   const ready = agentReady && keysReady
   // The keys come once the agent is ready; with both, the agent's card says all is set.
   const step = agentReady && keys !== null && !keysReady ? "keys" : "agent"
-  const next = useRef<HTMLButtonElement>(null)
+  const canFinish = stage === "setup" && ready && !leaving
 
   useEffect(() => {
     if (still) return
@@ -75,11 +86,6 @@ export function Splash({ onDone }: { onDone: () => void }) {
     return () => audio.pause()
   }, [])
 
-  // The arrow takes focus when it appears, so Return goes on.
-  useEffect(() => {
-    if (stage === "setup" && ready) next.current?.focus()
-  }, [stage, ready])
-
   function finish() {
     startLeaving(async () => {
       await finishFirstRun()
@@ -87,37 +93,46 @@ export function Splash({ onDone }: { onDone: () => void }) {
     })
   }
 
+  // Return goes on once the arrow is there.
+  const onKey = useEffectEvent((event: KeyboardEvent) => {
+    if (event.key === "Enter" && canFinish) finish()
+  })
+  useEffect(() => {
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [])
+
   const mascot = MASCOT[stage]
+  const y =
+    stage === "night"
+      ? below + 90
+      : stage === "dawn"
+        ? below - 20
+        : stage === "rise"
+          ? 48
+          : 0
   return (
     <motion.div
       className="fixed inset-0 flex flex-col items-center justify-center overflow-hidden bg-background"
       animate={{ opacity: leaving ? 0 : 1 }}
-      transition={{ duration: 0.4, ease: EASE }}
+      transition={{ duration: 0.6, ease: EASE }}
     >
       <div
         data-tauri-drag-region
         className="absolute inset-x-0 top-0 h-titlebar"
       />
-      <DayGlow
-        daypart={daypart}
-        stage={stage}
-        duration={stage === "setup" ? 1000 : 800}
-      />
+      <DayGlow daypart={daypart} stage={stage} duration={TAKES[stage] * 1000} />
 
       <motion.div
         layout
         className="relative flex flex-col items-center"
-        transition={{ duration: 0.7, ease: EASE }}
+        transition={{ duration: 1.2, ease: EASE }}
       >
         <motion.div
           layout
           initial={false}
-          animate={{
-            y: stage === "dawn" ? dawnY : stage === "rise" ? 48 : 0,
-            width: mascot.size,
-            height: mascot.size,
-          }}
-          transition={{ duration: stage === "rise" ? 0.6 : 0.8, ease: EASE }}
+          animate={{ y, width: mascot.size, height: mascot.size }}
+          transition={{ duration: TAKES[stage], ease: EASE }}
         >
           <Mascot depth state={mascot.state} className="size-full" />
         </motion.div>
@@ -127,10 +142,10 @@ export function Splash({ onDone }: { onDone: () => void }) {
             <motion.div
               key="hello"
               className="mt-[18px] flex flex-col items-center gap-[18px]"
-              initial={{ opacity: 0, y: 10 }}
+              initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.5, ease: EASE }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 1, ease: EASE, delay: 0.4 }}
             >
               <h1 className="font-heading text-[40px] leading-[44px] font-bold tracking-[-0.035em]">
                 {GREETING[daypart]}, I'm bomby.
@@ -143,10 +158,10 @@ export function Splash({ onDone }: { onDone: () => void }) {
           {stage === "setup" && (
             <motion.div
               key={step}
-              initial={still ? false : { opacity: 0, y: 12 }}
+              initial={still ? false : { opacity: 0, y: 14 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.6, ease: EASE, delay: 0.1 }}
+              transition={{ duration: 1, ease: EASE, delay: 0.5 }}
             >
               {step === "keys" && keys ? (
                 <KeysStep keys={keys} />
@@ -171,17 +186,21 @@ export function Splash({ onDone }: { onDone: () => void }) {
         {stage === "setup" && ready && (
           <motion.button
             type="button"
-            ref={next}
             aria-label="Continue"
-            className="absolute right-6 bottom-5 flex size-11 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-            initial={{ opacity: 0, scale: 0.8 }}
+            className="group absolute right-6 bottom-5 flex size-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-[0_10px_24px_-12px_rgb(18_18_18/0.55)] outline-none focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-ring dark:shadow-[0_10px_28px_-12px_rgb(232_255_58/0.5)]"
+            initial={{ opacity: 0, scale: 0.85 }}
             animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.8 }}
-            transition={{ duration: 0.35, ease: EASE, delay: 0.4 }}
+            exit={{ opacity: 0, scale: 0.85 }}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.96 }}
+            transition={{ duration: 0.6, ease: EASE, delay: 0.6 }}
             disabled={leaving}
             onClick={finish}
           >
-            <ArrowRight className="size-5" />
+            <ArrowRight
+              className="size-5 transition-transform duration-300 group-hover:translate-x-0.5"
+              strokeWidth={2.25}
+            />
           </motion.button>
         )}
       </AnimatePresence>

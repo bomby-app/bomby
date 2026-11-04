@@ -6,10 +6,11 @@ import { cn } from "@/lib/utils"
 export type Daypart = "morning" | "afternoon" | "evening"
 
 /**
- * How far the glow has risen: the splash's four stages (Paper "splash", option A), and
- * `rest` for a page that just sits in it (Paper "projects view").
+ * How far the glow has risen: `night` (none yet, for it to rise from), the splash's four
+ * stages (Paper "splash", option A), and `rest` for a page that just sits in it (Paper
+ * "projects view").
  */
-export type GlowStage = "dawn" | "rise" | "awake" | "setup" | "rest"
+export type GlowStage = "night" | "dawn" | "rise" | "awake" | "setup" | "rest"
 
 /** Morning until noon, afternoon until five, evening after that and through the night. */
 export function daypartAt(date: Date): Daypart {

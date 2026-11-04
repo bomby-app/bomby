@@ -26,14 +26,22 @@ import {
 // Claude Code's own installer (claude.ai/install.sh), for a Mac with no agent yet.
 const INSTALL = "curl -fsSL https://claude.ai/install.sh | bash"
 
-/** The agent the splash offers: the one picked, else a ready one, else the first found. */
+/** Offered first when installed, ready or not (owner, 2026-11-05). */
+const PREFERRED = ["claude", "codex"]
+
+/**
+ * The agent the splash offers: the one picked, else Claude Code, else Codex, else the first
+ * that's ready, else the first found.
+ */
 export function firstAgent(
   agents: AgentStatus[] | null,
   chosen: string | null
 ): AgentStatus | null {
   const installed = agents?.filter((agent) => agent.path !== null) ?? []
+  const byId = (id: string | null) => installed.find((agent) => agent.id === id)
   return (
-    installed.find((agent) => agent.id === chosen) ??
+    byId(chosen) ??
+    PREFERRED.map(byId).find(Boolean) ??
     installed.find(isReady) ??
     installed[0] ??
     null
