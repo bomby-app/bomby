@@ -135,6 +135,8 @@
   --mascot-eye-top: #f6ff9a;
   --mascot-eye-bottom: #ddf52a;
   --mascot-lid: #e8ff3a;
+  /* Failed eyes: bubblegum on the ink bubble. */
+  --mascot-failed: var(--claude);
   --mascot-rim: rgb(255 255 255 / 0.35);
   --mascot-catchlight: rgb(255 255 255 / 0.8);
   --mascot-shadow: drop-shadow(0 10px 14px rgb(40 50 0 / 0.3));
@@ -180,6 +182,8 @@
   --mascot-eye-top: #3a3a3a;
   --mascot-eye-bottom: #0a0a0a;
   --mascot-lid: #121212;
+  /* Failed eyes: ink on the highlighter bubble, where bubblegum would barely show. */
+  --mascot-failed: #121212;
   --mascot-rim: rgb(255 255 255 / 0.8);
   --mascot-catchlight: rgb(255 255 255 / 0.8);
   --mascot-shadow: drop-shadow(0 10px 22px rgb(232 255 58 / 0.28));
