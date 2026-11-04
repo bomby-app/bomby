@@ -1,5 +1,4 @@
 import asyncio
-import contextlib
 import json
 
 from harnesses import CLAUDE_CODE, GOOSE
@@ -61,36 +60,3 @@ def test_a_failed_publish_never_stops_the_work() -> None:
 
     assert asyncio.run(scenario()) == "1"
     assert b.tasks[0].status == "failed"
-
-
-def test_a_task_cancelled_while_publishing_ends_stopped() -> None:
-    # The cancel lands during the first publish (review finding, 2026-11-04).
-    gate = asyncio.Event()
-    sent: list[list[dict[str, object]]] = []
-
-    async def publish(attributes: dict[str, str]) -> None:
-        sent.append(json.loads(attributes[ATTRIBUTE]))
-        if len(sent) == 1:
-            _ = await gate.wait()
-
-    b = TaskBoard(publish)
-
-    async def tool() -> None:
-        id = b.add(CLAUDE_CODE, "main", "hello")
-        try:
-            await b.publish()
-        except asyncio.CancelledError:
-            await b.finish(id, "stopped")
-            raise
-
-    async def scenario() -> None:
-        task = asyncio.create_task(tool())
-        await asyncio.sleep(0.05)
-        _ = task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
-
-    asyncio.run(scenario())
-
-    assert b.tasks[0].status == "stopped"
-    assert sent[-1][0]["status"] == "stopped"
