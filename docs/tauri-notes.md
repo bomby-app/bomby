@@ -82,8 +82,8 @@ Checked 2026-11-03/04 against Tauri 2.12.5, `tauri-codegen` 2.7.4, `wry` 0.57.1,
 
 - `bundle.macOS.dmg` configures background, 660 x 400 window, app at (180, 200) and Applications at (480, 200).
 - `just app icon` combines 1x/2x backgrounds into `dmg-background.tiff` with `tiffutil -cathidpicheck`. The bundler copies it and writes `.DS_Store`.
-- Check icon-label contrast in Finder's dark mode; Finder chooses the label color.
-- One background for both appearances: Finder shows a DMG window's background picture as is in light and dark mode, with no per-appearance variant ([c-command forum](https://forum.c-command.com/t/light-and-dark-mode-background-images/11916), checked 2026-11-04). The art is exported from Paper `app assets` / `dmg-background` at 1x and 2x.
+- Finder colours icon labels by the system appearance, not the picture. The background is dark (ink, owner's choice 2026-11-04), so check label contrast in Finder's light mode.
+- One background for both appearances: Finder shows a DMG window's background picture as is in light and dark mode, with no per-appearance variant ([c-command forum](https://forum.c-command.com/t/light-and-dark-mode-background-images/11916), checked 2026-11-04). The art is exported from Paper `app assets` / `dmg-background-dark` at 1x and 2x; `dmg-background` there is the unused light version.
 
 ## Dock icon in dev
 
