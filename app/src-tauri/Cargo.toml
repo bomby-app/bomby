@@ -30,6 +30,7 @@ rusqlite = { version = "0.41", features = ["bundled"] }
 livekit-api = { version = "0.10", default-features = false, features = ["access-token"] }
 livekit-protocol = "0.8.2"
 tauri-plugin-clipboard-manager = "2"
+tauri-plugin-notification = "2.8"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

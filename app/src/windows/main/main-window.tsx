@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { CallProvider } from "@/features/call/call-provider"
+import { TaskNotifier } from "@/features/notifications/task-notifier"
 import { firstRun } from "@/features/onboarding/api"
 import { Splash } from "@/features/onboarding/splash"
 import { NewProjectDialog } from "@/features/projects/new-project-dialog"
@@ -76,6 +77,9 @@ function Workspace() {
           onOpenProject={(projectId) =>
             setSelection({ kind: "project", projectId })
           }
+        />
+        <TaskNotifier
+          onOpen={(projectId) => setSelection({ kind: "project", projectId })}
         />
       </CallProvider>
     </ProjectsProvider>

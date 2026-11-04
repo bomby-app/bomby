@@ -20,6 +20,8 @@ pub enum Error {
     Tauri(#[from] tauri::Error),
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    #[error("notification: {0}")]
+    Notification(#[from] tauri_plugin_notification::Error),
 }
 
 impl Serialize for Error {

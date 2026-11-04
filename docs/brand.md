@@ -106,6 +106,7 @@ Short, everyday sentences with contractions. Name the actor: Claude does the wor
 | Listening | Listening |
 | Claude working | Claude's on it · fix-login |
 | Claude done | Done. Claude changed 2 files. |
+| Notification, task done / failed | Claude's done · fix-login / Claude couldn't finish · fix-login |
 | Call failed | Lost the connection. Try again? |
 | No mic access | Bomby needs your mic. Turn it on in System Settings. |
 | Call ended | Talk soon. |

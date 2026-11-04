@@ -4,6 +4,7 @@
 const COMMANDS: &[&str] = &[
     "open_settings",
     "set_tray_status",
+    "task_finished",
     "app_log",
     "credentials_info",
     "save_credentials",

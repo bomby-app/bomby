@@ -1,4 +1,4 @@
-//! The Tauri core of the desktop app: windows, the menu bar icon, the permission prompt for the mic, the app's
+//! The Tauri core of the desktop app: windows, the menu bar icon, notifications, the permission prompt for the mic, the app's
 //! database, and the commands the page calls. Each command's module documents it;
 //! capabilities/ grants them.
 
@@ -10,6 +10,7 @@ mod calls;
 mod credentials;
 mod db;
 mod error;
+mod notifications;
 mod projects;
 mod settings;
 mod setup;
@@ -24,6 +25,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         // The page asks the webview for the mic; grant it here so only the operating
         // system's own prompt appears (macOS shows NSMicrophoneUsageDescription from
@@ -43,6 +45,7 @@ pub fn run() {
             app.manage(agents::Agents::default());
             app.manage(calls::CallAgents::default());
             tray::init(app.handle())?;
+            notifications::init(app.handle())?;
             // Look for the agents now, so Settings and the first call find them ready.
             tauri::async_runtime::spawn(agents::refresh_in_background(app.handle().clone()));
             adapters::update_in_background(app.handle());
@@ -61,6 +64,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             windows::open_settings,
             tray::set_tray_status,
+            notifications::task_finished,
             app_log::app_log,
             credentials::credentials_info,
             credentials::save_credentials,

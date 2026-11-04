@@ -44,6 +44,17 @@ Checked 2026-11-05 against `tauri` 2.12.5 (`src/tray/mod.rs`, `src/app.rs`), `tr
 - Menu clicks come to `on_menu_event` with the item's id. Call actions go to the main window with `emit_to("main", ...)`; the page listens with `getCurrentWindow().listen` (allowed by `core:default`). `PredefinedMenuItem::quit` quits through the normal exit, so `RunEvent::Exit` still stops the worker.
 - Closing the main window hides it (`WindowEvent::CloseRequested` and `api.prevent_close()` in `on_window_event`), so the page and its call keep running. `RunEvent::Reopen` (macOS, a Dock click; `#[non_exhaustive]`) shows it again. Cmd+Q quits as usual. Check in `just app dev` that a call keeps its audio while the window is hidden: WebKit may throttle timers in a hidden page.
 
+## Notifications
+
+Checked 2026-11-05 against the published sources of `tauri-plugin-notification` 2.8.0 (`src/desktop.rs`; its desktop code matches 2.7.0, and 2.8.0 only adds Android options), `notify-rust` 4.18.1 and `mac-notification-sys` 0.6.15 (`objc/notify.m`), and v2.tauri.app/plugin/notification.
+
+- The core alone uses it (`src-tauri/src/notifications.rs`, Rust API `app.notification().builder()`), so no window gets `notification:` permissions and the npm package isn't installed. The page reports finished tasks with `task_finished`.
+- macOS goes through the deprecated `NSUserNotificationCenter`: mac-notification-sys swaps the process's bundle identifier for the one it's given, if LaunchServices knows an app with it (`setApplication`, `LSCopyApplicationURLsForBundleIdentifier`).
+- **Dev and packaged differ.** Under `tauri dev`, `tauri::is_dev()` makes the plugin post as `com.apple.Terminal`: notifications show Terminal's name and icon and follow Terminal's setting in System Settings > Notifications, whichever terminal started the app. A built app (`just app build`, or `tauri build --debug`) posts as `app.bomby.desktop` once it has been opened from its bundle.
+- **Permission.** On desktop, `permission_state` and `request_permission` always answer `Granted` and never prompt; whether macOS asks the user, and where a refusal shows, is up to macOS. Check it on the packaged app.
+- **Clicks.** Once a Rust `on_action` handler is registered, each notification is shown "tracked": a thread waits for its response, and a click arrives as action `"tap"` with the notification's `extra` data (`projectId` here). Without a handler, `show()` doesn't wait.
+- "Bomby isn't focused" means no window's `is_focused()`, which on macOS is `NSWindow.isKeyWindow` (`tao` 0.37.2): false for a hidden window and for every window while another app is active.
+
 ## Agent worker
 
 - `src-tauri/src/agent.rs` keeps one worker per app run. The first `open_call` starts it; credential or `claude` path changes, or its death, restart it; app exit stops it.
