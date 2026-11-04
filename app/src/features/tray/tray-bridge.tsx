@@ -1,5 +1,5 @@
 import { useAgent, useSessionContext } from "@livekit/components-react"
-import { useEffect, useEffectEvent, useState } from "react"
+import { useEffect, useState } from "react"
 
 import { mascotState } from "@/components/mascot"
 import { useCall } from "@/features/call/call-provider"
@@ -7,6 +7,7 @@ import { useTasks } from "@/features/call/tasks"
 import { useCallReadiness } from "@/features/call/use-call-readiness"
 import { useProjects } from "@/features/projects/projects-provider"
 import { recentProjects } from "@/features/projects/recent"
+import { useCoreEvent } from "@/hooks/use-core-event"
 
 import { onEndCall, onStartCall, setTrayStatus, type TrayState } from "./api"
 
@@ -54,24 +55,12 @@ export function TrayBridge({
     void setTrayStatus({ state, call, starting: isStarting, recent, blocked })
   }, [state, call, isStarting, recent, blocked])
 
-  const startFromTray = useEffectEvent((projectId: number) => {
+  useCoreEvent(onStartCall, (projectId) => {
     onOpenProject(projectId)
     // One call at a time; when a call can't start, the project's page says why.
     if (ready && !active && !starting) void start(projectId)
   })
-  const endFromTray = useEffectEvent(() => {
-    void end()
-  })
-
-  useEffect(() => {
-    const stops = [
-      onStartCall((projectId) => startFromTray(projectId)),
-      onEndCall(() => endFromTray()),
-    ]
-    return () => {
-      for (const stop of stops) void stop.then((unlisten) => unlisten())
-    }
-  }, [])
+  useCoreEvent(onEndCall, () => void end())
 
   return null
 }
