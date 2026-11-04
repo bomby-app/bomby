@@ -1,11 +1,4 @@
-import {
-  createContext,
-  type ReactNode,
-  use,
-  useCallback,
-  useEffect,
-  useState,
-} from "react"
+import { createContext, type ReactNode, use, useEffect, useState } from "react"
 
 import {
   createProject,
@@ -35,13 +28,14 @@ const ProjectsContext = createContext<ProjectsState | null>(null)
 export function ProjectsProvider({ children }: { children: ReactNode }) {
   const [projects, setProjects] = useState<Project[] | null>(null)
 
-  const reload = useCallback(async () => {
+  async function reload() {
     setProjects(await listProjects())
-  }, [])
+  }
 
+  // The first load from the core; the list lands when it answers.
   useEffect(() => {
-    void reload()
-  }, [reload])
+    void listProjects().then(setProjects)
+  }, [])
 
   const state: ProjectsState = {
     projects,

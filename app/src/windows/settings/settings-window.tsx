@@ -1,5 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window"
-import { type CSSProperties, useCallback, useEffect, useState } from "react"
+import { type CSSProperties, useEffect, useState } from "react"
 
 import { TitlebarSpacer } from "@/components/titlebar-spacer"
 import {
@@ -16,6 +16,7 @@ import {
   SettingsNavigationContext,
   type SettingsPlace,
 } from "@/lib/settings-navigation"
+
 import { SECTIONS } from "./sections"
 
 /**
@@ -28,7 +29,6 @@ export function SettingsWindow() {
   })
   const section = SECTIONS.find((s) => s.id === place.section) ?? SECTIONS[0]
   const Content = section.component
-  const go = useCallback((to: SettingsPlace) => setPlace(to), [])
 
   // Esc closes the window, unless something inside (a menu, a popup) handled it first.
   useEffect(() => {
@@ -55,7 +55,7 @@ export function SettingsWindow() {
                   <SidebarMenuItem key={id}>
                     <SidebarMenuButton
                       isActive={id === section.id}
-                      onClick={() => go({ section: id })}
+                      onClick={() => setPlace({ section: id })}
                     >
                       <Icon />
                       <span>{label}</span>
@@ -79,7 +79,7 @@ export function SettingsWindow() {
         </header>
         <div className="min-h-0 flex-1 overflow-auto px-6 pt-2 pb-6">
           <div className="max-w-md">
-            <SettingsNavigationContext value={{ place, go }}>
+            <SettingsNavigationContext value={{ place, go: setPlace }}>
               {/* Keyed by section, so going to the open one again runs its focus anew. */}
               <Content key={`${place.section}:${place.field ?? ""}`} />
             </SettingsNavigationContext>

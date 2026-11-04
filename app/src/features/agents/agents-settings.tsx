@@ -1,13 +1,14 @@
 import { SquareTerminal } from "lucide-react"
-import type { ReactNode } from "react"
+import { type ReactNode, useTransition } from "react"
 
 import { CheckAgainButton } from "@/components/check-again-button"
 import { StatusMark, StatusRow } from "@/components/status-row"
+
 import { AgentLogo } from "./agent-logos"
 import { type AgentStatus, planName, versionNumber } from "./api"
 import { CopyButton } from "./copy-button"
 import { InstallFirstAgent } from "./install-first-agent"
-import { isReady, useAgents } from "./use-agents"
+import { checkAgentsAgain, isReady, useAgents } from "./use-agents"
 
 /**
  * The Agents section of the settings window: the agents Bomby can hand work to, as the
@@ -16,7 +17,8 @@ import { isReady, useAgents } from "./use-agents"
  * the core reports is listed; a new agent needs no change here.
  */
 export function AgentsSettings() {
-  const { agents, error, refreshing, refresh } = useAgents()
+  const { agents, error } = useAgents()
+  const [checking, startChecking] = useTransition()
 
   return (
     <div className="flex flex-col gap-6">
@@ -52,9 +54,9 @@ export function AgentsSettings() {
       )}
       <div>
         <CheckAgainButton
-          checking={refreshing}
+          checking={checking}
           disabled={agents === null}
-          onClick={() => void refresh()}
+          onClick={() => startChecking(checkAgentsAgain)}
         />
       </div>
     </div>

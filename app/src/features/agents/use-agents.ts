@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useSyncExternalStore } from "react"
 
 import {
   type AgentStatus,
@@ -7,56 +7,68 @@ import {
   refreshAgents,
 } from "./api"
 
-// One quiet look per page load (the settings window is a new page each time it opens), so
-// an agent installed while the app ran shows up without anyone pressing Check again.
-let lookedOnOpen = false
+/**
+ * The agents as the core last found them, for this page. The core is the source of truth
+ * (src-tauri/src/agents.rs); this mirrors it: it reads the core's list once, then follows
+ * its `agents-changed` events. Every component shares one subscription.
+ */
+type Agents = {
+  /** null until the core first answers. */
+  agents: AgentStatus[] | null
+  error: string | null
+}
+
+let snapshot: Agents = { agents: null, error: null }
+const listeners = new Set<() => void>()
+let started = false
+
+function set(next: Agents) {
+  snapshot = next
+  for (const listener of listeners) listener()
+}
+
+/** Starts mirroring the core, on the first subscriber. */
+function start() {
+  if (started) return
+  started = true
+  void onAgentsChanged((agents) => set({ agents, error: null }))
+  agentsStatus().then(
+    // An event may have brought a newer list already.
+    (agents) => set({ agents: snapshot.agents ?? agents, error: null }),
+    (e: unknown) => set({ ...snapshot, error: String(e) })
+  )
+  // One quiet look per page load (Settings is a new page each time it opens), so an agent
+  // installed while the app ran shows up unasked. Its result arrives as agents-changed.
+  refreshAgents().catch(() => {})
+}
+
+function subscribe(listener: () => void) {
+  start()
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
+  }
+}
+
+function getSnapshot() {
+  return snapshot
+}
+
+/** The agents on this computer, kept current; re-renders when they change. */
+export function useAgents(): Agents {
+  return useSyncExternalStore(subscribe, getSnapshot)
+}
 
 /**
- * The agents on this computer as the core last found them, kept current: the list shows at
- * once, and changes arrive by event. `refresh` looks again; the list stays up meanwhile.
+ * Asks the core to look again (Check again). Resolves when it has, and never rejects: a
+ * failure shows as the store's error, with the last list kept.
  */
-export function useAgents() {
-  const [agents, setAgents] = useState<AgentStatus[] | null>(null)
-  const [refreshing, setRefreshing] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let live = true
-    const unlisten = onAgentsChanged((found) => {
-      if (live) setAgents(found)
-    })
-    agentsStatus().then(
-      (found) => {
-        if (live) setAgents((current) => current ?? found)
-      },
-      (e: unknown) => {
-        if (live) setError(String(e))
-      }
-    )
-    if (!lookedOnOpen) {
-      lookedOnOpen = true
-      // What it finds arrives as agents-changed; a failure leaves the list as it was.
-      refreshAgents().catch(() => {})
-    }
-    return () => {
-      live = false
-      void unlisten.then((stop) => stop())
-    }
-  }, [])
-
-  const refresh = useCallback(async () => {
-    setRefreshing(true)
-    setError(null)
-    try {
-      setAgents(await refreshAgents())
-    } catch (e) {
-      setError(String(e))
-    } finally {
-      setRefreshing(false)
-    }
-  }, [])
-
-  return { agents, error, refreshing, refresh }
+export async function checkAgentsAgain(): Promise<void> {
+  try {
+    set({ agents: await refreshAgents(), error: null })
+  } catch (e) {
+    set({ ...snapshot, error: String(e) })
+  }
 }
 
 /** Installed, and signed in where the agent can tell us. */

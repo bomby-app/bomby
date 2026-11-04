@@ -18,6 +18,7 @@ import {
   FieldSet,
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+
 import type { Project } from "./api"
 import { FolderList } from "./folder-list"
 import { folderName, uniqueName } from "./names"
@@ -102,7 +103,6 @@ function NewProjectForm({
           <Input
             id="new-project-name"
             value={name}
-            autoFocus
             spellCheck={false}
             autoComplete="off"
             onChange={(e) => {

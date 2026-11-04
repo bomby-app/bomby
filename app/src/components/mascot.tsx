@@ -125,6 +125,8 @@ export function Mascot({
       viewBox="0 0 120 120"
       width={size}
       height={size}
+      // An inline SVG is labelled for screen readers with role="img", not an <img>.
+      // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
       role="img"
       aria-label={`Bomby, ${state}`}
       className={cn(
