@@ -110,17 +110,16 @@ export function FirstAgent({
 
       <AgentCard agent={agent} phase={phase} />
 
-      <div className="mt-7 flex min-h-[18px] items-center">
-        {install.error ? (
+      <div className="mt-7 flex min-h-[18px] flex-col items-center gap-3">
+        {install.error && (
           <p className="text-[13px] leading-[18px] text-destructive">
             {install.error}
           </p>
-        ) : phase === "fix" || phase === "none" ? (
-          <CheckAgain />
-        ) : (
-          others.some((other) => other.path !== null) && (
-            <OtherAgents agents={others} onChoose={onChoose} />
-          )
+        )}
+        {(phase === "fix" || phase === "none") && <CheckAgain />}
+        {/* Another agent can always be picked, also while this one needs fixing. */}
+        {others.some((other) => other.path !== null) && (
+          <OtherAgents agents={others} onChoose={onChoose} />
         )}
       </div>
     </div>

@@ -428,9 +428,12 @@ fn refresh<R: Runtime>(
     found
 }
 
-/// [`refresh`] for callers already on a blocking thread.
-pub fn refresh_blocking<R: Runtime>(app: &AppHandle<R>) {
-    refresh(app, None);
+/// [`refresh`] after something on disk changed (adapters installed), for callers already on
+/// a blocking thread. The answer comes from a look that starts now: one already running
+/// began before the change, so it may miss it (an empty `seen` asks for that, as a call's
+/// news does).
+pub fn refresh_after_change<R: Runtime>(app: &AppHandle<R>) {
+    refresh(app, Some(Vec::new()));
 }
 
 /// [`refresh`] on a blocking thread, for async callers.
@@ -663,6 +666,40 @@ mod tests {
         });
         assert_eq!(looks.load(Ordering::SeqCst), 2);
         assert_eq!(agents.cached(), Some(fresh.clone()));
+    }
+
+    #[test]
+    fn a_change_on_disk_waits_for_the_running_look_then_looks_again() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::mpsc;
+
+        let (agents, looks) = (&Agents::default(), &AtomicUsize::new(0));
+        let (started, wait_for_start) = mpsc::channel();
+        let (release, wait_for_release) = mpsc::channel::<()>();
+        thread::scope(|scope| {
+            scope.spawn(move || {
+                agents.detect_with(None, |_| {
+                    looks.fetch_add(1, Ordering::SeqCst);
+                    started.send(()).unwrap();
+                    wait_for_release.recv().unwrap();
+                    vec![]
+                })
+            });
+            wait_for_start.recv().unwrap();
+            let after = scope.spawn(|| {
+                agents.detect_with(Some(Vec::new()), |_| {
+                    looks.fetch_add(1, Ordering::SeqCst);
+                    vec![status("claude", Some("/Users/me/.local/bin/claude"))]
+                })
+            });
+            while agents.lock().waiting == 0 {
+                thread::yield_now();
+            }
+            release.send(()).unwrap();
+            let (found, _) = after.join().unwrap();
+            assert_eq!(found.len(), 1);
+        });
+        assert_eq!(looks.load(Ordering::SeqCst), 2);
     }
 
     #[test]

@@ -70,6 +70,7 @@ export function Splash({ onDone }: { onDone: () => void }) {
   const [look, setLook] = useState(0)
   const [introDone, setIntroDone] = useState(still)
   const [leaving, startLeaving] = useTransition()
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   const { agents } = useAgents()
   const [chosen, setChosen] = useState<string | null>(null)
@@ -204,17 +205,18 @@ export function Splash({ onDone }: { onDone: () => void }) {
     return () => audio.pause()
   }, [])
 
-  // The fade out ends before the splash unmounts, so it needs no context to clean up.
+  // Saved first, so a failed save keeps the splash up with the error. The fade out ends
+  // before the splash unmounts, so it needs no context to clean up.
   function finish() {
-    gsap.to(root.current, {
-      autoAlpha: 0,
-      duration: 0.7,
-      ease: EASE,
-      onComplete: () =>
-        startLeaving(async () => {
-          await finishFirstRun()
-          onDone()
-        }),
+    startLeaving(async () => {
+      try {
+        await finishFirstRun()
+      } catch (e) {
+        setSaveError(String(e))
+        return
+      }
+      await gsap.to(root.current, { autoAlpha: 0, duration: 0.7, ease: EASE })
+      onDone()
     })
   }
 
@@ -271,6 +273,12 @@ export function Splash({ onDone }: { onDone: () => void }) {
           />
         )}
       </div>
+
+      {saveError && (
+        <p className="absolute inset-x-0 bottom-7 text-center text-[13px] leading-[18px] text-destructive">
+          {saveError}
+        </p>
+      )}
 
       <span className="absolute bottom-[22px] left-6 rounded-full bg-claude px-2.5 py-1 font-mono text-[11px] leading-[14px] font-semibold tracking-[0.08em] text-claude-foreground uppercase">
         Beta

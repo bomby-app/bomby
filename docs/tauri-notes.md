@@ -60,7 +60,7 @@ Checked 2026-11-03/04 against Tauri 2.12.5, `tauri-codegen` 2.7.4, `wry` 0.57.1,
 ## Credentials
 
 - `keyring` 4.2.0 with `v1` uses Keychain, Windows Credential Manager or Secret Service. One entry (service = app identifier, account `credentials`) stores JSON for LiveKit and Gemini.
-- `credentials::Vault` reads once per run and caches in Tauri state. The page receives URL, API key and boolean secret presence, never the secrets.
+- `credentials::Vault` reads once per run and caches in Tauri state. The page receives URL, API key and boolean secret presence, never the secrets. Each save or removal sends `keys-changed` (no payload) to every window, so the main window's Call buttons follow keys changed in Settings.
 - Ad-hoc-signed dev rebuilds can trigger another macOS keychain prompt because each binary is a new trust identity. A Developer ID release keeps a stable identity.
 
 ## Storage

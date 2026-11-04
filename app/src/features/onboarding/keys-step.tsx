@@ -147,27 +147,28 @@ export function KeysStep({
         }
       />
 
+      {error && (
+        <p className="mt-5 w-[440px] text-center text-[13px] leading-[18px] text-destructive">
+          {error}
+        </p>
+      )}
+      {/* Always there, so a failed paste still leaves the way to type them. */}
       <p
         className={cn(
-          "mt-7 w-[440px] text-center text-[13px] leading-[18px]",
-          error ? "text-destructive" : "text-foreground/55"
+          "w-[440px] text-center text-[13px] leading-[18px] text-foreground/55",
+          error ? "mt-2" : "mt-7"
         )}
       >
-        {error ?? (
-          <>
-            Copy them from <Link href={LIVEKIT_KEYS}>LiveKit Cloud</Link>{" "}
-            (Settings, API keys) and{" "}
-            <Link href={GEMINI_KEYS}>Google AI Studio</Link>, or{" "}
-            <button
-              type="button"
-              className="font-medium text-foreground underline decoration-highlighter decoration-[3px] underline-offset-[3px] outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              onClick={() => setTyping(true)}
-            >
-              type them in
-            </button>
-            .
-          </>
-        )}
+        Copy them from <Link href={LIVEKIT_KEYS}>LiveKit Cloud</Link> (Settings,
+        API keys) and <Link href={GEMINI_KEYS}>Google AI Studio</Link>, or{" "}
+        <button
+          type="button"
+          className="font-medium text-foreground underline decoration-highlighter decoration-[3px] underline-offset-[3px] outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={() => setTyping(true)}
+        >
+          type them in
+        </button>
+        .
       </p>
 
       <Dialog open={typing} onOpenChange={setTyping}>

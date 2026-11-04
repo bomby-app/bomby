@@ -25,7 +25,6 @@ import {
   saveCredentials,
 } from "./api"
 import { type LiveKitEnv, parseLiveKitEnv } from "./livekit-env"
-import { checkKeysAgain } from "./use-saved-keys"
 
 // Typed keys, not prose: no spell check, autocorrect or autofill.
 const KEY_INPUT = {
@@ -93,7 +92,6 @@ export function LiveKitForm({ focus = false }: { focus?: boolean }) {
       })
       show(await credentialsInfo())
       setStatus({ kind: "saved" })
-      void checkKeysAgain()
     } catch (error) {
       setStatus({ kind: "error", message: String(error) })
     }
@@ -104,7 +102,6 @@ export function LiveKitForm({ focus = false }: { focus?: boolean }) {
       await clearCredentials()
       show(null)
       setStatus({ kind: "idle" })
-      void checkKeysAgain()
     } catch (error) {
       setStatus({ kind: "error", message: String(error) })
     }

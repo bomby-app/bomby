@@ -88,7 +88,7 @@ pub fn update_in_background<R: Runtime>(app: &AppHandle<R>) {
             // A half-updated set must not run; Settings offers Set up again.
             let _ = fs::remove_dir_all(dir.join("bin"));
         }
-        agents::refresh_blocking(&app);
+        agents::refresh_after_change(&app);
     });
 }
 
@@ -106,7 +106,7 @@ pub async fn install_adapters<R: Runtime>(app: AppHandle<R>) -> Result<()> {
         install(&dir, |step| {
             let _ = reporter.emit(PROGRESS, step);
         })?;
-        agents::refresh_blocking(&app);
+        agents::refresh_after_change(&app);
         let _ = app.emit(PROGRESS, Step::Done);
         Ok(())
     })
