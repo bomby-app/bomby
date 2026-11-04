@@ -12,7 +12,7 @@ import {
 import { pickFolders } from "./api"
 
 /**
- * A project's folders, in order: the first is Claude's working folder. Add opens the system
+ * A project's folders, in order: the first is the agents' working folder. Add opens the system
  * folder picker; rows can be removed or moved to the top. Used by the New project dialog
  * and the project view.
  */
@@ -27,7 +27,7 @@ export function FolderList({
   minimum?: number
 }) {
   async function add() {
-    const picked = await pickFolders("Add folders Claude can work in")
+    const picked = await pickFolders("Add folders the agents can work in")
     const fresh = picked.filter((f) => !folders.includes(f))
     if (fresh.length > 0) onChange([...folders, ...fresh])
   }

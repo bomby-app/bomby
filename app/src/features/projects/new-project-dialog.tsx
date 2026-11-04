@@ -24,7 +24,7 @@ import { FolderList } from "./folder-list"
 import { folderName, uniqueName } from "./names"
 import { useProjects } from "./projects-provider"
 
-/** New project: a name and the folders Claude can work in. */
+/** New project: a name and the folders the agents can work in. */
 export function NewProjectDialog({
   open,
   onOpenChange,
@@ -93,7 +93,7 @@ function NewProjectForm({
       <DialogHeader>
         <DialogTitle>New project</DialogTitle>
         <DialogDescription>
-          A name and the folders Claude can work in.
+          A name and the folders your agents can work in.
         </DialogDescription>
       </DialogHeader>
 
