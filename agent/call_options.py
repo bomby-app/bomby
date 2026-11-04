@@ -67,8 +67,8 @@ class CallOptions:
         return (
             f"{base}\n\n## Previous conversation\n\n"
             "You're picking up an earlier conversation with the user; its last lines are "
-            "below. Carry on as if it never stopped. Claude doesn't remember it, though "
-            "anything Claude did then is still done, so when you hand off a follow-up, tell "
-            "Claude what it needs to know.\n\n"
+            "below. Carry on as if it never stopped. The agents don't remember it, though "
+            "anything they did then is still done, so when you hand off a follow-up, tell "
+            "the agent what it needs to know.\n\n"
             f"{lines}"
         )

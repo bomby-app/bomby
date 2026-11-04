@@ -160,7 +160,7 @@ def _display_name(option: SessionConfigOptionSelect) -> str:
 
 def _reports_auth(capabilities: AgentCapabilities | None) -> bool:
     meta = capabilities.field_meta if capabilities else None
-    return bool(meta) and "authStatus" in (meta or {})
+    return "authStatus" in (meta or {})
 
 
 def _can_delete(capabilities: AgentCapabilities | None) -> bool:
