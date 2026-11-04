@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core"
+import { getCurrentWindow } from "@tauri-apps/api/window"
 
 // The core's call commands (src-tauri/src/calls.rs).
 
@@ -54,4 +55,15 @@ export function deleteCall(callId: number): Promise<void> {
 
 export function callMessages(callId: number): Promise<SavedMessage[]> {
   return invoke("call_messages", { callId })
+}
+
+/** A call's agent job crashed, with why (src-tauri/src/calls.rs, `AGENT_CRASHED`). */
+export type AgentCrashed = { callId: number; reason: string }
+
+/** Calls `handler` when a call's agent job crashes. Returns the unlisten. */
+export function onAgentCrashed(handler: (crash: AgentCrashed) => void) {
+  return getCurrentWindow().listen<AgentCrashed>(
+    "call-agent-crashed",
+    (event) => handler(event.payload)
+  )
 }

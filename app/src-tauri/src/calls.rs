@@ -4,20 +4,20 @@
 //! (docs/decisions/app-data-in-one-sqlite-db.md).
 
 use std::path::PathBuf;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use livekit_api::access_token::{AccessToken, VideoGrants};
 use livekit_protocol::{RoomAgentDispatch, RoomConfiguration};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, Runtime, State};
+use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
-use crate::agent::{AgentWorker, WorkerConfig};
+use crate::agent::{AgentWorker, JobCrash, OnCrash, WorkerConfig};
 use crate::db::{Db, now_ms};
 use crate::error::{Error, Result};
 use crate::sync;
-use crate::{agents, credentials, projects, settings};
+use crate::{agents, credentials, projects, settings, windows};
 
 /// The agent's name in `agent/agent.py` (`AGENT_NAME`), which the token dispatches.
 const AGENT_NAME: &str = "bomby";
@@ -25,6 +25,43 @@ const AGENT_NAME: &str = "bomby";
 const TOKEN_TTL: Duration = Duration::from_secs(10 * 60);
 /// How much of a resumed call the agent is told: the last this many lines.
 const RESUME_LINES: i64 = 50;
+/// Sent to the main window when a call's agent job crashes, so the call fails at once
+/// instead of after the agent's join timeout.
+pub const AGENT_CRASHED: &str = "call-agent-crashed";
+
+/// What the main window hears when a call's agent job crashed.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentCrashed {
+    call_id: i64,
+    /// What went wrong, in the agent's words: "project folder does not exist: ...".
+    reason: String,
+}
+
+/// A new room for `call_id` every time, also when resuming. Unique across reinstalls too,
+/// since row ids start over with a new database.
+fn room_name(call_id: i64) -> String {
+    format!("bomby-{call_id}-{}", now_ms())
+}
+
+/// The call a room belongs to (`room_name`).
+fn call_of_room(room: &str) -> Option<i64> {
+    room.strip_prefix("bomby-")?.split('-').next()?.parse().ok()
+}
+
+/// Tells the main window about each crashed job, by its call.
+fn report_crashes<R: Runtime>(app: &AppHandle<R>) -> OnCrash {
+    let app = app.clone();
+    Arc::new(move |JobCrash { room, reason }| {
+        if let Some(call_id) = call_of_room(&room) {
+            let _ = app.emit_to(
+                windows::MAIN,
+                AGENT_CRASHED,
+                AgentCrashed { call_id, reason },
+            );
+        }
+    })
+}
 
 /// The agents the current call opened with. Every token for that call carries the same
 /// ones, so a reconnect mid-call never hands the voice agent a different list, whatever
@@ -209,6 +246,7 @@ pub fn open_call<R: Runtime>(
             gemini_key: gemini,
         },
         &log_dir,
+        report_crashes(&app),
     )?;
 
     let conn = db.conn();
@@ -259,9 +297,7 @@ pub fn call_token<R: Runtime>(
             settings::voice(&conn)?,
         )
     };
-    // A new room every time, also when resuming. Unique across reinstalls too, since row
-    // ids start over with a new database.
-    let room = format!("bomby-{call_id}-{}", now_ms());
+    let room = room_name(call_id);
     // A call opened in this run has its own list; any other gets the last one found.
     let agents = call_agents
         .get(call_id)
@@ -508,5 +544,11 @@ mod tests {
         let config = claims.room_config.unwrap();
         assert_eq!(config.agents[0].agent_name, AGENT_NAME);
         assert_eq!(config.agents[0].metadata, r#"{"project":"samba"}"#);
+    }
+
+    #[test]
+    fn a_room_names_its_call() {
+        assert_eq!(call_of_room(&room_name(42)), Some(42));
+        assert_eq!(call_of_room("someone-elses-room"), None);
     }
 }

@@ -18,12 +18,14 @@ import {
 
 import { AgentSessionProvider } from "@/components/agents-ui/agent-session-provider"
 import { StartAudioButton } from "@/components/agents-ui/start-audio-button"
+import { useCoreEvent } from "@/hooks/use-core-event"
 
 import { useProjects } from "../projects/projects-provider"
 import {
   callMessages,
   callToken,
   endCall,
+  onAgentCrashed,
   openCall,
   type SavedMessage,
   saveMessage,
@@ -143,10 +145,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
       await session.start({ signal: aborter.signal })
       await refresh() // the new call shows in the tree
     } catch (e) {
-      // Cancelled because the call already ended: the disconnect closed it, and whatever
-      // ended it said why.
-      if (aborter.signal.aborted) return
-      setError({ projectId, message: String(e) })
+      // Cancelled because the call already ended: whatever ended it said why.
+      if (!aborter.signal.aborted) setError({ projectId, message: String(e) })
       // Joining may have failed before the room connected, so no disconnect closes the call.
       if (opened !== null) {
         await session.end().catch(() => {})
@@ -171,6 +171,18 @@ export function CallProvider({ children }: { children: ReactNode }) {
     },
     [active]
   )
+
+  // The agent's job crashed: fail the call now with the agent's reason, rather than wait
+  // out the join timeout (issue #14). Ending the session cancels a start in progress.
+  useCoreEvent(onAgentCrashed, ({ callId, reason }) => {
+    if (active?.callId !== callId) return
+    setError({
+      projectId: active.projectId,
+      message: `The agent stopped: ${reason}`,
+    })
+    joining.current?.abort()
+    void session.end()
+  })
 
   return (
     <CallContext value={{ active, starting, error, start }}>
