@@ -49,6 +49,15 @@ Checked 2026-11-04 against [react.dev](https://react.dev/reference/react) for Re
 - Pending states come from `useTransition` with an async action, not hand-kept `loading` flags. A `set` call after an `await` inside an action needs its own `startTransition`; store updates are synchronous anyway.
 - Effects only synchronize with something outside React. Never set state synchronously in an effect (`react/set-state-in-effect`), and don't read `ref.current` during render, or pass a ref to a function during render: a closure-held value works where a value must outlive renders but not drive them (`callTokens` in `call-provider.tsx`).
 
+## Animated gradients
+
+- A gradient can't transition by itself; its numbers can. `components/day-glow.css` registers each one with `@property` (`<percentage>`, `<number>`, `<color>`, `inherits: false`) and builds the `radial-gradient` from them, with each stop's alpha from `color-mix(in oklab, <color> calc(<alpha> * 100%), transparent)`. A new `data-stage` then transitions smoothly. Tailwind v4 relies on `@property` too, so the webview supports it.
+- `in oklab` interpolation inside the gradient itself is left out: every stop shares one hue, and a declaration the webview didn't parse would drop the glow.
+
+## Splash sound
+
+- WKWebView plays audio without a user gesture here: wry 0.57.1 sets `mediaTypesRequiringUserActionForPlayback` to none when `autoplay` is on, its default (`src/wkwebview/mod.rs`, `WebViewAttributes::default`), and Tauri 2.12 doesn't turn it off. The splash calls `new Audio(...).play()` on mount.
+
 ## React Compiler
 
 Checked 2026-11-04 against `@vitejs/plugin-react` 6.2.1 (installed README), `oxc-transform-react` 0.156.0, [oxc.rs/blog/2026-08-18-react-compiler-support](https://oxc.rs/blog/2026-08-18-react-compiler-support) and [react.dev/learn/react-compiler](https://react.dev/learn/react-compiler/introduction).

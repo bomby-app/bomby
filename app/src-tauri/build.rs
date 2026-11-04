@@ -21,6 +21,8 @@ const COMMANDS: &[&str] = &[
     "delete_call",
     "voice_settings",
     "set_voice",
+    "first_run",
+    "finish_first_run",
     "list_projects",
     "create_project",
     "update_project",

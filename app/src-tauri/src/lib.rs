@@ -66,6 +66,8 @@ pub fn run() {
             calls::delete_call,
             settings::voice_settings,
             settings::set_voice,
+            settings::first_run,
+            settings::finish_first_run,
             projects::list_projects,
             projects::create_project,
             projects::update_project,

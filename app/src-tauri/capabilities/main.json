@@ -23,6 +23,12 @@
     "allow-save-message",
     "allow-call-messages",
     "allow-app-log",
-    "allow-delete-call"
+    "allow-delete-call",
+    "clipboard-manager:allow-write-text",
+    "allow-agents-status",
+    "allow-refresh-agents",
+    "allow-install-adapters",
+    "allow-first-run",
+    "allow-finish-first-run"
   ]
 }

@@ -12,7 +12,7 @@ src/
   windows/                  one folder per window; mount.tsx wraps every window in the shared providers
     main/                   the main window: sidebar, header, main panel
     settings/               the settings window; sections.ts lists its sections
-  features/<feature>/       one folder per feature: theme, credentials, projects, call, agents, setup, voice
+  features/<feature>/       one folder per feature: theme, credentials, projects, call, agents, setup, voice, onboarding (the first-run splash)
   components/               shared components of our own (app-logo, wordmark, mascot, titlebar-spacer)
   components/ui/            shadcn components, from shadcn's registry
   components/agents-ui/     LiveKit Agents UI components, from LiveKit's registry

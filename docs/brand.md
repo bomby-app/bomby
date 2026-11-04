@@ -6,7 +6,7 @@ The source of truth is the Paper file **bomby**, pages `branding` and `app asset
 
 - **Bomby**; lowercase wordmark `bomby`. Website `bomby.app` ([rename decision](decisions/name-bomby.md)).
 - Tagline: **"Stop typing. Start talking."** (owner, 2026-11-04, from the cover). Supporting line: "Say the task out loud. Bomby hands it to your agent and tells you when it's done."
-- Never co-brand with Claude, LiveKit or Gemini. Name them only to describe requirements or implementation. Their logos appear only in Settings > Setup, in `currentColor`.
+- Never co-brand with Claude, LiveKit or Gemini. Name them only to describe requirements or implementation. Their logos appear only in Settings and on the first-run card, in `currentColor`, except Claude's own colours on its first-run tile (owner's board, 2026-11-04).
 - `.github/assets/cover.jpg` (1280 x 640) heads the README and serves as the social preview.
 
 ## Mark: Dot Dot
@@ -76,6 +76,15 @@ Only the eyes change, never the bubble shape or colours. States follow `useAgent
 `app/src/components/mascot.tsx` exports `<Mascot state level size />` and `mascotState(agentState)`. Dot Dot sits over LiveKit's bar visualizer on the call screen, replaces a project's folder icon during a call and appears on Start a call. Visualizer bars use `--primary`: highlighter in dark, ink in light (owner, 2026-11-04).
 
 Motion uses CSS transforms on one SVG. Eyes lead; only sound scales the bubble. Use ease-out for changes, sine for loops, no bounce, and 120 to 400ms one-offs. Reduced motion removes loops and makes swaps instant, but keeps blinking. Below 32px nothing loops.
+
+## First run
+
+Paper page `splash`, option A (owner, 2026-11-04), in `app/src/features/onboarding/`. It shows until an agent is set up.
+
+- **Glow.** `components/day-glow.tsx`: a glow rising from the bottom, by the Mac's clock: highlighter in the morning (5 to 12), option B's bubblegum glow around a highlighter core in the afternoon (12 to 17), bubblegum in option A's shape in the evening. Dark mode uses the dark boards. Its `rest` stage is the projects view's glow (page `projects view`), for reuse there.
+- **Sequence.** Dawn (0 ms: the glow low, Dot Dot peeking up with closed eyes), Rise (600 ms), Awake (1400 ms: eyes open, "Good morning, I'm bomby." and "Let's set up your first agent."), Setup (2800 ms: Dot Dot small and listening above the first agent's card). Each stage eases into the next (ease-out, 0.6 to 1 s); reduced motion starts at Setup. A six-second opening sound plays with it (`app/src/assets/splash-music.mp3`).
+- **Mascot with depth.** `<Mascot depth />`: Paper's lit bubble (a gradient from above, a rim of light, catchlights in the eyes, a soft shadow), an ink bubble with highlighter eyes in light and the reverse in dark (`--mascot-*` tokens).
+- **The card.** The agent found (a ready one first), with Set up now (installs its adapter), the command it needs, or Ready; "Use … instead" picks another. Claude's tile keeps Claude's own colours, as the owner's board shows (`--agent-claude`). A ready agent brings the round continue arrow, bottom right.
 
 ## Voice
 
