@@ -1,5 +1,8 @@
+import { useGSAP } from "@gsap/react"
+import gsap from "gsap"
 import { ChevronRight, Folder, Plus } from "lucide-react"
-import { useState } from "react"
+import { useReducedMotion } from "motion/react"
+import { useRef, useState } from "react"
 
 import { DayGlow, type Daypart, useDaypart } from "@/components/day-glow"
 import { Mascot } from "@/components/mascot"
@@ -7,6 +10,12 @@ import { Button } from "@/components/ui/button"
 
 import type { Project } from "./api"
 import { shortPath, timeAgo } from "./names"
+
+gsap.registerPlugin(useGSAP)
+
+// The mascot drops in and settles like something with weight: a damped spring (GSAP's
+// elastic is a sine damped by 2^-10t), about two and a half waves (owner, 2026-11-05).
+const DROP = { from: -36, duration: 1.6, ease: "elastic.out(1, 0.45)" }
 
 const GREETING: Record<Daypart, string> = {
   morning: "Good morning.",
@@ -52,6 +61,23 @@ export function ProjectsHome({
 }) {
   const daypart = useDaypart()
   const [all, setAll] = useState(false)
+  const still = useReducedMotion() === true
+  const mascot = useRef<HTMLDivElement>(null)
+
+  // Every time the home opens.
+  useGSAP(() => {
+    if (still) return
+    gsap.fromTo(
+      mascot.current,
+      { y: DROP.from },
+      { y: 0, duration: DROP.duration, ease: DROP.ease }
+    )
+    gsap.fromTo(
+      mascot.current,
+      { autoAlpha: 0 },
+      { autoAlpha: 1, duration: 0.35, ease: "power1.out" }
+    )
+  })
   const recent = [...projects].sort(byNewestCall)
   const shown = all ? recent : recent.slice(0, RECENT)
 
@@ -60,7 +86,9 @@ export function ProjectsHome({
       <DayGlow daypart={daypart} stage="rest" />
       <div className="relative flex min-h-0 flex-1 flex-col items-center [justify-content:safe_center] gap-9 overflow-auto px-6 pt-8 pb-11">
         <div className="flex flex-col items-center">
-          <Mascot depth state="idle" size={92} />
+          <div ref={mascot}>
+            <Mascot depth state="idle" size={92} />
+          </div>
           <h1 className="pt-5 font-heading text-[40px] leading-[44px] font-bold tracking-[-0.035em]">
             {GREETING[daypart]}
           </h1>

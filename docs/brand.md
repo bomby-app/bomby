@@ -91,7 +91,7 @@ Paper page `splash`, option A (owner, 2026-11-04), in `app/src/features/onboardi
 
 ## Projects home
 
-Paper page `projects view`, in `app/src/features/projects/projects-home.tsx`: the main panel with nothing selected. Dot Dot with depth, the day's greeting ("Good evening.") in the day glow's `rest` stage, then the recent projects, the newest call first (three, See all for the rest), or Create your first project. The sidebar's logo brings it back, with no hover state. Call and Resume stay disabled, with a tooltip saying what's missing, until a call has an agent, LiveKit and Gemini (`features/call/use-call-readiness.ts`).
+Paper page `projects view`, in `app/src/features/projects/projects-home.tsx`: the main panel with nothing selected. Dot Dot with depth, the day's greeting ("Good evening.") in the day glow's `rest` stage, then the recent projects, the newest call first (three, See all for the rest), or Create your first project. The sidebar's logo brings it back, with no hover state. Each time it opens, Dot Dot drops in and settles like something with weight, a damped spring (`elastic.out(1, 0.45)`, 1.6 s): the one place it overshoots, by the owner's choice (2026-11-05). Call and Resume stay disabled, with a tooltip saying what's missing, until a call has an agent, LiveKit and Gemini (`features/call/use-call-readiness.ts`).
 
 ## Voice
 
