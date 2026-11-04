@@ -13,7 +13,7 @@ from livekit.agents.llm import ToolError
 
 from acp_client import AcpRunner
 from acp_client.client import pick_allow
-from acp_client.runner import briefing, child_environment, steered_note
+from acp_client.runner import Turn, briefing, child_environment, steered_note
 from harnesses import CLAUDE_CODE, Harness
 from project import Project
 
@@ -49,6 +49,11 @@ def run_with_fake(
     return result, events
 
 
+async def text(turn: Awaitable[Turn]) -> str:
+    """The text a request came back with."""
+    return (await turn).text
+
+
 def names(events: list[dict[str, Any]]) -> list[str]:
     return [e["event"] for e in events]
 
@@ -57,7 +62,7 @@ async def until_prompted(
     runner: AcpRunner, task: str, session: str = "main"
 ) -> asyncio.Task[str]:
     """Start `task` in `session` and return once its turn is running."""
-    running = asyncio.create_task(runner.run(task, session))
+    running = asyncio.create_task(text(runner.run(task, session)))
     for _ in range(200):
         if runner.is_busy(session):
             await asyncio.sleep(0.2)  # let the prompt reach the agent
@@ -67,7 +72,9 @@ async def until_prompted(
 
 
 def test_run_returns_only_the_final_message(tmp_path: Path) -> None:
-    result, events = run_with_fake(tmp_path, lambda r: r.run("reply all tests pass"))
+    result, events = run_with_fake(
+        tmp_path, lambda r: text(r.run("reply all tests pass"))
+    )
 
     assert result == "Done: all tests pass"
     assert names(events) == [
@@ -82,7 +89,7 @@ def test_run_returns_only_the_final_message(tmp_path: Path) -> None:
 def test_new_session_appends_system_prompt_and_bypasses_permissions(
     tmp_path: Path,
 ) -> None:
-    _, events = run_with_fake(tmp_path, lambda r: r.run("reply ok"))
+    _, events = run_with_fake(tmp_path, lambda r: text(r.run("reply ok")))
 
     new_session = next(e for e in events if e["event"] == "new_session")
     assert new_session["system_prompt"] == {
@@ -100,7 +107,7 @@ def test_project_folders_become_cwd_and_extra_directories(tmp_path: Path) -> Non
     other.mkdir()
 
     _, events = run_with_fake(
-        tmp_path, lambda r: r.run("reply ok"), folders=(main, other)
+        tmp_path, lambda r: text(r.run("reply ok")), folders=(main, other)
     )
 
     new_session = next(e for e in events if e["event"] == "new_session")
@@ -117,7 +124,7 @@ def test_without_a_system_prompt_the_briefing_goes_with_the_first_task(
     plain = dataclasses.replace(CLAUDE_CODE, id="plain", system_prompt_append=False)
 
     async def scenario(runner: AcpRunner) -> list[str]:
-        return [await runner.run("turns"), await runner.run("turns")]
+        return [(await runner.run("turns")).text, (await runner.run("turns")).text]
 
     _, events = run_with_fake(tmp_path, scenario, folders=(main, other), harness=plain)
 
@@ -131,7 +138,7 @@ def test_without_a_system_prompt_the_briefing_goes_with_the_first_task(
 
 def test_follow_ups_continue_the_same_session(tmp_path: Path) -> None:
     async def scenario(runner: AcpRunner) -> list[str]:
-        return [await runner.run("turns"), await runner.run("turns")]
+        return [(await runner.run("turns")).text, (await runner.run("turns")).text]
 
     result, events = run_with_fake(tmp_path, scenario)
 
@@ -147,11 +154,14 @@ def test_sessions_run_in_parallel_and_each_keeps_its_context(
     async def scenario(runner: AcpRunner) -> list[str]:
         page = await until_prompted(runner, "hang", "page")
         # "page" is still working; "api" opens its own session and runs alongside it.
-        api = [await runner.run("turns", "api"), await runner.run("turns", "api")]
+        api = [
+            (await runner.run("turns", "api")).text,
+            (await runner.run("turns", "api")).text,
+        ]
         _ = page.cancel()
         with pytest.raises(asyncio.CancelledError):
             await page
-        return [*api, await runner.run("turns", "page")]
+        return [*api, (await runner.run("turns", "page")).text]
 
     result, events = run_with_fake(tmp_path, scenario)
 
@@ -166,8 +176,8 @@ def test_sessions_run_in_parallel_and_each_keeps_its_context(
 def test_session_names_ignore_case_and_spacing(tmp_path: Path) -> None:
     async def scenario(runner: AcpRunner) -> list[str]:
         return [
-            await runner.run("turns", "Landing page"),
-            await runner.run("turns", "landing-page"),
+            (await runner.run("turns", "Landing page")).text,
+            (await runner.run("turns", "landing-page")).text,
         ]
 
     result, events = run_with_fake(tmp_path, scenario)
@@ -177,7 +187,7 @@ def test_session_names_ignore_case_and_spacing(tmp_path: Path) -> None:
 
 
 def test_a_request_mid_turn_is_steered_into_it(tmp_path: Path) -> None:
-    async def scenario(runner: AcpRunner) -> tuple[str, str]:
+    async def scenario(runner: AcpRunner) -> tuple[str, Turn]:
         first = await until_prompted(runner, "wait landing page", "page")
         steered = await runner.run("make the header blue", "page")
         return await first, steered
@@ -185,7 +195,7 @@ def test_a_request_mid_turn_is_steered_into_it(tmp_path: Path) -> None:
     (first, steered), events = run_with_fake(tmp_path, scenario)
 
     assert first == "Done: landing page + make the header blue"
-    assert steered == steered_note(CLAUDE_CODE)
+    assert steered == Turn(steered_note(CLAUDE_CODE), steered=True)
     steer = next(e for e in events if e["event"] == "steer")
     assert steer["idle_behavior"] == "promptRequired"
     assert steer["injected"] is True
@@ -197,7 +207,7 @@ def test_without_steering_a_request_waits_for_the_running_turn(
 ) -> None:
     async def scenario(runner: AcpRunner) -> list[str]:
         first = await until_prompted(runner, "hang")
-        second = asyncio.create_task(runner.run("turns"))
+        second = asyncio.create_task(text(runner.run("turns")))
         await asyncio.sleep(0.5)
         assert not second.done()  # queued behind the running turn
         _ = first.cancel()
@@ -220,7 +230,7 @@ def test_a_harness_without_steering_or_bypass_mode_skips_both(tmp_path: Path) ->
 
     async def scenario(runner: AcpRunner) -> list[str]:
         first = await until_prompted(runner, "hang")
-        second = asyncio.create_task(runner.run("turns"))
+        second = asyncio.create_task(text(runner.run("turns")))
         await asyncio.sleep(0.5)
         assert not second.done()  # no steering: queued behind the running turn
         _ = first.cancel()
@@ -241,7 +251,7 @@ def test_cancelling_stops_the_turn_and_keeps_the_session(tmp_path: Path) -> None
         _ = task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
-        return await runner.run("turns")
+        return (await runner.run("turns")).text
 
     result, events = run_with_fake(tmp_path, scenario)
 
@@ -276,7 +286,7 @@ def test_no_new_work_after_the_call_ends(tmp_path: Path) -> None:
 
 
 def test_permission_requests_are_approved_once(tmp_path: Path) -> None:
-    result, _ = run_with_fake(tmp_path, lambda r: r.run("permission"))
+    result, _ = run_with_fake(tmp_path, lambda r: text(r.run("permission")))
 
     assert result == "chose once"
 
@@ -323,7 +333,7 @@ def test_a_failed_turn_and_a_crash_are_reported_briefly_and_the_next_task_restar
     async def scenario(runner: AcpRunner) -> tuple[str, str, str]:
         failed = await tool_error(runner, "fail Rate limited")
         crashed = await tool_error(runner, "crash out of memory")
-        return failed, crashed, await runner.run("reply back")
+        return failed, crashed, (await runner.run("reply back")).text
 
     (failed, crashed, after), _ = run_with_fake(tmp_path, scenario)
 

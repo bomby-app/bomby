@@ -13,6 +13,7 @@ import logging
 import os
 from collections.abc import Mapping, Sequence
 from contextlib import AsyncExitStack
+from dataclasses import dataclass
 from pathlib import Path
 from typing import final
 
@@ -113,6 +114,16 @@ def steered_note(harness: Harness) -> str:
     )
 
 
+@dataclass(frozen=True)
+class Turn:
+    """What a request to a session came back with."""
+
+    text: str
+    """The agent's final message, or `steered_note` when the request was steered."""
+    steered: bool = False
+    """Whether it joined a turn that was already running, whose result covers it."""
+
+
 @final
 class _Session:
     """One named session in the call."""
@@ -175,11 +186,11 @@ class AcpRunner:
         session = self._sessions.get(session_name(name))
         return session is not None and session.turn_lock.locked()
 
-    async def run(self, task: str, session: str = DEFAULT_SESSION) -> str:
+    async def run(self, task: str, session: str = DEFAULT_SESSION) -> Turn:
         """Send `task` to the session called `session`; return the agent's final message.
 
         A new name opens a new session. Mid-turn, the task is steered into the running
-        turn and this returns `steered_note` at once: that turn's result answers it.
+        turn and this returns a steered `Turn` at once: that turn's result answers it.
         """
         if self._closed:
             raise ToolError(self._ending())
@@ -189,10 +200,10 @@ class AcpRunner:
         if s.turn_lock.locked() and self._can_steer:
             conn, session_id = await self._open(s)
             if await self._steer(conn, s, session_id, task):
-                return steered_note(self._harness)
+                return Turn(steered_note(self._harness), steered=True)
         async with s.turn_lock:
             conn, session_id = await self._open(s)
-            return await self._prompt(conn, s, session_id, task)
+            return Turn(await self._prompt(conn, s, session_id, task))
 
     async def aclose(self) -> None:
         """Close every session, then the adapter process. No new work after this."""
