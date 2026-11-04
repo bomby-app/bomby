@@ -10,7 +10,6 @@ from livekit.agents import RunContext
 from livekit.agents.llm import ToolError, ToolFlag, function_tool
 
 from acp_client import session_name
-from acp_client.runner import steered_note
 from call import Call
 from harnesses import DEFAULT_AGENT, HARNESSES, AgentName, Harness
 
@@ -56,15 +55,15 @@ async def start_task(
     id = board.add(harness, name, task)
     try:
         await board.publish()
-        result = await runner.run(task, name)
+        turn = await runner.run(task, name)
     except asyncio.CancelledError:
         await board.finish(id, "stopped")
         raise
     except Exception:
         await board.finish(id, "failed")
         raise
-    await board.finish(id, "added" if result == steered_note(harness) else "done")
-    return result
+    await board.finish(id, "added" if turn.steered else "done")
+    return turn.text
 
 
 def agents_note(available: list[Harness]) -> str:
