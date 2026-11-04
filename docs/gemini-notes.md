@@ -45,3 +45,28 @@ Sources:
 
 - Proactive audio means the model may stay silent on input it judges irrelevant (background speech, noise). Address it directly if it doesn't respond.
 - On Extended Thinking, expect spoken progress updates while it works and longer time to the tool call. Per the LiveKit demo, the server sends `turnComplete` after each progress segment, then more audio, then the tool call.
+
+## Voices
+
+Checked 2026-11-04.
+
+- Live (native audio) takes any TTS voice by name (`speech_config.voice_config.prebuilt_voice_config.voice_name`; the plugin's `RealtimeModel(voice=...)`). The app offers Gemini's 30 prebuilt voices, with style and pitch from the speech generation docs and AI Studio (`app/src-tauri/src/settings.rs`); Charon is the default.
+- `GET /v1beta/voices` (`x-goog-api-key`, `page_size` up to 1000) lists far more: the user's own designed voices (`type: "prompted"`, ids like `voice_...`) first, then a catalog of about a thousand prebuilt voices per page (ids like `achernar` or `ar-001-advisor-1`, with `language_code`, `accent`, `gender`, `pitch`, `persona`, `description`) and a `next_page_token`. The owner chose the 30 default voices only; whether Live accepts catalog or custom ids is unchecked.
+
+## Language
+
+- Native-audio Live models choose their spoken language themselves and take no language code (Live API capabilities, "Change voice and language"); "you can restrict the languages it speaks in by specifying it in the system instructions". `prompts/voice.md` holds the agent to English unless the user switches.
+- Input transcription takes `AudioTranscriptionConfig(language_codes=[...])` as BCP-47 hints (google-genai types). `agent.py` passes `["en-US"]`: noisy audio had been transcribed as Portuguese and answered in Russian (2026-11-04).
+- **The user's transcript arrives with the reply.** The plugin forwards each `input_transcription` chunk the moment Gemini sends it (`realtime_api.py`, `_is_new_generation` starts a generation for it), but Gemini sends it around the start of its answer, so the user's line shows with the agent's turn. LiveKit's docs: realtime models give no interim results and user transcripts "often arrive after the agent's response"; their fix is a separate STT, which `agent_activity.py` only uses for the transcript when the realtime model has no user transcription of its own (`on_interim_transcript`). Checked in `livekit-agents` 1.8.10 and docs.livekit.io `agents/models/realtime`, 2026-11-04. The owner chose no separate model: the delay stays.
+
+## Prompting
+
+From Google's Live API best practices (ai.google.dev `gemini-api/docs/live-api/best-practices`, read 2026-11-04), which `agent/prompts/voice.md` broadly follows (owner's own sections: Role, Tone, How you work, Non-negotiable rules; written as plain sentences, positive where possible):
+
+- System instructions in this order: **persona** (name, role, character, language), **conversational rules** in the order the model should follow them (one-time steps apart from loops the user can repeat), **tool calls** each in their own sentence inside that flow, then **guardrails**, with "if X happens, do Y" examples.
+- Use "unmistakably" where the model must be precise. For language: `RESPOND IN {LANGUAGE}. YOU MUST RESPOND UNMISTAKABLY IN {LANGUAGE}.` Our prompt keeps it in plain sentence case instead (owner, 2026-11-04: no shouting at a modern model).
+- Tool definitions should say when to invoke the tool, not only what it does (`start_task`'s docstring does).
+- Keep one prompt per persona and avoid multi-page prompts; the model does best with single function calls.
+- The Live API waits for user input before speaking; to greet first, prompt it to (the agent's `on_enter` does, with `generate_reply`).
+
+- **Tool schemas.** A `Literal` parameter with one value becomes JSON Schema `const`; the Google plugin rewrites `const` as a one-value `enum`, which Gemini accepts (`livekit/plugins/google/utils.py`, plugin 1.8.10). More values give a plain `enum`. So `start_task`'s `agent` reaches Gemini as `enum: ["claude"]`.

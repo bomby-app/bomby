@@ -1,0 +1,28 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "The main window: projects and the call.",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-set-theme",
+    "core:webview:allow-set-webview-zoom",
+    "opener:default",
+    "dialog:allow-open",
+    "allow-open-settings",
+    "allow-list-projects",
+    "allow-create-project",
+    "allow-update-project",
+    "allow-delete-project",
+    "allow-open-call",
+    "allow-call-token",
+    "allow-end-call",
+    "allow-save-message",
+    "allow-call-messages",
+    "allow-app-log",
+    "allow-delete-call"
+  ]
+}

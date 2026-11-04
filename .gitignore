@@ -15,3 +15,9 @@ wheels/
 # Tool caches
 .pytest_cache/
 .ruff_cache/
+
+# Web research cache
+.firecrawl/
+
+# Reference checkouts (not ours)
+.scratch/

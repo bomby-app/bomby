@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Merged into the app's Info.plist by the Tauri CLI. macOS shows this text when it asks for the mic. -->
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Bomby needs your mic so you can talk to it.</string>
+  <!-- macOS 26+ takes the app icon (light, dark, clear, tinted) from Resources/Assets.car,
+       compiled from icons/Bomby.icon by `just app icon`. Older macOS keeps using
+       CFBundleIconFile (icon.icns), which Tauri sets. -->
+  <key>CFBundleIconName</key>
+  <string>Bomby</string>
+</dict>
+</plist>

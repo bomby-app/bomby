@@ -3,3 +3,7 @@
 "github:livekit/livekit-cli" = "2.18.8"
 # Claude Code's ACP adapter, the process agent/tools/claude.py drives (`claude-agent-acp`)
 "npm:@agentclientprotocol/claude-agent-acp" = "0.100.0"
+# Rust toolchain for the Tauri app (app/src-tauri), installed through rustup by mise
+rust = "1.99.1"
+# JS package manager and runtime for the app's frontend (app/)
+bun = "1.4.4"

@@ -6,9 +6,12 @@ Start here. Every doc has one job; keep it that way.
 | --- | --- |
 | [architecture.md](architecture.md) | The pieces, how a call flows through them, and the contracts between them. Read first. |
 | [roadmap.md](roadmap.md) | The build steps, their status, and what is deliberately not done yet. |
+| [brand.md](brand.md) | Bomby's name, logo, colours, type, mascot and voice; points at the Paper file. |
 | [decisions/](decisions/) | One short record per decision: what we chose, why, and what it costs. |
 | [acp-notes.md](acp-notes.md) | ACP and `claude-agent-acp` facts, checked against the installed source. |
 | [livekit-notes.md](livekit-notes.md) | LiveKit Agents facts we rely on (async tools, dispatch, data to the frontend). |
+| [tauri-notes.md](tauri-notes.md) | How a Tauri app fits together, and the Tauri facts we rely on (mic permissions, window). |
+| [frontend-notes.md](frontend-notes.md) | The app's web half: shadcn, Tailwind v4, Biome, Agents UI. |
 | [gemini-notes.md](gemini-notes.md) | Gemini 3.8 Live facts and caveats, checked against the plugin. |
 | [gemini-capabilities-guide.md](gemini-capabilities-guide.md) | Google's Live API guide, downloaded as reference. Not ours; don't edit. |
 

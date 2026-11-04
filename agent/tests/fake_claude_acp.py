@@ -123,8 +123,8 @@ class FakeClaude:
         session = self._sessions[session_id]
         session.turns += 1
         session.cancelled.clear()
-        text = prompt[0].text
-        log("prompt", session_id=session_id, text=text)
+        text = prompt[-1].text  # the task; a briefing may come before it
+        log("prompt", session_id=session_id, text=text, blocks=[b.text for b in prompt])
 
         async def say(reply: str, message_id: str = "m1") -> None:
             assert self._client is not None

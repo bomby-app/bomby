@@ -1,6 +1,6 @@
-# claude-livekit
+# Bomby
 
-Talk to Claude Code. A voice agent (LiveKit Agents, Python, Gemini 3.8 Live) hands real work to a Claude Code session over **ACP** and speaks Claude's result when it is done. A desktop app (Tauri v2, planned) holds the projects and runs the call.
+Bomby lets you talk to your agents. The voice agent (LiveKit Agents, Python, Gemini 3.8 Live) hands real work to an agent over **ACP** (Claude Code today; more ACP harnesses later) and speaks its result when it is done. A desktop app (Tauri v2, in progress) holds the projects and runs the call.
 
 **Read [docs/README.md](docs/README.md) first**, then [docs/architecture.md](docs/architecture.md) and [docs/roadmap.md](docs/roadmap.md). Why things are the way they are is in [docs/decisions/](docs/decisions/).
 
@@ -8,21 +8,24 @@ Talk to Claude Code. A voice agent (LiveKit Agents, Python, Gemini 3.8 Live) han
 
 | Path | What |
 | --- | --- |
-| `agent/` | The voice agent (uv project). `agent.py` entrypoint, `tools/claude.py` the Claude runner and tool, `prompts/` the two prompts, `tests/` with a fake ACP agent. |
-| `app/` | The desktop app (planned). |
+| `agent/` | The voice agent (uv project). `agent.py` entrypoint, `harnesses/` one definition per agent (`claude.py`), `acp_client/` the ACP client and runner shared by all of them, `tools/` the voice model's tools, `prompts/` the prompts, `tests/` with a fake ACP agent. |
+| `app/` | The desktop app: Tauri v2, React frontend in `src/` (layout and conventions in `app/README.md`), Rust core in `src-tauri/`. See `docs/tauri-notes.md` and `docs/frontend-notes.md`. |
 | `docs/` | Architecture, roadmap, decisions, library notes. |
-| `justfile`, `agent.just` | Every main command, run from the repo root. The root `justfile` has repo-wide recipes and one `mod` per part: `just agent console`, later `just app build`. `just` lists them. |
-| `mise.toml` | Pinned tools: `lk` and `claude-agent-acp`. |
+| `justfile`, `agent.just`, `app.just` | Every main command, run from the repo root. The root `justfile` has repo-wide recipes and one `mod` per part: `just agent console`, `just app build`. `just` lists them. |
+| `mise.toml` | Pinned tools: `lk`, `claude-agent-acp`, `rust`, `bun`. |
 
 ## Rules
 
-- **Run commands through `just`** from the repo root. A new main command gets a recipe in its part's module (`agent.just`, later `app.just`) with a doc comment, a group and `[working-directory: '...']`. A new part gets its own `<part>.just` and a `mod <part>` line in the `justfile`.
+- **The app is Bomby** (lowercase wordmark `bomby`). Never co-brand it with Claude, LiveKit or Gemini ("Claude LiveKit", "Claude x LiveKit"); name them only for what the app uses. UI colours, logo and copy follow [docs/brand.md](docs/brand.md). The repo folder is still `claude-livekit`.
+- **Run commands through `just`** from the repo root. A new main command gets a recipe in its part's module (`agent.just`, `app.just`) with a doc comment, a group and `[working-directory: '...']`. A new part gets its own `<part>.just` and a `mod <part>` line in the `justfile`.
 - **`just check` must pass** (lint, types with 0 errors and 0 warnings, tests) before a change is done. Fix any lint, type or test failure you see, related or not.
-- **Don't run dev servers, `lk agent console` or the app.** Report what to run; the owner tests first.
+- **Don't run dev servers, `lk agent console` or the app (`just app dev`).** Builds and checks are fine. Report what to run; the owner tests first.
+- **Frontend code follows `app/README.md`**: shadcn components via `just app add`, never hand-written copies; generated `components/ui/` is styled from outside.
+- **Call UI is LiveKit's.** Anything in a call (session, transcript, controls, visualizers, devices) uses LiveKit Agents UI (`just app add @agents-ui/...`) and `@livekit/components-react`, following LiveKit's agent starter (`livekit-examples/agent-starter-react`). Check what LiveKit ships before building anything; brand it from outside (props, `className`, `data-slot` styles in `index.css`), never by hand-rolling a replacement.
 - **Only `uv` for Python deps.** Pin new tools in `mise.toml`. No system-level installs.
 - **Never trust memory for LiveKit, Gemini, ACP or Tauri APIs.** They move fast. Check the installed source and current docs, and record what you found in the matching `docs/*-notes.md` with source and version.
 - **Never name a file `claude.md`.** macOS is case-insensitive, so it is `CLAUDE.md`, which Claude Code loads as instructions.
-- **Secrets live only in `agent/.env`** (gitignored). Never pass them to Claude: the runner strips `.env` keys and Anthropic credentials from Claude's environment.
+- **Secrets live only in `agent/.env`** (gitignored) **and the OS keychain** (the app's LiveKit credentials, held by the Rust core; the page never reads a secret back). Never pass them to Claude: the runner strips `.env` keys and Anthropic credentials from Claude's environment.
 - **Long Gemini sessions are deliberately unhandled.** No compression or resumption logic unless the owner asks.
 - **Claude's output reaches Gemini only as the tool result.** No `session.generate_reply` pushes. See `docs/decisions/results-only-as-tool-results.md`.
 

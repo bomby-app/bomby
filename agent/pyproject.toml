@@ -1,7 +1,7 @@
 [project]
-name = "claude-livekit"
+name = "bomby-agent"
 version = "0.1.0"
-description = "Voice agent on LiveKit + Gemini 3.8 Live that runs Claude Code sessions over ACP in the background"
+description = "Bomby's voice agent: LiveKit + Gemini 3.8 Live, running agents (Claude Code first) over ACP in the background"
 authors = [
     { name = "Ahmed Aburady", email = "accounts@aburady.com" }
 ]
