@@ -100,5 +100,5 @@ Paper board `Handoff / Tauri asset map`, page `app assets`. Artboard names match
 
 - `app-icon.png` (1024 canvas, 824 tile): required `tauri icon` source for ICNS, ICO and PNGs.
 - `Bomby.icon` (macOS 26+, `app/src-tauri/icons/`): light (ink bubble, highlighter eyes, on highlighter), dark (highlighter bubble, ink eyes, on ink) and tinted. Glossy, as the owner asked (2026-11-03): top-to-bottom gradients on tile, bubble and eyes, Liquid Glass with specular, a chromatic shadow under the bubble. Edit in Icon Composer and compile with `just app icon` ([details](tauri-notes.md#icons)).
-- `app-icon-dark.png` (reference), `app-icon-flat.png` (optional ICO/Linux), `dmg-background.png` (660 x 400 at 1x and 2x, from the `dmg-background-dark` artboard: ink with a slight texture, owner's choice 2026-11-04), `tray-icon-template.png` (22 and 44).
+- `app-icon-dark.png` (reference), `app-icon-flat.png` (optional ICO/Linux), `dmg-background.png` (660 x 400 at 1x and 2x, from the light `dmg-background` artboard; Finder's labels can't follow a dark one, see [Tauri notes](tauri-notes.md#dmg-window)), `tray-icon-template.png` (22 and 44).
 - `app-logo-light` / `-dark` (28px SVG): `app-logo.tsx`.
