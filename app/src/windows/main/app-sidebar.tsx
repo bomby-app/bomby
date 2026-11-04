@@ -15,7 +15,10 @@ import type { Selection } from "@/features/projects/selection"
 import { NewProjectRow } from "./new-project-row"
 import { SettingsButton } from "./settings-button"
 
-/** The left column: brand, New project, the project and call tree, settings. */
+/**
+ * The left column: brand, New project, the project and call tree, settings. The brand goes
+ * back to the projects home; it looks the same however it's pointed at.
+ */
 export function AppSidebar({
   selection,
   onSelect,
@@ -30,13 +33,18 @@ export function AppSidebar({
       <TitlebarSpacer />
 
       <SidebarHeader>
-        <div className="flex items-center gap-2 px-1">
+        <button
+          type="button"
+          aria-label="Projects home"
+          className="flex w-fit items-center gap-2 rounded-md px-1 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={() => onSelect(null)}
+        >
           <AppLogo />
           <Wordmark />
           <Badge className="h-4 bg-claude px-1.5 text-[10px] font-semibold tracking-wider text-claude-foreground uppercase">
             Beta
           </Badge>
-        </div>
+        </button>
       </SidebarHeader>
 
       <SidebarContent>

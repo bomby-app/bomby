@@ -17,9 +17,24 @@ const GREETING: Record<Daypart, string> = {
 /** How many recent projects show before See all. */
 const RECENT = 3
 
-/** When a project was last worked on: its newest call, or its creation. */
-function lastActive(project: Project): number {
-  return Math.max(project.createdAt, project.calls[0]?.startedAt ?? 0)
+/** When a project's newest call started, or null before its first (calls are newest first). */
+function lastCall(project: Project): number | null {
+  return project.calls[0]?.startedAt ?? null
+}
+
+/** "2 hours ago" for the newest call, or that there's none yet. */
+function lastSeen(project: Project): string {
+  const at = lastCall(project)
+  return at === null ? "No calls yet" : timeAgo(at)
+}
+
+/** The newest call first; projects without one after, newest first. */
+function byNewestCall(a: Project, b: Project): number {
+  const [x, y] = [lastCall(a), lastCall(b)]
+  if (x !== null && y !== null) return y - x
+  if (x !== null) return -1
+  if (y !== null) return 1
+  return b.createdAt - a.createdAt
 }
 
 /**
@@ -37,7 +52,7 @@ export function ProjectsHome({
 }) {
   const daypart = useDaypart()
   const [all, setAll] = useState(false)
-  const recent = [...projects].sort((a, b) => lastActive(b) - lastActive(a))
+  const recent = [...projects].sort(byNewestCall)
   const shown = all ? recent : recent.slice(0, RECENT)
 
   return (
@@ -108,7 +123,7 @@ export function ProjectsHome({
                     </span>
                     <span className="flex w-32 shrink-0 items-center justify-end gap-2.5">
                       <span className="text-[13px] leading-4 text-muted-foreground">
-                        {timeAgo(lastActive(project))}
+                        {lastSeen(project)}
                       </span>
                       <ChevronRight className="size-4 text-muted-foreground/70" />
                     </span>
