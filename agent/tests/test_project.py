@@ -20,8 +20,8 @@ def test_project_falls_back_to_the_environment(tmp_path: Path) -> None:
     other = tmp_path / "other"
     other.mkdir()
     environ = {
-        "CLAUDE_PROJECT": "console",
-        "CLAUDE_FOLDERS": os.pathsep.join([str(tmp_path), str(other)]),
+        "BOMBY_PROJECT": "console",
+        "BOMBY_FOLDERS": os.pathsep.join([str(tmp_path), str(other)]),
     }
 
     project = Project.from_job(None, environ)
