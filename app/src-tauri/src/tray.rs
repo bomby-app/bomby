@@ -135,34 +135,16 @@ fn menu<R: Runtime>(app: &AppHandle<R>, status: &TrayStatus) -> Result<Menu<R>> 
         } else {
             format!("On a call · {project}")
         };
-        menu.append(&MenuItem::new(app, line, false, None::<&str>)?)?;
+        menu.append(&note(app, &line)?)?;
         menu.append(&PredefinedMenuItem::separator(app)?)?;
     }
-    menu.append(&MenuItem::with_id(
-        app,
-        "open",
-        "Open Bomby",
-        true,
-        None::<&str>,
-    )?)?;
+    menu.append(&item(app, "open", "Open Bomby")?)?;
     menu.append(&start_menu(app, status)?)?;
     if can_end(status) {
-        menu.append(&MenuItem::with_id(
-            app,
-            "end-call",
-            "End call",
-            true,
-            None::<&str>,
-        )?)?;
+        menu.append(&item(app, "end-call", "End call")?)?;
     }
     menu.append(&PredefinedMenuItem::separator(app)?)?;
-    menu.append(&MenuItem::with_id(
-        app,
-        "settings",
-        "Settings…",
-        true,
-        None::<&str>,
-    )?)?;
+    menu.append(&item(app, "settings", "Settings…")?)?;
     menu.append(&PredefinedMenuItem::quit(app, Some("Quit Bomby"))?)?;
     Ok(menu)
 }
@@ -177,26 +159,25 @@ fn can_end(status: &TrayStatus) -> bool {
 fn start_menu<R: Runtime>(app: &AppHandle<R>, status: &TrayStatus) -> Result<Submenu<R>> {
     let submenu = Submenu::new(app, "Start a call", status.call.is_none())?;
     if let Some(reason) = &status.blocked {
-        submenu.append(&MenuItem::new(app, reason, false, None::<&str>)?)?;
+        submenu.append(&note(app, reason)?)?;
     } else if status.recent.is_empty() {
-        submenu.append(&MenuItem::new(
-            app,
-            "Add a folder and start talking.",
-            false,
-            None::<&str>,
-        )?)?;
+        submenu.append(&note(app, "Add a folder and start talking.")?)?;
     } else {
         for project in &status.recent {
-            submenu.append(&MenuItem::with_id(
-                app,
-                format!("call:{}", project.id),
-                &project.name,
-                true,
-                None::<&str>,
-            )?)?;
+            submenu.append(&item(app, &format!("call:{}", project.id), &project.name)?)?;
         }
     }
     Ok(submenu)
+}
+
+/// A menu choice; `on_menu_event` acts on its `id`.
+fn item<R: Runtime>(app: &AppHandle<R>, id: &str, label: &str) -> Result<MenuItem<R>> {
+    Ok(MenuItem::with_id(app, id, label, true, None::<&str>)?)
+}
+
+/// A line of text that can't be chosen.
+fn note<R: Runtime>(app: &AppHandle<R>, text: &str) -> Result<MenuItem<R>> {
+    Ok(MenuItem::new(app, text, false, None::<&str>)?)
 }
 
 fn on_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {

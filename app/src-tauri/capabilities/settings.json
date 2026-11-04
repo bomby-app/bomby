@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "settings",
-  "description": "The settings window. The only window that can read or change credentials.",
+  "description": "The settings window: setup, agents, voice, appearance and credentials (the first-run splash in the main window reads and saves credentials too).",
   "windows": [
     "settings"
   ],
