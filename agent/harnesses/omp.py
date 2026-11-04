@@ -9,7 +9,6 @@ from .harness import Harness
 
 OMP = Harness(
     id="omp",
-    name="omp",
     short_name="omp",
     program="omp",
     args=("acp",),

@@ -6,9 +6,8 @@ for any agent that speaks ACP, and lives in `acp_client/`.
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 # Where the adapters are built: by the app, into its own folder (BOMBY_ADAPTERS), or by
 # `just agent install` (agent/adapters/bin) for console runs.
@@ -25,8 +24,6 @@ class Harness:
     id: str
     """The name the voice model passes to `start_task` as `agent`, and the key in logs and
     settings: "claude". Short, lowercase, stable."""
-    name: str
-    """The product's full name, for logs: "Claude Code". The voice never says it."""
     short_name: str
     """How the voice talks about it: "Claude" ("Claude's on it"). Also in tool errors."""
     program: str
@@ -44,8 +41,6 @@ class Harness:
     """Where the adapter reads the agent's program path from ("CLAUDE_CODE_EXECUTABLE")."""
     blocked_env: frozenset[str] = frozenset()
     """Names never passed to the agent, on top of the app's own keys (`acp_client/runner.py`)."""
-    session_options: Mapping[str, Any] = field(default_factory=dict[str, Any])
-    """Extra fields for `session/new`, as the adapter defines them."""
     system_prompt_append: bool = False
     """Whether it takes extra system-prompt text in `session/new` as `systemPrompt.append`
     (claude-agent-acp's option). The runner's briefing goes there; otherwise it goes with
