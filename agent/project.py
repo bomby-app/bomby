@@ -36,7 +36,7 @@ class Project:
         """The project from the job's metadata (`job.py`), else from the environment.
 
         The metadata has `{"project": "samba", "folders": ["/abs/path", ...]}`. Console
-        runs have no metadata, so `CLAUDE_PROJECT` and `CLAUDE_FOLDERS` (separated by
+        runs have no metadata, so `BOMBY_PROJECT` and `BOMBY_FOLDERS` (separated by
         `os.pathsep`) stand in. Without folders, the project is the home folder.
         """
         name: object
@@ -46,9 +46,9 @@ class Project:
             if folders is None:
                 folders = []
         else:
-            name = environ.get("CLAUDE_PROJECT")
+            name = environ.get("BOMBY_PROJECT")
             folders = [
-                f for f in environ.get("CLAUDE_FOLDERS", "").split(os.pathsep) if f
+                f for f in environ.get("BOMBY_FOLDERS", "").split(os.pathsep) if f
             ]
 
         items = cast(list[object], folders) if isinstance(folders, list) else None
