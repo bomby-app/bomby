@@ -12,7 +12,8 @@ from livekit.plugins import google
 import lifeline
 from acp_client import CallRunners
 from call import Call
-from call_options import CallOptions, call_options
+from call_options import CallOptions
+from job import read_metadata
 from task_board import TaskBoard
 from tools import ALL_TOOLS, agents_note
 
@@ -89,9 +90,10 @@ async def entrypoint(ctx: JobContext) -> None:
     # A call works on one project, set in the dispatch metadata by the app. Each harness
     # the app found gets one ACP process per call, started on its first task, to
     # run its named sessions. Shutting the job down closes every session and process.
-    runners = CallRunners.for_job(ctx.job.metadata)
+    job = read_metadata(ctx.job.metadata)
+    runners = CallRunners.for_job(job)
     # The voice and, on a resumed call, the conversation so far.
-    options = call_options(ctx.job.metadata)
+    options = CallOptions.from_job(job, os.environ)
     logger.info(
         "project %s in %s, agents %s, voice %s, %d earlier lines",
         runners.project.name,

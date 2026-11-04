@@ -1,16 +1,16 @@
 """What the app sends with a call besides the project (`project.py`, `Project`): the
 voice to speak in and, when the user resumes an earlier call, its last lines.
 
-Metadata is the job's JSON, `{"voice": "Kore", "history": [{"role": "user", "text": "..."}]}`
-(`app/src-tauri/src/calls.rs`, `dispatch_metadata`). Console runs have none: `GEMINI_VOICE`
+The job's metadata (`job.py`) has `{"voice": "Kore", "history": [{"role": "user", "text": "..."}]}`.
+Console runs have none: `GEMINI_VOICE`
 stands in for the voice, and there is no history.
 """
 
-import json
-import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal, cast
+
+from job import JobFields
 
 # The voice the agent has always had; the app defaults to it too (`settings.rs`).
 DEFAULT_VOICE = "Charon"
@@ -31,14 +31,10 @@ class CallOptions:
     history: tuple[Line, ...] = ()
 
     @classmethod
-    def from_job(cls, metadata: str, environ: Mapping[str, str]) -> "CallOptions":
+    def from_job(cls, fields: JobFields, environ: Mapping[str, str]) -> "CallOptions":
         fallback = environ.get("GEMINI_VOICE") or DEFAULT_VOICE
-        if not metadata.strip():
-            return cls(voice=fallback)
-        data = cast(object, json.loads(metadata))
-        fields = cast(dict[str, object], data) if isinstance(data, dict) else None
         if fields is None:
-            raise ValueError("job metadata must be a JSON object")
+            return cls(voice=fallback)
 
         voice = fields.get("voice")
         if voice is not None and (not isinstance(voice, str) or not voice.strip()):
@@ -76,7 +72,3 @@ class CallOptions:
             "Claude what it needs to know.\n\n"
             f"{lines}"
         )
-
-
-def call_options(metadata: str) -> CallOptions:
-    return CallOptions.from_job(metadata, os.environ)

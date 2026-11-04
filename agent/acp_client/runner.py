@@ -29,6 +29,7 @@ from livekit.agents.llm import ToolError
 
 from harnesses import HARNESSES, installed
 from harnesses.harness import Harness
+from job import JobFields
 from project import Project
 
 from .client import HarnessClient, Reply
@@ -467,12 +468,12 @@ class CallRunners:
         self._runners: dict[str, AcpRunner] = {}
 
     @classmethod
-    def for_job(cls, metadata: str = "") -> "CallRunners":
+    def for_job(cls, fields: JobFields) -> "CallRunners":
         """Runners for the project and the installed agents in the job's metadata (see
         `Project.from_job` and `harnesses.installed`)."""
         return cls(
-            Project.from_job(metadata, os.environ),
-            installed(metadata, HARNESSES, os.environ),
+            Project.from_job(fields, os.environ),
+            installed(fields, HARNESSES, os.environ),
             os.environ,
         )
 

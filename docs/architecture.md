@@ -68,7 +68,7 @@ The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS)
 - All fields are optional. `folders` must be absolute, existing paths; the first is the working directory and the rest become ACP `additionalDirectories`. Defaults are the home folder, project `home`, and voice `GEMINI_VOICE` or Charon.
 - `agents` maps installed harness ids to programs. The voice model can use only agents in this list; console runs find them on PATH ([decision](decisions/detect-acp-native-agents.md)).
 - `history` appears only when resuming a call and contains its last 50 lines ([decision](decisions/resume-a-call-with-its-last-lines.md)).
-- Console runs use `CLAUDE_PROJECT` and `CLAUDE_FOLDERS` from `agent/.env`. Invalid metadata fails the call at start.
+- The agent reads it once (`agent/job.py`); the project, the installed agents and the call options each take their fields from that. Console runs use `CLAUDE_PROJECT` and `CLAUDE_FOLDERS` from `agent/.env`. Invalid metadata fails the call at start.
 
 **`start_task`** ([decision](decisions/one-tool-for-every-agent.md)):
 

@@ -9,6 +9,7 @@ from livekit.agents.llm import ToolError
 from acp_client import CallRunners
 from harnesses import CLAUDE_CODE, CODEX, HARNESSES, OMP, OPENCODE, installed
 from harnesses.harness import ADAPTERS
+from job import read_metadata
 from project import Project
 
 
@@ -24,13 +25,13 @@ def test_installed_agents_come_from_the_job_metadata() -> None:
         {"agents": {"claude": "/usr/local/bin/claude", "pi": "/bin/pi"}}
     )
 
-    assert installed(metadata, HARNESSES, {}) == {
+    assert installed(read_metadata(metadata), HARNESSES, {}) == {
         "claude": Path("/usr/local/bin/claude")
     }
 
 
 def test_a_call_with_no_agents_has_none() -> None:
-    assert installed(json.dumps({"project": "samba"}), HARNESSES, {}) == {}
+    assert installed({"project": "samba"}, HARNESSES, {}) == {}
 
 
 @pytest.mark.parametrize(
@@ -38,13 +39,13 @@ def test_a_call_with_no_agents_has_none() -> None:
 )
 def test_bad_agents_are_rejected(agents: str) -> None:
     with pytest.raises(ValueError, match="agent"):
-        _ = installed(f'{{"agents": {agents}}}', HARNESSES, {})
+        _ = installed(read_metadata(f'{{"agents": {agents}}}'), HARNESSES, {})
 
 
 def test_console_runs_find_agents_on_path(tmp_path: Path) -> None:
     opencode = executable(tmp_path, "opencode")
 
-    found = installed("", HARNESSES, {"PATH": str(tmp_path)})
+    found = installed(None, HARNESSES, {"PATH": str(tmp_path)})
 
     assert found == {"opencode": opencode}
 
