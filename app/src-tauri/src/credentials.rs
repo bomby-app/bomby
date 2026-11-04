@@ -25,9 +25,6 @@ pub const KEYS_CHANGED: &str = "keys-changed";
 
 /// The entry's account; the service is the app identifier (tauri.conf.json).
 const ACCOUNT: &str = "credentials";
-/// Entries from before 2026-11-04, one per provider. Read once, merged, then deleted.
-const LEGACY_LIVEKIT: &str = "livekit";
-const LEGACY_GEMINI: &str = "gemini";
 
 /// The LiveKit keys. The core uses them for tokens and the agent's environment.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -91,26 +88,12 @@ fn write<R: Runtime>(app: &AppHandle<R>, keys: &Keys) -> Result<()> {
     Ok(())
 }
 
-/// Reads the entry, moving the older per-provider entries into it the first time.
+/// Reads the entry; no keys yet when there is none.
 fn read_keychain<R: Runtime>(app: &AppHandle<R>) -> Result<Keys> {
-    if let Some(json) = read(&entry(app, ACCOUNT)?)? {
-        return serde_json::from_str(&json).map_err(Error::Corrupt);
+    match read(&entry(app, ACCOUNT)?)? {
+        Some(json) => serde_json::from_str(&json).map_err(Error::Corrupt),
+        None => Ok(Keys::default()),
     }
-    let livekit_entry = entry(app, LEGACY_LIVEKIT)?;
-    let gemini_entry = entry(app, LEGACY_GEMINI)?;
-    let keys = Keys {
-        livekit: read(&livekit_entry)?
-            .map(|json| serde_json::from_str(&json))
-            .transpose()
-            .map_err(Error::Corrupt)?,
-        gemini_key: read(&gemini_entry)?.filter(|key| !key.is_empty()),
-    };
-    if keys.livekit.is_some() || keys.gemini_key.is_some() {
-        write(app, &keys)?;
-        remove(&livekit_entry)?;
-        remove(&gemini_entry)?;
-    }
-    Ok(keys)
 }
 
 /// The keychain entry, read on first use and kept for the run. Tauri state.
