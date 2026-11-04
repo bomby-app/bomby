@@ -69,8 +69,15 @@ function ProjectNode({
   const { active } = useCall()
   const onCall = active?.projectId === project.id
   const holdsSelection = selection?.projectId === project.id
-  // Starts open when it holds the selection (the project or one of its calls).
+  // Open while it holds the selection (the project or one of its calls), also when that is
+  // set from elsewhere: the projects home, the menu bar or a notification. Adjusted during
+  // render, not in an Effect (react.dev, "Adjusting some state when a prop changes").
   const [open, setOpen] = useState(holdsSelection)
+  const [held, setHeld] = useState(holdsSelection)
+  if (held !== holdsSelection) {
+    setHeld(holdsSelection)
+    if (holdsSelection) setOpen(true)
+  }
 
   return (
     <Collapsible asChild open={open} onOpenChange={setOpen}>
