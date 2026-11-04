@@ -104,7 +104,7 @@ export function ProjectSettingsDialog({
           <FieldSet>
             <FieldLegend variant="label">Folders</FieldLegend>
             <FieldDescription>
-              Claude works in the first one and can reach the rest.
+              Agents work in the first one and can reach the rest.
             </FieldDescription>
             <FolderList
               folders={project.folders}
