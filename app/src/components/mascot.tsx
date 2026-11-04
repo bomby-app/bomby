@@ -98,6 +98,7 @@ export function Mascot({
   bubble = "var(--sidebar-primary)",
   eyes = "var(--sidebar-primary-foreground)",
   depth = false,
+  look = 0,
   className,
 }: {
   state: MascotState
@@ -108,6 +109,8 @@ export function Mascot({
   bubble?: string
   eyes?: string
   depth?: boolean
+  /** Where the eyes look, in viewBox units: negative is left. */
+  look?: number
   className?: string
 }) {
   const id = useId()
@@ -192,7 +195,7 @@ export function Mascot({
       )}
       <g
         className={cn(
-          "transition-transform duration-[400ms] ease-out",
+          "transition-transform duration-[450ms] ease-in-out",
           state === "thinking" && "motion-safe:animate-dotdot-wander"
         )}
         style={{
@@ -200,10 +203,10 @@ export function Mascot({
             state === "thinking"
               ? "translate(5px, -6px)"
               : state === "listening"
-                ? "translate(0, -3px)"
+                ? `translate(${look}px, -3px)`
                 : state === "speaking"
                   ? `translate(${glance}px, -1px)`
-                  : undefined,
+                  : `translate(${look}px, 0)`,
         }}
       >
         {EYES.map((cx) => (
@@ -237,17 +240,67 @@ function Eye({
   fill: string
   lit: boolean
 }) {
-  // Eyes closed: waking (before the agent is ready) and asleep (the call ended).
-  if (lit && state === "waking") {
+  // With depth, closed eyes are Paper's curved lids (board "04 Mascot states", Done), and
+  // opening crossfades them into round eyes that open from a squint. The blink is its own
+  // layer, so it stays quick while opening is slow.
+  if (lit && state !== "asleep" && state !== "failed") {
+    const closed = state === "waking"
+    const r =
+      state === "listening" ? 10.5 : state === "speaking" ? 7 + 1.2 * level : 7
     return (
-      <path
-        d={`M${cx - 7} ${EYE_Y + 1} H${cx + 7}`}
-        stroke="var(--mascot-lid)"
-        strokeWidth={5}
-        strokeLinecap="round"
-      />
+      <g>
+        <path
+          d={`M${cx - 7} ${EYE_Y + 3} Q${cx} ${EYE_Y - 7} ${cx + 7} ${EYE_Y + 3}`}
+          fill="none"
+          stroke="var(--mascot-lid)"
+          strokeWidth={5}
+          strokeLinecap="round"
+          style={{
+            opacity: closed ? 1 : 0,
+            transition: "opacity 360ms ease-out",
+          }}
+        />
+        <g
+          style={{
+            opacity: closed ? 0 : 1,
+            transform: closed ? "scaleY(0.1)" : "scaleY(1)",
+            transformBox: "fill-box",
+            transformOrigin: "center",
+            transition:
+              "transform 560ms cubic-bezier(0.22, 1, 0.36, 1), opacity 320ms ease-out",
+          }}
+        >
+          <g
+            style={{
+              transform: blinking ? "scaleY(0.1)" : "scaleY(1)",
+              transformBox: "fill-box",
+              transformOrigin: "center",
+              transition: "transform 70ms ease-in-out",
+            }}
+          >
+            <ellipse
+              cx={cx}
+              cy={EYE_Y}
+              rx={r}
+              ry={r}
+              fill={fill}
+              style={{ transition: "rx 200ms ease-out, ry 120ms ease-out" }}
+            />
+            {/* A catchlight, up and to the left as in the Paper board. */}
+            <ellipse
+              cx={cx - 0.32 * r}
+              cy={EYE_Y - 0.34 * r}
+              rx={0.24 * r}
+              ry={0.24 * r}
+              fill="var(--mascot-catchlight)"
+              style={{ transition: "all 200ms ease-out" }}
+            />
+          </g>
+        </g>
+      </g>
     )
   }
+  // Eyes closed: waking (before the agent is ready) and asleep (the call ended).
   if (state === "waking" || state === "asleep") {
     return (
       <rect
@@ -276,36 +329,20 @@ function Eye({
   const r =
     state === "listening" ? 10.5 : state === "speaking" ? 7 + 1.2 * level : 7
   return (
-    <g
-      // With depth, the eyes open slowly when they first appear (waking up).
-      className={lit ? "motion-safe:animate-dotdot-open" : undefined}
+    <ellipse
+      cx={cx}
+      cy={EYE_Y}
+      rx={r}
+      ry={r}
+      fill={fill}
       style={{
         transform: blinking ? "scaleY(0.1)" : "scaleY(1)",
         transformBox: "fill-box",
         transformOrigin: "center",
-        transition: "transform 70ms ease-in-out",
+        transition:
+          "transform 70ms ease-in-out, rx 200ms ease-out, ry 120ms ease-out",
       }}
-    >
-      <ellipse
-        cx={cx}
-        cy={EYE_Y}
-        rx={r}
-        ry={r}
-        fill={fill}
-        style={{ transition: "rx 200ms ease-out, ry 120ms ease-out" }}
-      />
-      {lit && (
-        // A catchlight, up and to the left as in the Paper board.
-        <ellipse
-          cx={cx - 0.32 * r}
-          cy={EYE_Y - 0.34 * r}
-          rx={0.24 * r}
-          ry={0.24 * r}
-          fill="var(--mascot-catchlight)"
-          style={{ transition: "all 200ms ease-out" }}
-        />
-      )}
-    </g>
+    />
   )
 }
 

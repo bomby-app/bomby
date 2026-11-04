@@ -30,8 +30,9 @@ gsap.registerPlugin(useGSAP)
 
 /**
  * The first run (Paper "splash", option A), one GSAP timeline with nothing overlapping:
- * the glow comes up while Bomby rises with its eyes closed, opens them and grows in the
- * middle, says hello, lets the hello go, then moves up for the setup to fade in under it.
+ * the glow comes up while Bomby rises with its eyes closed, opens them as it arrives and
+ * looks around, says hello, lets the hello go, then moves up for the setup to fade in
+ * under it.
  * Setup is the agent, then, one more step, the LiveKit and Gemini keys; steps already done
  * are skipped. The round arrow on comes only once a call has all three, and nothing gets
  * past it before that: the app can't work without them.
@@ -56,7 +57,8 @@ const GLOW_TAKES: Partial<Record<GlowStage, number>> = {
   setup: 2200,
 }
 
-const EASE = "sine.inOut"
+// No overshoot anywhere (Paper "05 Motion"): arrivals slow down, moves ease both ways.
+const EASE = "power2.inOut"
 
 export function Splash({ onDone }: { onDone: () => void }) {
   const still = useReducedMotion() === true
@@ -65,6 +67,7 @@ export function Splash({ onDone }: { onDone: () => void }) {
   const [mascot, setMascot] = useState<MascotState>(
     still ? "listening" : "waking"
   )
+  const [look, setLook] = useState(0)
   const [introDone, setIntroDone] = useState(still)
   const [leaving, startLeaving] = useTransition()
 
@@ -111,17 +114,35 @@ export function Splash({ onDone }: { onDone: () => void }) {
           },
         })
         .call(() => setGlow("rise"), [], 0.1)
-        .to(mascotBox.current, { y: HELLO_Y, duration: 3 }, 0.2)
-        .call(() => {
-          setMascot("idle")
-          setGlow("awake")
-        })
-        .to(mascotBox.current, { scale: 1, duration: 0.9 })
+        // Floats up, slowing as it arrives, eyes closed.
+        .to(
+          mascotBox.current,
+          { y: HELLO_Y, duration: 3.2, ease: "power3.out" },
+          0.2
+        )
+        // Arrived: the eyes open, and it settles to full size.
+        .call(
+          () => {
+            setMascot("idle")
+            setGlow("awake")
+          },
+          [],
+          ">-0.4"
+        )
+        .to(
+          mascotBox.current,
+          { scale: 1, duration: 1, ease: "power2.out" },
+          "<"
+        )
+        // A look around (the eyes ease over in 450 ms), then back at you.
+        .call(() => setLook(-4), [], "+=0.2")
+        .call(() => setLook(4), [], "+=0.9")
+        .call(() => setLook(0), [], "+=0.9")
         .fromTo(
           hello.current,
           { autoAlpha: 0, y: 10 },
-          { autoAlpha: 1, y: 0, duration: 1.1 },
-          ">-0.3"
+          { autoAlpha: 1, y: 0, duration: 1.1, ease: "power2.out" },
+          "+=0.3"
         )
         .to(hello.current, { autoAlpha: 0, y: -6, duration: 0.8 }, "+=2.4")
         .call(() => setGlow("setup"), [], ">+0.1")
@@ -130,7 +151,7 @@ export function Splash({ onDone }: { onDone: () => void }) {
         .fromTo(
           content.current,
           { autoAlpha: 0, y: 14 },
-          { autoAlpha: 1, y: 0, duration: 1.1 },
+          { autoAlpha: 1, y: 0, duration: 1.1, ease: "power2.out" },
           ">+0.1"
         )
     },
@@ -219,7 +240,7 @@ export function Splash({ onDone }: { onDone: () => void }) {
         ref={mascotBox}
         className="absolute top-1/2 left-1/2 -ml-[60px] size-[120px]"
       >
-        <Mascot depth state={mascot} className="size-full" />
+        <Mascot depth state={mascot} look={look} className="size-full" />
       </div>
 
       <div
