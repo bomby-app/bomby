@@ -6,13 +6,11 @@ import { useCall } from "@/features/call/call-provider"
 import { useTasks } from "@/features/call/tasks"
 import { useCallReadiness } from "@/features/call/use-call-readiness"
 import { useProjects } from "@/features/projects/projects-provider"
-import { recentProjects } from "@/features/projects/recent"
+import { RECENT_COUNT, recentProjects } from "@/features/projects/recent"
 import { useCoreEvent } from "@/hooks/use-core-event"
 
 import { onEndCall, onStartCall, setTrayStatus, type TrayState } from "./api"
 
-/** How many recent projects the menu lists, as the projects home does. */
-const RECENT = 3
 /** How long the crossed eyes stay after a call fails. */
 const FAILED_MS = 5000
 
@@ -27,8 +25,8 @@ export function TrayBridge({
   onOpenProject: (projectId: number) => void
 }) {
   const { active, starting, error, start } = useCall()
-  const { end } = useSessionContext()
-  const agent = useAgent()
+  const session = useSessionContext()
+  const agent = useAgent(session)
   const tasks = useTasks()
   const { projects } = useProjects()
   const { ready, missing } = useCallReadiness()
@@ -45,7 +43,7 @@ export function TrayBridge({
   const callProject = active?.projectId ?? starting?.projectId
   const call = projects?.find((p) => p.id === callProject)?.name ?? null
   const recent = recentProjects(projects ?? [])
-    .slice(0, RECENT)
+    .slice(0, RECENT_COUNT)
     .map(({ id, name }) => ({ id, name }))
   const blocked = ready ? null : (missing ?? "Checking your setup...")
   const isStarting = starting !== null
@@ -60,7 +58,7 @@ export function TrayBridge({
     // One call at a time; when a call can't start, the project's page says why.
     if (ready && !active && !starting) void start(projectId)
   })
-  useCoreEvent(onEndCall, () => void end())
+  useCoreEvent(onEndCall, () => void session.end())
 
   return null
 }
