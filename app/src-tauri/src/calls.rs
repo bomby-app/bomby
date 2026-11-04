@@ -3,7 +3,9 @@
 //! LiveKit keeps no transcripts, so the page sends each line here as it arrives
 //! (docs/decisions/app-data-in-one-sqlite-db.md).
 
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use livekit_api::access_token::{AccessToken, VideoGrants};
@@ -23,6 +25,30 @@ const AGENT_NAME: &str = "bomby";
 const TOKEN_TTL: Duration = Duration::from_secs(10 * 60);
 /// How much of a resumed call the agent is told: the last this many lines.
 const RESUME_LINES: i64 = 50;
+
+/// The agents each call opened with, by call id. Every token for a call carries the same
+/// ones, so a reconnect mid-call never hands the voice agent a different list, whatever
+/// looking for agents finds meanwhile (`agents::Agents`).
+#[derive(Default)]
+pub struct CallAgents(Mutex<HashMap<i64, Vec<(String, PathBuf)>>>);
+
+impl CallAgents {
+    fn set(&self, call_id: i64, agents: Vec<(String, PathBuf)>) {
+        self.lock().insert(call_id, agents);
+    }
+
+    fn get(&self, call_id: i64) -> Option<Vec<(String, PathBuf)>> {
+        self.lock().get(&call_id).cloned()
+    }
+
+    fn forget(&self, call_id: i64) {
+        self.lock().remove(&call_id);
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<i64, Vec<(String, PathBuf)>>> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
 
 /// What the page needs to join the call.
 #[derive(Serialize)]
@@ -156,7 +182,7 @@ pub fn open_call<R: Runtime>(
     db: State<'_, Db>,
     worker: State<'_, AgentWorker>,
     vault: State<'_, credentials::Vault>,
-    found: State<'_, agents::Found>,
+    call_agents: State<'_, CallAgents>,
     project_id: i64,
     resume_call_id: Option<i64>,
 ) -> Result<i64> {
@@ -165,7 +191,9 @@ pub fn open_call<R: Runtime>(
     let gemini = vault
         .gemini_key(&app)?
         .ok_or_else(|| Error::Invalid("Add your Gemini API key in Settings first.".into()))?;
-    if found.refresh().is_empty() {
+    // Looks again, so an agent installed since launch is picked up.
+    let found = agents::installed(&agents::refresh(&app));
+    if found.is_empty() {
         return Err(Error::Invalid(
             "Bomby can't find an agent to work with. See Settings, Agents.".into(),
         ));
@@ -174,19 +202,21 @@ pub fn open_call<R: Runtime>(
     worker.ensure(WorkerConfig::new(keys, gemini), &log_dir)?;
 
     let conn = db.conn();
-    match resume_call_id {
+    let call_id = match resume_call_id {
         Some(call_id) => {
             reopen(&conn, project_id, call_id)?;
-            Ok(call_id)
+            call_id
         }
         None => {
             conn.execute(
                 "INSERT INTO calls (project_id, started_at) VALUES (?1, ?2)",
                 params![project_id, now_ms()],
             )?;
-            Ok(conn.last_insert_rowid())
+            conn.last_insert_rowid()
         }
-    }
+    };
+    call_agents.set(call_id, found);
+    Ok(call_id)
 }
 
 /// A token for a new room on the call, dispatching the agent with the project, the voice and
@@ -198,7 +228,8 @@ pub fn call_token<R: Runtime>(
     app: AppHandle<R>,
     db: State<'_, Db>,
     vault: State<'_, credentials::Vault>,
-    found: State<'_, agents::Found>,
+    found: State<'_, agents::Agents>,
+    call_agents: State<'_, CallAgents>,
     call_id: i64,
 ) -> Result<CallToken> {
     let keys = livekit_keys(&app, &vault)?;
@@ -221,7 +252,11 @@ pub fn call_token<R: Runtime>(
     // A new room every time, also when resuming. Unique across reinstalls too, since row
     // ids start over with a new database.
     let room = format!("bomby-{call_id}-{}", now_ms());
-    let metadata = dispatch_metadata(&project, &found.get(), &voice, &history);
+    // A call opened in this run has its own list; any other gets the last one found.
+    let agents = call_agents
+        .get(call_id)
+        .unwrap_or_else(|| agents::installed(&found.cached().unwrap_or_default()));
+    let metadata = dispatch_metadata(&project, &agents, &voice, &history);
     Ok(CallToken {
         participant_token: token(&keys, &room, metadata)?,
         server_url: keys.url,
@@ -244,8 +279,14 @@ fn delete(conn: &Connection, call_id: i64) -> Result<()> {
 }
 
 #[tauri::command(async)]
-pub fn delete_call(db: State<'_, Db>, call_id: i64) -> Result<()> {
-    delete(&db.conn(), call_id)
+pub fn delete_call(
+    db: State<'_, Db>,
+    call_agents: State<'_, CallAgents>,
+    call_id: i64,
+) -> Result<()> {
+    delete(&db.conn(), call_id)?;
+    call_agents.forget(call_id);
+    Ok(())
 }
 
 fn save(conn: &Connection, call_id: i64, line: &MessageInput) -> Result<()> {

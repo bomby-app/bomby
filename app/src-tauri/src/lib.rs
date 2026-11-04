@@ -36,7 +36,10 @@ pub fn run() {
             app.manage(db::Db::open(&dir.join(db::FILE_NAME))?);
             app.manage(agent::AgentWorker::default());
             app.manage(credentials::Vault::default());
-            app.manage(agents::Found::default());
+            app.manage(agents::Agents::default());
+            app.manage(calls::CallAgents::default());
+            // Look for the agents now, so Settings and the first call find them ready.
+            tauri::async_runtime::spawn(agents::refresh_in_background(app.handle().clone()));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -49,6 +52,7 @@ pub fn run() {
             credentials::save_gemini_key,
             credentials::clear_gemini_key,
             agents::agents_status,
+            agents::refresh_agents,
             calls::open_call,
             calls::call_token,
             calls::end_call,
