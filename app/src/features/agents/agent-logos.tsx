@@ -15,7 +15,7 @@ export function ClaudeCodeLogo(props: SVGProps<SVGSVGElement>) {
   )
 }
 
-export function CodexLogo(props: SVGProps<SVGSVGElement>) {
+function CodexLogo(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 68 68" fillRule="evenodd" aria-hidden="true" {...props}>
       <path
@@ -30,7 +30,7 @@ export function CodexLogo(props: SVGProps<SVGSVGElement>) {
   )
 }
 
-export function GooseLogo(props: SVGProps<SVGSVGElement>) {
+function GooseLogo(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 46.016 46.018" aria-hidden="true" {...props}>
       <path
@@ -41,7 +41,7 @@ export function GooseLogo(props: SVGProps<SVGSVGElement>) {
   )
 }
 
-export function OpenCodeLogo(props: SVGProps<SVGSVGElement>) {
+function OpenCodeLogo(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="217.401 0 39.005 48.757" aria-hidden="true" {...props}>
       <g transform="translate(-128 -96)">
@@ -55,7 +55,7 @@ export function OpenCodeLogo(props: SVGProps<SVGSVGElement>) {
   )
 }
 
-export function OmpLogo(props: SVGProps<SVGSVGElement>) {
+function OmpLogo(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 56.587 63" aria-hidden="true" {...props}>
       <g transform="translate(-58.33 -66.67) matrix(4.167,0,0,4.167,0,0)">

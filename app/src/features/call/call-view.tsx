@@ -84,9 +84,7 @@ export function CallView({ call }: { call: ActiveCall }) {
             transition={{ duration: 0.16, ease: "easeOut" }}
             className={cn(
               "mx-auto block w-full max-w-2xl pb-3 text-center text-sm font-medium",
-              agent.state === "connecting" ||
-                agent.state === "initializing" ||
-                agent.state === "pre-connect-buffering"
+              mascotState(agent.state) === "waking"
                 ? "shimmer shimmer-duration-2000"
                 : "text-muted-foreground"
             )}
