@@ -57,7 +57,11 @@ function Workspace() {
             onNewProject={() => setCreating(true)}
           />
           <SidebarInset className="overflow-hidden">
-            <MainPanel selection={selection} onSelect={setSelection} />
+            <MainPanel
+              selection={selection}
+              onSelect={setSelection}
+              onNewProject={() => setCreating(true)}
+            />
           </SidebarInset>
         </SidebarProvider>
         <NewProjectDialog

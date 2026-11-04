@@ -44,3 +44,27 @@ export function callLength(startedAt: number, endedAt: number): string {
   const rest = minutes % 60
   return rest ? `${hours} hr ${rest} min` : `${hours} hr`
 }
+
+/** When something last happened, for the projects home: "2 hours ago", "Yesterday". */
+export function timeAgo(at: number, now = Date.now()): string {
+  const minutes = Math.floor((now - at) / 60_000)
+  if (minutes < 1) return "Just now"
+  if (minutes < 60) return `${minutes} min ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return hours === 1 ? "An hour ago" : `${hours} hours ago`
+  const days = Math.round(
+    (startOfDay(new Date(now)) - startOfDay(new Date(at))) /
+      (24 * 60 * 60 * 1000)
+  )
+  if (days <= 1) return "Yesterday"
+  if (days < 7) return `${days} days ago`
+  return new Date(at).toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+  })
+}
+
+/** A folder for display, with the home folder as "~": "~/code/plantpal". */
+export function shortPath(path: string): string {
+  return path.replace(/^\/Users\/[^/]+(?=\/|$)/, "~")
+}

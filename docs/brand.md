@@ -79,12 +79,18 @@ Motion uses CSS transforms on one SVG. Eyes lead; only sound scales the bubble. 
 
 ## First run
 
-Paper page `splash`, option A (owner, 2026-11-04), in `app/src/features/onboarding/`. It shows until an agent is set up.
+Paper page `splash`, option A (owner, 2026-11-04), in `app/src/features/onboarding/`. It shows until a call has everything it needs, and nothing gets past it before that: an agent that's set up, the LiveKit keys and the Gemini key (owner, 2026-11-05).
 
 - **Glow.** `components/day-glow.tsx`: a glow rising from the bottom, by the Mac's clock: highlighter in the morning (5 to 12), option B's bubblegum glow around a highlighter core in the afternoon (12 to 17), bubblegum in option A's shape in the evening. Dark mode uses the dark boards. Its `rest` stage is the projects view's glow (page `projects view`), for reuse there.
 - **Sequence.** Dawn (0 ms: the glow low, Dot Dot peeking up with closed eyes), Rise (600 ms), Awake (1400 ms: eyes open, "Good morning, I'm bomby." and "Let's set up your first agent."), Setup (2800 ms: Dot Dot small and listening above the first agent's card). Each stage eases into the next (ease-out, 0.6 to 1 s); reduced motion starts at Setup. A six-second opening sound plays with it (`app/src/assets/splash-music.mp3`).
 - **Mascot with depth.** `<Mascot depth />`: Paper's lit bubble (a gradient from above, a rim of light, catchlights in the eyes, a soft shadow), an ink bubble with highlighter eyes in light and the reverse in dark (`--mascot-*` tokens).
-- **The card.** The agent found (a ready one first), with Set up now (installs its adapter), the command it needs, or Ready; "Use … instead" picks another. Claude's tile keeps Claude's own colours, as the owner's board shows (`--agent-claude`). A ready agent brings the round continue arrow, bottom right.
+- **The agent step.** The agent found (a ready one first), with Set up now (installs its adapter), the command it needs, or Ready; "Use … instead" picks another. Claude's tile keeps Claude's own colours, as the owner's board shows (`--agent-claude`).
+- **Just one more step.** The LiveKit and Gemini keys on the same cards: Paste all reads LiveKit Cloud's Environment variables box from the clipboard, Paste key the Gemini key; "type them in" opens the Settings forms in a dialog. Steps already done are skipped.
+- **Done.** With all three, the agent's card says "You're all set" and the round continue arrow appears, bottom right. It opens the projects home.
+
+## Projects home
+
+Paper page `projects view`, in `app/src/features/projects/projects-home.tsx`: the main panel with nothing selected. Dot Dot with depth, the day's greeting ("Good evening.") in the day glow's `rest` stage, then the recent projects (three, See all for the rest) or Create your first project. Call and Resume stay disabled, with a tooltip saying what's missing, until a call has an agent, LiveKit and Gemini (`features/call/use-call-readiness.ts`).
 
 ## Voice
 
