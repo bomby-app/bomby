@@ -15,7 +15,7 @@ An installed agent can still be unusable: goose with no provider, omp with no mo
 
 ## Consequences
 
-- A new ACP agent gets setup checks and readable errors with no code of its own; a harness adds `setup_command` only when its `authMethods` don't name one.
+- A new ACP agent gets setup checks and friendly errors with no code of its own; a harness adds `setup_command` only when its `authMethods` don't name one.
 - omp can't delete sessions, so each omp probe leaves an empty session in its history. Probing only when something changed keeps that rare.
-- A setup that breaks after a probe still shows as ready until Check again; the call's spoken error points there.
+- A setup that breaks after a probe still shows as ready until Check again; in a call, the voice says sorry and offers another agent.
 - Release builds can't probe until the agent ships as a sidecar ([roadmap step 7](../roadmap.md)); Settings then shows agents as installed, as before.
