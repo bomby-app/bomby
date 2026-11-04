@@ -138,6 +138,19 @@
      only, ink on it (1.1:1 on white, so never as text or a bare icon). */
   --highlighter: #e8ff3a;
   --highlighter-foreground: #121212;
+  /* The mascot with depth (Paper "splash"): an ink bubble lit from above, highlighter eyes. */
+  --mascot-body-top: #3a3a3a;
+  --mascot-body-middle: #161616;
+  --mascot-body-bottom: #0a0a0a;
+  --mascot-eye-top: #f6ff9a;
+  --mascot-eye-bottom: #ddf52a;
+  --mascot-lid: #e8ff3a;
+  --mascot-rim: rgb(255 255 255 / 0.35);
+  --mascot-catchlight: rgb(255 255 255 / 0.8);
+  --mascot-shadow: drop-shadow(0 10px 14px rgb(40 50 0 / 0.3));
+  /* Claude's own colours, for its tile on the splash (Paper "splash"). */
+  --agent-claude: #d97757;
+  --agent-claude-tile: #fbf1ec;
 }
 
 .dark {
@@ -176,6 +189,17 @@
   --claude-foreground: #121212;
   --highlighter: #e8ff3a;
   --highlighter-foreground: #121212;
+  --mascot-body-top: #f8ffa6;
+  --mascot-body-middle: #e8ff3a;
+  --mascot-body-bottom: #c9e214;
+  --mascot-eye-top: #3a3a3a;
+  --mascot-eye-bottom: #0a0a0a;
+  --mascot-lid: #121212;
+  --mascot-rim: rgb(255 255 255 / 0.8);
+  --mascot-catchlight: rgb(255 255 255 / 0.8);
+  --mascot-shadow: drop-shadow(0 10px 22px rgb(232 255 58 / 0.28));
+  --agent-claude: #d97757;
+  --agent-claude-tile: #2b1f1a;
 }
 
 @layer base {

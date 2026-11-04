@@ -1,5 +1,5 @@
 import { useReducedMotion } from "motion/react"
-import { useEffect, useState } from "react"
+import { useEffect, useId, useState } from "react"
 
 import { cn } from "@/lib/utils"
 
@@ -7,6 +7,9 @@ import { cn } from "@/lib/utils"
  * Dot Dot, the mascot (docs/brand.md, Paper boards "04 Mascot states" and "05 Motion").
  * The bubble never changes shape or colour; only the eyes do. The bubble scales with sound
  * while listening or talking, and nothing else moves it.
+ *
+ * With `depth`, it is the lit version from the splash (Paper "splash"): gradients, a rim
+ * of light and catchlights in the eyes, in the theme's mascot colours.
  *
  * Working and done (a Claude session running, a result arriving) join when Claude's status
  * events reach the app.
@@ -23,6 +26,8 @@ export type MascotState =
 // The mark in a 120 viewBox: one square corner (bottom left), two eyes.
 const BUBBLE =
   "M60 18 A42 42 0 0 1 102 60 A42 42 0 0 1 60 102 H18 V60 A42 42 0 0 1 60 18 Z"
+// The light along the top of the bubble, with depth.
+const RIM = "M27 44 A38.5 38.5 0 0 1 93 44"
 const EYES = [47, 73] as const
 const EYE_Y = 58
 
@@ -92,6 +97,7 @@ export function Mascot({
   size = 120,
   bubble = "var(--sidebar-primary)",
   eyes = "var(--sidebar-primary-foreground)",
+  depth = false,
   className,
 }: {
   state: MascotState
@@ -101,8 +107,10 @@ export function Mascot({
   /** Fill colours; the defaults flip with the theme like the logo tile. */
   bubble?: string
   eyes?: string
+  depth?: boolean
   className?: string
 }) {
+  const id = useId()
   // Reduced motion and small sizes: no loops (the blink stays).
   const still = useReducedMotion() === true || size < 32
   const blinking = useBlink(
@@ -118,7 +126,15 @@ export function Mascot({
       : state === "speaking"
         ? 1 + 0.05 * sound
         : 1
-  const bubbleFill = state === "asleep" ? "var(--muted-foreground)" : bubble
+  const lit = depth && state !== "asleep"
+  const bubbleFill =
+    state === "asleep"
+      ? "var(--muted-foreground)"
+      : lit
+        ? `url(#${id}-body)`
+        : bubble
+  const eyeFill =
+    state === "asleep" ? "var(--background)" : lit ? `url(#${id}-eye)` : eyes
 
   return (
     <svg
@@ -134,7 +150,26 @@ export function Mascot({
         state === "failed" && "motion-safe:animate-dotdot-shake",
         className
       )}
+      style={lit ? { filter: "var(--mascot-shadow)" } : undefined}
     >
+      {lit && (
+        <defs>
+          <linearGradient id={`${id}-body`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="var(--mascot-body-top)" />
+            <stop offset="0.5" stopColor="var(--mascot-body-middle)" />
+            <stop offset="1" stopColor="var(--mascot-body-bottom)" />
+          </linearGradient>
+          <linearGradient id={`${id}-eye`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="var(--mascot-eye-top)" />
+            <stop offset="1" stopColor="var(--mascot-eye-bottom)" />
+          </linearGradient>
+          <linearGradient id={`${id}-rim`} x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stopColor="var(--mascot-rim)" stopOpacity="0" />
+            <stop offset="0.5" stopColor="var(--mascot-rim)" />
+            <stop offset="1" stopColor="var(--mascot-rim)" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+      )}
       <path
         d={BUBBLE}
         fill={bubbleFill}
@@ -146,6 +181,15 @@ export function Mascot({
           opacity: state === "asleep" ? 0.45 : 1,
         }}
       />
+      {lit && (
+        <path
+          d={RIM}
+          fill="none"
+          stroke={`url(#${id}-rim)`}
+          strokeWidth={1.6}
+          strokeLinecap="round"
+        />
+      )}
       <g
         className={cn(
           "transition-transform duration-[400ms] ease-out",
@@ -169,7 +213,8 @@ export function Mascot({
             state={state}
             level={sound}
             blinking={blinking}
-            fill={state === "asleep" ? "var(--background)" : eyes}
+            fill={eyeFill}
+            lit={lit}
           />
         ))}
       </g>
@@ -183,14 +228,26 @@ function Eye({
   level,
   blinking,
   fill,
+  lit,
 }: {
   cx: number
   state: MascotState
   level: number
   blinking: boolean
   fill: string
+  lit: boolean
 }) {
   // Eyes closed: waking (before the agent is ready) and asleep (the call ended).
+  if (lit && state === "waking") {
+    return (
+      <path
+        d={`M${cx - 7} ${EYE_Y + 1} H${cx + 7}`}
+        stroke="var(--mascot-lid)"
+        strokeWidth={5}
+        strokeLinecap="round"
+      />
+    )
+  }
   if (state === "waking" || state === "asleep") {
     return (
       <rect
@@ -219,20 +276,34 @@ function Eye({
   const r =
     state === "listening" ? 10.5 : state === "speaking" ? 7 + 1.2 * level : 7
   return (
-    <ellipse
-      cx={cx}
-      cy={EYE_Y}
-      rx={r}
-      ry={r}
-      fill={fill}
+    <g
       style={{
         transform: blinking ? "scaleY(0.1)" : "scaleY(1)",
         transformBox: "fill-box",
         transformOrigin: "center",
-        transition:
-          "transform 70ms ease-in-out, rx 200ms ease-out, ry 120ms ease-out",
+        transition: "transform 70ms ease-in-out",
       }}
-    />
+    >
+      <ellipse
+        cx={cx}
+        cy={EYE_Y}
+        rx={r}
+        ry={r}
+        fill={fill}
+        style={{ transition: "rx 200ms ease-out, ry 120ms ease-out" }}
+      />
+      {lit && (
+        // A catchlight, up and to the left as in the Paper board.
+        <ellipse
+          cx={cx - 0.32 * r}
+          cy={EYE_Y - 0.34 * r}
+          rx={0.24 * r}
+          ry={0.24 * r}
+          fill="var(--mascot-catchlight)"
+          style={{ transition: "all 200ms ease-out" }}
+        />
+      )}
+    </g>
   )
 }
 

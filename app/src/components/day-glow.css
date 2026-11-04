@@ -1,0 +1,572 @@
+/* The day glow (day-glow.tsx), with the values of the Paper file bomby, pages "splash"
+   (options A and B) and "projects view". Each stage animates into the next through the
+   registered properties below. Morning is highlighter, evening bubblegum, and the afternoon
+   a bubblegum glow around a highlighter core. */
+
+@property --wide-w {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 70%;
+}
+
+@property --wide-h {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 45%;
+}
+
+@property --wide-a0 {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
+}
+
+@property --wide-a1 {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
+}
+
+@property --wide-a2 {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
+}
+
+@property --wide-m {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 55%;
+}
+
+@property --wide-n {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 77%;
+}
+
+@property --core-w {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 70%;
+}
+
+@property --core-h {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 45%;
+}
+
+@property --core-a0 {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
+}
+
+@property --core-a1 {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
+}
+
+@property --core-m {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 55%;
+}
+
+@property --wide-c {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: transparent;
+}
+
+@property --wide-c2 {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: transparent;
+}
+
+:root {
+  --glow-morning-pale: #f6ffc2;
+  --glow-evening-pale: #ffe3f2;
+}
+
+.dark {
+  --glow-morning-pale: #272a12;
+  --glow-evening-pale: #2a1a22;
+}
+
+.day-glow,
+.day-glow > span {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.day-glow > span {
+  transition-duration: var(--day-glow-duration, 800ms);
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.day-glow > .day-glow-wide {
+  transition-property:
+    --wide-w, --wide-h, --wide-a0, --wide-a1, --wide-a2, --wide-m, --wide-n,
+    --wide-c, --wide-c2;
+  background-image: radial-gradient(
+    ellipse var(--wide-w) var(--wide-h) at 50% 100%,
+    color-mix(in oklab, var(--wide-c) calc(var(--wide-a0) * 100%), transparent)
+      0%,
+    color-mix(in oklab, var(--wide-c) calc(var(--wide-a1) * 100%), transparent)
+      var(--wide-m),
+    color-mix(in oklab, var(--wide-c2) calc(var(--wide-a2) * 100%), transparent)
+      var(--wide-n),
+    transparent 100%
+  );
+}
+
+.day-glow > .day-glow-core {
+  --core-a0: 0;
+  --core-a1: 0;
+  transition-property: --core-w, --core-h, --core-a0, --core-a1, --core-m;
+  background-image: radial-gradient(
+    ellipse var(--core-w) var(--core-h) at 50% 100%,
+    color-mix(
+        in oklab,
+        var(--highlighter) calc(var(--core-a0) * 100%),
+        transparent
+      )
+      0%,
+    color-mix(
+        in oklab,
+        var(--highlighter) calc(var(--core-a1) * 100%),
+        transparent
+      )
+      var(--core-m),
+    transparent 100%
+  );
+}
+
+.day-glow[data-daypart="morning"][data-stage="dawn"] > .day-glow-wide {
+  --wide-c: var(--highlighter);
+  --wide-c2: var(--highlighter);
+  --wide-w: 70%;
+  --wide-h: 45%;
+  --wide-a0: 0.45;
+  --wide-a1: 0.12;
+  --wide-m: 55%;
+  --wide-a2: 0.06;
+  --wide-n: 77.5%;
+}
+
+.day-glow[data-daypart="morning"][data-stage="rise"] > .day-glow-wide {
+  --wide-c: var(--highlighter);
+  --wide-c2: var(--highlighter);
+  --wide-w: 95%;
+  --wide-h: 70%;
+  --wide-a0: 0.85;
+  --wide-a1: 0.35;
+  --wide-m: 45%;
+  --wide-a2: 0.175;
+  --wide-n: 72.5%;
+}
+
+.day-glow[data-daypart="morning"][data-stage="awake"] > .day-glow-wide {
+  --wide-c: var(--highlighter);
+  --wide-c2: var(--glow-morning-pale);
+  --wide-w: 120%;
+  --wide-h: 85%;
+  --wide-a0: 1;
+  --wide-a1: 0.55;
+  --wide-m: 35%;
+  --wide-a2: 0.4;
+  --wide-n: 60%;
+}
+
+.day-glow[data-daypart="morning"][data-stage="setup"] > .day-glow-wide {
+  --wide-c: var(--highlighter);
+  --wide-c2: var(--highlighter);
+  --wide-w: 110%;
+  --wide-h: 40%;
+  --wide-a0: 0.55;
+  --wide-a1: 0.15;
+  --wide-m: 55%;
+  --wide-a2: 0.075;
+  --wide-n: 77.5%;
+}
+
+.day-glow[data-daypart="morning"][data-stage="rest"] > .day-glow-wide {
+  --wide-c: var(--highlighter);
+  --wide-c2: var(--highlighter);
+  --wide-w: 75%;
+  --wide-h: 55%;
+  --wide-a0: 0.42;
+  --wide-a1: 0.12;
+  --wide-m: 55%;
+  --wide-a2: 0.06;
+  --wide-n: 77.5%;
+}
+
+.day-glow[data-daypart="evening"][data-stage="dawn"] > .day-glow-wide {
+  --wide-c: var(--claude);
+  --wide-c2: var(--claude);
+  --wide-w: 70%;
+  --wide-h: 45%;
+  --wide-a0: 0.34;
+  --wide-a1: 0.09;
+  --wide-m: 55%;
+  --wide-a2: 0.045;
+  --wide-n: 77.5%;
+}
+
+.day-glow[data-daypart="evening"][data-stage="rise"] > .day-glow-wide {
+  --wide-c: var(--claude);
+  --wide-c2: var(--claude);
+  --wide-w: 95%;
+  --wide-h: 70%;
+  --wide-a0: 0.64;
+  --wide-a1: 0.26;
+  --wide-m: 45%;
+  --wide-a2: 0.13;
+  --wide-n: 72.5%;
+}
+
+.day-glow[data-daypart="evening"][data-stage="awake"] > .day-glow-wide {
+  --wide-c: var(--claude);
+  --wide-c2: var(--glow-evening-pale);
+  --wide-w: 120%;
+  --wide-h: 85%;
+  --wide-a0: 0.75;
+  --wide-a1: 0.41;
+  --wide-m: 35%;
+  --wide-a2: 0.4;
+  --wide-n: 60%;
+}
+
+.day-glow[data-daypart="evening"][data-stage="setup"] > .day-glow-wide {
+  --wide-c: var(--claude);
+  --wide-c2: var(--claude);
+  --wide-w: 110%;
+  --wide-h: 40%;
+  --wide-a0: 0.41;
+  --wide-a1: 0.11;
+  --wide-m: 55%;
+  --wide-a2: 0.055;
+  --wide-n: 77.5%;
+}
+
+.day-glow[data-daypart="evening"][data-stage="rest"] > .day-glow-wide {
+  --wide-c: var(--claude);
+  --wide-c2: var(--claude);
+  --wide-w: 75%;
+  --wide-h: 55%;
+  --wide-a0: 0.3;
+  --wide-a1: 0.09;
+  --wide-m: 55%;
+  --wide-a2: 0.045;
+  --wide-n: 77.5%;
+}
+
+.day-glow[data-daypart="afternoon"][data-stage="dawn"] > .day-glow-wide {
+  --wide-c: var(--claude);
+  --wide-c2: var(--claude);
+  --wide-w: 80%;
+  --wide-h: 50%;
+  --wide-a0: 0.42;
+  --wide-a1: 0.12;
+  --wide-m: 55%;
+  --wide-a2: 0.06;
+  --wide-n: 77.5%;
+}
+
+.day-glow[data-daypart="afternoon"][data-stage="rise"] > .day-glow-wide {
+  --wide-c: var(--claude);
+  --wide-c2: var(--claude);
+  --wide-w: 100%;
+  --wide-h: 75%;
+  --wide-a0: 0.5;
+  --wide-a1: 0.15;
+  --wide-m: 55%;
+  --wide-a2: 0.075;
+  --wide-n: 77.5%;
+}
+
+.day-glow[data-daypart="afternoon"][data-stage="rise"] > .day-glow-core {
+  --core-w: 42%;
+  --core-h: 30%;
+  --core-a0: 0.85;
+  --core-a1: 0.3;
+  --core-m: 50%;
+}
+
+.day-glow[data-daypart="afternoon"][data-stage="awake"] > .day-glow-wide {
+  --wide-c: var(--claude);
+  --wide-c2: var(--claude);
+  --wide-w: 130%;
+  --wide-h: 100%;
+  --wide-a0: 0.6;
+  --wide-a1: 0.25;
+  --wide-m: 50%;
+  --wide-a2: 0.125;
+  --wide-n: 75%;
+}
+
+.day-glow[data-daypart="afternoon"][data-stage="awake"] > .day-glow-core {
+  --core-w: 60%;
+  --core-h: 45%;
+  --core-a0: 1;
+  --core-a1: 0.6;
+  --core-m: 40%;
+}
+
+.day-glow[data-daypart="afternoon"][data-stage="setup"] > .day-glow-wide {
+  --wide-c: var(--claude);
+  --wide-c2: var(--claude);
+  --wide-w: 110%;
+  --wide-h: 45%;
+  --wide-a0: 0.35;
+  --wide-a1: 0.1;
+  --wide-m: 60%;
+  --wide-a2: 0.05;
+  --wide-n: 80%;
+}
+
+.day-glow[data-daypart="afternoon"][data-stage="setup"] > .day-glow-core {
+  --core-w: 45%;
+  --core-h: 22%;
+  --core-a0: 0.8;
+  --core-a1: 0.4;
+  --core-m: 50%;
+}
+
+.day-glow[data-daypart="afternoon"][data-stage="rest"] > .day-glow-wide {
+  --wide-c: var(--claude);
+  --wide-c2: var(--claude);
+  --wide-w: 75%;
+  --wide-h: 55%;
+  --wide-a0: 0.3;
+  --wide-a1: 0.09;
+  --wide-m: 55%;
+  --wide-a2: 0.045;
+  --wide-n: 77.5%;
+}
+
+.day-glow[data-daypart="afternoon"][data-stage="rest"] > .day-glow-core {
+  --core-w: 40%;
+  --core-h: 25%;
+  --core-a0: 0.5;
+  --core-a1: 0.2;
+  --core-m: 50%;
+}
+
+.dark .day-glow[data-daypart="morning"][data-stage="dawn"] > .day-glow-wide {
+  --wide-c: var(--highlighter);
+  --wide-c2: var(--highlighter);
+  --wide-w: 70%;
+  --wide-h: 45%;
+  --wide-a0: 0.22;
+  --wide-a1: 0.06;
+  --wide-m: 55%;
+  --wide-a2: 0.03;
+  --wide-n: 77.5%;
+}
+
+.dark .day-glow[data-daypart="morning"][data-stage="rise"] > .day-glow-wide {
+  --wide-c: var(--highlighter);
+  --wide-c2: var(--highlighter);
+  --wide-w: 95%;
+  --wide-h: 70%;
+  --wide-a0: 0.42;
+  --wide-a1: 0.14;
+  --wide-m: 45%;
+  --wide-a2: 0.07;
+  --wide-n: 72.5%;
+}
+
+.dark .day-glow[data-daypart="morning"][data-stage="awake"] > .day-glow-wide {
+  --wide-c: var(--highlighter);
+  --wide-c2: var(--glow-morning-pale);
+  --wide-w: 120%;
+  --wide-h: 85%;
+  --wide-a0: 0.62;
+  --wide-a1: 0.22;
+  --wide-m: 35%;
+  --wide-a2: 0.5;
+  --wide-n: 62%;
+}
+
+.dark .day-glow[data-daypart="morning"][data-stage="setup"] > .day-glow-wide {
+  --wide-c: var(--highlighter);
+  --wide-c2: var(--highlighter);
+  --wide-w: 110%;
+  --wide-h: 40%;
+  --wide-a0: 0.3;
+  --wide-a1: 0.08;
+  --wide-m: 55%;
+  --wide-a2: 0.04;
+  --wide-n: 77.5%;
+}
+
+.dark .day-glow[data-daypart="morning"][data-stage="rest"] > .day-glow-wide {
+  --wide-c: var(--highlighter);
+  --wide-c2: var(--highlighter);
+  --wide-w: 75%;
+  --wide-h: 55%;
+  --wide-a0: 0.2;
+  --wide-a1: 0.05;
+  --wide-m: 55%;
+  --wide-a2: 0.025;
+  --wide-n: 77.5%;
+}
+
+.dark .day-glow[data-daypart="evening"][data-stage="dawn"] > .day-glow-wide {
+  --wide-c: var(--claude);
+  --wide-c2: var(--claude);
+  --wide-w: 70%;
+  --wide-h: 45%;
+  --wide-a0: 0.2;
+  --wide-a1: 0.05;
+  --wide-m: 55%;
+  --wide-a2: 0.025;
+  --wide-n: 77.5%;
+}
+
+.dark .day-glow[data-daypart="evening"][data-stage="rise"] > .day-glow-wide {
+  --wide-c: var(--claude);
+  --wide-c2: var(--claude);
+  --wide-w: 95%;
+  --wide-h: 70%;
+  --wide-a0: 0.36;
+  --wide-a1: 0.12;
+  --wide-m: 45%;
+  --wide-a2: 0.06;
+  --wide-n: 72.5%;
+}
+
+.dark .day-glow[data-daypart="evening"][data-stage="awake"] > .day-glow-wide {
+  --wide-c: var(--claude);
+  --wide-c2: var(--glow-evening-pale);
+  --wide-w: 120%;
+  --wide-h: 85%;
+  --wide-a0: 0.5;
+  --wide-a1: 0.18;
+  --wide-m: 35%;
+  --wide-a2: 0.5;
+  --wide-n: 62%;
+}
+
+.dark .day-glow[data-daypart="evening"][data-stage="setup"] > .day-glow-wide {
+  --wide-c: var(--claude);
+  --wide-c2: var(--claude);
+  --wide-w: 110%;
+  --wide-h: 40%;
+  --wide-a0: 0.24;
+  --wide-a1: 0.07;
+  --wide-m: 55%;
+  --wide-a2: 0.035;
+  --wide-n: 77.5%;
+}
+
+.dark .day-glow[data-daypart="evening"][data-stage="rest"] > .day-glow-wide {
+  --wide-c: var(--claude);
+  --wide-c2: var(--claude);
+  --wide-w: 75%;
+  --wide-h: 55%;
+  --wide-a0: 0.17;
+  --wide-a1: 0.05;
+  --wide-m: 55%;
+  --wide-a2: 0.025;
+  --wide-n: 77.5%;
+}
+
+.dark .day-glow[data-daypart="afternoon"][data-stage="dawn"] > .day-glow-wide {
+  --wide-c: var(--claude);
+  --wide-c2: var(--claude);
+  --wide-w: 80%;
+  --wide-h: 50%;
+  --wide-a0: 0.22;
+  --wide-a1: 0.06;
+  --wide-m: 55%;
+  --wide-a2: 0.03;
+  --wide-n: 77.5%;
+}
+
+.dark .day-glow[data-daypart="afternoon"][data-stage="rise"] > .day-glow-wide {
+  --wide-c: var(--claude);
+  --wide-c2: var(--claude);
+  --wide-w: 100%;
+  --wide-h: 75%;
+  --wide-a0: 0.28;
+  --wide-a1: 0.08;
+  --wide-m: 55%;
+  --wide-a2: 0.04;
+  --wide-n: 77.5%;
+}
+
+.dark .day-glow[data-daypart="afternoon"][data-stage="rise"] > .day-glow-core {
+  --core-w: 42%;
+  --core-h: 30%;
+  --core-a0: 0.55;
+  --core-a1: 0.15;
+  --core-m: 50%;
+}
+
+.dark .day-glow[data-daypart="afternoon"][data-stage="awake"] > .day-glow-wide {
+  --wide-c: var(--claude);
+  --wide-c2: var(--claude);
+  --wide-w: 130%;
+  --wide-h: 100%;
+  --wide-a0: 0.34;
+  --wide-a1: 0.12;
+  --wide-m: 50%;
+  --wide-a2: 0.06;
+  --wide-n: 75%;
+}
+
+.dark .day-glow[data-daypart="afternoon"][data-stage="awake"] > .day-glow-core {
+  --core-w: 60%;
+  --core-h: 45%;
+  --core-a0: 0.8;
+  --core-a1: 0.35;
+  --core-m: 40%;
+}
+
+.dark .day-glow[data-daypart="afternoon"][data-stage="setup"] > .day-glow-wide {
+  --wide-c: var(--claude);
+  --wide-c2: var(--claude);
+  --wide-w: 110%;
+  --wide-h: 45%;
+  --wide-a0: 0.2;
+  --wide-a1: 0.05;
+  --wide-m: 60%;
+  --wide-a2: 0.025;
+  --wide-n: 80%;
+}
+
+.dark .day-glow[data-daypart="afternoon"][data-stage="setup"] > .day-glow-core {
+  --core-w: 45%;
+  --core-h: 22%;
+  --core-a0: 0.5;
+  --core-a1: 0.25;
+  --core-m: 50%;
+}
+
+.dark .day-glow[data-daypart="afternoon"][data-stage="rest"] > .day-glow-wide {
+  --wide-c: var(--claude);
+  --wide-c2: var(--claude);
+  --wide-w: 75%;
+  --wide-h: 55%;
+  --wide-a0: 0.17;
+  --wide-a1: 0.05;
+  --wide-m: 55%;
+  --wide-a2: 0.025;
+  --wide-n: 77.5%;
+}
+
+.dark .day-glow[data-daypart="afternoon"][data-stage="rest"] > .day-glow-core {
+  --core-w: 40%;
+  --core-h: 25%;
+  --core-a0: 0.3;
+  --core-a1: 0.12;
+  --core-m: 50%;
+}
