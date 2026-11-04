@@ -15,6 +15,7 @@ mod process;
 mod projects;
 mod settings;
 mod setup;
+mod sync;
 mod tray;
 mod windows;
 

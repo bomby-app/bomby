@@ -4,7 +4,7 @@
 //! (docs/decisions/app-data-in-one-sqlite-db.md).
 
 use std::path::PathBuf;
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 
 use livekit_api::access_token::{AccessToken, VideoGrants};
@@ -16,6 +16,7 @@ use tauri::{AppHandle, Manager, Runtime, State};
 use crate::agent::{AgentWorker, WorkerConfig};
 use crate::db::{Db, now_ms};
 use crate::error::{Error, Result};
+use crate::sync;
 use crate::{agents, credentials, projects, settings};
 
 /// The agent's name in `agent/agent.py` (`AGENT_NAME`), which the token dispatches.
@@ -48,7 +49,7 @@ impl CallAgents {
     }
 
     fn lock(&self) -> MutexGuard<'_, Option<CurrentCall>> {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+        sync::lock(&self.0)
     }
 }
 

@@ -19,6 +19,7 @@ use tauri::{AppHandle, Emitter, Runtime};
 use crate::agents;
 use crate::error::{Error, Result};
 use crate::process;
+use crate::sync;
 
 const PACKAGE: &str = include_str!("../../../agent/adapters/package.json");
 const LOCKFILE: &str = include_str!("../../../agent/adapters/bun.lock");
@@ -83,7 +84,7 @@ pub fn update_in_background<R: Runtime>(app: &AppHandle<R>) {
     };
     let app = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let _one = INSTALLING.lock().unwrap_or_else(|p| p.into_inner());
+        let _one = sync::lock(&INSTALLING);
         if install(&dir, |_| {}).is_err() {
             // A half-updated set must not run; Settings offers Set up again.
             let _ = fs::remove_dir_all(dir.join("bin"));
@@ -102,7 +103,7 @@ pub async fn install_adapters<R: Runtime>(app: AppHandle<R>) -> Result<()> {
         .ok_or_else(|| Error::Invalid("The app isn't ready yet.".into()))?;
     let reporter = app.clone();
     tauri::async_runtime::spawn_blocking(move || -> Result<()> {
-        let _one = INSTALLING.lock().unwrap_or_else(|p| p.into_inner());
+        let _one = sync::lock(&INSTALLING);
         install(&dir, |step| {
             let _ = reporter.emit(PROGRESS, step);
         })?;

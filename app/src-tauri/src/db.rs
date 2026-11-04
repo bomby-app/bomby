@@ -7,6 +7,7 @@ use std::sync::{Mutex, MutexGuard};
 use rusqlite::Connection;
 
 use crate::error::Result;
+use crate::sync;
 
 pub const FILE_NAME: &str = "bomby.db";
 
@@ -83,9 +84,7 @@ impl Db {
 
     pub fn conn(&self) -> MutexGuard<'_, Connection> {
         // A panic while holding the lock leaves the connection usable; carry on.
-        self.0
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        sync::lock(&self.0)
     }
 }
 
