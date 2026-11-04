@@ -360,8 +360,34 @@ impl Agents {
     }
 }
 
+/// The installed agents' programs, looked up now: the shell and the install places only,
+/// without the version and sign-in checks, which a call doesn't need. Blocks for the shell
+/// lookup. When they differ from what Settings shows, a full look follows in the
+/// background, so Settings catches up.
+pub fn installed_now<R: Runtime>(app: &AppHandle<R>) -> Vec<(String, PathBuf)> {
+    let shown = app
+        .state::<Agents>()
+        .cached()
+        .map(|found| installed(&found));
+    let previous: HashMap<_, _> = shown.clone().unwrap_or_default().into_iter().collect();
+    let found = programs(find_all(&previous));
+    if shown.as_ref() != Some(&found) {
+        tauri::async_runtime::spawn(refresh_in_background(app.clone()));
+    }
+    found
+}
+
+/// The ones `find_all` found, by id with their programs, in `KNOWN` order like
+/// [`installed`].
+fn programs(found: Vec<(&'static Known, Option<PathBuf>)>) -> Vec<(String, PathBuf)> {
+    found
+        .into_iter()
+        .filter_map(|(known, path)| Some((known.id.to_owned(), path?)))
+        .collect()
+}
+
 /// Looks for the agents (blocking) and tells every window when they changed.
-pub fn refresh<R: Runtime>(app: &AppHandle<R>) -> Vec<AgentStatus> {
+fn refresh<R: Runtime>(app: &AppHandle<R>) -> Vec<AgentStatus> {
     let (found, changed) = app.state::<Agents>().detect();
     if changed {
         // Only fails for an invalid event name or payload; a window that misses it still
@@ -532,6 +558,18 @@ mod tests {
             assert_eq!(second.join().unwrap(), (found.clone(), false));
         });
         assert_eq!(looks.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn programs_match_installed_for_the_same_agents() {
+        let claude = PathBuf::from("/Users/me/.local/bin/claude");
+        let found = programs(vec![(&KNOWN[0], Some(claude.clone())), (&KNOWN[1], None)]);
+        let shown = installed(&[
+            status("claude", Some("/Users/me/.local/bin/claude")),
+            status("opencode", None),
+        ]);
+        assert_eq!(found, shown);
+        assert_eq!(found, vec![("claude".to_owned(), claude)]);
     }
 
     #[test]

@@ -191,8 +191,9 @@ pub fn open_call<R: Runtime>(
     let gemini = vault
         .gemini_key(&app)?
         .ok_or_else(|| Error::Invalid("Add your Gemini API key in Settings first.".into()))?;
-    // Looks again, so an agent installed since launch is picked up.
-    let found = agents::installed(&agents::refresh(&app));
+    // Looks again, so an agent installed since launch is picked up; only where the programs
+    // are, not their versions or sign-in.
+    let found = agents::installed_now(&app);
     if found.is_empty() {
         return Err(Error::Invalid(
             "Bomby can't find an agent to work with. See Settings, Agents.".into(),
