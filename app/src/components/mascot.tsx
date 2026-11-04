@@ -313,13 +313,14 @@ function Eye({
       />
     )
   }
-  // Failed: crossed eyes in bubblegum (Paper "04 Mascot states", Failed: 10 wide, 4.5 thick).
+  // Failed: crossed eyes (Paper "04 Mascot states", Failed: 10 wide, 4.5 thick), bubblegum on
+  // the light theme's ink bubble and ink on the dark theme's highlighter one (--mascot-failed).
   if (state === "failed") {
     const d = 5
     return (
       <path
         d={`M${cx - d} ${EYE_Y - d} L${cx + d} ${EYE_Y + d} M${cx + d} ${EYE_Y - d} L${cx - d} ${EYE_Y + d}`}
-        stroke="var(--claude)"
+        stroke="var(--mascot-failed)"
         strokeWidth={4.5}
         strokeLinecap="round"
       />

@@ -70,7 +70,7 @@ Only the eyes change, never the bubble shape or colours. States follow `useAgent
 - **Thinking**: eyes drift up-right.
 - **Speaking**: glances every 1 to 2.5 s, blinks every 2 to 4 s with occasional double blinks, opens slightly on loud syllables; bubble pulses with voice. No squint: it should feel alive (owner, 2026-11-04).
 - **Asleep** (disconnected): closed and greyed.
-- **Failed**: crossed bubblegum eyes.
+- **Failed**: crossed eyes, bubblegum on the light theme's ink bubble and ink on the dark theme's highlighter bubble, where bubblegum would barely show (owner, 2026-11-05).
 - **Working** and **done**, not wired yet: scanning eyes while a task runs; smiling arcs for 1.2 s when a result arrives.
 
 In the menu bar, the mascot swaps one template image per state and never animates (Motion board): no call (dots), waking, listening, thinking, speaking, working (eyes to the left, while an agent works and the voice only listens) and failed (crossed, for five seconds after a call fails). Paper `app assets`, `tray-icon-template` and `tray-icon-<state>-template`, exported at 36 px to `app/src-tauri/icons/tray/` ([Tauri notes](tauri-notes.md#menu-bar-icon)). Its menu: the call's project, Open Bomby, Start a call on the three recent projects (or what's missing), End call, Settings, Quit Bomby.
