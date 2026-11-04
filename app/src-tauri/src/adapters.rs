@@ -216,17 +216,24 @@ fn sha256_of(file: &Path) -> Result<String> {
         .to_owned())
 }
 
+/// A package manifest, parsed; `what` names it in the error.
+fn json(text: &str, what: &str) -> Result<serde_json::Value> {
+    serde_json::from_str(text).map_err(|e| Error::Invalid(format!("Couldn't read {what}: {e}")))
+}
+
 /// Each adapter in the lockfile's package list: the program it installs, and its script.
 fn entries(work: &Path) -> Result<Vec<(String, PathBuf)>> {
-    let package: serde_json::Value = serde_json::from_str(PACKAGE)?;
+    let package = json(PACKAGE, "agent/adapters/package.json")?;
     let dependencies = package["dependencies"]
         .as_object()
         .ok_or_else(|| Error::Invalid("agent/adapters/package.json has no dependencies".into()))?;
     let mut entries = Vec::new();
     for name in dependencies.keys() {
         let root = work.join("node_modules").join(name);
-        let manifest: serde_json::Value =
-            serde_json::from_str(&fs::read_to_string(root.join("package.json"))?)?;
+        let manifest = json(
+            &fs::read_to_string(root.join("package.json"))?,
+            &format!("{name}'s package.json"),
+        )?;
         let bins: Vec<(String, String)> = match &manifest["bin"] {
             serde_json::Value::String(path) => {
                 let program = name.rsplit('/').next().unwrap_or(name).to_owned();
