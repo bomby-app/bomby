@@ -151,7 +151,7 @@ fn start(config: &WorkerConfig, log_dir: &Path) -> Result<(Child, ChildStdin)> {
     .into_iter()
     .flatten()
     {
-        let (log, ready_tx) = (Arc::clone(&log), ready_tx.clone());
+        let (log, ready_tx, recent) = (Arc::clone(&log), ready_tx.clone(), Arc::clone(&recent));
         thread::spawn(move || {
             for line in BufReader::new(stream)
                 .lines()
@@ -163,6 +163,7 @@ fn start(config: &WorkerConfig, log_dir: &Path) -> Result<(Child, ChildStdin)> {
                 if let Ok(mut file) = log.lock() {
                     let _ = writeln!(file, "{line}");
                 }
+                remember(&recent, line);
             }
         });
     }
@@ -182,6 +183,16 @@ fn start(config: &WorkerConfig, log_dir: &Path) -> Result<(Child, ChildStdin)> {
                 log_dir.join("agent.log").display()
             )))
         }
+    }
+}
+
+/// Keeps `line` among the worker's last `RECENT_LINES` lines.
+fn remember(recent: &Mutex<VecDeque<String>>, line: String) {
+    if let Ok(mut recent) = recent.lock() {
+        if recent.len() == RECENT_LINES {
+            recent.pop_front();
+        }
+        recent.push_back(line);
     }
 }
 
@@ -224,7 +235,21 @@ fn stop(mut child: Child) {
 
 #[cfg(test)]
 mod tests {
-    use super::last_error;
+    use std::collections::VecDeque;
+    use std::sync::Mutex;
+
+    use super::{RECENT_LINES, last_error, remember};
+
+    #[test]
+    fn keeps_only_the_last_lines() {
+        let recent = Mutex::new(VecDeque::new());
+        for n in 0..RECENT_LINES + 5 {
+            remember(&recent, format!("line {n}"));
+        }
+        let recent = recent.into_inner().unwrap();
+        assert_eq!(recent.len(), RECENT_LINES);
+        assert_eq!(recent.front().map(String::as_str), Some("line 5"));
+    }
 
     #[test]
     fn finds_the_last_logged_error() {

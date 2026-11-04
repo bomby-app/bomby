@@ -1,5 +1,5 @@
 import { Trash2 } from "lucide-react"
-import { type KeyboardEvent, useState } from "react"
+import { type KeyboardEvent, useRef, useState } from "react"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -52,18 +52,30 @@ export function ProjectSettingsDialog({
   const { update, remove } = useProjects()
   const [error, setError] = useState<string | null>(null)
 
-  async function save(changes: Partial<Pick<Project, "name" | "folders">>) {
+  // The project as this dialog last changed it. Each save sends the whole draft, and saves
+  // run one after another, so a rename followed quickly by a folder change can't write the
+  // old name back (the prop only catches up once the core has answered).
+  const draft = useRef({ ...project })
+  const saving = useRef<Promise<unknown>>(Promise.resolve())
+
+  function save(changes: Partial<Pick<Project, "name" | "folders">>) {
     setError(null)
-    try {
-      await update(project.id, {
-        name: changes.name ?? project.name,
-        folders: changes.folders ?? project.folders,
-      })
-      return true
-    } catch (e) {
-      setError(String(e))
-      return false
-    }
+    const base = draft.current.id === project.id ? draft.current : project
+    draft.current = { ...base, ...changes }
+    const { name, folders } = draft.current
+    const done = saving.current.then(() =>
+      update(project.id, { name, folders }).then(
+        () => true,
+        (e: unknown) => {
+          // Back to what the core has, so the next save doesn't resend the failed change.
+          draft.current = { ...project }
+          setError(String(e))
+          return false
+        }
+      )
+    )
+    saving.current = done
+    return done
   }
 
   return (

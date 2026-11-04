@@ -47,16 +47,18 @@ class Harness:
     Used only when `initialize` advertises it in `_meta.steering.supported`."""
 
     def launch(
-        self, program: str, environ: Mapping[str, str]
+        self, program: str, child_env: Mapping[str, str], settings: Mapping[str, str]
     ) -> tuple[str, tuple[str, ...], dict[str, str]]:
         """The command, arguments and environment that start this agent over ACP, given
-        where its program is and the environment it may see."""
-        env = dict(environ)
+        where its program is, the environment it may see (`child_env`, secrets removed)
+        and the agent's own settings (`settings`: the full environment, `agent/.env`
+        included), where an adapter override like `CLAUDE_ACP_BIN` lives."""
+        env = dict(child_env)
         if self.adapter is None:
             return program, self.args, env
         if self.program_env is not None:
             env[self.program_env] = program
         adapter = (
-            environ.get(self.adapter_env) if self.adapter_env else None
+            settings.get(self.adapter_env) if self.adapter_env else None
         ) or self.adapter
         return adapter, self.args, env

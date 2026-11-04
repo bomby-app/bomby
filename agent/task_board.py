@@ -53,7 +53,8 @@ class TaskBoard:
     def tasks(self) -> list[Task]:
         return list(self._tasks)
 
-    async def start(self, harness: Harness, session: str, task: str) -> str:
+    def add(self, harness: Harness, session: str, task: str) -> str:
+        """Records a new working task, without publishing it yet (see `publish`)."""
         short = task if len(task) <= TASK_CHARS else task[: TASK_CHARS - 1] + "…"
         entry = Task(
             id=str(next(self._ids)),
@@ -65,8 +66,10 @@ class TaskBoard:
             startedAt=_now_ms(),
         )
         self._tasks = [*self._tasks, entry][-KEEP:]
-        await self._send()
         return entry.id
+
+    async def publish(self) -> None:
+        await self._send()
 
     async def finish(self, id: str, status: Status) -> None:
         for entry in self._tasks:

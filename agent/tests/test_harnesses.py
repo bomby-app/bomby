@@ -49,20 +49,39 @@ def test_console_runs_find_agents_on_path(tmp_path: Path) -> None:
 
 
 def test_a_native_agent_runs_its_own_program() -> None:
-    command, args, env = OPENCODE.launch("/bin/opencode", {"PATH": "/bin"})
+    command, args, env = OPENCODE.launch("/bin/opencode", {"PATH": "/bin"}, {})
 
     assert (command, args, env) == ("/bin/opencode", ("acp",), {"PATH": "/bin"})
-    assert OMP.launch("/bin/omp", {})[:2] == ("/bin/omp", ("acp",))
+    assert OMP.launch("/bin/omp", {}, {})[:2] == ("/bin/omp", ("acp",))
 
 
 def test_an_adapter_gets_the_agents_program_in_its_environment() -> None:
-    command, args, env = CLAUDE_CODE.launch("/bin/claude", {"PATH": "/bin"})
+    command, args, env = CLAUDE_CODE.launch("/bin/claude", {"PATH": "/bin"}, {})
 
     assert (command, args) == ("claude-agent-acp", ())
     assert env == {"PATH": "/bin", "CLAUDE_CODE_EXECUTABLE": "/bin/claude"}
-    assert (
-        CLAUDE_CODE.launch("/bin/claude", {"CLAUDE_ACP_BIN": "/x/acp"})[0] == "/x/acp"
+
+
+def test_an_adapter_override_in_agent_env_is_used_but_not_passed_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # CLAUDE_ACP_BIN in agent/.env is a .env key, so it's kept out of the agent's
+    # environment, yet it still picks the adapter (review finding, 2026-11-04).
+    def dotenv_values(_: object) -> dict[str, str]:
+        return {"CLAUDE_ACP_BIN": "/x/acp"}
+
+    monkeypatch.setattr("acp_client.runner.dotenv_values", dotenv_values)
+    runners = CallRunners(
+        Project(name="test", folders=(tmp_path,)),
+        {"claude": executable(tmp_path, "claude")},
+        {"PATH": "/bin", "CLAUDE_ACP_BIN": "/x/acp"},
     )
+
+    runner = runners.get(CLAUDE_CODE)
+
+    assert runner.command == "/x/acp"
+    assert "CLAUDE_ACP_BIN" not in runner.env
+    asyncio.run(runners.aclose())
 
 
 def test_only_installed_agents_are_available(tmp_path: Path) -> None:

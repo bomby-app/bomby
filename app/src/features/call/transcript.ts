@@ -14,11 +14,15 @@ export function lineId(message: ReceivedMessage): string {
   return message.attributes?.["lk.segment_id"] ?? message.id
 }
 
-/** "user" or "agent" for a live transcript line; null for anything else (chat). */
+/**
+ * "user" or "agent" for a live line: a spoken transcript, or a chat message typed in the
+ * control bar (the user's own) or sent back as chat. Null when it has no sender.
+ */
 export function roleOf(message: ReceivedMessage): "user" | "agent" | null {
   if (message.type === "userTranscript") return "user"
   if (message.type === "agentTranscript") return "agent"
-  return null
+  if (!message.from) return null
+  return message.from.isLocal ? "user" : "agent"
 }
 
 /**

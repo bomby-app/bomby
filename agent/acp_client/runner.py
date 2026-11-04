@@ -149,6 +149,14 @@ class AcpRunner:
         return self._harness
 
     @property
+    def command(self) -> str:
+        return self._command
+
+    @property
+    def env(self) -> Mapping[str, str]:
+        return self._env
+
+    @property
     def project(self) -> Project:
         return self._project
 
@@ -463,7 +471,9 @@ class CallRunners:
         if program is None:
             raise ToolError(f"{harness.short_name} isn't installed on this computer.")
         command, args, env = harness.launch(
-            str(program), child_environment(self._environ, self._dotenv_keys, harness)
+            str(program),
+            child_environment(self._environ, self._dotenv_keys, harness),
+            self._environ,
         )
         runner = self._runners[harness.id] = AcpRunner(
             harness=harness, project=self._project, env=env, command=command, args=args

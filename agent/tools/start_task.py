@@ -52,8 +52,10 @@ async def start_task(
         await context.update(f"Sent to {who} mid-task, in session {name}: {task}")
     else:
         await context.update(f"{who} has started on this, in session {name}: {task}")
-    id = await board.start(harness, name, task)
+    # Recorded before anything can be cancelled, so the cleanup below always finds it.
+    id = board.add(harness, name, task)
     try:
+        await board.publish()
         result = await runner.run(task, name)
     except asyncio.CancelledError:
         await board.finish(id, "stopped")
