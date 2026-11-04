@@ -297,6 +297,9 @@ struct Detection {
     waiting: usize,
     /// Counts finished looks, so a waiter can tell its look is done.
     looks: u64,
+    /// Programs a call found that the next look starts from, so a login shell that fails
+    /// then doesn't lose them.
+    seen: HashMap<String, PathBuf>,
 }
 
 impl Agents {
@@ -311,34 +314,46 @@ impl Agents {
 
     /// Looks again, or waits for the look already running, and returns what it found and
     /// whether that differs from before. Blocks for as long as the look takes.
-    pub fn detect(&self) -> (Vec<AgentStatus>, bool) {
-        self.detect_with(detect_all)
+    ///
+    /// With `seen`, the programs a call just found, the answer comes from a look that starts
+    /// after this one asked, and that look starts from them: a look already running began
+    /// before they were found, so it may miss them.
+    pub fn detect(&self, seen: Option<Vec<(String, PathBuf)>>) -> (Vec<AgentStatus>, bool) {
+        self.detect_with(seen, detect_all)
     }
 
     fn detect_with(
         &self,
+        seen: Option<Vec<(String, PathBuf)>>,
         look: impl FnOnce(&HashMap<String, PathBuf>) -> Vec<AgentStatus>,
     ) -> (Vec<AgentStatus>, bool) {
         let mut state = self.lock();
-        if state.running {
-            let look = state.looks;
+        // The number of the look that answers: the running one, or the next for news, and
+        // this caller's own when none runs. Only one runs at a time, so they finish in order.
+        let answer = state.looks + 1 + u64::from(seen.is_some() && state.running);
+        state.seen.extend(seen.into_iter().flatten());
+        while state.running {
             state.waiting += 1;
-            let mut state = self
+            state = self
                 .finished
-                .wait_while(state, |s| s.looks == look)
+                .wait_while(state, |s| s.running)
                 .unwrap_or_else(PoisonError::into_inner);
             state.waiting -= 1;
-            // The look's own caller tells the windows about a change.
-            return (state.found.clone().unwrap_or_default(), false);
+            if state.looks >= answer {
+                // The look's own caller tells the windows about a change.
+                return (state.found.clone().unwrap_or_default(), false);
+            }
         }
         state.running = true;
-        let previous: HashMap<_, _> = state
+        let mut previous: HashMap<_, _> = state
             .found
             .as_deref()
             .map(installed)
             .unwrap_or_default()
             .into_iter()
             .collect();
+        let seen = std::mem::take(&mut state.seen);
+        previous.extend(seen.clone());
         drop(state);
 
         // A look that panics keeps what was found before, and never leaves waiters waiting.
@@ -351,7 +366,13 @@ impl Agents {
                 state.found = Some(found);
                 changed
             }
-            Err(_) => false,
+            Err(_) => {
+                // The next look starts from them instead, unless a newer call found others.
+                for (id, path) in seen {
+                    state.seen.entry(id).or_insert(path);
+                }
+                false
+            }
         };
         state.running = false;
         state.looks += 1;
@@ -362,8 +383,8 @@ impl Agents {
 
 /// The installed agents' programs, looked up now: the shell and the install places only,
 /// without the version and sign-in checks, which a call doesn't need. Blocks for the shell
-/// lookup. When they differ from what Settings shows, a full look follows in the
-/// background, so Settings catches up.
+/// lookup. When they differ from what Settings shows, a full look starting from them
+/// follows in the background, so Settings catches up.
 pub fn installed_now<R: Runtime>(app: &AppHandle<R>) -> Vec<(String, PathBuf)> {
     let shown = app
         .state::<Agents>()
@@ -372,7 +393,8 @@ pub fn installed_now<R: Runtime>(app: &AppHandle<R>) -> Vec<(String, PathBuf)> {
     let previous: HashMap<_, _> = shown.clone().unwrap_or_default().into_iter().collect();
     let found = programs(find_all(&previous));
     if shown.as_ref() != Some(&found) {
-        tauri::async_runtime::spawn(refresh_in_background(app.clone()));
+        let (app, seen) = (app.clone(), found.clone());
+        tauri::async_runtime::spawn_blocking(move || refresh(&app, Some(seen)));
     }
     found
 }
@@ -386,9 +408,13 @@ fn programs(found: Vec<(&'static Known, Option<PathBuf>)>) -> Vec<(String, PathB
         .collect()
 }
 
-/// Looks for the agents (blocking) and tells every window when they changed.
-fn refresh<R: Runtime>(app: &AppHandle<R>) -> Vec<AgentStatus> {
-    let (found, changed) = app.state::<Agents>().detect();
+/// Looks for the agents (blocking), starting from what a call has `seen`, and tells every
+/// window when they changed.
+fn refresh<R: Runtime>(
+    app: &AppHandle<R>,
+    seen: Option<Vec<(String, PathBuf)>>,
+) -> Vec<AgentStatus> {
+    let (found, changed) = app.state::<Agents>().detect(seen);
     if changed {
         // Only fails for an invalid event name or payload; a window that misses it still
         // gets the list when it asks.
@@ -399,7 +425,7 @@ fn refresh<R: Runtime>(app: &AppHandle<R>) -> Vec<AgentStatus> {
 
 /// [`refresh`] on a blocking thread, for async callers.
 pub async fn refresh_in_background<R: Runtime>(app: AppHandle<R>) -> Result<Vec<AgentStatus>> {
-    Ok(tauri::async_runtime::spawn_blocking(move || refresh(&app)).await?)
+    Ok(tauri::async_runtime::spawn_blocking(move || refresh(&app, None)).await?)
 }
 
 /// Every known agent: installed or not, its version, and its sign-in where it reports one.
@@ -493,15 +519,18 @@ mod tests {
         assert_eq!(agents.cached(), None);
 
         let first = vec![status("claude", Some("/Users/me/.local/bin/claude"))];
-        assert_eq!(agents.detect_with(|_| first.clone()), (first.clone(), true));
+        assert_eq!(
+            agents.detect_with(None, |_| first.clone()),
+            (first.clone(), true)
+        );
         assert_eq!(agents.cached(), Some(first.clone()));
         assert_eq!(
-            agents.detect_with(|_| first.clone()),
+            agents.detect_with(None, |_| first.clone()),
             (first.clone(), false)
         );
 
         // The next look starts from the programs found before.
-        let (_, changed) = agents.detect_with(|previous| {
+        let (_, changed) = agents.detect_with(None, |previous| {
             assert_eq!(
                 previous.get("claude"),
                 Some(&PathBuf::from("/Users/me/.local/bin/claude"))
@@ -515,12 +544,12 @@ mod tests {
     fn a_look_that_panics_keeps_what_was_found_before() {
         let agents = Agents::default();
         let first = vec![status("claude", Some("/Users/me/.local/bin/claude"))];
-        agents.detect_with(|_| first.clone());
+        agents.detect_with(None, |_| first.clone());
 
-        let (found, changed) = agents.detect_with(|_| panic!("the shell fell over"));
+        let (found, changed) = agents.detect_with(None, |_| panic!("the shell fell over"));
         assert_eq!((found, changed), (first.clone(), false));
         // And the next look still runs.
-        assert_eq!(agents.detect_with(|_| vec![]), (vec![], true));
+        assert_eq!(agents.detect_with(None, |_| vec![]), (vec![], true));
     }
 
     #[test]
@@ -535,7 +564,7 @@ mod tests {
 
         thread::scope(|scope| {
             let first = scope.spawn(move || {
-                agents.detect_with(|_| {
+                agents.detect_with(None, |_| {
                     looks.fetch_add(1, Ordering::SeqCst);
                     started.send(()).unwrap();
                     wait_for_release.recv().unwrap();
@@ -544,7 +573,7 @@ mod tests {
             });
             wait_for_start.recv().unwrap();
             let second = scope.spawn(|| {
-                agents.detect_with(|_| {
+                agents.detect_with(None, |_| {
                     looks.fetch_add(1, Ordering::SeqCst);
                     vec![]
                 })
@@ -558,6 +587,73 @@ mod tests {
             assert_eq!(second.join().unwrap(), (found.clone(), false));
         });
         assert_eq!(looks.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn a_look_starts_from_the_programs_a_call_found() {
+        let agents = Agents::default();
+        let goose = PathBuf::from("/Users/me/.local/bin/goose");
+        let seen = vec![("goose".to_owned(), goose.clone())];
+        agents.detect_with(Some(seen.clone()), |previous| {
+            assert_eq!(previous.get("goose"), Some(&goose));
+            vec![]
+        });
+        // Only that look: the next one starts from what was found.
+        agents.detect_with(None, |previous| {
+            assert!(previous.is_empty());
+            vec![]
+        });
+
+        // A look that panics hands them on to the next one.
+        agents.detect_with(Some(seen), |_| panic!("the shell fell over"));
+        agents.detect_with(None, |previous| {
+            assert_eq!(previous.get("goose"), Some(&goose));
+            vec![]
+        });
+    }
+
+    #[test]
+    fn news_from_a_call_waits_for_the_running_look_then_looks_again() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::mpsc;
+
+        let (agents, looks) = (&Agents::default(), &AtomicUsize::new(0));
+        let goose = &PathBuf::from("/Users/me/.local/bin/goose");
+        let stale = &vec![status("goose", None)];
+        let fresh = &vec![status("goose", Some("/Users/me/.local/bin/goose"))];
+        let (started, wait_for_start) = mpsc::channel();
+        let (release, wait_for_release) = mpsc::channel::<()>();
+
+        thread::scope(|scope| {
+            // A look that began before goose was installed.
+            let first = scope.spawn(move || {
+                agents.detect_with(None, |_| {
+                    looks.fetch_add(1, Ordering::SeqCst);
+                    started.send(()).unwrap();
+                    wait_for_release.recv().unwrap();
+                    stale.clone()
+                })
+            });
+            wait_for_start.recv().unwrap();
+            // A call finds goose while it runs.
+            let call = scope.spawn(move || {
+                let seen = vec![("goose".to_owned(), goose.clone())];
+                agents.detect_with(Some(seen), |previous| {
+                    looks.fetch_add(1, Ordering::SeqCst);
+                    assert_eq!(previous.get("goose"), Some(goose));
+                    fresh.clone()
+                })
+            });
+            while agents.lock().waiting == 0 {
+                thread::yield_now();
+            }
+            release.send(()).unwrap();
+
+            assert_eq!(first.join().unwrap(), (stale.clone(), true));
+            assert_eq!(call.join().unwrap(), (fresh.clone(), true));
+        });
+        assert_eq!(looks.load(Ordering::SeqCst), 2);
+        assert_eq!(agents.cached(), Some(fresh.clone()));
     }
 
     #[test]
