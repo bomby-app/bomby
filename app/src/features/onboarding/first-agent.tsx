@@ -144,13 +144,7 @@ function AgentCard({
 }
 
 /** An agent's logo on its tile: Claude in its own colours, the rest in the theme's. */
-export function AgentTile({
-  id,
-  small = false,
-}: {
-  id: string
-  small?: boolean
-}) {
+function AgentTile({ id, small = false }: { id: string; small?: boolean }) {
   return (
     <Tile
       small={small}
