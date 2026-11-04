@@ -88,7 +88,7 @@ Researched 2026-11-05 for a floating mascot window (not built). Sources: `tauri`
 
 - `src-tauri/src/adapters.rs` installs the ACP adapters into `app_data_dir()/adapters` ([decision](decisions/install-adapters-on-setup.md)): bun 1.4.4 from its GitHub release zip (`curl`, checked with `shasum -a 256` against the release's SHASUMS256.txt, unpacked with `ditto -x -k`), then `bun install --frozen-lockfile --omit optional` on the embedded `agent/adapters/` lockfile (`include_str!`) and `bun build --compile` per package `bin`. Output goes to `install.log` there; each step has a five-minute limit. Measured 2026-11-04: 6 s end to end on a fast connection.
 - A file `curl` downloads gets `com.apple.provenance` but no `com.apple.quarantine`, so Gatekeeper doesn't stop it, and the downloaded bun runs (macOS 27, 2026-11-04, from a terminal; recheck from the packaged app in step 7).
-- `install_adapters` runs one install at a time, sends `adapters-progress` (`runtime`, `packages`, `build`, `done`) and looks for the agents again. `agent::command` passes `BOMBY_ADAPTERS` to the worker and the probe.
+- `install_adapters` runs one install at a time and looks for the agents again before it resolves; the page shows one "Setting up..." state for the whole install (owner, 2026-11-05). `agent::command` passes `BOMBY_ADAPTERS` to the worker and the probe.
 
 ## Credentials
 
