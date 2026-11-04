@@ -172,20 +172,12 @@ class AcpRunner:
         self._sessions: dict[str, _Session] = {}
 
     @property
-    def harness(self) -> Harness:
-        return self._harness
-
-    @property
     def command(self) -> str:
         return self._command
 
     @property
     def env(self) -> Mapping[str, str]:
         return self._env
-
-    @property
-    def project(self) -> Project:
-        return self._project
 
     def is_busy(self, name: str) -> bool:
         """Whether the session called `name` has a turn running."""
@@ -245,7 +237,7 @@ class AcpRunner:
                     self._command,
                     s.name,
                 )
-            options = dict(self._harness.session_options)
+            options: dict[str, object] = {}
             if self._harness.system_prompt_append:
                 options["systemPrompt"] = {"append": briefing(self._project)}
             try:

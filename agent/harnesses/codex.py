@@ -8,7 +8,6 @@ from .harness import Harness
 
 CODEX = Harness(
     id="codex",
-    name="Codex",
     short_name="Codex",
     program="codex",
     adapter="codex-acp",

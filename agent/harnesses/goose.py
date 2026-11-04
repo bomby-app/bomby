@@ -9,7 +9,6 @@ from .harness import Harness
 
 GOOSE = Harness(
     id="goose",
-    name="goose",
     short_name="goose",
     program="goose",
     args=("acp",),

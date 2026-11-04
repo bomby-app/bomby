@@ -15,7 +15,6 @@ from harnesses import Harness
 FAKE_AGENT = Path(__file__).resolve().parent / "fake_claude_acp.py"
 FAKE = Harness(
     id="fake",
-    name="Fake",
     short_name="Fake",
     program="python",
     args=(str(FAKE_AGENT),),

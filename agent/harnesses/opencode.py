@@ -10,7 +10,6 @@ from .harness import Harness
 
 OPENCODE = Harness(
     id="opencode",
-    name="OpenCode",
     short_name="OpenCode",
     program="opencode",
     args=("acp",),

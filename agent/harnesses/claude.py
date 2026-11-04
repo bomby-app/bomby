@@ -8,7 +8,6 @@ from .harness import Harness
 
 CLAUDE_CODE = Harness(
     id="claude",
-    name="Claude Code",
     short_name="Claude",
     program="claude",
     adapter="claude-agent-acp",
