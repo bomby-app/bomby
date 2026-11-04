@@ -12,7 +12,6 @@ The working name was claude-livekit, and the app showed "Claude LiveKit". A prod
 - The wordmark is lowercase, `claudible`; in sentences it is Claudible.
 - Bundle identifier `com.aburady.claudible`, product name and window title `Claudible`, Rust crate `claudible`.
 - Claude and LiveKit are named only to say what the app uses ("runs Claude Code", "built on LiveKit"). Never "Claude x LiveKit", "Claude LiveKit" or anything that reads as a co-brand or partnership.
-- The repository folder stays `claude-livekit` for now; renaming it is the owner's call.
 
 ## Why
 

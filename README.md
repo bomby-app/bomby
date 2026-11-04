@@ -84,6 +84,10 @@ just          # every command
 just check    # lint, types and tests in every part: what each change must pass
 ```
 
-Start with [docs/README.md](docs/README.md), then [docs/architecture.md](docs/architecture.md) and [docs/roadmap.md](docs/roadmap.md). Adding another ACP agent is a few lines; see [the decision on detecting agents](docs/decisions/detect-acp-native-agents.md).
+Start with [docs/AGENTS.md](docs/AGENTS.md), then [docs/architecture.md](docs/architecture.md) and [docs/roadmap.md](docs/roadmap.md). Adding another ACP agent is a few lines; see [the decision on detecting agents](docs/decisions/detect-acp-native-agents.md).
 
 Bomby is built on [LiveKit](https://livekit.io) and [Gemini Live](https://ai.google.dev/gemini-api/docs/live), and works with the agents above. It isn't affiliated with any of them.
+
+## License
+
+The code is [MIT](LICENSE). Bomby™, its wordmark, the Dot Dot logo and the app icons are trademarks and aren't covered by the license: a fork you share needs its own name and brand. See [TRADEMARKS.md](TRADEMARKS.md).

@@ -8,7 +8,7 @@ With a fresh session per task, Claude forgot everything between requests, and th
 
 ## Decision
 
-A call works on one project (its folders), through one `claude-agent-acp` process. The `claude` tool takes a `session` name that the voice model picks per piece of work ("landing-page", "api-tests"):
+A call works on one project (its folders), through one `claude-agent-acp` process. The `start_task` tool takes a `session` name that the voice model picks per piece of work ("landing-page", "api-tests"):
 
 - A new name opens a new Claude session; different sessions run in parallel.
 - A name in use continues that session, so Claude keeps the context. Names are normalized (lowercase, dashes), so "Landing page" and "landing-page" are one session.
@@ -21,4 +21,4 @@ A call works on one project (its folders), through one `claude-agent-acp` proces
 
 - The voice model has to choose well between a new name and an existing one; its prompt tells it to ask when unsure.
 - If the adapter process dies mid-call, each session's next request opens a new Claude session without the earlier context (logged as a warning).
-- Session ids are the handle for resuming work in a later call (roadmap step 4), and the unit the app's Claude panel will show (step 2).
+- Session ids are the handle for resuming work in a later call (roadmap step 4), and the unit the app's agents panel shows (step 2).

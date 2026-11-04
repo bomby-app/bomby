@@ -18,5 +18,5 @@ The app uses shadcn components. shadcn's CLI now defaults to Base UI (`base-nova
 
 ## Consequences
 
-- Base UI composes with a `render` prop where Radix used `asChild`, and some props differ (see [frontend-notes.md](../frontend-notes.md#base-ui)).
+- Base UI composes with a `render` prop where Radix used `asChild`, and some props differ.
 - When an Agents UI component lands, check that it works with the Base UI `select` and `toggle` it pulls in.

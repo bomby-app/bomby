@@ -16,7 +16,7 @@ The sidebar lists projects. Each project collects its calls over time, and a pas
 
 - File Tree is built for "the files the agent changed" (its docs): folder and file rows made of Collapsible and Button, outside the sidebar's styling. It would need restyling to match sidebar rows, active states and spacing.
 - The sidebar submenu uses the same Collapsible underneath, and already has sidebar tokens, active and hover states, row actions (`SidebarMenuAction` for a new call or a menu) and the collapsed-sidebar behavior.
-- File Tree stays the right component later for the files Claude touched, in the Claude panel.
+- File Tree stays the right component later for the files an agent touched, in the agents panel.
 
 ## Consequences
 

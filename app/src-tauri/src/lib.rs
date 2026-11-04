@@ -30,7 +30,7 @@ pub fn run() {
             _ => PermissionResponse::Default,
         })
         .setup(|app| {
-            // ~/Library/Application Support/com.aburady.bomby on macOS.
+            // ~/Library/Application Support/app.bomby.desktop on macOS.
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
             app.manage(db::Db::open(&dir.join(db::FILE_NAME))?);

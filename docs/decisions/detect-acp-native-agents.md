@@ -21,5 +21,5 @@ People use more than Claude Code, and many agents speak ACP. Bomby should work w
 
 ## Consequences
 
-- OpenCode and omp run with the user's own setup (providers, models, rules). They have no steering or bypass mode we rely on: a mid-task request waits for the running turn, and permission requests are approved once.
+- Every agent uses the user's own setup. Claude and omp support steering; OpenCode and goose queue mid-task requests behind the running turn. OpenCode permissions are approved once, omp does not prompt, and goose uses `auto`.
 - A call needs at least one agent; with none, starting one says so and points at Settings, Agents.
