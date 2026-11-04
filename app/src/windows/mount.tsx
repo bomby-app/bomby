@@ -1,5 +1,4 @@
 import "@/index.css"
-
 import { type ReactNode, StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 

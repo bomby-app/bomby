@@ -18,7 +18,7 @@ export function NewProjectRow({ onClick }: { onClick: () => void }) {
         <SidebarMenuButton onClick={onClick}>
           <SquarePen />
           <span>New project</span>
-          <KbdGroup className="ml-auto opacity-0 transition-opacity group-hover/menu-item:opacity-100 group-focus-within/menu-item:opacity-100">
+          <KbdGroup className="ml-auto opacity-0 transition-opacity group-focus-within/menu-item:opacity-100 group-hover/menu-item:opacity-100">
             {NEW_PROJECT_SHORTCUT.keys.map((key) => (
               <Kbd key={key}>{key}</Kbd>
             ))}

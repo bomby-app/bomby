@@ -1,5 +1,6 @@
 import { Trash2 } from "lucide-react"
 import { type KeyboardEvent, useRef, useState } from "react"
+
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,6 +31,7 @@ import {
   FieldSet,
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+
 import type { Project } from "./api"
 import { FolderList } from "./folder-list"
 import { useProjects } from "./projects-provider"

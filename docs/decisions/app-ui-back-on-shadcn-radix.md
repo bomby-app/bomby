@@ -10,7 +10,7 @@ We moved to Base UI after checking that Agents UI imports no Radix itself. That 
 
 - shadcn with the **Radix** base, `radix-nova` style (the same Nova look), the unified `radix-ui` package, Tailwind v4, lucide icons.
 - Agents UI components are used as generated, with no hand fixes.
-- The rest of the earlier records stands: Biome, the OS font and native defaults, the macOS overlay title bar.
+- The rest of the earlier records stands: the OS font and native defaults, the macOS overlay title bar. Biome was replaced by Vite+ ([frontend-toolchain-on-vite-plus.md](frontend-toolchain-on-vite-plus.md)).
 
 ## Why
 

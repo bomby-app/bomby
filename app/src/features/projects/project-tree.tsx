@@ -2,7 +2,6 @@ import { ChevronRight, Folder } from "lucide-react"
 import { useState } from "react"
 
 import { Mascot } from "@/components/mascot"
-
 import {
   Collapsible,
   CollapsibleContent,
@@ -20,6 +19,7 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar"
+
 import { useCall } from "../call/call-provider"
 import type { Project } from "./api"
 import { callLabel } from "./names"
@@ -87,7 +87,7 @@ function ProjectNode({
           <span>{project.name}</span>
         </SidebarMenuButton>
         <CollapsibleTrigger asChild>
-          <SidebarMenuAction className="data-[state=open]:[&>svg]:rotate-90 [&>svg]:transition-transform">
+          <SidebarMenuAction className="[&>svg]:transition-transform data-[state=open]:[&>svg]:rotate-90">
             <ChevronRight />
             <span className="sr-only">
               {open ? "Hide calls" : "Show calls"}

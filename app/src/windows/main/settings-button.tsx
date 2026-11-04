@@ -7,6 +7,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+
 import { openSettings, SETTINGS_SHORTCUT } from "../settings/open-settings"
 
 /** The gear in the sidebar footer; its tooltip shows the shortcut. */

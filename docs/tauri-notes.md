@@ -90,4 +90,4 @@ Without a bundle, Tauri sets the Dock icon from the first ICNS in `bundle.icon` 
 
 ## Toolchain
 
-Rust 1.99.1 and bun 1.4.4 are pinned in `mise.toml`; macOS also needs Xcode Command Line Tools. `just app check` runs Clippy, fmt, TypeScript and Biome ([frontend notes](frontend-notes.md)).
+Rust 1.99.1 and bun 1.4.4 are pinned in `mise.toml`; macOS also needs Xcode Command Line Tools. `just app check` runs Clippy, rustfmt, `vp check` (Oxfmt, Oxlint, types) and the Rust tests ([frontend notes](frontend-notes.md)).
