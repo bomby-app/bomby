@@ -9,7 +9,9 @@ const host = process.env.TAURI_DEV_HOST
 
 // https://vite.dev/config/ and https://v2.tauri.app/start/frontend/vite/
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  // React Compiler memoizes components and hooks at build time, through Oxc's Rust port
+  // (`oxc-transform-react`; docs/frontend-notes.md).
+  plugins: [react({ compiler: true }), tailwindcss()],
   resolve: {
     alias: { "@": path.resolve(import.meta.dirname, "./src") },
   },

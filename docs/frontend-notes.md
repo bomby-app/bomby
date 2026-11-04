@@ -34,6 +34,15 @@ The app's web half is `app/src`. Checked 2026-11-03/04 against installed shadcn 
 - `tsconfig.json` enables unused-local and unused-parameter checks. If generated code fails them, move unused-code checks to Biome rather than editing vendor files.
 - Tailwind class sorting remains off because Biome 2.6's rule is nursery.
 
+## React Compiler
+
+Checked 2026-11-04 against `@vitejs/plugin-react` 6.2.1 (installed README), `oxc-transform-react` 0.156.0, [oxc.rs/blog/2026-08-18-react-compiler-support](https://oxc.rs/blog/2026-08-18-react-compiler-support) and [react.dev/learn/react-compiler](https://react.dev/learn/react-compiler/introduction).
+
+- `react({ compiler: true })` in `vite.config.ts` runs Oxc's Rust port of React Compiler through the optional peer `oxc-transform-react`; no Babel. Plugin 6.2.1 accepts `oxc-transform-react` `>=0.152.0 <0.157.0`; move both together.
+- The plugin still labels the Rust integration experimental. Oxc reports output identical to `babel-plugin-react-compiler` across 100k+ files and about 10x faster compiles. The owner chose it over Babel (2026-11-04).
+- Check it works: compiled modules contain `memo_cache_sentinel` in `dist/assets/*.js`. Opt a component out with `"use no memo"`.
+- New code relies on the compiler, not `useMemo`/`useCallback`. Keep manual memoization where identity matters to an effect or a library (React's guidance for existing code); `call-provider.tsx`'s `tokenSource` is one.
+
 ## Agents UI
 
 - Install with `just app add @agents-ui/<name>`. Generated code lands in `components/agents-ui/` and `hooks/agents-ui/`.
