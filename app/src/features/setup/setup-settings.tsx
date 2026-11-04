@@ -87,7 +87,7 @@ function GoButton({
     <Button
       size="sm"
       // Bubblegum marks what is missing (docs/brand.md).
-      className="bg-claude text-claude-foreground hover:bg-claude/85"
+      variant="claude"
       onClick={() => go(to)}
     >
       {children}

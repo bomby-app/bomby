@@ -2,7 +2,6 @@ import { LoaderCircle } from "lucide-react"
 import type { ComponentProps } from "react"
 
 import { Button } from "@/components/ui/button"
-import { cn } from "@/lib/utils"
 
 import {
   installAdaptersNow,
@@ -15,7 +14,6 @@ import {
  * Bubblegum, like every button to something a call still needs (docs/brand.md).
  */
 export function SetUpButton({
-  className,
   children = "Set up",
   ...props
 }: Omit<ComponentProps<typeof Button>, "onClick">) {
@@ -24,12 +22,9 @@ export function SetUpButton({
   return (
     <Button
       size="sm"
+      variant="claude"
       {...props}
       disabled={working}
-      className={cn(
-        "bg-claude text-claude-foreground hover:bg-claude/85",
-        className
-      )}
       onClick={() => void installAdaptersNow()}
     >
       {working && <LoaderCircle className="animate-spin" />}

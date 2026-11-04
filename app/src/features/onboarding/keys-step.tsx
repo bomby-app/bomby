@@ -3,6 +3,7 @@ import { openUrl } from "@tauri-apps/plugin-opener"
 import { ClipboardPaste } from "lucide-react"
 import { useActionState, useState } from "react"
 
+import { InlineLink } from "@/components/inline-link"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -161,14 +162,7 @@ export function KeysStep({
       >
         Copy them from <Link href={LIVEKIT_KEYS}>LiveKit Cloud</Link> (Settings,
         API keys) and <Link href={GEMINI_KEYS}>Google AI Studio</Link>, or{" "}
-        <button
-          type="button"
-          className="font-medium text-foreground underline decoration-highlighter decoration-[3px] underline-offset-[3px] outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          onClick={() => setTyping(true)}
-        >
-          type them in
-        </button>
-        .
+        <InlineLink onClick={() => setTyping(true)}>type them in</InlineLink>.
       </p>
 
       <Dialog open={typing} onOpenChange={setTyping}>
@@ -195,15 +189,7 @@ export function KeysStep({
   )
 }
 
-/** Opens a page in the browser, in the app's link style (ink, highlighter underline). */
+/** Opens a page in the browser. */
 function Link({ href, children }: { href: string; children: string }) {
-  return (
-    <button
-      type="button"
-      className="font-medium text-foreground underline decoration-highlighter decoration-[3px] underline-offset-[3px] outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      onClick={() => void openUrl(href)}
-    >
-      {children}
-    </button>
-  )
+  return <InlineLink onClick={() => void openUrl(href)}>{children}</InlineLink>
 }
