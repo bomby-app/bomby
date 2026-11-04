@@ -13,13 +13,12 @@ Every doc has one job; keep it that way.
 | [tauri-notes.md](tauri-notes.md) | How a Tauri app fits together, and the Tauri facts we rely on (mic permissions, window). |
 | [frontend-notes.md](frontend-notes.md) | The app's web half: shadcn, Tailwind v4, Biome, Agents UI. |
 | [gemini-notes.md](gemini-notes.md) | Gemini 3.8 Live facts and caveats, checked against the plugin. |
-| [gemini-capabilities-guide.md](gemini-capabilities-guide.md) | Google's Live API guide, downloaded as reference. Not ours; don't edit. |
 
 ## How we document
 
 - **Docs change with the code.** A change that alters behavior, a contract or a command updates the matching doc in the same commit.
-- **One decision, one record.** A choice someone could reasonably question gets a file in `decisions/`, named after the decision in kebab case (`desktop-app-on-tauri-v2.md`), with Status, Context, Decision and Consequences. Never rewrite an old record: mark it `Superseded by <new-record>.md` and write a new one.
-- **The roadmap stays true.** When a step starts, finishes or changes, update `roadmap.md`.
+- **One decision, one record.** A choice someone could reasonably question gets a file in `decisions/`, named after the decision in kebab case (`desktop-app-on-tauri-v2.md`), with Status, Context, Decision and Consequences. Keep records current: fix stale names, paths and links in place. When the decision itself changes, mark the old one `Superseded by <new-record>.md` and write a new one.
+- **The roadmap stays true.** When a step starts, finishes or changes, update `roadmap.md`. Pending work, tests and bug stories live in [GitHub issues](https://github.com/bomby-app/bomby/issues); the roadmap links them instead of telling them.
 - **Facts carry their source.** Library and API facts go in the `*-notes.md` files with where they were checked (a URL, or a path in the installed source) and the version. These libraries move fast: re-check before relying on a note older than the pinned version.
-- **Short and plain.** Lead with the point. No filler sections.
+- **Concise and informative.** Lead with the point and list facts tersely. Keep what future work needs: the fact with its source and version, and the reason behind a choice, with who made it for the owner's. Drop what no one needs again: debugging chronology, superseded attempts, plans already answered.
 - **Agent instructions live in `AGENTS.md` files**, each with a `CLAUDE.md` symlink next to it (`ln -s AGENTS.md CLAUDE.md`). The root one holds what Bomby is and why, the stack and the rules for the whole repo; each part's (`agent/`, `app/`, `docs/`) holds only what matters there. Keep them short and link here for details ([decision](decisions/agent-instructions-per-folder.md)).

@@ -1,73 +1,85 @@
 # Brand
 
-The source of truth is the Paper file **claudible** (the app's old name; see [name-bomby.md](decisions/name-bomby.md)) (pages `branding` and `app assets`). This page is the short version for building the app. Read 2026-11-03.
+The source of truth is the Paper file **claudible** (the old app name), pages `branding` and `app assets`. This is the implementation summary. Read 2026-11-03; updated for Bomby on 2026-11-04.
 
 ## Name
 
-- Bomby. Wordmark lowercase `bomby`; in sentences "Bomby". Website `bomby.app`. Renamed from Claudible on 2026-11-04 ([name-bomby.md](decisions/name-bomby.md)).
-- Tagline: **"Stop typing. Start talking."** (owner, 2026-11-04, from the cover). Line under it: "Say the task out loud. Bomby hands it to your agent and tells you when it's done." The cover (`.github/assets/cover.jpg`, 1280x640, also GitHub's social preview size) heads the README.
-- Never co-brand with Claude, LiveKit or Gemini ("Claude x LiveKit", "Claude LiveKit"); name them only for what Bomby uses. Their logos appear only where Bomby says what it needs (Settings > Setup), in `currentColor` like text.
+- **Bomby**; lowercase wordmark `bomby`. Website `bomby.app` ([rename decision](decisions/name-bomby.md)).
+- Tagline: **"Stop typing. Start talking."** (owner, 2026-11-04, from the cover). Supporting line: "Say the task out loud. Bomby hands it to your agent and tells you when it's done."
+- Never co-brand with Claude, LiveKit or Gemini. Name them only to describe requirements or implementation. Their logos appear only in Settings > Setup, in `currentColor`.
+- `.github/assets/cover.jpg` (1280 x 640) heads the README and serves as the social preview.
 
 ## Mark: Dot Dot
 
-- A speech bubble with one square corner (bottom left) and two round eyes. It speaks and listens.
-- Three forms: **lockup** (mark + wordmark, default), **mark** alone (icons, avatars, small spaces), **wordmark** alone (when the mark is nearby).
-- Clear space: half the bubble's height on every side. Minimum sizes: lockup 100px wide, mark 16px (eyes enlarged), wordmark 14px.
-- Don't tilt, outline, sticker, stretch, flip the corner, add a mouth or features, or put highlighter on white.
-- The app's 28px tile is `app/src/components/app-logo.tsx`: ink tile with highlighter bubble in light mode, highlighter tile with ink bubble in dark (artboards `app-logo-light`, `app-logo-dark`).
+A speech bubble with a square bottom-left corner and two round eyes. It speaks and listens.
+
+- Forms: **lockup** (default), **mark** (icons and small spaces), **wordmark** (when the mark is nearby).
+- Clear space: half the bubble height. Minimum widths: lockup 100px, mark 16px with enlarged eyes, wordmark 14px.
+- Never tilt, outline, sticker, stretch, flip the corner, add a mouth or features, or put highlighter on white.
+- The 28px app tile is `app/src/components/app-logo.tsx`: ink/highlighter in light mode, reversed in dark.
 
 ## Colour
 
 | Name | Hex | Role |
 | --- | --- | --- |
-| Highlighter | `#E8FF3A` | Primary. The one loud moment. |
-| Ink | `#121212` | Mark, text, the UI's main colour. |
-| Bubblegum | `#FF9BD2` | Accent. Means Claude, and errors. Fill only, ink text on it. |
-| Paper | `#F4F4F1` | Quiet surfaces. |
-| White | `#FFFFFF` | Ground. |
+| Highlighter | `#E8FF3A` | Primary; the one loud moment |
+| Ink | `#121212` | Mark, text and main UI |
+| Bubblegum | `#FF9BD2` | Claude and errors; fill only, with ink text |
+| Paper | `#F4F4F1` | Quiet surfaces |
+| White | `#FFFFFF` | Ground |
 
-UI mapping onto the shadcn variables (board "07 Colour in UI"), light / dark:
+UI tokens (Paper board "07 Colour in UI"), light / dark:
 
 | Variable | Light | Dark | Use |
 | --- | --- | --- | --- |
 | `--background` / `--card` | `#FFFFFF` | `#121212` / `#1A1A1A` | Window and panels |
 | `--foreground` | `#121212` | `#F5F5F2` | Body text |
-| `--muted` / `-foreground` | `#F4F4F1` / `#6B6B6B` | `#1F1F1F` / `#A3A3A3` | Quiet surfaces, secondary text |
-| `--primary` / `-foreground` | `#121212` / `#E8FF3A` | `#E8FF3A` / `#121212` | Main action: ink with highlighter text, flipped in dark |
-| `--accent` / `-foreground` | `#F4F4F1` / `#121212` | `#1F1F1F` / `#F5F5F2` | Hover, selected row, active project. Owner's change, 2026-11-03: neutral grey, not the board's tinted highlighter, so hover stays quiet. |
-| `--border` / `--input` | `#E4E4E4` | `#2A2A2A` | Dividers, fields |
-| `--ring` | `#121212` | `#E8FF3A` | Focus rings |
-| `--sidebar` / `-primary` | `#F4F4F1` / `#121212` | `#161616` / `#E8FF3A` | Sidebar and its logo tile |
-| `--sidebar-accent` / `-foreground` | `#E8E8E4` / `#121212` | `#242424` / `#F5F5F2` | Sidebar row hover and selection: a lighter (or darker) grey than the sidebar, as in other desktop apps |
-| `--claude` (new) | `#FF9BD2` | `#FF9BD2` | Claude sessions, working indicators. Fill only, ink text on it |
-| `--destructive` | `#D92D20` | `#F97066` | End call, delete. Not for the mascot |
-| `--highlighter` (new) | `#E8FF3A` | `#E8FF3A` | Good-news marks (a requirement is ready, a task done in the call's agents panel): a disc with an ink icon on it, never a bare lime icon or text. Running tasks spin in `--primary`, failed ones are `--destructive` |
+| `--muted` / `-foreground` | `#F4F4F1` / `#6B6B6B` | `#1F1F1F` / `#A3A3A3` | Quiet surfaces and secondary text |
+| `--primary` / `-foreground` | `#121212` / `#E8FF3A` | `#E8FF3A` / `#121212` | Main action |
+| `--accent` / `-foreground` | `#F4F4F1` / `#121212` | `#1F1F1F` / `#F5F5F2` | Hover, selected row, active project. Neutral grey, not the board's tinted highlighter, so hover stays quiet (owner, 2026-11-03) |
+| `--border` / `--input` | `#E4E4E4` | `#2A2A2A` | Dividers and fields |
+| `--ring` | `#121212` | `#E8FF3A` | Focus |
+| `--sidebar` / `-primary` | `#F4F4F1` / `#121212` | `#161616` / `#E8FF3A` | Sidebar and logo tile |
+| `--sidebar-accent` / `-foreground` | `#E8E8E4` / `#121212` | `#242424` / `#F5F5F2` | Sidebar hover and selection |
+| `--claude` | `#FF9BD2` | `#FF9BD2` | Claude sessions and working indicators; fill only, ink text on it |
+| `--destructive` | `#D92D20` | `#F97066` | End call and delete; never the mascot |
+| `--highlighter` | `#E8FF3A` | `#E8FF3A` | Good news (a requirement ready, a task done): a disc with an ink icon, never a bare lime icon or text |
 
-Transcript bubbles (owner, 2026-11-04, after the Paper board "In use / the conversation"): Bomby speaks in highlighter with ink text, the user in ink with white text (a raised grey in dark). Bubblegum is kept for Claude's own messages when they show in the call.
+Owner's choices, 2026-11-04:
 
-Resume buttons are bubblegum with ink text: resuming brings a conversation back (owner, 2026-11-04). The sidebar shows a small bubblegum **Beta** badge (ink text) after the wordmark while the app is in beta (owner, 2026-11-04).
+- Transcript bubbles (Paper board "In use / the conversation"): Bomby in highlighter with ink text, the user in ink with white text (raised grey in dark). Bubblegum stays for Claude's own messages when they show in the call.
+- Resume buttons are bubblegum with ink text: resuming brings a conversation back.
+- A small bubblegum **Beta** badge (ink text) follows the wordmark in the sidebar while the app is in beta.
 
-Status marks pair up: ready is an ink thumbs-up on a highlighter disc, missing an ink cross on a bubblegum disc (Settings > Setup).
+Ready and missing setup marks use an ink thumbs-up on highlighter and an ink cross on bubblegum. Running tasks spin in `--primary`; failed tasks use `--destructive`.
 
-Contrast: ink on highlighter 16.8:1 and ink on bubblegum 9.7:1 are always fine. Highlighter on white (1.1:1) and bubblegum on white (1.9:1) are never text or icons. Links are ink text with a 3px highlighter underline; in dark mode highlighter text is fine.
+Ink on highlighter (16.8:1) and bubblegum (9.7:1) is readable. Highlighter on white (1.1:1) and bubblegum on white (1.9:1) are never text or icons. Links use ink with a 3px highlighter underline; dark-mode links may use highlighter text.
 
 ## Type
 
-- **Bricolage Grotesque Bold**: the wordmark (lowercase, -0.02em) and display headlines.
-- Interface text: the OS font in the app (owner confirmed 2026-11-03; the Paper app previews use Inter as its stand-in). Bricolage Regular and Medium are for body text on the web.
+- **Bricolage Grotesque Bold**: lowercase wordmark at -0.02em and display headlines.
+- App interface: the OS font (owner, 2026-11-03). Web body: Bricolage Regular or Medium. Paper app previews use Inter only as a stand-in.
 
 ## Mascot states and motion
 
-- Only the eyes change: never the bubble shape or its colours. States follow LiveKit's agent state (`useAgent()`): waking (connecting, initializing: closed lines), idle (blinks), listening (eyes wide, bubble breathes with mic level), thinking (eyes drift up-right), speaking (round eyes that glance left and right every 1 to 2.5 s and blink every 2 to 4 s, now and then twice, opening a little on loud syllables; bubble pulses with the voice. Owner, 2026-11-04: no squint, it should feel alive), asleep (disconnected: closed, greyed), failed (crossed bubblegum eyes). Ours on top: working (a Claude session runs: eyes scan left and right, a layer over any live state) and done (smiling arcs for 1.2s when a result arrives).
-- Built as `app/src/components/mascot.tsx` (`<Mascot state level size />`, plus `mascotState(agentState)`): every state except working and done, which need Claude's status events. It sits over LiveKit's bar visualizer on the call screen (bars in `--primary`: highlighter in dark, ink in light; owner, 2026-11-04), replaces the folder icon of a project on a call, and is the icon on Start a call.
-- Motion: eyes lead, the bubble only scales with sound; driven by audio level, not timers; ease-out for changes, sine for loops, no bounce, 120 to 400ms one-offs. One SVG component: `<Mascot state working done level />`, CSS transforms only. Reduced motion: no loops, instant swaps, blink stays. Under 32px nothing loops.
+Only the eyes change, never the bubble shape or colours. States follow `useAgent()`:
+
+- **Waking** (connecting, initializing): closed lines.
+- **Idle**: blinks.
+- **Listening**: wide eyes; bubble breathes with mic level.
+- **Thinking**: eyes drift up-right.
+- **Speaking**: glances every 1 to 2.5 s, blinks every 2 to 4 s with occasional double blinks, opens slightly on loud syllables; bubble pulses with voice. No squint: it should feel alive (owner, 2026-11-04).
+- **Asleep** (disconnected): closed and greyed.
+- **Failed**: crossed bubblegum eyes.
+- **Working** and **done**, not wired yet: scanning eyes while a task runs; smiling arcs for 1.2 s when a result arrives.
+
+`app/src/components/mascot.tsx` exports `<Mascot state level size />` and `mascotState(agentState)`. Dot Dot sits over LiveKit's bar visualizer on the call screen, replaces a project's folder icon during a call and appears on Start a call. Visualizer bars use `--primary`: highlighter in dark, ink in light (owner, 2026-11-04).
+
+Motion uses CSS transforms on one SVG. Eyes lead; only sound scales the bubble. Use ease-out for changes, sine for loops, no bounce, and 120 to 400ms one-offs. Reduced motion removes loops and makes swaps instant, but keeps blinking. Below 32px nothing loops.
 
 ## Voice
 
-- Say it out loud: short sentences, everyday words, contractions.
-- Name who's acting: Claude does the work, Bomby talks. "Claude's on it", not "Task running". Bomby says Claude, never "Claude Code" (owner, 2026-11-04).
-- Calm when it breaks: what happened, then what to do. No codes up front, no exclamation marks.
-- UI text in sentence case.
+Short, everyday sentences with contractions. Name the actor: Claude does the work, Bomby talks; say "Claude", not "Claude Code" (owner, 2026-11-04). When something breaks, state what happened and what to do, without leading error codes or exclamation marks. UI text uses sentence case.
 
 | Moment | Say |
 | --- | --- |
@@ -80,13 +92,13 @@ Contrast: ink on highlighter 16.8:1 and ink on bubblegum 9.7:1 are always fine. 
 | No mic access | Bomby needs your mic. Turn it on in System Settings. |
 | Call ended | Talk soon. |
 
-The agent's spoken persona follows this voice, written as behaviour rather than adjectives (Gemini Live reads every word as an instruction; owner, 2026-11-04): `agent/prompts/voice.md` gives Bomby one-or-two-sentence replies that lead with the point, an even tone with no exclamation marks or hype words, humour only when the user is joking, silence while the user is quiet, and example lines.
+`agent/prompts/voice.md` applies this voice to the spoken agent, written as behaviour rather than adjectives because Gemini Live reads every word as an instruction (owner, 2026-11-04): one-or-two-sentence, outcome-first replies; even tone; no hype; humour only when the user jokes; silence while the user is quiet.
 
 ## App assets
 
-Board "Handoff / Tauri asset map" on the `app assets` page. Each artboard is named after the file it exports to:
+Paper board `Handoff / Tauri asset map`, page `app assets`. Artboard names match their outputs:
 
-- `app-icon.png` (1024, 824 tile): the `tauri icon` source for icon.icns, icon.ico and all PNGs. Required.
-- `Bomby.icon` (in `app/src-tauri/icons/`): the two layers above with light (ink bubble, highlighter eyes on highlighter), dark (highlighter bubble, ink eyes on ink) and tinted looks. Glossy, as the owner asked (2026-11-03): top-to-bottom gradients on the tile, bubble and eyes, Liquid Glass with specular on both groups, a chromatic shadow under the bubble. Fine-tune in Icon Composer; compiled to Assets.car by `just app icon` (see [tauri-notes.md](tauri-notes.md#icons)).
-- `app-icon-dark.png` (reference), `app-icon-flat.png` (optional, ico and Linux), `dmg-background.png` (660 x 400, exported at 1x and 2x into `app/src-tauri/icons/`, combined into the DMG's TIFF), `tray-icon-template.png` (22 and 44, with the tray).
+- `app-icon.png` (1024 canvas, 824 tile): required `tauri icon` source for ICNS, ICO and PNGs.
+- `Bomby.icon` (macOS 26+, `app/src-tauri/icons/`): light (ink bubble, highlighter eyes, on highlighter), dark (highlighter bubble, ink eyes, on ink) and tinted. Glossy, as the owner asked (2026-11-03): top-to-bottom gradients on tile, bubble and eyes, Liquid Glass with specular, a chromatic shadow under the bubble. Edit in Icon Composer and compile with `just app icon` ([details](tauri-notes.md#icons)).
+- `app-icon-dark.png` (reference), `app-icon-flat.png` (optional ICO/Linux), `dmg-background.png` (660 x 400 at 1x and 2x), `tray-icon-template.png` (22 and 44).
 - `app-logo-light` / `-dark` (28px SVG): `app-logo.tsx`.

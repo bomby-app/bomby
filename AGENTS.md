@@ -31,4 +31,5 @@ It is in beta and runs from source; packaging comes later. The owner designs and
 - Never trust memory for LiveKit, Gemini, ACP or Tauri APIs. Check the installed source and current docs, and record what you find in the matching `docs/*-notes.md` with source and version.
 - Pin new tools in `mise.toml`. No system-level installs.
 - Secrets live only in `agent/.env` (gitignored) and the OS keychain.
+- No personal details in docs, comments or tests: no one's devices, accounts or other apps, and no real local paths. Use placeholders like `/Users/me/...`. The repo will be open source.
 - Docs change in the same commit as the code they describe ([how we document](docs/AGENTS.md#how-we-document)).

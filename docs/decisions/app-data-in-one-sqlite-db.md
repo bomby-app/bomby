@@ -8,9 +8,9 @@ The app needs to keep projects (a name and folders), the calls made on each proj
 
 ## Decision
 
-- All app data lives in Tauri's `app_data_dir` (`~/Library/Application Support/com.aburady.claudible` on macOS; the platform equivalent elsewhere).
+- All app data lives in Tauri's `app_data_dir` (`~/Library/Application Support/app.bomby.desktop` on macOS; the platform equivalent elsewhere).
 - One SQLite database there, owned by the Rust core. The page reads and writes only through core commands.
-- Tables, to start: `projects` (name, folders), `calls` (one row per call, belongs to a project), `messages` (one row per transcript line, belongs to a call). Claude tasks and results become rows in `messages` (or a sibling table) when status events land (roadmap step 2).
+- Tables: `projects` (name, folders), `calls` (belongs to a project) and `messages` (one transcript line per row, belongs to a call). Task status reaches the app separately through `bomby.tasks` ([decision](tasks-as-an-agent-attribute.md)).
 - The app writes transcript lines itself as they arrive during the call.
 - Secrets never go in the database; they stay in the keychain ([credentials-in-the-os-keychain.md](credentials-in-the-os-keychain.md)).
 - The schema changes only through numbered migrations run by the core at startup.
@@ -25,4 +25,4 @@ The app needs to keep projects (a name and folders), the calls made on each proj
 
 - A past call's conversation is rebuilt from `messages`, with the same transcript component as a live call.
 - If the app is closed mid-call, lines already received are kept; nothing after.
-- The SQLite library and migration approach are chosen when the storage step is built, and recorded in [tauri-notes.md](../tauri-notes.md).
+- The SQLite library and migration approach are recorded in [tauri-notes.md](../tauri-notes.md#storage).

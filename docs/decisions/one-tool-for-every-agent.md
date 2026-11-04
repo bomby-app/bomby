@@ -9,7 +9,7 @@ Bomby will drive more agents that speak ACP than Claude Code (Pi, omp, Goose and
 ## Decision
 
 - The voice model has one tool, `start_task(task, session, agent)` (`agent/tools/start_task.py`).
-- `agent` is a fixed set of names (`AgentName`, a `Literal` in `agent/harnesses/__init__.py`), one per harness in `HARNESSES`; a test keeps the two in step. Today it is only `claude`.
+- `agent` is a fixed set of names (`AgentName`, a `Literal` in `agent/harnesses/__init__.py`), one per harness in `HARNESSES`; a test keeps the two in step. Current ids are `claude`, `opencode`, `omp` and `goose`.
 - Each harness is one `Harness` definition (`agent/harnesses/`); the runner, sessions, steering and results are shared.
 
 ## Why
@@ -20,4 +20,4 @@ Bomby will drive more agents that speak ACP than Claude Code (Pi, omp, Goose and
 ## Consequences
 
 - Sessions are per agent: "landing-page" on Claude and on another agent are separate.
-- The prompt tells the model to use `claude` unless the user names another agent.
+- The prompt tells the model to use `claude` when installed, otherwise the first available agent, unless the user names another.

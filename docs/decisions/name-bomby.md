@@ -9,11 +9,10 @@ Status: accepted, 2026-11-04. Supersedes [name-claudible.md](name-claudible.md).
 ## Decision
 
 - The app is **Bomby**. Website `bomby.app`. Wordmark lowercase `bomby`; in sentences Bomby.
-- Bundle identifier `com.aburady.bomby`, product name and window title `Bomby`, Rust crate `bomby`, packages `bomby-app` and `bomby-agent`, agent name `bomby` (what each call's token dispatches).
+- Bundle identifier `app.bomby.desktop` ([decision](identifier-from-the-domain.md)), product name and window title `Bomby`, Rust crate `bomby`, packages `bomby-app` and `bomby-agent`, agent name `bomby` (what each call's token dispatches).
 - The brand stays as it is: Dot Dot, the colours, type and voice in [brand.md](../brand.md).
 - Claude, LiveKit and Gemini are still named only for what the app uses; never a co-brand.
-- The tagline is open: the old one called the app a voice agent and named Claude Code.
-- The repository folder stays `claude-livekit` for now; renaming it is the owner's call.
+- The tagline is "Stop typing. Start talking." ([brand.md](../brand.md)).
 
 ## Consequences
 

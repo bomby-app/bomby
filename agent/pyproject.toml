@@ -5,6 +5,7 @@ description = "Bomby's voice agent: LiveKit + Gemini 3.8 Live, running agents (C
 authors = [
     { name = "Ahmed Aburady", email = "accounts@aburady.com" }
 ]
+license = "MIT"
 requires-python = ">=3.13"
 dependencies = [
     "agent-client-protocol>=0.12.1",
