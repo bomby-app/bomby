@@ -4,6 +4,7 @@ import { useEffect, useEffectEvent, useState, useTransition } from "react"
 
 import music from "@/assets/splash-music.mp3"
 import { DayGlow, type Daypart, useDaypart } from "@/components/day-glow"
+import { FilmGrain } from "@/components/film-grain"
 import { Mascot, type MascotState } from "@/components/mascot"
 import { isReady, useAgents } from "@/features/agents/use-agents"
 import { useSavedKeys } from "@/features/credentials/use-saved-keys"
@@ -122,6 +123,7 @@ export function Splash({ onDone }: { onDone: () => void }) {
         className="absolute inset-x-0 top-0 h-titlebar"
       />
       <DayGlow daypart={daypart} stage={stage} duration={TAKES[stage] * 1000} />
+      <FilmGrain />
 
       <motion.div
         layout
