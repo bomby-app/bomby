@@ -68,16 +68,14 @@ class TaskBoard:
         self._tasks = [*self._tasks, entry][-KEEP:]
         return entry.id
 
-    async def publish(self) -> None:
-        await self._send()
-
     async def finish(self, id: str, status: Status) -> None:
         for entry in self._tasks:
             if entry.id == id:
                 entry.status, entry.endedAt = status, _now_ms()
-        await self._send()
+        await self.publish()
 
-    async def _send(self) -> None:
+    async def publish(self) -> None:
+        """Sends the latest tasks to the app."""
         payload = json.dumps([asdict(t) for t in self._tasks], ensure_ascii=False)
         try:
             await self._publish({ATTRIBUTE: payload})

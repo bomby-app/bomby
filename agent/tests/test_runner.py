@@ -202,8 +202,23 @@ def test_a_request_mid_turn_is_steered_into_it(tmp_path: Path) -> None:
     assert names(events).count("prompt") == 1
 
 
+PLAIN = dataclasses.replace(
+    CLAUDE_CODE, id="plain", steer_method=None, bypass_mode=None
+)
+
+
+@pytest.mark.parametrize(
+    ("harness", "env"),
+    [
+        # The adapter doesn't advertise steering.
+        (CLAUDE_CODE, {"FAKE_ACP_NO_STEERING": "1"}),
+        # The harness has no steer method (and no bypass mode).
+        (PLAIN, {}),
+    ],
+    ids=["adapter", "harness"],
+)
 def test_without_steering_a_request_waits_for_the_running_turn(
-    tmp_path: Path,
+    tmp_path: Path, harness: Harness, env: dict[str, str]
 ) -> None:
     async def scenario(runner: AcpRunner) -> list[str]:
         first = await until_prompted(runner, "hang")
@@ -215,34 +230,12 @@ def test_without_steering_a_request_waits_for_the_running_turn(
             await first
         return [await second]
 
-    result, events = run_with_fake(
-        tmp_path, scenario, env={"FAKE_ACP_NO_STEERING": "1"}
-    )
+    result, events = run_with_fake(tmp_path, scenario, env=env, harness=harness)
 
     assert result == ["turn 2"]
     assert "steer" not in names(events)
-
-
-def test_a_harness_without_steering_or_bypass_mode_skips_both(tmp_path: Path) -> None:
-    plain = dataclasses.replace(
-        CLAUDE_CODE, id="plain", steer_method=None, bypass_mode=None
-    )
-
-    async def scenario(runner: AcpRunner) -> list[str]:
-        first = await until_prompted(runner, "hang")
-        second = asyncio.create_task(text(runner.run("turns")))
-        await asyncio.sleep(0.5)
-        assert not second.done()  # no steering: queued behind the running turn
-        _ = first.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await first
-        return [await second]
-
-    result, events = run_with_fake(tmp_path, scenario, harness=plain)
-
-    assert result == ["turn 2"]
-    assert "steer" not in names(events)
-    assert "set_session_mode" not in names(events)
+    if harness is PLAIN:
+        assert "set_session_mode" not in names(events)
 
 
 def test_cancelling_stops_the_turn_and_keeps_the_session(tmp_path: Path) -> None:
