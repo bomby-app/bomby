@@ -78,10 +78,11 @@ async def probe(harness: Harness, program: Path, environ: Mapping[str, str]) -> 
                     _ = drain.cancel()
     except TimeoutError:
         return Setup(ready=False, problem="It didn't answer in time")
-    except OSError as e:
-        return Setup(ready=False, problem=f"It couldn't be started: {detail(e)}")
+    # Before OSError, which ConnectionError is a kind of.
     except (RequestError, ConnectionError) as e:
         return Setup(ready=False, problem=f"It quit while starting: {detail(e)}")
+    except OSError as e:
+        return Setup(ready=False, problem=f"It couldn't be started: {detail(e)}")
 
 
 async def probe_all(

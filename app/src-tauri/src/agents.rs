@@ -57,6 +57,16 @@ const KNOWN: &[Known] = &[
         ],
     },
     Known {
+        id: "codex",
+        name: "Codex",
+        binary: "codex",
+        places: &[
+            "~/.local/bin/codex",
+            "/opt/homebrew/bin/codex",
+            "/usr/local/bin/codex",
+        ],
+    },
+    Known {
         id: "opencode",
         name: "OpenCode",
         binary: "opencode",
@@ -653,7 +663,7 @@ mod tests {
     #[test]
     fn programs_match_installed_for_the_same_agents() {
         let claude = PathBuf::from("/Users/me/.local/bin/claude");
-        let found = programs(vec![(&KNOWN[0], Some(claude.clone())), (&KNOWN[1], None)]);
+        let found = programs(vec![(&KNOWN[0], Some(claude.clone())), (&KNOWN[2], None)]);
         let shown = installed(&[
             status("claude", Some("/Users/me/.local/bin/claude")),
             status("opencode", None),
