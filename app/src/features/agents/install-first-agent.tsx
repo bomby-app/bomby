@@ -1,8 +1,8 @@
 import { ClaudeCodeLogo } from "./agent-logos"
 import { CopyButton } from "./copy-button"
 
-// Claude Code's own installer (claude.ai/install.sh).
-const INSTALL = "curl -fsSL https://claude.ai/install.sh | bash"
+/** Claude Code's own installer (claude.ai/install.sh), for a Mac with no agent yet. */
+export const CLAUDE_INSTALL = "curl -fsSL https://claude.ai/install.sh | bash"
 
 /** Shown in place of the agent list when none is installed: how to get Claude Code. */
 export function InstallFirstAgent() {
@@ -21,9 +21,9 @@ export function InstallFirstAgent() {
       </div>
       <div className="flex items-center gap-2 rounded-md bg-muted py-1.5 pr-1.5 pl-3">
         <code className="min-w-0 flex-1 truncate font-mono text-xs select-text">
-          {INSTALL}
+          {CLAUDE_INSTALL}
         </code>
-        <CopyButton text={INSTALL} variant="ghost" size="icon-sm" />
+        <CopyButton text={CLAUDE_INSTALL} variant="ghost" size="icon-sm" />
       </div>
     </div>
   )

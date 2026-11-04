@@ -1,6 +1,7 @@
 import { ChevronDown } from "lucide-react"
 import { useState, useTransition } from "react"
 
+import { InlineLink } from "@/components/inline-link"
 import {
   Popover,
   PopoverContent,
@@ -9,6 +10,7 @@ import {
 import { AgentLogo } from "@/features/agents/agent-logos"
 import type { AgentStatus } from "@/features/agents/api"
 import { CopyButton } from "@/features/agents/copy-button"
+import { CLAUDE_INSTALL } from "@/features/agents/install-first-agent"
 import { SetUpButton } from "@/features/agents/set-up-button"
 import { useAdapterInstall } from "@/features/agents/use-adapter-install"
 import { checkAgentsAgain, isReady } from "@/features/agents/use-agents"
@@ -22,9 +24,6 @@ import {
   Tile,
   type Tone,
 } from "./setup-card"
-
-// Claude Code's own installer (claude.ai/install.sh), for a Mac with no agent yet.
-const INSTALL = "curl -fsSL https://claude.ai/install.sh | bash"
 
 /** Offered first when installed, ready or not (owner, 2026-11-05). */
 const PREFERRED = ["claude", "codex"]
@@ -204,7 +203,7 @@ function Action({ agent, phase }: { agent: AgentStatus | null; phase: Phase }) {
     )
   if (phase === "none")
     return (
-      <CopyButton text={INSTALL} className={CARD_BUTTON}>
+      <CopyButton text={CLAUDE_INSTALL} className={CARD_BUTTON}>
         Copy install
       </CopyButton>
     )
@@ -224,14 +223,12 @@ function CheckAgain() {
   return (
     <span className="flex items-center gap-1.5 text-[13px] leading-[18px] text-foreground/55">
       Run it in Terminal, then
-      <button
-        type="button"
+      <InlineLink
         disabled={checking}
-        className="font-medium text-foreground underline decoration-highlighter decoration-[3px] underline-offset-[3px] outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
         onClick={() => startChecking(checkAgentsAgain)}
       >
         {checking ? "checking..." : "check again"}
-      </button>
+      </InlineLink>
     </span>
   )
 }

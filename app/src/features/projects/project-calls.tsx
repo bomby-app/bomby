@@ -137,7 +137,7 @@ export function ResumeButton({
       <Button
         size="sm"
         // Bubblegum: resuming brings the conversation back (owner's call, docs/brand.md).
-        className="bg-claude text-claude-foreground hover:bg-claude/85"
+        variant="claude"
         disabled={!ready || active !== null || starting !== null}
         onClick={() => void start(projectId, callId)}
       >
