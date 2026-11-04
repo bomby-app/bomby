@@ -11,6 +11,7 @@ mod credentials;
 mod db;
 mod error;
 mod notifications;
+mod process;
 mod projects;
 mod settings;
 mod setup;

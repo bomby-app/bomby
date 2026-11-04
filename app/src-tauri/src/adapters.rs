@@ -11,14 +11,14 @@ use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{Mutex, OnceLock};
-use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Runtime};
 
 use crate::agents;
 use crate::error::{Error, Result};
+use crate::process;
 
 const PACKAGE: &str = include_str!("../../../agent/adapters/package.json");
 const LOCKFILE: &str = include_str!("../../../agent/adapters/bun.lock");
@@ -265,18 +265,10 @@ fn run_for(mut command: Command, log: &Path, what: &str, timeout: Duration) -> R
         .stdout(out.try_clone()?)
         .stderr(out)
         .spawn()?;
-    let started = Instant::now();
-    let status = loop {
-        if let Some(status) = child.try_wait()? {
-            break Some(status);
-        }
-        if started.elapsed() > timeout {
-            let _ = child.kill();
-            let _ = child.wait();
-            break None;
-        }
-        thread::sleep(Duration::from_millis(100));
-    };
+    let status = process::wait_timeout(&mut child, timeout)?;
+    if status.is_none() {
+        process::kill(&mut child);
+    }
     match status {
         Some(status) if status.success() => Ok(()),
         Some(_) => Err(Error::Invalid(format!(

@@ -23,9 +23,12 @@ use std::time::Duration;
 
 use crate::credentials::LiveKitKeys;
 use crate::error::{Error, Result};
+use crate::process;
 
 /// How long a fresh worker gets to register with LiveKit.
 const READY_TIMEOUT: Duration = Duration::from_secs(60);
+/// How long the worker gets to exit after SIGTERM before SIGKILL.
+const STOP_TIMEOUT: Duration = Duration::from_secs(5);
 /// What livekit-agents logs once the worker is registered (`worker.py`, `_handle_register`).
 const READY_LINE: &str = "registered worker";
 /// How many of the worker's last lines to keep for a failure message.
@@ -227,16 +230,12 @@ fn stop(mut child: Child) {
     if let Ok(pid) = i32::try_from(child.id()) {
         // SAFETY: killpg only sends a signal; the group is the one the child leads.
         unsafe { libc::killpg(pid, libc::SIGTERM) };
-        for _ in 0..50 {
-            if matches!(child.try_wait(), Ok(Some(_))) {
-                return;
-            }
-            thread::sleep(Duration::from_millis(100));
+        if let Ok(Some(_)) = process::wait_timeout(&mut child, STOP_TIMEOUT) {
+            return;
         }
         unsafe { libc::killpg(pid, libc::SIGKILL) };
     }
-    let _ = child.kill();
-    let _ = child.wait();
+    process::kill(&mut child);
 }
 
 #[cfg(test)]

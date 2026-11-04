@@ -18,12 +18,13 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 use crate::error::Result;
+use crate::process;
 use crate::setup::{self, Setup};
 
 /// The event every window gets with the new list when a look finds something different.
@@ -120,18 +121,11 @@ pub fn run(mut command: Command, timeout: Duration) -> Option<Output> {
         .stderr(Stdio::null())
         .spawn()
         .ok()?;
-    let started = Instant::now();
-    loop {
-        match child.try_wait() {
-            Ok(Some(_)) => return child.wait_with_output().ok(),
-            Ok(None) if started.elapsed() < timeout => thread::sleep(Duration::from_millis(50)),
-            _ => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return None;
-            }
-        }
+    if let Ok(Some(_)) = process::wait_timeout(&mut child, timeout) {
+        return child.wait_with_output().ok();
     }
+    process::kill(&mut child);
+    None
 }
 
 fn stdout(output: &Output) -> Option<String> {
