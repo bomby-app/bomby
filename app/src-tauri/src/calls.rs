@@ -3,7 +3,7 @@
 //! LiveKit keeps no transcripts, so the page sends each line here as it arrives
 //! (docs/decisions/app-data-in-one-sqlite-db.md).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
@@ -47,6 +47,23 @@ fn room_name(call_id: i64) -> String {
 /// The call a room belongs to (`room_name`).
 fn call_of_room(room: &str) -> Option<i64> {
     room.strip_prefix("bomby-")?.split('-').next()?.parse().ok()
+}
+
+/// Fails the call before it starts when a folder is gone (moved, renamed or deleted since it
+/// was added), which would otherwise crash the agent's job (`Project.from_job`).
+fn folders_are_there(project: &projects::CallProject) -> Result<()> {
+    for folder in &project.folders {
+        let path = Path::new(folder);
+        if !path.is_dir() {
+            let name = path
+                .file_name()
+                .map_or(folder.as_str(), |n| n.to_str().unwrap_or(folder.as_str()));
+            return Err(Error::Invalid(format!(
+                "The folder {name} isn't there any more. Add it again in Project settings."
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Tells the main window about each crashed job, by its call.
@@ -226,7 +243,7 @@ pub fn open_call<R: Runtime>(
     project_id: i64,
     resume_call_id: Option<i64>,
 ) -> Result<i64> {
-    projects::exists(&db.conn(), project_id)?;
+    folders_are_there(&projects::for_call(&db.conn(), project_id)?)?;
     let keys = livekit_keys(&app, &vault)?;
     let gemini = vault
         .gemini_key(&app)?
@@ -550,5 +567,20 @@ mod tests {
     fn a_room_names_its_call() {
         assert_eq!(call_of_room(&room_name(42)), Some(42));
         assert_eq!(call_of_room("someone-elses-room"), None);
+    }
+
+    #[test]
+    fn a_call_needs_every_folder_to_be_there() {
+        let here = env!("CARGO_MANIFEST_DIR").to_owned();
+        let project = |folders: Vec<String>| projects::CallProject {
+            name: "samba".into(),
+            folders,
+        };
+        assert!(folders_are_there(&project(vec![here.clone()])).is_ok());
+        let gone = folders_are_there(&project(vec![here, "/Users/me/Dev/gone".into()]));
+        assert_eq!(
+            gone.unwrap_err().to_string(),
+            "The folder gone isn't there any more. Add it again in Project settings."
+        );
     }
 }

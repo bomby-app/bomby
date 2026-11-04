@@ -176,9 +176,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
   // out the join timeout (issue #14). Ending the session cancels a start in progress.
   useCoreEvent(onAgentCrashed, ({ callId, reason }) => {
     if (active?.callId !== callId) return
+    // The reason is for us, not the user: it goes to app.log.
+    log(`call ${callId}: the agent's job crashed: ${reason}`)
     setError({
       projectId: active.projectId,
-      message: `The agent stopped: ${reason}`,
+      message: "Bomby couldn't start the call. Try again?",
     })
     joining.current?.abort()
     void session.end()
