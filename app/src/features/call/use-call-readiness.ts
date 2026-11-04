@@ -13,7 +13,7 @@ export function useCallReadiness(): { ready: boolean; missing: string | null } {
     return { ready: false, missing: "Add your LiveKit keys in Settings first." }
   if (!keys.gemini)
     return { ready: false, missing: "Add your Gemini key in Settings first." }
-  if (!agents.some((agent) => agent.path !== null && isReady(agent)))
+  if (!agents.some(isReady))
     return { ready: false, missing: "Set up an agent in Settings first." }
   return { ready: true, missing: null }
 }

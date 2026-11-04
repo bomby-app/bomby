@@ -54,7 +54,7 @@ function phaseOf(
   agent: AgentStatus | null
 ): Phase {
   if (agents === null) return "looking"
-  if (agent === null) return "none"
+  if (agent === null || agent.path === null) return "none"
   if (agent.setup?.adapter) return "adapter"
   return isReady(agent) ? "ready" : "fix"
 }
@@ -188,6 +188,20 @@ function statusOf(agent: AgentStatus | null, phase: Phase): string {
   }
 }
 
+/** The same, in the list of other agents, where there's room for less. */
+function shortStatusOf(agent: AgentStatus, phase: Phase): string {
+  switch (phase) {
+    case "none":
+      return "Not on this Mac"
+    case "ready":
+      return "Ready"
+    case "fix":
+      return agent.setup?.problem ?? "Needs setting up"
+    default:
+      return "Needs setting up"
+  }
+}
+
 function Action({ agent, phase }: { agent: AgentStatus | null; phase: Phase }) {
   if (phase === "adapter")
     return (
@@ -275,13 +289,7 @@ function OtherAgents({
                 <span className="flex min-w-0 flex-col">
                   <span className="text-sm font-medium">{agent.name}</span>
                   <span className="truncate text-xs text-muted-foreground">
-                    {agent.path === null
-                      ? "Not on this Mac"
-                      : agent.setup?.adapter
-                        ? "Needs setting up"
-                        : isReady(agent)
-                          ? "Ready"
-                          : (agent.setup?.problem ?? "Needs setting up")}
+                    {shortStatusOf(agent, phaseOf(agents, agent))}
                   </span>
                 </span>
               </button>
