@@ -1,7 +1,7 @@
 import { Play, Trash2 } from "lucide-react"
 
+import { ErrorCard } from "@/components/error-card"
 import { Mascot } from "@/components/mascot"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -50,11 +50,7 @@ export function ProjectCalls({
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-6 py-8">
-      {error?.projectId === project.id && (
-        <Alert variant="destructive">
-          <AlertDescription>{error.message}</AlertDescription>
-        </Alert>
-      )}
+      {error?.projectId === project.id && <ErrorCard message={error.message} />}
       {project.calls.length === 0 ? (
         <Empty>
           <EmptyHeader>

@@ -2,6 +2,7 @@ import { SquareTerminal } from "lucide-react"
 import { useTransition } from "react"
 
 import { CheckAgainButton } from "@/components/check-again-button"
+import { ErrorCard } from "@/components/error-card"
 import { StatusRow } from "@/components/status-row"
 import { Button } from "@/components/ui/button"
 import { useSettingsNavigation } from "@/lib/settings-navigation"
@@ -28,7 +29,7 @@ export function SetupSettings() {
       <p className="text-sm text-muted-foreground">
         A call needs these three. Bomby uses your own accounts.
       </p>
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <ErrorCard message={error} />}
       <ul className="flex flex-col divide-y rounded-lg border">
         <StatusRow
           logo={<LiveKitLogo />}

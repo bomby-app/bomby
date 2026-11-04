@@ -2,6 +2,7 @@ import { SquareTerminal } from "lucide-react"
 import { type ReactNode, useTransition } from "react"
 
 import { CheckAgainButton } from "@/components/check-again-button"
+import { ErrorCard } from "@/components/error-card"
 import { StatusMark, StatusRow } from "@/components/status-row"
 
 import { AgentLogo } from "./agent-logos"
@@ -30,10 +31,8 @@ export function AgentsSettings() {
         Bomby hands work to the agents you have installed. A call needs at least
         one.
       </p>
-      {error && <p className="text-sm text-destructive">{error}</p>}
-      {install.error && (
-        <p className="text-sm text-destructive">{install.error}</p>
-      )}
+      {error && <ErrorCard message={error} />}
+      {install.error && <ErrorCard message={install.error} />}
       {agents?.every((agent) => agent.path === null) ? (
         <InstallFirstAgent />
       ) : (
