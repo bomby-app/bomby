@@ -55,6 +55,17 @@ Checked 2026-11-05 against the published sources of `tauri-plugin-notification` 
 - **Clicks.** Once a Rust `on_action` handler is registered, each notification is shown "tracked": a thread waits for its response, and a click arrives as action `"tap"` with the notification's `extra` data (`projectId` here). Without a handler, `show()` doesn't wait.
 - "Bomby isn't focused" means no window's `is_focused()`, which on macOS is `NSWindow.isKeyWindow` (`tao` 0.37.2): false for a hidden window and for every window while another app is active.
 
+## Transparent windows and private APIs
+
+Researched 2026-11-05 for a floating mascot window (not built). Sources: `tauri` 2.12.5 `src/lib.rs` and v2.tauri.app/release/tauri (PR tauri-apps/tauri#16166), `wry` 0.57.1 `src/wkwebview/mod.rs`, `tao` 0.37.2, Apple's App Review Guidelines and "Notarizing macOS software before distribution", tauri-apps/tauri#13070 and #2090.
+
+- `transparent(true)` works on macOS with no flag: the `macos-private-api` feature and `macOSPrivateApi` config are no-ops since Tauri 2.12.1, because wry dropped its feature gates (#16166).
+- A transparent window (or one with `background_color`) makes wry set WebKit's private `drawsBackground` key through KVC (`setValue:forKey:`). Every webview already sets the private `allowsPictureInPictureMediaPlayback` key the same way, transparent or not (`mod.rs:386`), so Bomby uses private WebKit keys today. If a macOS update removes a key, KVC raises `NSUnknownKeyException` when the webview is created.
+- **Mac App Store**: guideline 2.5.1 allows only public APIs. Bomby can't go there anyway: 2.4.5(i) requires the App Sandbox, and 2.5.2 bans downloading, installing or running code, which is what Set up (bun, the adapters) and the call (the user's agents) do.
+- **Developer ID**: "Notarization of macOS software is not App Review": the notary service scans for malicious content and code-signing problems. Private API use isn't checked.
+- **Click-through**: a transparent webview window takes every click in its rectangle. Per-pixel pass-through won't be added (#13070, closed as a duplicate of #2090); the way is to switch `set_ignore_cursor_events` on demand. `AppHandle::cursor_position` reads `NSEvent.mouseLocation` (tao 0.37.2 `util/mod.rs`), a public API that needs no permission, so the core can poll it and turn ignoring off only over the visible shape.
+- **Shortcuts**: `tauri-plugin-global-shortcut` 2.4.1 uses `global-hotkey` 0.8, which registers ordinary shortcuts with Carbon's `RegisterEventHotKey` (no Accessibility permission); only media keys use an event tap.
+
 ## Agent worker
 
 - `src-tauri/src/agent.rs` keeps one worker per app run. The first `open_call` starts it; credential or `claude` path changes, or its death, restart it; app exit stops it.
