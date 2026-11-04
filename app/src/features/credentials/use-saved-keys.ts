@@ -1,12 +1,12 @@
 import { useSyncExternalStore } from "react"
 
-import { credentialsInfo, hasGeminiKey } from "./api"
+import { credentialsInfo, hasGeminiKey, onKeysChanged } from "./api"
 
 /**
  * Which keys are saved, for this page: only whether each exists, never a key itself (the
- * core keeps them; src-tauri/src/credentials.rs). Read from the core once, then again after
- * a save, a removal or Check again. Every component shares it, so a section that opens
- * again shows it at once.
+ * core keeps them; src-tauri/src/credentials.rs). Read from the core once, then again
+ * whenever any window saves or removes one (keys-changed) and on Check again. Every
+ * component shares it, so a section that opens again shows it at once.
  */
 type SavedKeys = {
   /** null until the core first answers. */
@@ -26,6 +26,7 @@ function set(next: SavedKeys) {
 function subscribe(listener: () => void) {
   if (!started) {
     started = true
+    void onKeysChanged(() => void checkKeysAgain())
     void checkKeysAgain()
   }
   listeners.add(listener)

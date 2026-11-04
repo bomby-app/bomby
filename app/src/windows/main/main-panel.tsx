@@ -1,12 +1,3 @@
-import { FolderOpen } from "lucide-react"
-
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty"
 import { AgentsPanel } from "@/features/call/agents-panel"
 import { useCall } from "@/features/call/call-provider"
 import { CallView } from "@/features/call/call-view"
@@ -18,6 +9,7 @@ import {
   ProjectCalls,
   ResumeButton,
 } from "@/features/projects/project-calls"
+import { ProjectsHome } from "@/features/projects/projects-home"
 import { useProjects } from "@/features/projects/projects-provider"
 import type { Selection } from "@/features/projects/selection"
 
@@ -27,9 +19,11 @@ import { AppHeader } from "./app-header"
 export function MainPanel({
   selection,
   onSelect,
+  onNewProject,
 }: {
   selection: Selection
   onSelect: (selection: Selection) => void
+  onNewProject: () => void
 }) {
   const { projects } = useProjects()
   const { active } = useCall()
@@ -39,20 +33,18 @@ export function MainPanel({
       ? project?.calls.find((c) => c.id === selection.callId)
       : undefined
 
-  // Nothing chosen, or it was deleted.
+  // Nothing chosen, or it was deleted: the projects home.
   if (!project) {
     return (
       <>
         <AppHeader title="Projects" />
-        <Placeholder
-          icon={<FolderOpen />}
-          title={projects?.length === 0 ? "No projects yet" : "Pick a project"}
-          description={
-            projects?.length === 0
-              ? "Add a folder and start talking."
-              : "Or start a new one."
-          }
-        />
+        {projects && (
+          <ProjectsHome
+            projects={projects}
+            onOpen={(projectId) => onSelect({ kind: "project", projectId })}
+            onNewProject={onNewProject}
+          />
+        )}
       </>
     )
   }
@@ -115,27 +107,5 @@ export function MainPanel({
         />
       </div>
     </>
-  )
-}
-
-function Placeholder({
-  icon,
-  title,
-  description,
-}: {
-  icon: React.ReactNode
-  title: string
-  description: string
-}) {
-  return (
-    <div className="flex min-h-0 flex-1 overflow-auto">
-      <Empty>
-        <EmptyHeader>
-          <EmptyMedia variant="icon">{icon}</EmptyMedia>
-          <EmptyTitle>{title}</EmptyTitle>
-          <EmptyDescription>{description}</EmptyDescription>
-        </EmptyHeader>
-      </Empty>
-    </div>
   )
 }

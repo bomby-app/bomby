@@ -68,6 +68,33 @@ def child_environment(
     }
 
 
+def launch(
+    harness: Harness, program: Path, environ: Mapping[str, str]
+) -> tuple[str, tuple[str, ...], dict[str, str]]:
+    """How to start `harness` from `program`, with this agent's environment minus its
+    secrets."""
+    dotenv_keys = set(dotenv_values(AGENT_ROOT / ".env"))
+    return harness.launch(
+        str(program), child_environment(environ, dotenv_keys, harness), environ
+    )
+
+
+# What the voice model hears when a harness fails; the details go to the log, and
+# Settings shows what to fix (the setup probe).
+def not_ready(harness: Harness) -> str:
+    return (
+        f"{harness.short_name} isn't ready right now. Say sorry and offer another "
+        "agent, if there is one."
+    )
+
+
+def stopped(harness: Harness) -> str:
+    return (
+        f"{harness.short_name} stopped before finishing. Say sorry and offer to try "
+        "again or to try another agent."
+    )
+
+
 def briefing(project: Project) -> str:
     """What a harness is told once per session: how its result is used, and the folders
     it works in. Every harness gets it, whether or not it reads ACP's
@@ -172,9 +199,7 @@ class AcpRunner:
         turn and this returns `steered_note` at once: that turn's result answers it.
         """
         if self._closed:
-            raise ToolError(
-                f"The call is ending; {self._harness.short_name} takes no new work."
-            )
+            raise ToolError(self._ending())
         s = self._sessions.setdefault(
             session_name(session), _Session(session_name(session))
         )
@@ -201,7 +226,10 @@ class AcpRunner:
         try:
             return await self._open_session(s)
         except (OSError, RequestError, ConnectionError) as e:
-            raise ToolError(f"{self._harness.short_name} could not start: {e}") from e
+            if self._closed:
+                raise ToolError(self._ending()) from e
+            logger.warning("%s could not start: %r", self._harness.id, e)
+            raise ToolError(not_ready(self._harness)) from e
 
     async def _open_session(self, s: _Session) -> tuple[ClientSideConnection, str]:
         async with s.open_lock:
@@ -261,11 +289,11 @@ class AcpRunner:
             with contextlib.suppress(Exception):
                 await asyncio.shield(conn.cancel(session_id=session_id))
             raise
-        except ConnectionError as e:
-            self._connection_lost(conn)
-            raise ToolError(f"{name} failed: {e}") from e
-        except RequestError as e:
-            raise ToolError(f"{name} failed: {e}") from e
+        except (ConnectionError, RequestError) as e:
+            if isinstance(e, ConnectionError):
+                self._connection_lost(conn)
+            logger.warning("%s turn in %s failed: %r", self._harness.id, s.name, e)
+            raise ToolError(stopped(self._harness)) from e
         finally:
             _ = self._client.replies.pop(session_id, None)
 
@@ -356,6 +384,9 @@ class AcpRunner:
             logger.info("%s started (pid %s)", self._command, process.pid)
             return conn
 
+    def _ending(self) -> str:
+        return f"The call is ending; {self._harness.short_name} takes no new work."
+
     def _read_capabilities(self, init: InitializeResponse) -> None:
         capabilities = init.agent_capabilities
         sessions = capabilities.session_capabilities if capabilities else None
@@ -441,7 +472,6 @@ class CallRunners:
         self._project = project
         self._installed = dict(installed)
         self._environ = dict(environ)
-        self._dotenv_keys = set(dotenv_values(AGENT_ROOT / ".env"))
         self._runners: dict[str, AcpRunner] = {}
 
     @classmethod
@@ -469,12 +499,8 @@ class CallRunners:
             return runner
         program = self._installed.get(harness.id)
         if program is None:
-            raise ToolError(f"{harness.short_name} isn't installed on this computer.")
-        command, args, env = harness.launch(
-            str(program),
-            child_environment(self._environ, self._dotenv_keys, harness),
-            self._environ,
-        )
+            raise ToolError(not_ready(harness))
+        command, args, env = launch(harness, program, self._environ)
         runner = self._runners[harness.id] = AcpRunner(
             harness=harness, project=self._project, env=env, command=command, args=args
         )

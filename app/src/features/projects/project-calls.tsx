@@ -28,7 +28,9 @@ import {
 } from "@/components/ui/tooltip"
 
 import { deleteCall } from "../call/api"
+import { CallGate } from "../call/call-gate"
 import { useCall } from "../call/call-provider"
+import { useCallReadiness } from "../call/use-call-readiness"
 import type { CallSummary, Project } from "./api"
 import { callLabel, callLength } from "./names"
 import { useProjects } from "./projects-provider"
@@ -129,17 +131,20 @@ export function ResumeButton({
   callId: number
 }) {
   const { active, starting, start } = useCall()
+  const { ready, missing } = useCallReadiness()
   return (
-    <Button
-      size="sm"
-      // Bubblegum: resuming brings the conversation back (owner's call, docs/brand.md).
-      className="bg-claude text-claude-foreground hover:bg-claude/85"
-      disabled={active !== null || starting !== null}
-      onClick={() => void start(projectId, callId)}
-    >
-      <Play />
-      {starting?.resumeCallId === callId ? "Waking up..." : "Resume"}
-    </Button>
+    <CallGate missing={missing}>
+      <Button
+        size="sm"
+        // Bubblegum: resuming brings the conversation back (owner's call, docs/brand.md).
+        className="bg-claude text-claude-foreground hover:bg-claude/85"
+        disabled={!ready || active !== null || starting !== null}
+        onClick={() => void start(projectId, callId)}
+      >
+        <Play />
+        {starting?.resumeCallId === callId ? "Waking up..." : "Resume"}
+      </Button>
+    </CallGate>
   )
 }
 

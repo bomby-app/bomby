@@ -6,7 +6,7 @@ The source of truth is the Paper file **bomby**, pages `branding` and `app asset
 
 - **Bomby**; lowercase wordmark `bomby`. Website `bomby.app` ([rename decision](decisions/name-bomby.md)).
 - Tagline: **"Stop typing. Start talking."** (owner, 2026-11-04, from the cover). Supporting line: "Say the task out loud. Bomby hands it to your agent and tells you when it's done."
-- Never co-brand with Claude, LiveKit or Gemini. Name them only to describe requirements or implementation. Their logos appear only in Settings > Setup, in `currentColor`.
+- Never co-brand with Claude, LiveKit or Gemini. Name them only to describe requirements or implementation. Their logos appear only in Settings and on the first-run card, in `currentColor`, except Claude's own colours on its first-run tile (owner's board, 2026-11-04).
 - `.github/assets/cover.jpg` (1280 x 640) heads the README and serves as the social preview.
 
 ## Mark: Dot Dot
@@ -76,6 +76,22 @@ Only the eyes change, never the bubble shape or colours. States follow `useAgent
 `app/src/components/mascot.tsx` exports `<Mascot state level size />` and `mascotState(agentState)`. Dot Dot sits over LiveKit's bar visualizer on the call screen, replaces a project's folder icon during a call and appears on Start a call. Visualizer bars use `--primary`: highlighter in dark, ink in light (owner, 2026-11-04).
 
 Motion uses CSS transforms on one SVG. Eyes lead; only sound scales the bubble. Use ease-out for changes, sine for loops, no bounce, and 120 to 400ms one-offs. Reduced motion removes loops and makes swaps instant, but keeps blinking. Below 32px nothing loops.
+
+## First run
+
+Paper page `splash`, option A (owner, 2026-11-04), in `app/src/features/onboarding/`. It shows until a call has everything it needs, and nothing gets past it before that: an agent that's set up, the LiveKit keys and the Gemini key (owner, 2026-11-05).
+
+- **Glow.** `components/day-glow.tsx`: a glow rising from the bottom, by the Mac's clock: highlighter in the morning (5 to 12), option B's bubblegum glow around a highlighter core in the afternoon (12 to 17), bubblegum in option A's shape in the evening. Dark mode uses the dark boards. Its `rest` stage is the projects view's glow (page `projects view`), for reuse there.
+- **Sequence.** One GSAP timeline, each move after the last, slow in and slow out (sine), as the owner asked (2026-11-05): the glow comes up from nothing while Dot Dot floats up from below with its eyes closed (3.2 s, slowing as it arrives); as it arrives its eyes open and it settles to full size, then it looks left, right and back at you; "Good morning, I'm bomby." and "Let's set up your first agent." fade in under it, stay 2.4 s and fade out; then Dot Dot moves up, small and listening, and the setup fades in with a slight rise. A new step fades the old one out first. About 11 s in all, with the six-second opening sound (`app/src/assets/splash-music.mp3`) at the start; reduced motion starts at the setup.
+- **Film grain.** `components/film-grain.tsx`: moving grain over the glow, one tiny WebGL shader with no libraries, at 24 frames a second, blended with overlay at 9% (12% in dark); one still frame with reduced motion.
+- **Mascot with depth.** `<Mascot depth />`: Paper's lit bubble (a gradient from above, a rim of light, catchlights in the eyes, a soft shadow), an ink bubble with highlighter eyes in light and the reverse in dark (`--mascot-*` tokens). Its closed eyes are the curved lids of the Done state; waking crossfades them into round eyes that open from a squint (560 ms), with the blink on its own layer. `look` turns the eyes left or right.
+- **The agent step.** Claude Code when it's installed, ready or not, else Codex, else the first ready agent (owner, 2026-11-05), with Set up now (installs its adapter), the command it needs, or Ready; "Use … instead" picks another. Claude's tile keeps Claude's own colours, as the owner's board shows (`--agent-claude`).
+- **Just one more step.** The LiveKit and Gemini keys on the same cards: Paste all reads LiveKit Cloud's Environment variables box from the clipboard, Paste key the Gemini key; "type them in" opens the Settings forms in a dialog. Steps already done are skipped.
+- **Done.** With all three, the agent's card says "You're all set" and the round continue arrow appears, bottom right. It opens the projects home.
+
+## Projects home
+
+Paper page `projects view`, in `app/src/features/projects/projects-home.tsx`: the main panel with nothing selected. Dot Dot with depth, the day's greeting ("Good evening.") in the day glow's `rest` stage, then the recent projects, the newest call first (three, See all for the rest), or Create your first project. The sidebar's logo brings it back, with no hover state. Each time it opens, Dot Dot drops in and settles like something with weight, a damped spring (`elastic.out(1, 0.45)`, 1.6 s): the one place it overshoots, by the owner's choice (2026-11-05). Call and Resume stay disabled, with a tooltip saying what's missing, until a call has an agent, LiveKit and Gemini (`features/call/use-call-readiness.ts`).
 
 ## Voice
 

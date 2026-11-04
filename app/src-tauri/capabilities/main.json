@@ -23,6 +23,19 @@
     "allow-save-message",
     "allow-call-messages",
     "allow-app-log",
-    "allow-delete-call"
+    "allow-delete-call",
+    "clipboard-manager:allow-write-text",
+    "clipboard-manager:allow-read-text",
+    "allow-credentials-info",
+    "allow-save-credentials",
+    "allow-clear-credentials",
+    "allow-has-gemini-key",
+    "allow-save-gemini-key",
+    "allow-clear-gemini-key",
+    "allow-agents-status",
+    "allow-refresh-agents",
+    "allow-install-adapters",
+    "allow-first-run",
+    "allow-finish-first-run"
   ]
 }

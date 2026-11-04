@@ -12,6 +12,10 @@ wheels/
 # local
 .env
 
+# ACP adapters, installed and built by `just agent install`
+agent/adapters/node_modules/
+agent/adapters/bin/
+
 # Tool caches
 .pytest_cache/
 .ruff_cache/

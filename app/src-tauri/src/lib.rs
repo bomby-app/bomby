@@ -2,6 +2,7 @@
 //! database, and the commands the page calls. Each command's module documents it;
 //! capabilities/ grants them.
 
+mod adapters;
 mod agent;
 mod agents;
 mod app_log;
@@ -11,6 +12,7 @@ mod db;
 mod error;
 mod projects;
 mod settings;
+mod setup;
 mod windows;
 
 use tauri::Manager;
@@ -33,6 +35,7 @@ pub fn run() {
             // ~/Library/Application Support/app.bomby.desktop on macOS.
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
+            adapters::init(&dir);
             app.manage(db::Db::open(&dir.join(db::FILE_NAME))?);
             app.manage(agent::AgentWorker::default());
             app.manage(credentials::Vault::default());
@@ -40,6 +43,7 @@ pub fn run() {
             app.manage(calls::CallAgents::default());
             // Look for the agents now, so Settings and the first call find them ready.
             tauri::async_runtime::spawn(agents::refresh_in_background(app.handle().clone()));
+            adapters::update_in_background(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -53,6 +57,7 @@ pub fn run() {
             credentials::clear_gemini_key,
             agents::agents_status,
             agents::refresh_agents,
+            adapters::install_adapters,
             calls::open_call,
             calls::call_token,
             calls::end_call,
@@ -61,6 +66,8 @@ pub fn run() {
             calls::delete_call,
             settings::voice_settings,
             settings::set_voice,
+            settings::first_run,
+            settings::finish_first_run,
             projects::list_projects,
             projects::create_project,
             projects::update_project,

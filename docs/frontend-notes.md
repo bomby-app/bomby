@@ -49,6 +49,27 @@ Checked 2026-11-04 against [react.dev](https://react.dev/reference/react) for Re
 - Pending states come from `useTransition` with an async action, not hand-kept `loading` flags. A `set` call after an `await` inside an action needs its own `startTransition`; store updates are synchronous anyway.
 - Effects only synchronize with something outside React. Never set state synchronously in an effect (`react/set-state-in-effect`), and don't read `ref.current` during render, or pass a ref to a function during render: a closure-held value works where a value must outlive renders but not drive them (`callTokens` in `call-provider.tsx`).
 
+## Animated gradients
+
+- A gradient can't transition by itself; its numbers can. `components/day-glow.css` registers each one with `@property` (`<percentage>`, `<number>`, `<color>`, `inherits: false`) and builds the `radial-gradient` from them, with each stop's alpha from `color-mix(in oklab, <color> calc(<alpha> * 100%), transparent)`. A new `data-stage` then transitions smoothly. Tailwind v4 relies on `@property` too, so the webview supports it.
+- `in oklab` interpolation inside the gradient itself is left out: every stop shares one hue, and a declaration the webview didn't parse would drop the glow.
+
+## Actions
+
+- A one-off async action with its own error, like the splash's Paste all, is a React 19 `useActionState(action, null)`: the action returns the error message or null, a `<form action={...}>` runs it, and its pending flag disables the button. Longer flows (Check again, leaving the splash) use `useTransition` with an async function.
+
+## GSAP
+
+- The splash runs on one GSAP timeline (`gsap` 3.15.0, `@gsap/react` 2.1.2; 3.15.1 was a day old). Checked 2026-11-05 at gsap.com/resources/React and gsap.com/docs/v3/GSAP/Timeline.
+- `useGSAP()` replaces `useEffect`: animations made while it runs join a `gsap.context()` and revert on unmount (and on StrictMode's double run). Register it once with `gsap.registerPlugin(useGSAP)`. `{ dependencies, scope }` reruns it; animations made later, in handlers or timeouts, need `contextSafe()` to be cleaned up.
+- React Compiler's refs rule rejects `contextSafe(...)` called during render on a function that reads a ref. The splash's fade out finishes before it unmounts, so it is a plain handler.
+- The position parameter orders the steps: `">"` after the previous one, `"<"` with it, `"+=2.4"` a gap. `autoAlpha` fades opacity and sets `visibility`, so elements start `invisible`.
+- Positions are fixed (absolute, from the window's middle) and only transforms move, so nothing reflows mid-animation. Motion's `layout` animations made the mascot swing around the text (2026-11-05), so the splash doesn't use them.
+
+## Splash sound
+
+- WKWebView plays audio without a user gesture here: wry 0.57.1 sets `mediaTypesRequiringUserActionForPlayback` to none when `autoplay` is on, its default (`src/wkwebview/mod.rs`, `WebViewAttributes::default`), and Tauri 2.12 doesn't turn it off. The splash calls `new Audio(...).play()` on mount.
+
 ## React Compiler
 
 Checked 2026-11-04 against `@vitejs/plugin-react` 6.2.1 (installed README), `oxc-transform-react` 0.156.0, [oxc.rs/blog/2026-08-18-react-compiler-support](https://oxc.rs/blog/2026-08-18-react-compiler-support) and [react.dev/learn/react-compiler](https://react.dev/learn/react-compiler/introduction).

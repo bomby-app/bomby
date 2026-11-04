@@ -2,7 +2,7 @@
 
 ## What and why
 
-Bomby is a macOS desktop app you talk to. You say what you want done, and Bomby's voice agent hands it to a coding agent already installed on the computer (Claude Code, OpenCode, omp or goose), keeps the conversation going while it works, and tells you the result when it's done. You can run several tasks at once, add to one while it runs, and resume an earlier call.
+Bomby is a macOS desktop app you talk to. You say what you want done, and Bomby's voice agent hands it to a coding agent already installed on the computer (Claude Code, Codex, OpenCode, omp or goose), keeps the conversation going while it works, and tells you the result when it's done. You can run several tasks at once, add to one while it runs, and resume an earlier call.
 
 Why: talking is the fastest way to hand off work ("Stop typing. Start talking."). Bomby works with the agent the user already has, on their own setup, and with their own LiveKit and Gemini keys, so we host nothing and hold no one's keys or logins.
 

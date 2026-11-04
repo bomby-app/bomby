@@ -102,7 +102,7 @@ function agentDetail(agents: AgentStatus[]): string {
     return `${list(ready)} ${ready.length === 1 ? "is" : "are"} ready.`
   const installed = agents.filter((agent) => agent.path !== null)
   if (installed.length > 0)
-    return `${list(installed.map((agent) => agent.name))} ${installed.length === 1 ? "needs" : "need"} signing in.`
+    return `${list(installed.map((agent) => agent.name))} ${installed.length === 1 ? "needs" : "need"} setting up.`
   return "None installed yet."
 }
 

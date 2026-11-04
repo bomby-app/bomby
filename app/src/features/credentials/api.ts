@@ -1,7 +1,8 @@
 import { invoke } from "@tauri-apps/api/core"
+import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 
-// The core's credentials commands (src-tauri/src/credentials.rs). Only the settings window
-// may call them (capabilities/settings.json). The API secret goes in, never comes back out.
+// The core's credentials commands (src-tauri/src/credentials.rs), for the settings window
+// and the first-run splash (capabilities/). The API secret goes in, never comes back out.
 
 /** What is saved, without the secret. */
 export type CredentialsInfo = {
@@ -40,4 +41,9 @@ export function saveGeminiKey(key: string): Promise<void> {
 
 export function clearGeminiKey(): Promise<void> {
   return invoke("clear_gemini_key")
+}
+
+/** Calls `handler` whenever a key is saved or removed, in any window. */
+export function onKeysChanged(handler: () => void): Promise<UnlistenFn> {
+  return listen("keys-changed", () => handler())
 }

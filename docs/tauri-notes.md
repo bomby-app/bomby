@@ -45,15 +45,22 @@ Checked 2026-11-03/04 against Tauri 2.12.5, `tauri-codegen` 2.7.4, `wry` 0.57.1,
 ## Finding agents
 
 - Finder launches provide launchd's PATH, not the shell's. `src-tauri/src/agents.rs` queries the login shell once (`$SHELL -ilc`, eight-second timeout), ignores rc-file noise, then checks known install locations.
-- Settings strips version prefixes from `opencode --version` and `omp --version`. Claude sign-in comes from `claude auth status --json`; version from `claude --version`. Each agent's checks run on their own thread.
-- `agents::Agents` in Tauri state keeps the last look. `setup` starts the first one on `tauri::async_runtime::spawn_blocking`; only one look runs at a time, and callers during it wait on a `Condvar` instead of starting another. `open_call` looks up only the programs (`installed_now`: shell and install places, no version or sign-in checks) and starts a full look in the background when they differ from what Settings shows. That look starts after any running one (which began before the programs were found) and starts from them, so a login shell that fails then still keeps them. A changed result goes to every window as the `agents-changed` event (`Emitter::emit`; `core:default` includes `core:event:default`, which allows `listen`).
+- Settings strips version prefixes from `opencode --version` and `omp --version`. Each agent's checks run on their own thread.
+- Setup (provider, model, sign-in) comes from the agent's probe (`src-tauri/src/setup.rs` runs `agent/probe.py` through `agent::command`, 60-second timeout, JSON on stdout). It runs on its own thread beside the version checks, so it is part of every look ([decision](decisions/check-agent-setup-with-an-acp-probe.md)).
+- `agents::Agents` in Tauri state keeps the last look. `setup` starts the first one on `tauri::async_runtime::spawn_blocking`; only one look runs at a time, and callers during it wait on a `Condvar` instead of starting another. `open_call` looks up only the programs (`usable_now`: shell and install places, no version checks), leaves out those the last look found not set up, and starts a full look in the background when they differ from what Settings shows. That look starts after any running one (which began before the programs were found) and starts from them, so a login shell that fails then still keeps them. A changed result goes to every window as the `agents-changed` event (`Emitter::emit`; `core:default` includes `core:event:default`, which allows `listen`).
 - A sync `#[tauri::command(async)]` runs inside `async_runtime::spawn` on a tokio worker, not on a blocking thread (`tauri` 2.12.5 `src/ipc/mod.rs`, `respond_async`). The agent commands are `async fn` and move the look to `spawn_blocking`; its `JoinHandle` resolves to `tauri::Result<T>`.
 - See [detection decision](decisions/detect-acp-native-agents.md).
+
+## Installing adapters
+
+- `src-tauri/src/adapters.rs` installs the ACP adapters into `app_data_dir()/adapters` ([decision](decisions/install-adapters-on-setup.md)): bun 1.4.4 from its GitHub release zip (`curl`, checked with `shasum -a 256` against the release's SHASUMS256.txt, unpacked with `ditto -x -k`), then `bun install --frozen-lockfile --omit optional` on the embedded `agent/adapters/` lockfile (`include_str!`) and `bun build --compile` per package `bin`. Output goes to `install.log` there; each step has a five-minute limit. Measured 2026-11-04: 6 s end to end on a fast connection.
+- A file `curl` downloads gets `com.apple.provenance` but no `com.apple.quarantine`, so Gatekeeper doesn't stop it, and the downloaded bun runs (macOS 27, 2026-11-04, from a terminal; recheck from the packaged app in step 7).
+- `install_adapters` runs one install at a time, sends `adapters-progress` (`runtime`, `packages`, `build`, `done`) and looks for the agents again. `agent::command` passes `BOMBY_ADAPTERS` to the worker and the probe.
 
 ## Credentials
 
 - `keyring` 4.2.0 with `v1` uses Keychain, Windows Credential Manager or Secret Service. One entry (service = app identifier, account `credentials`) stores JSON for LiveKit and Gemini.
-- `credentials::Vault` reads once per run and caches in Tauri state. The page receives URL, API key and boolean secret presence, never the secrets.
+- `credentials::Vault` reads once per run and caches in Tauri state. The page receives URL, API key and boolean secret presence, never the secrets. Each save or removal sends `keys-changed` (no payload) to every window, so the main window's Call buttons follow keys changed in Settings.
 - Ad-hoc-signed dev rebuilds can trigger another macOS keychain prompt because each binary is a new trust identity. A Developer ID release keeps a stable identity.
 
 ## Storage

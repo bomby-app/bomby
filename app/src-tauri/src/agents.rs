@@ -3,12 +3,14 @@
 //! it finds the user's own install and tells the voice agent where it is.
 //!
 //! Adding one is a row in `KNOWN` here and a harness definition in `agent/harnesses/`,
-//! under the same id.
+//! under the same id. Whether it is set up comes from the harness, through the probe
+//! ([`setup`](crate::setup)).
 //!
 //! Finding them runs the user's login shell and each agent's own program, which takes
 //! seconds, so the core does it once at launch, in the background, and keeps the result in
-//! [`Agents`]. Settings shows what is kept and asks for a fresh look without waiting on it;
-//! each call looks again before it opens.
+//! [`Agents`]. Each look also probes the installed agents' setup. Settings shows what is
+//! kept and looks again on Check again; each call looks up the programs again before it
+//! opens.
 
 use std::collections::HashMap;
 use std::panic::{self, AssertUnwindSafe};
@@ -18,10 +20,11 @@ use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 use crate::error::Result;
+use crate::setup::{self, Setup};
 
 /// The event every window gets with the new list when a look finds something different.
 pub const CHANGED: &str = "agents-changed";
@@ -39,8 +42,6 @@ struct Known {
     /// Where installers put it, relative to the home folder or absolute, for when the
     /// login shell can't tell us.
     places: &'static [&'static str],
-    /// How to tell whether it is signed in, if it can say.
-    sign_in: Option<fn(&Path) -> SignIn>,
 }
 
 const KNOWN: &[Known] = &[
@@ -54,7 +55,16 @@ const KNOWN: &[Known] = &[
             "/opt/homebrew/bin/claude",
             "/usr/local/bin/claude",
         ],
-        sign_in: Some(claude_sign_in),
+    },
+    Known {
+        id: "codex",
+        name: "Codex",
+        binary: "codex",
+        places: &[
+            "~/.local/bin/codex",
+            "/opt/homebrew/bin/codex",
+            "/usr/local/bin/codex",
+        ],
     },
     Known {
         id: "opencode",
@@ -65,7 +75,6 @@ const KNOWN: &[Known] = &[
             "/opt/homebrew/bin/opencode",
             "/usr/local/bin/opencode",
         ],
-        sign_in: None,
     },
     Known {
         id: "omp",
@@ -76,7 +85,6 @@ const KNOWN: &[Known] = &[
             "/opt/homebrew/bin/omp",
             "/usr/local/bin/omp",
         ],
-        sign_in: None,
     },
     Known {
         id: "goose",
@@ -87,19 +95,8 @@ const KNOWN: &[Known] = &[
             "/opt/homebrew/bin/goose",
             "/usr/local/bin/goose",
         ],
-        sign_in: None,
     },
 ];
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SignIn {
-    signed_in: bool,
-    /// What to run in Terminal to sign in.
-    login: &'static str,
-    /// The account's plan, e.g. "max" or "pro".
-    plan: Option<String>,
-}
 
 /// What Settings shows for one agent.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -110,12 +107,13 @@ pub struct AgentStatus {
     /// Where its program is, or `None` when it isn't installed (or can't be found).
     path: Option<String>,
     version: Option<String>,
-    /// `None` when the agent can't report it.
-    sign_in: Option<SignIn>,
+    /// `None` when the probe couldn't run.
+    setup: Option<Setup>,
 }
 
-/// Runs `command` and returns its output if it finishes in time; kills it otherwise.
-fn run(mut command: Command) -> Option<Output> {
+/// Runs `command` and returns its output if it finishes within `timeout`; kills it
+/// otherwise.
+pub fn run(mut command: Command, timeout: Duration) -> Option<Output> {
     let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -126,7 +124,7 @@ fn run(mut command: Command) -> Option<Output> {
     loop {
         match child.try_wait() {
             Ok(Some(_)) => return child.wait_with_output().ok(),
-            Ok(None) if started.elapsed() < TIMEOUT => thread::sleep(Duration::from_millis(50)),
+            Ok(None) if started.elapsed() < timeout => thread::sleep(Duration::from_millis(50)),
             _ => {
                 let _ = child.kill();
                 let _ = child.wait();
@@ -155,7 +153,7 @@ fn shell_paths() -> Option<HashMap<String, PathBuf>> {
     let mut lookup = Command::new(shell);
     lookup.args(["-ilc", &script]);
     // An interactive rc file may print its own lines; ours are `binary=path`.
-    run(lookup)
+    run(lookup, TIMEOUT)
         .as_ref()
         .and_then(stdout)
         .map(|out| parse_shell_paths(&out))
@@ -212,28 +210,6 @@ fn pick_path(
     })
 }
 
-/// `claude auth status --json`, the fields we read.
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ClaudeAuth {
-    logged_in: bool,
-    subscription_type: Option<String>,
-}
-
-fn claude_sign_in(claude: &Path) -> SignIn {
-    let mut auth = Command::new(claude);
-    auth.args(["auth", "status", "--json"]);
-    let auth: Option<ClaudeAuth> = run(auth)
-        .as_ref()
-        .and_then(stdout)
-        .and_then(|json| serde_json::from_str(&json).ok());
-    SignIn {
-        signed_in: auth.as_ref().is_some_and(|a| a.logged_in),
-        login: "claude auth login",
-        plan: auth.and_then(|a| a.subscription_type),
-    }
-}
-
 fn status_of(known: &'static Known, path: Option<PathBuf>) -> AgentStatus {
     let Some(path) = path else {
         return AgentStatus {
@@ -241,7 +217,7 @@ fn status_of(known: &'static Known, path: Option<PathBuf>) -> AgentStatus {
             name: known.name,
             path: None,
             version: None,
-            sign_in: None,
+            setup: None,
         };
     };
     let mut version = Command::new(&path);
@@ -249,25 +225,32 @@ fn status_of(known: &'static Known, path: Option<PathBuf>) -> AgentStatus {
     AgentStatus {
         id: known.id,
         name: known.name,
-        version: run(version).as_ref().and_then(stdout),
-        sign_in: known.sign_in.map(|check| check(&path)),
+        version: run(version, TIMEOUT).as_ref().and_then(stdout),
         path: Some(path.display().to_string()),
+        setup: None,
     }
 }
 
-/// Every known agent with its status. Each agent's own checks run side by side, so a look
-/// takes about as long as the shell and the slowest agent.
+/// Every known agent with its status and setup. The probe and each agent's own checks run
+/// side by side, so a look takes about as long as the shell and the slowest of them.
 fn detect_all(previous: &HashMap<String, PathBuf>) -> Vec<AgentStatus> {
     let found = find_all(previous);
+    let installed = programs(found.clone());
     thread::scope(|scope| {
+        let probe = scope.spawn(|| setup::probe(&installed).unwrap_or_default());
         let checks: Vec<_> = found
             .into_iter()
             .map(|(known, path)| (known, scope.spawn(move || status_of(known, path))))
             .collect();
-        checks
+        let mut agents: Vec<_> = checks
             .into_iter()
             .map(|(known, check)| check.join().unwrap_or_else(|_| status_of(known, None)))
-            .collect()
+            .collect();
+        let setups = probe.join().unwrap_or_default();
+        for agent in &mut agents {
+            agent.setup = setups.get(agent.id).cloned();
+        }
+        agents
     })
 }
 
@@ -381,22 +364,44 @@ impl Agents {
     }
 }
 
-/// The installed agents' programs, looked up now: the shell and the install places only,
-/// without the version and sign-in checks, which a call doesn't need. Blocks for the shell
-/// lookup. When they differ from what Settings shows, a full look starting from them
-/// follows in the background, so Settings catches up.
-pub fn installed_now<R: Runtime>(app: &AppHandle<R>) -> Vec<(String, PathBuf)> {
-    let shown = app
-        .state::<Agents>()
-        .cached()
-        .map(|found| installed(&found));
-    let previous: HashMap<_, _> = shown.clone().unwrap_or_default().into_iter().collect();
+/// The installed ones among `agents` a call can use: all but those the probe found not set
+/// up. One not probed yet stays, so a probe that can't run never hides an agent.
+pub fn usable(agents: &[AgentStatus]) -> Vec<(String, PathBuf)> {
+    let ready: Vec<_> = agents
+        .iter()
+        .filter(|a| a.setup.as_ref().is_none_or(|s| s.ready))
+        .cloned()
+        .collect();
+    installed(&ready)
+}
+
+/// The agents a call can use, looked up now: the shell and the install places only, without
+/// the version checks, which a call doesn't need, minus those Settings shows as not set up
+/// at the same program. Blocks for the shell lookup. When the programs differ from what
+/// Settings shows, a full look starting from them follows in the background, so Settings
+/// catches up.
+pub fn usable_now<R: Runtime>(app: &AppHandle<R>) -> Vec<(String, PathBuf)> {
+    let shown = app.state::<Agents>().cached().unwrap_or_default();
+    let previous: HashMap<_, _> = installed(&shown).into_iter().collect();
     let found = programs(find_all(&previous));
-    if shown.as_ref() != Some(&found) {
+    if installed(&shown) != found {
         let (app, seen) = (app.clone(), found.clone());
         tauri::async_runtime::spawn_blocking(move || refresh(&app, Some(seen)));
     }
+    without_unready(found, &shown)
+}
+
+/// `found` minus the programs `shown` has as not set up.
+fn without_unready(found: Vec<(String, PathBuf)>, shown: &[AgentStatus]) -> Vec<(String, PathBuf)> {
+    let set_up = usable(shown);
+    let unready: Vec<_> = installed(shown)
+        .into_iter()
+        .filter(|program| !set_up.contains(program))
+        .collect();
     found
+        .into_iter()
+        .filter(|program| !unready.contains(program))
+        .collect()
 }
 
 /// The ones `find_all` found, by id with their programs, in `KNOWN` order like
@@ -423,12 +428,20 @@ fn refresh<R: Runtime>(
     found
 }
 
+/// [`refresh`] after something on disk changed (adapters installed), for callers already on
+/// a blocking thread. The answer comes from a look that starts now: one already running
+/// began before the change, so it may miss it (an empty `seen` asks for that, as a call's
+/// news does).
+pub fn refresh_after_change<R: Runtime>(app: &AppHandle<R>) {
+    refresh(app, Some(Vec::new()));
+}
+
 /// [`refresh`] on a blocking thread, for async callers.
 pub async fn refresh_in_background<R: Runtime>(app: AppHandle<R>) -> Result<Vec<AgentStatus>> {
     Ok(tauri::async_runtime::spawn_blocking(move || refresh(&app, None)).await?)
 }
 
-/// Every known agent: installed or not, its version, and its sign-in where it reports one.
+/// Every known agent: installed or not, its version, and its setup once probed.
 /// What the last look found, so Settings never waits on a new one; only right after launch
 /// does it wait for the first. Runs the user's own programs, which only read their state.
 #[tauri::command]
@@ -439,7 +452,7 @@ pub async fn agents_status<R: Runtime>(app: AppHandle<R>) -> Result<Vec<AgentSta
     }
 }
 
-/// Looks for the agents again (Check again, or Settings opening) and returns what it found.
+/// Looks for the agents again (Check again) and returns what it found.
 #[tauri::command]
 pub async fn refresh_agents<R: Runtime>(app: AppHandle<R>) -> Result<Vec<AgentStatus>> {
     refresh_in_background(app).await
@@ -480,7 +493,6 @@ mod tests {
         name: "Nowhere",
         binary: "nowhere",
         places: &[],
-        sign_in: None,
     };
 
     #[test]
@@ -509,7 +521,7 @@ mod tests {
             name: id,
             path: path.map(str::to_owned),
             version: None,
-            sign_in: None,
+            setup: None,
         }
     }
 
@@ -657,15 +669,101 @@ mod tests {
     }
 
     #[test]
+    fn a_change_on_disk_waits_for_the_running_look_then_looks_again() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::mpsc;
+
+        let (agents, looks) = (&Agents::default(), &AtomicUsize::new(0));
+        let (started, wait_for_start) = mpsc::channel();
+        let (release, wait_for_release) = mpsc::channel::<()>();
+        thread::scope(|scope| {
+            scope.spawn(move || {
+                agents.detect_with(None, |_| {
+                    looks.fetch_add(1, Ordering::SeqCst);
+                    started.send(()).unwrap();
+                    wait_for_release.recv().unwrap();
+                    vec![]
+                })
+            });
+            wait_for_start.recv().unwrap();
+            let after = scope.spawn(|| {
+                agents.detect_with(Some(Vec::new()), |_| {
+                    looks.fetch_add(1, Ordering::SeqCst);
+                    vec![status("claude", Some("/Users/me/.local/bin/claude"))]
+                })
+            });
+            while agents.lock().waiting == 0 {
+                thread::yield_now();
+            }
+            release.send(()).unwrap();
+            let (found, _) = after.join().unwrap();
+            assert_eq!(found.len(), 1);
+        });
+        assert_eq!(looks.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
     fn programs_match_installed_for_the_same_agents() {
         let claude = PathBuf::from("/Users/me/.local/bin/claude");
-        let found = programs(vec![(&KNOWN[0], Some(claude.clone())), (&KNOWN[1], None)]);
+        let found = programs(vec![(&KNOWN[0], Some(claude.clone())), (&KNOWN[2], None)]);
         let shown = installed(&[
             status("claude", Some("/Users/me/.local/bin/claude")),
             status("opencode", None),
         ]);
         assert_eq!(found, shown);
         assert_eq!(found, vec![("claude".to_owned(), claude)]);
+    }
+
+    fn ready(model: &str) -> Setup {
+        Setup {
+            ready: true,
+            problem: None,
+            fix: None,
+            account: None,
+            model: Some(model.into()),
+            adapter: None,
+        }
+    }
+
+    fn needs_setup() -> Setup {
+        Setup {
+            ready: false,
+            problem: Some("No model is set".into()),
+            fix: None,
+            account: None,
+            model: None,
+            adapter: None,
+        }
+    }
+
+    #[test]
+    fn calls_leave_out_only_programs_the_probe_found_not_set_up() {
+        let goose = |setup| AgentStatus {
+            setup,
+            ..status("goose", Some("/Users/me/.local/bin/goose"))
+        };
+        let omp = status("omp", Some("/Users/me/.local/bin/omp"));
+        let shown = [goose(Some(needs_setup())), omp];
+        assert_eq!(
+            usable(&shown),
+            vec![("omp".to_owned(), PathBuf::from("/Users/me/.local/bin/omp"))]
+        );
+
+        let found = vec![
+            (
+                "goose".to_owned(),
+                PathBuf::from("/Users/me/.local/bin/goose"),
+            ),
+            ("omp".to_owned(), PathBuf::from("/Users/me/.local/bin/omp")),
+        ];
+        assert_eq!(without_unready(found.clone(), &shown), found[1..]);
+        // A goose moved or reinstalled elsewhere hasn't been probed there yet.
+        let moved = vec![("goose".to_owned(), PathBuf::from("/opt/homebrew/bin/goose"))];
+        assert_eq!(without_unready(moved.clone(), &shown), moved);
+        assert_eq!(
+            without_unready(found.clone(), &[goose(Some(ready("x")))]),
+            found
+        );
     }
 
     #[test]

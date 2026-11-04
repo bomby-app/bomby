@@ -7,7 +7,7 @@ Bomby is a desktop app for talking to coding agents. A call connects Gemini's vo
 | Piece | Where | Status |
 | --- | --- | --- |
 | Voice agent | `agent/`: Python, LiveKit Agents, Gemini 3.8 Live | Built |
-| Harnesses | `agent/harnesses/`: Claude Code, OpenCode, omp and goose; shared ACP client and runner in `agent/acp_client/`; one voice tool, `start_task` | Built |
+| Harnesses | `agent/harnesses/`: Claude Code, Codex, OpenCode, omp and goose; shared ACP client and runner in `agent/acp_client/`; one voice tool, `start_task` | Built |
 | Desktop app | `app/`: Tauri v2, React, LiveKit Agents UI; settings, projects, calls and saved transcripts | In progress; runs the agent from source in dev |
 | App data | One core-owned SQLite database for projects, calls and messages | Built ([decision](decisions/app-data-in-one-sqlite-db.md)) |
 | Packaging | Agent and Claude adapter as Tauri sidecars, using the user's `claude` | Prototypes passed; shipping later ([decision](decisions/ship-the-agent-and-adapter-as-sidecars.md)) |
@@ -39,7 +39,7 @@ flowchart LR
 
 ## A call, start to end
 
-1. **Start.** The core starts or restarts the agent worker, looks for the installed agents and records the call with `open_call`, then mints a read-only token with `call_token`. The token's room configuration dispatches `bomby` with the project, folders and the agents found when the call opened as job metadata; every token for the call carries the same agents. The entrypoint reads `ctx.job.metadata`.
+1. **Start.** The core starts or restarts the agent worker, looks for the installed agents (leaving out any the setup probe found not set up) and records the call with `open_call`, then mints a read-only token with `call_token`. The token's room configuration dispatches `bomby` with the project, folders and the agents found when the call opened as job metadata; every token for the call carries the same agents. The entrypoint reads `ctx.job.metadata`.
 2. **Talk.** Gemini 3.8 Live handles speech both ways, using `agent/prompts/voice.md`.
 3. **Work.** Gemini calls `start_task(task, session, agent)`. Its first `ctx.update()` makes the tool non-blocking, so the conversation continues.
 4. **Agent sessions.** Each selected harness gets one `AcpRunner` and one ACP process per call, started on its first task. A new session name opens a session; a known name continues it. Sessions run in parallel, and supported harnesses accept steering mid-turn.
@@ -77,6 +77,8 @@ The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS)
 - Cancelling with `lk_agents_cancel_task` stops the turn but keeps the session.
 
 **Briefing.** Each session receives `prompts/harness-briefing.md` plus the project name and folders once: through the system prompt when supported, otherwise before its first task. It requires a short, plain-text, outcome-first final report for speech.
+
+**Agent errors.** A harness that fails fails the task with one short line for the voice model, "<agent> isn't ready right now" or "<agent> stopped before finishing", plus an instruction to say sorry and offer another agent (`not_ready` and `stopped` in `agent/acp_client/runner.py`, owner's choice, 2026-11-04). The details go to `agent.log`; Settings shows what to fix, from the setup probe ([decision](decisions/check-agent-setup-with-an-acp-probe.md)).
 
 **Claude's environment.** The runner removes `agent/.env` keys, `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` and `CLAUDECODE`, so Claude uses its plan login. Sessions run in `bypassPermissions` with the user's settings, hooks and `CLAUDE.md` files.
 

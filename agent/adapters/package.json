@@ -1,0 +1,9 @@
+{
+  "name": "bomby-adapters",
+  "private": true,
+  "description": "ACP adapters for agents that don't speak ACP themselves, built into bin/ by `just agent install`",
+  "dependencies": {
+    "@agentclientprotocol/claude-agent-acp": "0.100.0",
+    "@agentclientprotocol/codex-acp": "2.2.2"
+  }
+}

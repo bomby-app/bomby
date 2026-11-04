@@ -24,5 +24,5 @@ We never bundle Claude Code, never ship its binary, and never build our own Clau
 
 ## Consequences
 
-- Settings shows each requirement as ready or missing: LiveKit keys, Gemini key, and Claude Code (found, and signed in). The adapter reports sign-in through `_auth/status_update` ([acp-notes.md](../acp-notes.md)), so the app can say "Run claude auth login" when it is missing.
-- First run is a short setup: three keys and a signed-in Claude Code.
+- Settings shows each requirement as ready or missing: LiveKit keys, Gemini key, and Claude Code (found, and signed in). The adapter reports sign-in through `_auth/status_update` ([acp-notes.md](../acp-notes.md)), which the setup probe reads ([decision](check-agent-setup-with-an-acp-probe.md)), so the app can say "Run claude auth login" when it is missing.
+- First run is a short setup: three keys and a signed-in Claude Code, on the splash, which nothing gets past until they're there ([brand](../brand.md#first-run)). Call buttons stay disabled without them.

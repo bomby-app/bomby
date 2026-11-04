@@ -1,5 +1,6 @@
 """The client side of ACP: answers an agent's requests and collects its replies."""
 
+import asyncio
 import logging
 from collections.abc import Sequence
 from typing import Any, final, override
@@ -83,6 +84,10 @@ class HarnessClient(Client):
     def __init__(self, harness: Harness) -> None:
         self._harness = harness
         self.replies: dict[str, Reply] = {}
+        self.auth_status: dict[str, Any] | None = None
+        """The identity the agent last reported through the `authStatus` extension
+        (docs/acp-notes.md#setup-signals), e.g. `{"kind": "account", "label": "Claude Max"}`."""
+        self.auth_reported = asyncio.Event()
 
     @override
     async def request_permission(
@@ -124,8 +129,11 @@ class HarnessClient(Client):
 
     @override
     async def ext_notification(self, method: str, params: dict[str, Any]) -> None:
-        # claude-agent-acp, for one, pushes which account it runs as (`_auth/status_update`).
         logger.info("%s %s: %s", self._harness.id, method, params)
+        status = params.get("authStatus")
+        if method == "auth/status_update" and isinstance(status, dict):
+            self.auth_status = status
+            self.auth_reported.set()
 
     @override
     def on_connect(self, conn: Agent) -> None:

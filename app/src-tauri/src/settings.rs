@@ -1,5 +1,5 @@
-//! App settings that aren't secrets, kept in the database's `settings` table. For now the
-//! agent's voice, sent with every call (`calls::call_token`).
+//! App settings that aren't secrets, kept in the database's `settings` table: the agent's
+//! voice, sent with every call (`calls::call_token`), and whether the first run is done.
 
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
@@ -9,6 +9,8 @@ use crate::db::Db;
 use crate::error::{Error, Result};
 
 const VOICE_KEY: &str = "voice";
+/// Set once the first-run splash has set up an agent.
+const FIRST_RUN_KEY: &str = "first_run_done";
 
 /// Used when none is chosen: the voice the agent has always had (`agent/call_options.py`).
 pub const DEFAULT_VOICE: &str = "Charon";
@@ -101,6 +103,30 @@ pub fn voice_settings(db: State<'_, Db>) -> Result<VoiceSettings> {
 #[tauri::command(async)]
 pub fn set_voice(db: State<'_, Db>, name: String) -> Result<()> {
     set(&db.conn(), &name)
+}
+
+/// Whether this is the first run: the splash shows until it has set up an agent.
+#[tauri::command(async)]
+pub fn first_run(db: State<'_, Db>) -> Result<bool> {
+    let done: Option<String> = db
+        .conn()
+        .query_row(
+            "SELECT value FROM settings WHERE key = ?1",
+            [FIRST_RUN_KEY],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(done.is_none())
+}
+
+#[tauri::command(async)]
+pub fn finish_first_run(db: State<'_, Db>) -> Result<()> {
+    db.conn().execute(
+        "INSERT INTO settings (key, value) VALUES (?1, '1')
+         ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+        [FIRST_RUN_KEY],
+    )?;
+    Ok(())
 }
 
 #[cfg(test)]

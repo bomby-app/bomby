@@ -289,8 +289,50 @@ def test_a_missing_adapter_is_reported_to_the_model(tmp_path: Path) -> None:
         env=os.environ,
     )
 
-    with pytest.raises(ToolError, match="could not start"):
+    with pytest.raises(ToolError, match="Claude isn't ready right now"):
         _ = asyncio.run(runner.run("reply ok"))
+
+
+async def tool_error(runner: AcpRunner, task: str = "reply ok") -> str:
+    with pytest.raises(ToolError) as caught:
+        _ = await runner.run(task)
+    return str(caught.value)
+
+
+@pytest.mark.parametrize(
+    "env",
+    [
+        {"FAKE_ACP_REFUSE_SESSION": "Configuration value not found: GOOSE_PROVIDER"},
+        {"FAKE_ACP_AUTH_REQUIRED": "1"},
+    ],
+)
+def test_an_agent_that_isnt_set_up_is_reported_briefly(
+    tmp_path: Path, env: dict[str, str]
+) -> None:
+    message, _ = run_with_fake(tmp_path, tool_error, env=env)
+
+    assert message == (
+        "Claude isn't ready right now. Say sorry and offer another agent, if there "
+        "is one."
+    )
+
+
+def test_a_failed_turn_and_a_crash_are_reported_briefly_and_the_next_task_restarts(
+    tmp_path: Path,
+) -> None:
+    async def scenario(runner: AcpRunner) -> tuple[str, str, str]:
+        failed = await tool_error(runner, "fail Rate limited")
+        crashed = await tool_error(runner, "crash out of memory")
+        return failed, crashed, await runner.run("reply back")
+
+    (failed, crashed, after), _ = run_with_fake(tmp_path, scenario)
+
+    stopped = (
+        "Claude stopped before finishing. Say sorry and offer to try again or to try "
+        "another agent."
+    )
+    assert failed == crashed == stopped
+    assert after == "Done: back"
 
 
 def test_child_environment_drops_dotenv_secrets_and_api_keys() -> None:

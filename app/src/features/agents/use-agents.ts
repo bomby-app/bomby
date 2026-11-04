@@ -37,9 +37,6 @@ function start() {
     (agents) => set({ agents: snapshot.agents ?? agents, error: null }),
     (e: unknown) => set({ ...snapshot, error: String(e) })
   )
-  // One quiet look per page load (Settings is a new page each time it opens), so an agent
-  // installed while the app ran shows up unasked. Its result arrives as agents-changed.
-  refreshAgents().catch(() => {})
 }
 
 function subscribe(listener: () => void) {
@@ -71,7 +68,7 @@ export async function checkAgentsAgain(): Promise<void> {
   }
 }
 
-/** Installed, and signed in where the agent can tell us. */
-export function isReady({ path, signIn }: AgentStatus): boolean {
-  return path !== null && (signIn === null || signIn.signedIn)
+/** Installed, and not found to need setup. One the core couldn't probe counts as ready. */
+export function isReady({ path, setup }: AgentStatus): boolean {
+  return path !== null && setup?.ready !== false
 }

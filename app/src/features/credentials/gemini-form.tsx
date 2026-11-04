@@ -11,7 +11,6 @@ import {
 import { Input } from "@/components/ui/input"
 
 import { clearGeminiKey, hasGeminiKey, saveGeminiKey } from "./api"
-import { checkKeysAgain } from "./use-saved-keys"
 
 type Status =
   | { kind: "idle" }
@@ -47,7 +46,6 @@ export function GeminiForm({ focus = false }: { focus?: boolean }) {
       setSaved(true)
       setKey("")
       setStatus({ kind: "saved" })
-      void checkKeysAgain()
     } catch (error) {
       setStatus({ kind: "error", message: String(error) })
     }
@@ -58,7 +56,6 @@ export function GeminiForm({ focus = false }: { focus?: boolean }) {
       await clearGeminiKey()
       setSaved(false)
       setStatus({ kind: "idle" })
-      void checkKeysAgain()
     } catch (error) {
       setStatus({ kind: "error", message: String(error) })
     }

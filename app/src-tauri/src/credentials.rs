@@ -15,9 +15,12 @@ use std::sync::Mutex;
 
 use keyring::Entry;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Runtime, State};
+use tauri::{AppHandle, Emitter, Runtime, State};
 
 use crate::error::{Error, Result};
+
+/// Sent to every window after a key is saved or removed, with no payload.
+pub const KEYS_CHANGED: &str = "keys-changed";
 
 /// The entry's account; the service is the app identifier (tauri.conf.json).
 const ACCOUNT: &str = "credentials";
@@ -138,6 +141,10 @@ impl Vault {
             return Err(e);
         }
         *cached = Some(keys);
+        drop(cached);
+        // Every window re-reads which keys are saved (no key goes with it). Only fails for
+        // an invalid event name or payload.
+        let _ = app.emit(KEYS_CHANGED, ());
         Ok(())
     }
 
