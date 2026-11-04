@@ -37,7 +37,8 @@ AGENT_ROOT = Path(__file__).resolve().parent.parent
 BRIEFING = (AGENT_ROOT / "prompts" / "harness-briefing.md").read_text().rstrip()
 CLOSE_TIMEOUT_S = 5
 # Never passed to any harness: the desktop app starts this agent with the user's LiveKit
-# and Gemini keys in its environment (not in .env). Each harness blocks its own on top.
+# and Gemini keys in its environment (not in .env), and GEMINI_API_KEY may come from the
+# user's own shell. Each harness blocks its own on top.
 APP_KEYS = frozenset(
     {
         "LIVEKIT_URL",
