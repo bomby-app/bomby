@@ -1,5 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window"
-import { type CSSProperties, useEffect, useState } from "react"
+import { type CSSProperties, useCallback, useEffect, useState } from "react"
 
 import { TitlebarSpacer } from "@/components/titlebar-spacer"
 import {
@@ -12,13 +12,23 @@ import {
   SidebarMenuItem,
   SidebarProvider,
 } from "@/components/ui/sidebar"
-import { SECTIONS, type SectionId } from "./sections"
+import {
+  SettingsNavigationContext,
+  type SettingsPlace,
+} from "@/lib/settings-navigation"
+import { SECTIONS } from "./sections"
 
-/** Settings: sections on the left, the chosen one on the right. */
+/**
+ * Settings: sections on the left, the chosen one on the right. A section can send the user
+ * to another, and to a field there (`useSettingsNavigation`).
+ */
 export function SettingsWindow() {
-  const [active, setActive] = useState<SectionId>(SECTIONS[0].id)
-  const section = SECTIONS.find((s) => s.id === active) ?? SECTIONS[0]
+  const [place, setPlace] = useState<SettingsPlace>({
+    section: SECTIONS[0].id,
+  })
+  const section = SECTIONS.find((s) => s.id === place.section) ?? SECTIONS[0]
   const Content = section.component
+  const go = useCallback((to: SettingsPlace) => setPlace(to), [])
 
   // Esc closes the window, unless something inside (a menu, a popup) handled it first.
   useEffect(() => {
@@ -44,8 +54,8 @@ export function SettingsWindow() {
                 {SECTIONS.map(({ id, label, icon: Icon }) => (
                   <SidebarMenuItem key={id}>
                     <SidebarMenuButton
-                      isActive={id === active}
-                      onClick={() => setActive(id)}
+                      isActive={id === section.id}
+                      onClick={() => go({ section: id })}
                     >
                       <Icon />
                       <span>{label}</span>
@@ -69,7 +79,10 @@ export function SettingsWindow() {
         </header>
         <div className="min-h-0 flex-1 overflow-auto px-6 pt-2 pb-6">
           <div className="max-w-md">
-            <Content />
+            <SettingsNavigationContext value={{ place, go }}>
+              {/* Keyed by section, so going to the open one again runs its focus anew. */}
+              <Content key={`${place.section}:${place.field ?? ""}`} />
+            </SettingsNavigationContext>
           </div>
         </div>
       </main>

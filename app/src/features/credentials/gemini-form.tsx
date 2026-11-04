@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useState } from "react"
+import { type FormEvent, useEffect, useRef, useState } from "react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -17,11 +17,19 @@ type Status =
   | { kind: "saved" }
   | { kind: "error"; message: string }
 
-/** The Gemini API key the voice runs on. Write-only: the page never sees it again. */
-export function GeminiForm() {
+/**
+ * The Gemini API key the voice runs on. Write-only: the page never sees it again. With
+ * `focus`, the key field takes focus when the form opens.
+ */
+export function GeminiForm({ focus = false }: { focus?: boolean }) {
   const [saved, setSaved] = useState(false)
   const [key, setKey] = useState("")
   const [status, setStatus] = useState<Status>({ kind: "idle" })
+  const input = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (focus) input.current?.focus()
+  }, [focus])
 
   useEffect(() => {
     hasGeminiKey().then(setSaved, (error: unknown) =>
@@ -61,6 +69,7 @@ export function GeminiForm() {
         <Field>
           <FieldLabel htmlFor="gemini-api-key">API key</FieldLabel>
           <Input
+            ref={input}
             id="gemini-api-key"
             type="password"
             placeholder={saved ? "Saved. Type a new one to replace it." : ""}

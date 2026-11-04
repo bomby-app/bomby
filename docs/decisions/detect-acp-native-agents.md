@@ -12,7 +12,7 @@ People use more than Claude Code, and many agents speak ACP. Bomby should work w
 - Only agents that speak ACP themselves are added (`opencode acp`, `omp acp`, `goose acp`). Claude Code is the exception, through the `claude-agent-acp` adapter we already ship. Agents that need a third-party adapter (pi through `pi-acp`) wait: we'd have to bundle it.
 - The core looks once at launch, in the background, and keeps the result; Settings shows it without waiting and asks for a fresh look on its own. Each call looks again, so an agent installed since launch is picked up, and the found agents go to the voice agent in the job metadata (`"agents": {"claude": "/path/claude", ...}`). The voice model can only use those; the default is Claude when it's installed.
 - A call keeps the agents it opened with: every token for that call, reconnects included, carries the same list, so a look during a call never changes what its voice agent can use. A look whose login shell fails keeps the programs found before that are still on disk, instead of reporting them gone.
-- Settings has an Agents section listing what the core reports; Setup keeps only the keys.
+- Settings has an Agents section listing what the core reports. Setup shows the keys and whether any agent is ready, each with a button to the section that fixes it.
 
 ## Adding an agent
 
