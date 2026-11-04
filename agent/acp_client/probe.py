@@ -13,13 +13,13 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from acp import PROTOCOL_VERSION, RequestError, spawn_agent_process
+from acp import RequestError
 from acp.client.connection import ClientSideConnection
 from acp.schema import (
     AgentCapabilities,
     AuthMethodAgent,
-    ClientCapabilities,
     EnvVarAuthMethod,
+    InitializeResponse,
     NewSessionResponse,
     SessionConfigOptionSelect,
     SessionConfigSelectGroup,
@@ -28,8 +28,8 @@ from acp.schema import (
 
 from harnesses.harness import Harness
 
-from .client import HarnessClient
-from .runner import CLIENT_INFO, STDIO_LIMIT, launch
+from .client import HarnessClient, connect
+from .runner import launch
 
 logger = logging.getLogger("bomby.acp_client.probe")
 
@@ -70,19 +70,12 @@ async def probe(harness: Harness, program: Path, environ: Mapping[str, str]) -> 
     FOLDER.mkdir(exist_ok=True)
     try:
         async with asyncio.timeout(TIMEOUT_S):
-            async with spawn_agent_process(
-                client,
-                command,
-                *args,
-                env=env,
-                cwd=FOLDER,
-                transport_kwargs={"limit": STDIO_LIMIT},
-            ) as (conn, process):
-                drain = asyncio.create_task(_drain(process.stderr))
-                try:
-                    return await _check(harness, conn, client)
-                finally:
-                    _ = drain.cancel()
+            async with connect(client, command, args, env=env, cwd=FOLDER) as (
+                conn,
+                _,
+                init,
+            ):
+                return await _check(harness, conn, client, init)
     except TimeoutError:
         return Setup(ready=False, problem="It didn't answer in time")
     # Before OSError, which ConnectionError is a kind of.
@@ -104,13 +97,11 @@ async def probe_all(
 
 
 async def _check(
-    harness: Harness, conn: ClientSideConnection, client: HarnessClient
+    harness: Harness,
+    conn: ClientSideConnection,
+    client: HarnessClient,
+    init: InitializeResponse,
 ) -> Setup:
-    init = await conn.initialize(
-        protocol_version=PROTOCOL_VERSION,
-        client_capabilities=ClientCapabilities(),
-        client_info=CLIENT_INFO,
-    )
     fix = setup_command(harness, init.auth_methods or [])
     session = None
     if _can_delete(init.agent_capabilities):
@@ -185,11 +176,6 @@ async def _delete(conn: ClientSideConnection, session_id: str) -> None:
         )
     except (RequestError, ConnectionError) as e:
         logger.warning("deleting probe session %s failed: %s", session_id, e)
-
-
-async def _drain(stream: asyncio.StreamReader | None) -> None:
-    while stream is not None and await stream.readline():
-        pass
 
 
 def detail(error: BaseException) -> str:

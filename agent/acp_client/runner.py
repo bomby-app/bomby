@@ -16,14 +16,9 @@ from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import final
 
-from acp import PROTOCOL_VERSION, RequestError, spawn_agent_process, text_block
+from acp import RequestError, text_block
 from acp.client.connection import ClientSideConnection
-from acp.schema import (
-    ClientCapabilities,
-    Implementation,
-    InitializeResponse,
-    NewSessionResponse,
-)
+from acp.schema import InitializeResponse, NewSessionResponse
 from dotenv import dotenv_values
 from livekit.agents.llm import ToolError
 
@@ -32,17 +27,13 @@ from harnesses.harness import Harness
 from job import JobFields
 from project import Project
 
-from .client import HarnessClient, Reply
+from .client import HarnessClient, Reply, connect
 
 logger = logging.getLogger("bomby.acp_client.runner")
 
 AGENT_ROOT = Path(__file__).resolve().parent.parent
 # What every harness is told about working behind a voice assistant.
 BRIEFING = (AGENT_ROOT / "prompts" / "harness-briefing.md").read_text().rstrip()
-CLIENT_INFO = Implementation(name="bomby", version="0.1.0")
-# The SDK's read buffer per line. It reassembles longer lines anyway; this only saves
-# round trips on large messages. Matches the SDK's agent side.
-STDIO_LIMIT = 50 * 1024 * 1024
 CLOSE_TIMEOUT_S = 5
 # Never passed to any harness: the desktop app starts this agent with the user's LiveKit
 # and Gemini keys in its environment (not in .env). Each harness blocks its own on top.
@@ -165,7 +156,6 @@ class AcpRunner:
         self._stack: AsyncExitStack | None = None
         self._conn: ClientSideConnection | None = None
         self._process: asyncio.subprocess.Process | None = None
-        self._stderr_task: asyncio.Task[None] | None = None
         self._can_close = False
         self._can_steer = False
         self._conn_failed = False  # a request saw the connection drop
@@ -349,26 +339,16 @@ class AcpRunner:
 
             stack = AsyncExitStack()
             try:
-                conn, process = await stack.enter_async_context(
-                    spawn_agent_process(
+                conn, process, init = await stack.enter_async_context(
+                    connect(
                         self._client,
                         self._command,
-                        *self._args,
+                        self._args,
                         env=self._env,
                         cwd=self._project.cwd,
-                        transport_kwargs={"limit": STDIO_LIMIT},
                     )
                 )
-                self._stderr_task = asyncio.create_task(
-                    self._log_stderr(process.stderr)
-                )
-                init = await conn.initialize(
-                    protocol_version=PROTOCOL_VERSION,
-                    client_capabilities=ClientCapabilities(),
-                    client_info=CLIENT_INFO,
-                )
             except BaseException:
-                await self._cancel_stderr_task()
                 await stack.aclose()
                 raise
             self._stack, self._conn, self._process = stack, conn, process
@@ -427,25 +407,8 @@ class AcpRunner:
                 "closing %s session %s failed: %s", self._harness.id, session_id, e
             )
 
-    async def _log_stderr(self, stream: asyncio.StreamReader | None) -> None:
-        # The pipe must be drained, or the adapter blocks once it fills.
-        if stream is None:
-            return
-        while line := await stream.readline():
-            logger.debug(
-                "%s: %s", self._command, line.decode(errors="replace").rstrip()
-            )
-
-    async def _cancel_stderr_task(self) -> None:
-        if self._stderr_task is not None:
-            _ = self._stderr_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await self._stderr_task
-            self._stderr_task = None
-
     async def _teardown(self) -> None:
         stack, self._stack, self._conn, self._process = self._stack, None, None, None
-        await self._cancel_stderr_task()
         if stack is not None:
             await stack.aclose()
 

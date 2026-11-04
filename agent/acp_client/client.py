@@ -1,20 +1,27 @@
 """The client side of ACP: answers an agent's requests and collects its replies."""
 
 import asyncio
+import contextlib
 import logging
-from collections.abc import Sequence
+from collections.abc import AsyncGenerator, Mapping, Sequence
+from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any, final, override
 
-from acp import RequestError
+from acp import PROTOCOL_VERSION, RequestError, spawn_agent_process
+from acp.client.connection import ClientSideConnection
 from acp.interfaces import Agent, Client
 from acp.schema import (
     AgentMessageChunk,
     AllowedOutcome,
+    ClientCapabilities,
     CreateElicitationResponse,
     CreateTerminalResponse,
     DeniedOutcome,
     ElicitationMode,
     EnvVariable,
+    Implementation,
+    InitializeResponse,
     KillTerminalResponse,
     PermissionOption,
     ReadTextFileResponse,
@@ -31,6 +38,54 @@ from acp.schema import (
 from harnesses.harness import Harness
 
 logger = logging.getLogger("bomby.acp_client.client")
+
+CLIENT_INFO = Implementation(name="bomby", version="0.1.0")
+# The SDK's read buffer per line. It reassembles longer lines anyway; this only saves
+# round trips on large messages. Matches the SDK's agent side.
+STDIO_LIMIT = 50 * 1024 * 1024
+
+
+@asynccontextmanager
+async def connect(
+    client: Client,
+    command: str,
+    args: Sequence[str],
+    *,
+    env: Mapping[str, str],
+    cwd: Path,
+) -> AsyncGenerator[
+    tuple[ClientSideConnection, asyncio.subprocess.Process, InitializeResponse]
+]:
+    """Starts an agent over ACP and initializes it: the connection, its process and what
+    `initialize` said. Leaving the context stops the process. Its stderr goes to the debug
+    log, which also keeps the pipe drained (the adapter blocks once it fills)."""
+    async with spawn_agent_process(
+        client,
+        command,
+        *args,
+        env=dict(env),
+        cwd=cwd,
+        transport_kwargs={"limit": STDIO_LIMIT},
+    ) as (conn, process):
+        stderr = asyncio.create_task(_log_stderr(command, process.stderr))
+        try:
+            init = await conn.initialize(
+                protocol_version=PROTOCOL_VERSION,
+                client_capabilities=ClientCapabilities(),
+                client_info=CLIENT_INFO,
+            )
+            yield conn, process, init
+        finally:
+            _ = stderr.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await stderr
+
+
+async def _log_stderr(command: str, stream: asyncio.StreamReader | None) -> None:
+    if stream is None:
+        return
+    while line := await stream.readline():
+        logger.debug("%s: %s", command, line.decode(errors="replace").rstrip())
 
 
 def pick_allow(options: Sequence[PermissionOption]) -> PermissionOption | None:
