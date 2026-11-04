@@ -24,6 +24,7 @@ use std::time::Duration;
 use crate::credentials::LiveKitKeys;
 use crate::error::{Error, Result};
 use crate::process;
+use crate::sync;
 
 /// How long a fresh worker gets to register with LiveKit.
 const READY_TIMEOUT: Duration = Duration::from_secs(60);
@@ -69,7 +70,7 @@ pub struct AgentWorker(Mutex<Option<Running>>);
 impl AgentWorker {
     /// Makes sure a worker with `config` is running and registered.
     pub fn ensure(&self, config: WorkerConfig, log_dir: &Path) -> Result<()> {
-        let mut slot = self.0.lock().unwrap_or_else(|p| p.into_inner());
+        let mut slot = sync::lock(&self.0);
         if let Some(running) = slot.as_mut() {
             let alive = matches!(running.child.try_wait(), Ok(None));
             if alive && running.config == config {
@@ -90,7 +91,7 @@ impl AgentWorker {
 
     /// Stops the worker, if one runs. Called when the app exits.
     pub fn shutdown(&self) {
-        let mut slot = self.0.lock().unwrap_or_else(|p| p.into_inner());
+        let mut slot = sync::lock(&self.0);
         if let Some(running) = slot.take() {
             stop(running.child);
         }

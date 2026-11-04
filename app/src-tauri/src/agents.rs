@@ -26,6 +26,7 @@ use tauri::{AppHandle, Emitter, Manager, Runtime};
 use crate::error::Result;
 use crate::process;
 use crate::setup::{self, Setup};
+use crate::sync;
 
 /// The event every window gets with the new list when a look finds something different.
 pub const CHANGED: &str = "agents-changed";
@@ -281,7 +282,7 @@ struct Detection {
 
 impl Agents {
     fn lock(&self) -> MutexGuard<'_, Detection> {
-        self.state.lock().unwrap_or_else(PoisonError::into_inner)
+        sync::lock(&self.state)
     }
 
     /// What the last look found, if one has finished.

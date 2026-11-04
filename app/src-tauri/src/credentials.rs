@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Runtime, State};
 
 use crate::error::{Error, Result};
+use crate::sync;
 
 /// Sent to every window after a key is saved or removed, with no payload.
 pub const KEYS_CHANGED: &str = "keys-changed";
@@ -118,7 +119,7 @@ pub struct Vault(Mutex<Option<Keys>>);
 
 impl Vault {
     fn keys<R: Runtime>(&self, app: &AppHandle<R>) -> Result<Keys> {
-        let mut cached = self.0.lock().unwrap_or_else(|p| p.into_inner());
+        let mut cached = sync::lock(&self.0);
         if cached.is_none() {
             *cached = Some(read_keychain(app)?);
         }
@@ -131,7 +132,7 @@ impl Vault {
         app: &AppHandle<R>,
         change: impl FnOnce(&mut Keys) -> Result<()>,
     ) -> Result<()> {
-        let mut cached = self.0.lock().unwrap_or_else(|p| p.into_inner());
+        let mut cached = sync::lock(&self.0);
         let mut keys = match cached.take() {
             Some(keys) => keys,
             None => read_keychain(app)?,

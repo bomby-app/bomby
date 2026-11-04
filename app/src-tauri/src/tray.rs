@@ -4,7 +4,7 @@
 //! `TrayStatus` with `set_tray_status` and the core draws the icon and menu from it. Menu
 //! choices that belong to the call go back to the main window as events.
 
-use std::sync::{Mutex, PoisonError};
+use std::sync::Mutex;
 
 use serde::Deserialize;
 use tauri::image::Image;
@@ -13,6 +13,7 @@ use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, Runtime, State, include_image};
 
 use crate::error::Result;
+use crate::sync;
 use crate::{app_log, windows};
 
 const ID: &str = "bomby";
@@ -112,7 +113,7 @@ pub fn set_tray_status<R: Runtime>(
     tray: State<'_, Tray>,
     status: TrayStatus,
 ) -> Result<()> {
-    let mut last = tray.0.lock().unwrap_or_else(PoisonError::into_inner);
+    let mut last = sync::lock(&tray.0);
     let Some(icon) = app.tray_by_id(ID) else {
         return Ok(());
     };
