@@ -11,6 +11,7 @@ import asyncio
 import contextlib
 import logging
 import os
+from collections import deque
 from collections.abc import Mapping, Sequence
 from contextlib import AsyncExitStack
 from pathlib import Path
@@ -32,6 +33,7 @@ from harnesses.harness import Harness
 from project import Project
 
 from .client import HarnessClient, Reply
+from .problems import AuthMethod, start_failed, turn_failed
 
 logger = logging.getLogger("bomby.acp_client.runner")
 
@@ -43,6 +45,7 @@ CLIENT_INFO = Implementation(name="bomby", version="0.1.0")
 # round trips on large messages. Matches the SDK's agent side.
 STDIO_LIMIT = 50 * 1024 * 1024
 CLOSE_TIMEOUT_S = 5
+DRAIN_TIMEOUT_S = 0.5
 # Never passed to any harness: the desktop app starts this agent with the user's LiveKit
 # and Gemini keys in its environment (not in .env). Each harness blocks its own on top.
 APP_KEYS = frozenset(
@@ -138,6 +141,8 @@ class AcpRunner:
         self._conn: ClientSideConnection | None = None
         self._process: asyncio.subprocess.Process | None = None
         self._stderr_task: asyncio.Task[None] | None = None
+        self._last_output: deque[str] = deque(maxlen=1)
+        self._auth_methods: list[AuthMethod] = []
         self._can_close = False
         self._can_steer = False
         self._conn_failed = False  # a request saw the connection drop
@@ -172,9 +177,7 @@ class AcpRunner:
         turn and this returns `steered_note` at once: that turn's result answers it.
         """
         if self._closed:
-            raise ToolError(
-                f"The call is ending; {self._harness.short_name} takes no new work."
-            )
+            raise ToolError(self._ending())
         s = self._sessions.setdefault(
             session_name(session), _Session(session_name(session))
         )
@@ -201,7 +204,13 @@ class AcpRunner:
         try:
             return await self._open_session(s)
         except (OSError, RequestError, ConnectionError) as e:
-            raise ToolError(f"{self._harness.short_name} could not start: {e}") from e
+            if self._closed:
+                raise ToolError(self._ending()) from e
+            message = start_failed(
+                self._harness, e, self._auth_methods, await self._last_words(e)
+            )
+            logger.warning("%s could not start: %r", self._harness.id, e)
+            raise ToolError(message) from e
 
     async def _open_session(self, s: _Session) -> tuple[ClientSideConnection, str]:
         async with s.open_lock:
@@ -261,11 +270,15 @@ class AcpRunner:
             with contextlib.suppress(Exception):
                 await asyncio.shield(conn.cancel(session_id=session_id))
             raise
-        except ConnectionError as e:
-            self._connection_lost(conn)
-            raise ToolError(f"{name} failed: {e}") from e
-        except RequestError as e:
-            raise ToolError(f"{name} failed: {e}") from e
+        except (ConnectionError, RequestError) as e:
+            if isinstance(e, ConnectionError):
+                self._connection_lost(conn)
+            logger.warning("%s turn in %s failed: %r", self._harness.id, s.name, e)
+            raise ToolError(
+                turn_failed(
+                    self._harness, e, self._auth_methods, await self._last_words(e)
+                )
+            ) from e
         finally:
             _ = self._client.replies.pop(session_id, None)
 
@@ -325,6 +338,7 @@ class AcpRunner:
             ):
                 return self._conn
             await self._teardown()  # the adapter died: start a fresh one
+            self._last_output.clear()
 
             stack = AsyncExitStack()
             try:
@@ -346,7 +360,8 @@ class AcpRunner:
                     client_capabilities=ClientCapabilities(),
                     client_info=CLIENT_INFO,
                 )
-            except BaseException:
+            except BaseException as e:
+                _ = await self._last_words(e)
                 await self._cancel_stderr_task()
                 await stack.aclose()
                 raise
@@ -356,7 +371,19 @@ class AcpRunner:
             logger.info("%s started (pid %s)", self._command, process.pid)
             return conn
 
+    def _ending(self) -> str:
+        return f"The call is ending; {self._harness.short_name} takes no new work."
+
+    async def _last_words(self, error: BaseException) -> str | None:
+        """The agent's last stderr line, once a process that quit has written it all."""
+        if not isinstance(error, ConnectionError):
+            return None
+        if self._stderr_task is not None and not self._stderr_task.done():
+            _ = await asyncio.wait({self._stderr_task}, timeout=DRAIN_TIMEOUT_S)
+        return self._last_output[-1] if self._last_output else None
+
     def _read_capabilities(self, init: InitializeResponse) -> None:
+        self._auth_methods = list(init.auth_methods or [])
         capabilities = init.agent_capabilities
         sessions = capabilities.session_capabilities if capabilities else None
         self._can_close = sessions is not None and sessions.close is not None
@@ -408,9 +435,10 @@ class AcpRunner:
         if stream is None:
             return
         while line := await stream.readline():
-            logger.debug(
-                "%s: %s", self._command, line.decode(errors="replace").rstrip()
-            )
+            text = line.decode(errors="replace").rstrip()
+            if text:
+                self._last_output.append(text)
+            logger.debug("%s: %s", self._command, text)
 
     async def _cancel_stderr_task(self) -> None:
         if self._stderr_task is not None:

@@ -289,8 +289,66 @@ def test_a_missing_adapter_is_reported_to_the_model(tmp_path: Path) -> None:
         env=os.environ,
     )
 
-    with pytest.raises(ToolError, match="could not start"):
+    with pytest.raises(ToolError, match="Claude couldn't be started: No such file"):
         _ = asyncio.run(runner.run("reply ok"))
+
+
+async def tool_error(runner: AcpRunner, task: str = "reply ok") -> str:
+    with pytest.raises(ToolError) as caught:
+        _ = await runner.run(task)
+    return str(caught.value)
+
+
+def test_a_refused_session_says_what_is_missing_and_how_to_fix_it(
+    tmp_path: Path,
+) -> None:
+    harness = dataclasses.replace(CLAUDE_CODE, short_name="goose", setup_command=None)
+    env = {
+        "FAKE_ACP_REFUSE_SESSION": "Configuration value not found: GOOSE_PROVIDER",
+        "FAKE_ACP_AUTH_METHODS": "Run `goose configure` to set up your AI provider",
+    }
+
+    message, _ = run_with_fake(tmp_path, tool_error, env=env, harness=harness)
+
+    assert message == (
+        "goose isn't set up: Configuration value not found: GOOSE_PROVIDER. To fix it, "
+        "run goose configure in Terminal; Settings, Agents can then check again."
+    )
+
+
+def test_a_sign_in_error_names_the_harness_command(tmp_path: Path) -> None:
+    env = {"FAKE_ACP_AUTH_REQUIRED": "1"}
+
+    message, _ = run_with_fake(tmp_path, tool_error, env=env)
+
+    assert message == (
+        "Claude needs the user to sign in. To fix it, run claude auth login in "
+        "Terminal; Settings, Agents can then check again."
+    )
+
+
+def test_a_failed_turn_reports_the_agents_own_words(tmp_path: Path) -> None:
+    message, _ = run_with_fake(
+        tmp_path, lambda r: tool_error(r, "fail Rate limited, try in 5 minutes.")
+    )
+
+    assert message == "Claude hit an error: Rate limited, try in 5 minutes."
+
+
+def test_a_crash_reports_the_agents_last_words_and_the_next_task_restarts_it(
+    tmp_path: Path,
+) -> None:
+    async def scenario(runner: AcpRunner) -> tuple[str, str]:
+        message = await tool_error(runner, "crash out of memory")
+        return message, await runner.run("reply back")
+
+    (message, after), _ = run_with_fake(tmp_path, scenario)
+
+    assert message == (
+        "Claude stopped unexpectedly, saying: out of memory. The next task starts it "
+        "again, in a new session without this one's context."
+    )
+    assert after == "Done: back"
 
 
 def test_child_environment_drops_dotenv_secrets_and_api_keys() -> None:

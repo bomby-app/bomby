@@ -22,6 +22,8 @@ CLAUDE_CODE = Harness(
     # into Claude's system prompt.
     system_prompt_append=True,
     bypass_mode="bypassPermissions",
+    # Its auth methods run the adapter (`--cli auth login`), not a command for the user.
+    setup_command="claude auth login",
     # The SDK sends it as `_session/steering`.
     steer_method="session/steering",
 )

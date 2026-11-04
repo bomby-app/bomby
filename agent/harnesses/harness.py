@@ -42,6 +42,9 @@ class Harness:
     each session's first task."""
     bypass_mode: str | None = None
     """The session mode that skips permission prompts, if the adapter has one."""
+    setup_command: str | None = None
+    """What the user runs in Terminal to sign in or set the agent up, when none of its ACP
+    `authMethods` names a command ("claude auth login")."""
     steer_method: str | None = None
     """The extension method that adds a message to a running turn, if the adapter has one.
     Used only when `initialize` advertises it in `_meta.steering.supported`."""

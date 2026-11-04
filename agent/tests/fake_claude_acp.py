@@ -2,22 +2,34 @@
 
 Every call it receives is appended as a JSON line to the file in FAKE_ACP_LOG, so tests
 can check what the client sent. Set FAKE_ACP_NO_STEERING=1 to leave steering out of
-initialize, like an adapter without it. Prompts:
+initialize, like an adapter without it. Setup scenarios, by environment variable:
+
+- FAKE_ACP_REFUSE_SESSION=<text>: `session/new` fails with <text> as the error's data
+- FAKE_ACP_AUTH_REQUIRED=1: `session/new` fails with `auth_required`
+- FAKE_ACP_AUTH_METHODS=<description>: initialize offers one auth method with it
+- FAKE_ACP_MODEL=<model>: sessions offer a model option set to it; `none` leaves it out
+- FAKE_ACP_AUTH_STATUS=<kind>: advertise `authStatus` and push that kind on `session/new`
+
+Prompts:
 
 - "reply <text>": narrate, run a tool call, then send "Done: <text>" as the final message
 - "permission": ask for permission, then report the option the client chose
 - "hang": wait until the client cancels, then stop with `cancelled`
 - "wait <text>": wait for a steered message, then reply "Done: <text> + <steered text>"
 - "turns": reply with how many prompts this session has had, e.g. "turn 2"
+- "fail <text>": fail the turn with <text> as the error's details
+- "crash <text>": print <text> to stderr and exit
 """
 
 import asyncio
 import json
 import os
+import sys
 from typing import Any, final
 
 from acp import (
     PROTOCOL_VERSION,
+    RequestError,
     run_agent,
     start_tool_call,
     text_block,
@@ -28,16 +40,22 @@ from acp.schema import (
     AgentCapabilities,
     AgentMessageChunk,
     AllowedOutcome,
+    AuthMethodAgent,
     CloseSessionResponse,
+    EnvVarAuthMethod,
     InitializeResponse,
     NewSessionResponse,
     PermissionOption,
     PromptResponse,
     SessionCapabilities,
     SessionCloseCapabilities,
+    SessionConfigOptionBoolean,
+    SessionConfigOptionSelect,
+    SessionConfigSelectOption,
     SessionMode,
     SessionModeState,
     SetSessionModeResponse,
+    TerminalAuthMethod,
     ToolCallUpdate,
 )
 
@@ -51,6 +69,33 @@ def message(text: str, message_id: str) -> AgentMessageChunk:
     chunk = update_agent_message(text_block(text))
     chunk.message_id = message_id
     return chunk
+
+
+def config_options() -> (
+    list[SessionConfigOptionSelect | SessionConfigOptionBoolean] | None
+):
+    model = os.getenv("FAKE_ACP_MODEL")
+    if model is None:
+        return None
+    mode = SessionConfigOptionSelect(
+        id="mode",
+        name="Mode",
+        category="mode",
+        type="select",
+        current_value="default",
+        options=[SessionConfigSelectOption(value="default", name="Default")],
+    )
+    if model == "none":
+        return [mode]
+    chosen = SessionConfigOptionSelect(
+        id="model",
+        name="Model",
+        category="model",
+        type="select",
+        current_value=model,
+        options=[SessionConfigSelectOption(value=model, name=f"Fake {model}")],
+    )
+    return [mode, chosen]
 
 
 @final
@@ -78,20 +123,39 @@ class FakeClaude:
         capabilities = AgentCapabilities(
             session_capabilities=SessionCapabilities(close=SessionCloseCapabilities())
         )
+        if os.getenv("FAKE_ACP_AUTH_STATUS"):
+            capabilities.field_meta = {"authStatus": {}}
         meta = (
             None
             if os.getenv("FAKE_ACP_NO_STEERING")
             else {"steering": {"supported": True}}
         )
+        description = os.getenv("FAKE_ACP_AUTH_METHODS")
+        methods: list[EnvVarAuthMethod | TerminalAuthMethod | AuthMethodAgent] = (
+            [AuthMethodAgent(id="fake-login", name="Log in", description=description)]
+            if description
+            else []
+        )
         return InitializeResponse(
             protocol_version=PROTOCOL_VERSION,
             agent_capabilities=capabilities,
+            auth_methods=methods,
             field_meta=meta,
         )
 
     async def new_session(
         self, cwd: str, additional_directories: list[str] | None = None, **kwargs: Any
     ) -> NewSessionResponse:
+        if refused := os.getenv("FAKE_ACP_REFUSE_SESSION"):
+            raise RequestError(-32603, "Internal error", refused)
+        if os.getenv("FAKE_ACP_AUTH_REQUIRED"):
+            raise RequestError.auth_required()
+        if kind := os.getenv("FAKE_ACP_AUTH_STATUS"):
+            assert self._client is not None
+            await self._client.ext_notification(
+                "auth/status_update",
+                {"authStatus": {"kind": kind, "label": "Fake Pro"}},
+            )
         session_id = f"s{len(self._sessions) + 1}"
         self._sessions[session_id] = _Session()
         log(
@@ -108,7 +172,9 @@ class FakeClaude:
                 SessionMode(id="bypassPermissions", name="Bypass Permissions"),
             ],
         )
-        return NewSessionResponse(session_id=session_id, modes=modes)
+        return NewSessionResponse(
+            session_id=session_id, modes=modes, config_options=config_options()
+        )
 
     async def set_session_mode(
         self, session_id: str, mode_id: str, **_kwargs: Any
@@ -175,6 +241,13 @@ class FakeClaude:
         if text == "turns":
             await say(f"turn {session.turns}")
             return PromptResponse(stop_reason="end_turn")
+
+        if text.startswith("fail "):
+            raise RequestError(-32603, "Internal error", {"details": text[5:]})
+
+        if text.startswith("crash "):
+            print(text[6:], file=sys.stderr, flush=True)
+            os._exit(1)
 
         raise ValueError(f"unknown prompt {text!r}")
 
