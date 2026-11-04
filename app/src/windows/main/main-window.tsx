@@ -49,6 +49,11 @@ function Workspace() {
     return () => window.removeEventListener("keydown", onKeyDown)
   }, [])
 
+  // A new project, the menu bar and a notification all open a project.
+  function openProject(projectId: number) {
+    setSelection({ kind: "project", projectId })
+  }
+
   return (
     <ProjectsProvider>
       <CallProvider>
@@ -69,18 +74,10 @@ function Workspace() {
         <NewProjectDialog
           open={creating}
           onOpenChange={setCreating}
-          onCreated={(project) =>
-            setSelection({ kind: "project", projectId: project.id })
-          }
+          onCreated={(project) => openProject(project.id)}
         />
-        <TrayBridge
-          onOpenProject={(projectId) =>
-            setSelection({ kind: "project", projectId })
-          }
-        />
-        <TaskNotifier
-          onOpen={(projectId) => setSelection({ kind: "project", projectId })}
-        />
+        <TrayBridge onOpenProject={openProject} />
+        <TaskNotifier onOpen={openProject} />
       </CallProvider>
     </ProjectsProvider>
   )

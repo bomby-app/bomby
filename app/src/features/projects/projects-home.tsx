@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button"
 
 import type { Project } from "./api"
 import { shortPath, timeAgo } from "./names"
-import { lastCall, recentProjects } from "./recent"
+import { lastCall, RECENT_COUNT, recentProjects } from "./recent"
 
 gsap.registerPlugin(useGSAP)
 
@@ -23,9 +23,6 @@ const GREETING: Record<Daypart, string> = {
   afternoon: "Good afternoon.",
   evening: "Good evening.",
 }
-
-/** How many recent projects show before See all. */
-const RECENT = 3
 
 /** "2 hours ago" for the newest call, or that there's none yet. */
 function lastSeen(project: Project): string {
@@ -66,7 +63,7 @@ export function ProjectsHome({
     )
   })
   const recent = recentProjects(projects)
-  const shown = all ? recent : recent.slice(0, RECENT)
+  const shown = all ? recent : recent.slice(0, RECENT_COUNT)
 
   return (
     <div className="relative flex min-h-0 flex-1 overflow-hidden">
@@ -105,7 +102,7 @@ export function ProjectsHome({
               <span className="font-mono text-[11px] leading-[14px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
                 Recent
               </span>
-              {recent.length > RECENT && (
+              {recent.length > RECENT_COUNT && (
                 <button
                   type="button"
                   className="text-[13px] leading-4 font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:text-foreground"

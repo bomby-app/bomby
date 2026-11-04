@@ -14,6 +14,9 @@ function byNewestCall(a: Project, b: Project): number {
   return b.createdAt - a.createdAt
 }
 
+/** How many recent projects show at first: the projects home (before See all) and the menu bar. */
+export const RECENT_COUNT = 3
+
 /** The projects, most recently used first: the projects home and the menu bar list them so. */
 export function recentProjects(projects: readonly Project[]): Project[] {
   return [...projects].sort(byNewestCall)
