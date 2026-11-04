@@ -55,7 +55,11 @@ export function SettingsWindow() {
                   <SidebarMenuItem key={id}>
                     <SidebarMenuButton
                       isActive={id === section.id}
-                      onClick={() => setPlace({ section: id })}
+                      // The open section stays as it is: rebuilding it would drop
+                      // what the user typed there.
+                      onClick={() => {
+                        if (id !== section.id) setPlace({ section: id })
+                      }}
                     >
                       <Icon />
                       <span>{label}</span>
