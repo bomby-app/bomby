@@ -1,3 +1,4 @@
+import { SquareTerminal } from "lucide-react"
 import type { SVGProps } from "react"
 
 // Logos of the agents Bomby works with, for Settings > Agents, drawn in `currentColor` so
@@ -50,4 +51,23 @@ export function OmpLogo(props: SVGProps<SVGSVGElement>) {
       </g>
     </svg>
   )
+}
+
+const LOGOS: Record<
+  string,
+  (props: SVGProps<SVGSVGElement>) => React.JSX.Element
+> = {
+  claude: ClaudeCodeLogo,
+  goose: GooseLogo,
+  omp: OmpLogo,
+  opencode: OpenCodeLogo,
+}
+
+/** An agent's logo by its harness id, or a neutral terminal icon for one without. */
+export function AgentLogo({
+  id,
+  ...props
+}: { id: string } & SVGProps<SVGSVGElement>) {
+  const Logo = LOGOS[id]
+  return Logo ? <Logo {...props} /> : <SquareTerminal {...props} />
 }

@@ -4,16 +4,20 @@ The agents are defined in `harnesses/`; running them (adapter, sessions, steerin
 `acp_client/`'s job.
 """
 
+import asyncio
+
 from livekit.agents import RunContext
 from livekit.agents.llm import ToolError, ToolFlag, function_tool
 
-from acp_client import CallRunners, session_name
+from acp_client import session_name
+from acp_client.runner import steered_note
+from call import Call
 from harnesses import DEFAULT_AGENT, HARNESSES, AgentName, Harness
 
 
 @function_tool(flags=ToolFlag.CANCELLABLE)
 async def start_task(
-    context: RunContext[CallRunners], task: str, session: str, agent: AgentName
+    context: RunContext[Call], task: str, session: str, agent: AgentName
 ) -> str:
     """Hand a task to an agent that works on this computer, with full access to its
     files, shell, git and the web. It runs in the background and can take minutes; its
@@ -40,14 +44,25 @@ async def start_task(
     harness = HARNESSES.get(agent)
     if harness is None:
         raise ToolError(f"There's no agent called {agent}.")
-    runner = context.userdata.get(harness)
+    runner = context.userdata.runners.get(harness)
+    board = context.userdata.board
     name = session_name(session)
     who = harness.short_name
     if runner.is_busy(name):
         await context.update(f"Sent to {who} mid-task, in session {name}: {task}")
     else:
         await context.update(f"{who} has started on this, in session {name}: {task}")
-    return await runner.run(task, name)
+    id = await board.start(harness, name, task)
+    try:
+        result = await runner.run(task, name)
+    except asyncio.CancelledError:
+        await board.finish(id, "stopped")
+        raise
+    except Exception:
+        await board.finish(id, "failed")
+        raise
+    await board.finish(id, "added" if result == steered_note(harness) else "done")
+    return result
 
 
 def agents_note(available: list[Harness]) -> str:

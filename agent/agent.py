@@ -11,7 +11,9 @@ from livekit.plugins import google
 
 import lifeline
 from acp_client import CallRunners
+from call import Call
 from call_options import CallOptions, call_options
+from task_board import TaskBoard
 from tools import ALL_TOOLS, agents_note
 
 _ = load_dotenv()
@@ -98,7 +100,14 @@ async def entrypoint(ctx: JobContext) -> None:
         options.voice,
         len(options.history),
     )
-    ctx.add_shutdown_callback(runners.aclose)
+
+    # The room's own participant only exists once the session has connected, so it's
+    # looked up when a task is published (always after connecting), not here.
+    async def publish(attributes: dict[str, str]) -> None:
+        await ctx.room.local_participant.set_attributes(attributes)
+
+    call = Call(runners, TaskBoard(publish))
+    ctx.add_shutdown_callback(call.aclose)
 
     # Which audio the agent gets, from whom: the first thing to check on an audio problem.
     def on_track_subscribed(
@@ -118,8 +127,8 @@ async def entrypoint(ctx: JobContext) -> None:
 
     # Everything Gemini gets at connect time is final for the session. The plugin reconnects
     # on a tool change and can only inject later instructions as a conversation turn.
-    session: AgentSession[CallRunners] = AgentSession(
-        userdata=runners,
+    session: AgentSession[Call] = AgentSession(
+        userdata=call,
         llm=google.realtime.RealtimeModel(
             model=MODEL,
             voice=options.voice,

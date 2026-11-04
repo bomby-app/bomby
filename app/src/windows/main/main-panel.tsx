@@ -7,6 +7,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty"
+import { AgentsPanel } from "@/features/call/agents-panel"
 import { useCall } from "@/features/call/call-provider"
 import { CallView } from "@/features/call/call-view"
 import { SavedCallView } from "@/features/call/saved-call-view"
@@ -63,7 +64,10 @@ export function MainPanel({
   if (live) {
     return (
       <>
-        <AppHeader title={`${project.name} · On a call`} />
+        <AppHeader
+          title={`${project.name} · On a call`}
+          actions={<AgentsPanel />}
+        />
         <div className="min-h-0 flex-1">
           <CallView call={active} />
         </div>

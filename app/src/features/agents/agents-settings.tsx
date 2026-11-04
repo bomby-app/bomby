@@ -3,16 +3,9 @@ import { type ReactNode, useCallback, useEffect, useState } from "react"
 
 import { StatusRow } from "@/components/status-row"
 import { Button } from "@/components/ui/button"
-import { ClaudeCodeLogo, GooseLogo, OmpLogo, OpenCodeLogo } from "./agent-logos"
+import { AgentLogo } from "./agent-logos"
 import { type AgentStatus, agentsStatus, planName, versionNumber } from "./api"
 import { InstallFirstAgent } from "./install-first-agent"
-
-const LOGOS: Record<string, ReactNode> = {
-  claude: <ClaudeCodeLogo />,
-  goose: <GooseLogo />,
-  omp: <OmpLogo />,
-  opencode: <OpenCodeLogo />,
-}
 
 /**
  * The Agents section of the settings window: the agents Bomby can hand work to, as the
@@ -60,7 +53,7 @@ export function AgentsSettings() {
             agents.map((agent) => (
               <StatusRow
                 key={agent.id}
-                logo={LOGOS[agent.id] ?? <SquareTerminal />}
+                logo={<AgentLogo id={agent.id} />}
                 name={agent.name}
                 ready={ready(agent)}
                 detail={detail(agent)}

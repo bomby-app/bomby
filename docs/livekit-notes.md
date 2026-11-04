@@ -48,6 +48,8 @@ Checked 2026-11-04 against `livekit-agents` 1.8.10, `livekit-api` 0.10.0 (token 
 
 ## Data to the frontend
 
+- **Participant attributes** carry the call's task list (`bomby.tasks` on the agent): set with `local_participant.set_attributes({...})` (keys merge), read with `useAgent().attributes`, which re-renders on `ParticipantAttributesChanged` (`useAgent.ts`, components-react 2.9.24). Limit: 64 KiB of attributes in all (docs: transport/data/state/participant-attributes).
+
 - Text streams (guaranteed, topic-routed) suit event messages such as Claude status; RPC suits request-response; participant attributes and room metadata suit shared state.
 - Docs: https://docs.livekit.io/transport/data/
 

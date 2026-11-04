@@ -34,7 +34,7 @@ flowchart LR
   Tool --> Runner
   Runner <-- "ACP: JSON-RPC over stdio" --> ACP
   ACP --> Claude
-  Runner -. "status events (planned)" .-> UI
+  Tool -. "bomby.tasks attribute" .-> UI
 ```
 
 ## A call, start to end
