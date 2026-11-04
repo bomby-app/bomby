@@ -17,6 +17,8 @@ export type TrayStatus = {
   state: TrayState
   /** The project on a call, while there is one. */
   call: string | null
+  /** Whether that call is still starting; it can't be ended until it has. */
+  starting: boolean
   /** Projects to start a call on, the newest call first. */
   recent: { id: number; name: string }[]
   /** Why a call can't start yet, if it can't. */

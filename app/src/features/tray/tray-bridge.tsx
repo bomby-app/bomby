@@ -47,11 +47,12 @@ export function TrayBridge({
     .slice(0, RECENT)
     .map(({ id, name }) => ({ id, name }))
   const blocked = ready ? null : (missing ?? "Checking your setup...")
+  const isStarting = starting !== null
 
   // The core redraws only what changed.
   useEffect(() => {
-    void setTrayStatus({ state, call, recent, blocked })
-  }, [state, call, recent, blocked])
+    void setTrayStatus({ state, call, starting: isStarting, recent, blocked })
+  }, [state, call, isStarting, recent, blocked])
 
   const startFromTray = useEffectEvent((projectId: number) => {
     onOpenProject(projectId)

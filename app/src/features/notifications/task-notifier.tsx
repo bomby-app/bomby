@@ -19,17 +19,22 @@ export function TaskNotifier({
 }) {
   const { active } = useCall()
   const tasks = useTasks()
-  // Each task's last status, by session and task id (ids restart with every session).
-  const seen = useRef(new Map<string, Task["status"]>())
+  // The current session's tasks and their last status (ids restart with every session).
+  const seen = useRef<{ session: number; status: Map<string, Task["status"]> }>(
+    { session: 0, status: new Map() }
+  )
 
   useEffect(() => {
     if (!active) return
+    // A new session starts over, so earlier calls' tasks aren't kept.
+    if (seen.current.session !== active.startedAt) {
+      seen.current = { session: active.startedAt, status: new Map() }
+    }
+    const before = seen.current.status
+    const now = new Map(tasks.map((task) => [task.id, task.status]))
     for (const task of tasks) {
-      const key = `${active.startedAt}:${task.id}`
-      const before = seen.current.get(key)
-      seen.current.set(key, task.status)
       if (
-        before === "working" &&
+        before.get(task.id) === "working" &&
         (task.status === "done" || task.status === "failed")
       ) {
         void taskFinished({
@@ -41,6 +46,8 @@ export function TaskNotifier({
         })
       }
     }
+    // Only the tasks still listed are kept.
+    seen.current.status = now
   }, [tasks, active])
 
   const open = useEffectEvent((projectId: number) => onOpen(projectId))

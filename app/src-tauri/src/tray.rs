@@ -67,6 +67,9 @@ pub struct TrayStatus {
     pub state: TrayState,
     /// The project on a call, while there is one.
     pub call: Option<String>,
+    /// Whether that call is still starting (the core is getting the agent ready). It can't
+    /// be ended yet: ending a call that hasn't joined wouldn't stop it from joining.
+    pub starting: bool,
     /// Projects to start a call on, the newest call first.
     pub recent: Vec<RecentProject>,
     /// Why a call can't start yet ("Add your Gemini key in Settings first."), if it can't.
@@ -75,7 +78,10 @@ pub struct TrayStatus {
 
 impl TrayStatus {
     fn same_menu(&self, other: &Self) -> bool {
-        self.call == other.call && self.recent == other.recent && self.blocked == other.blocked
+        self.call == other.call
+            && self.starting == other.starting
+            && self.recent == other.recent
+            && self.blocked == other.blocked
     }
 }
 
@@ -123,12 +129,12 @@ pub fn set_tray_status<R: Runtime>(
 fn menu<R: Runtime>(app: &AppHandle<R>, status: &TrayStatus) -> Result<Menu<R>> {
     let menu = Menu::new(app)?;
     if let Some(project) = &status.call {
-        menu.append(&MenuItem::new(
-            app,
-            format!("On a call · {project}"),
-            false,
-            None::<&str>,
-        )?)?;
+        let line = if status.starting {
+            format!("Starting a call · {project}")
+        } else {
+            format!("On a call · {project}")
+        };
+        menu.append(&MenuItem::new(app, line, false, None::<&str>)?)?;
         menu.append(&PredefinedMenuItem::separator(app)?)?;
     }
     menu.append(&MenuItem::with_id(
@@ -139,7 +145,7 @@ fn menu<R: Runtime>(app: &AppHandle<R>, status: &TrayStatus) -> Result<Menu<R>> 
         None::<&str>,
     )?)?;
     menu.append(&start_menu(app, status)?)?;
-    if status.call.is_some() {
+    if can_end(status) {
         menu.append(&MenuItem::with_id(
             app,
             "end-call",
@@ -158,6 +164,11 @@ fn menu<R: Runtime>(app: &AppHandle<R>, status: &TrayStatus) -> Result<Menu<R>> 
     )?)?;
     menu.append(&PredefinedMenuItem::quit(app, Some("Quit Bomby"))?)?;
     Ok(menu)
+}
+
+/// End call is offered once the call has started, as in the main window.
+fn can_end(status: &TrayStatus) -> bool {
+    status.call.is_some() && !status.starting
 }
 
 /// "Start a call", with the recent projects. Off during a call (one call at a time); when a
@@ -221,7 +232,7 @@ mod tests {
     #[test]
     fn reads_the_pages_status() {
         let status: TrayStatus = serde_json::from_str(
-            r#"{"state":"working","call":"samba","recent":[{"id":3,"name":"samba"}],"blocked":null}"#,
+            r#"{"state":"working","call":"samba","starting":false,"recent":[{"id":3,"name":"samba"}],"blocked":null}"#,
         )
         .unwrap();
         assert_eq!(status.state, TrayState::Working);
@@ -242,5 +253,25 @@ mod tests {
         };
         assert!(idle.same_menu(&speaking));
         assert!(!idle.same_menu(&on_call));
+        let starting = TrayStatus {
+            starting: true,
+            ..on_call.clone()
+        };
+        assert!(!on_call.same_menu(&starting));
+    }
+
+    #[test]
+    fn a_call_can_be_ended_only_once_it_has_started() {
+        let on_call = TrayStatus {
+            call: Some("samba".into()),
+            ..TrayStatus::default()
+        };
+        let starting = TrayStatus {
+            starting: true,
+            ..on_call.clone()
+        };
+        assert!(can_end(&on_call));
+        assert!(!can_end(&starting));
+        assert!(!can_end(&TrayStatus::default()));
     }
 }
