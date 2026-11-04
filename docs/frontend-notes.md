@@ -44,8 +44,8 @@ Checked 2026-11-04 against `vite-plus` 1.5.0 (`node_modules/vite-plus/docs`, [vi
 
 Checked 2026-11-04 against [react.dev](https://react.dev/reference/react) for React 19.3.1.
 
-- Core data that changes by event is an external store read with `useSyncExternalStore`, with `subscribe` declared outside components and immutable snapshots (`features/agents/use-agents.ts`). Stores are per page: each window is its own page; the core stays the source of truth.
-- A one-off read can be a promise in state read with `use()` under `Suspense`; refetching sets a new promise inside `startTransition`, which keeps the old rows up meanwhile (`features/setup/setup-settings.tsx`). The promise must not reject unless an error boundary is there.
+- Core data that changes by event is an external store read with `useSyncExternalStore`, with `subscribe` declared outside components and immutable snapshots (`features/agents/use-agents.ts`, `features/credentials/use-saved-keys.ts`, which holds only whether each key exists). Stores are per page: each window is its own page; the core stays the source of truth.
+- Prefer such a store over a promise read with `use()` for data a section shows each time it opens: a section remounts on every visit, a new promise suspends it again, and React holds a shown Suspense fallback for at least 300ms (`FALLBACK_THROTTLE_MS` in `react-dom` 19.3.1), so it flashes even when the core answers at once (`features/credentials/use-saved-keys.ts`). A store keeps the last answer.
 - Pending states come from `useTransition` with an async action, not hand-kept `loading` flags. A `set` call after an `await` inside an action needs its own `startTransition`; store updates are synchronous anyway.
 - Effects only synchronize with something outside React. Never set state synchronously in an effect (`react/set-state-in-effect`), and don't read `ref.current` during render, or pass a ref to a function during render: a closure-held value works where a value must outlive renders but not drive them (`callTokens` in `call-provider.tsx`).
 

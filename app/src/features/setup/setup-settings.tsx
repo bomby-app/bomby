@@ -1,5 +1,5 @@
 import { SquareTerminal } from "lucide-react"
-import { Suspense, use, useState, useTransition } from "react"
+import { useTransition } from "react"
 
 import { CheckAgainButton } from "@/components/check-again-button"
 import { StatusRow } from "@/components/status-row"
@@ -8,43 +8,20 @@ import { useSettingsNavigation } from "@/lib/settings-navigation"
 
 import type { AgentStatus } from "../agents/api"
 import { checkAgentsAgain, isReady, useAgents } from "../agents/use-agents"
-import { credentialsInfo, hasGeminiKey } from "../credentials/api"
+import { checkKeysAgain, useSavedKeys } from "../credentials/use-saved-keys"
 import { GeminiLogo, LiveKitLogo } from "./provider-logos"
-
-/** Which keys are saved, or why the keychain couldn't say. */
-type Keys = { livekit: boolean; gemini: boolean } | { error: string }
-
-/** Never rejects, so the rows can show a failure themselves. */
-async function loadKeys(): Promise<Keys> {
-  try {
-    const [livekit, gemini] = await Promise.all([
-      credentialsInfo(),
-      hasGeminiKey(),
-    ])
-    return { livekit: !!livekit?.hasSecret, gemini }
-  } catch (e) {
-    return { error: String(e) }
-  }
-}
 
 /**
  * The Setup section of the settings window: what a call needs (the user's keys and an
  * agent), each ready or a button to where it is fixed
- * (docs/decisions/users-bring-their-own-keys-and-claude.md).
+ * (docs/decisions/users-bring-their-own-keys-and-claude.md). Both come from stores the
+ * page keeps, so the rows show at once each time the section opens.
  */
 export function SetupSettings() {
-  // Read once when the section opens; Check again swaps in a new read inside a transition,
-  // so the rows stay up until it answers.
-  const [keys, setKeys] = useState(loadKeys)
+  const { keys, error: keysError } = useSavedKeys()
+  const { agents, error: agentsError } = useAgents()
   const [checking, startChecking] = useTransition()
-  const { agents, error } = useAgents()
-
-  function checkAgain() {
-    startChecking(async () => {
-      setKeys(loadKeys())
-      await checkAgentsAgain()
-    })
-  }
+  const error = keysError ?? agentsError
 
   return (
     <div className="flex flex-col gap-6">
@@ -53,9 +30,28 @@ export function SetupSettings() {
       </p>
       {error && <p className="text-sm text-destructive">{error}</p>}
       <ul className="flex flex-col divide-y rounded-lg border">
-        <Suspense fallback={<KeyRows keys={null} />}>
-          <SavedKeyRows keys={keys} />
-        </Suspense>
+        <StatusRow
+          logo={<LiveKitLogo />}
+          name="LiveKit keys"
+          ready={keys?.livekit}
+          detail={keys?.livekit ? "Saved in your keychain." : "Not added yet."}
+          action={
+            <GoButton to={{ section: "credentials", field: "livekit" }}>
+              Add keys
+            </GoButton>
+          }
+        />
+        <StatusRow
+          logo={<GeminiLogo />}
+          name="Gemini API key"
+          ready={keys?.gemini}
+          detail={keys?.gemini ? "Saved in your keychain." : "Not added yet."}
+          action={
+            <GoButton to={{ section: "credentials", field: "gemini" }}>
+              Add key
+            </GoButton>
+          }
+        />
         <StatusRow
           logo={<SquareTerminal />}
           name="Coding agent"
@@ -67,51 +63,19 @@ export function SetupSettings() {
       <div>
         <CheckAgainButton
           checking={checking}
-          disabled={agents === null}
-          onClick={checkAgain}
+          disabled={keys === null || agents === null}
+          onClick={() =>
+            startChecking(async () => {
+              await Promise.all([checkKeysAgain(), checkAgentsAgain()])
+            })
+          }
         />
       </div>
     </div>
   )
 }
 
-function SavedKeyRows({ keys }: { keys: Promise<Keys> }) {
-  return <KeyRows keys={use(keys)} />
-}
-
-/** The LiveKit and Gemini rows; `keys` null while the keychain is read. */
-function KeyRows({ keys }: { keys: Keys | null }) {
-  if (keys && "error" in keys)
-    return <li className="px-3 py-3 text-sm text-destructive">{keys.error}</li>
-  return (
-    <>
-      <StatusRow
-        logo={<LiveKitLogo />}
-        name="LiveKit keys"
-        ready={keys?.livekit}
-        detail={keys?.livekit ? "Saved in your keychain." : "Not added yet."}
-        action={
-          <GoButton to={{ section: "credentials", field: "livekit" }}>
-            Add keys
-          </GoButton>
-        }
-      />
-      <StatusRow
-        logo={<GeminiLogo />}
-        name="Gemini API key"
-        ready={keys?.gemini}
-        detail={keys?.gemini ? "Saved in your keychain." : "Not added yet."}
-        action={
-          <GoButton to={{ section: "credentials", field: "gemini" }}>
-            Add key
-          </GoButton>
-        }
-      />
-    </>
-  )
-}
-
-/** A row's way to where its item is fixed. */
+/** A row's way to where its item is fixed, in bubblegum: something a call still needs. */
 function GoButton({
   to,
   children,
@@ -121,7 +85,12 @@ function GoButton({
 }) {
   const { go } = useSettingsNavigation()
   return (
-    <Button variant="outline" size="sm" onClick={() => go(to)}>
+    <Button
+      size="sm"
+      // Bubblegum marks what is missing (docs/brand.md).
+      className="bg-claude text-claude-foreground hover:bg-claude/85"
+      onClick={() => go(to)}
+    >
       {children}
     </Button>
   )

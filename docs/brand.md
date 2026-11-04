@@ -51,7 +51,7 @@ Owner's choices, 2026-11-04:
 - Resume buttons are bubblegum with ink text: resuming brings a conversation back.
 - A small bubblegum **Beta** badge (ink text) follows the wordmark in the sidebar while the app is in beta.
 
-Ready and missing setup marks use an ink thumbs-up on highlighter and an ink cross on bubblegum. Running tasks spin in `--primary`; failed tasks use `--destructive`.
+Ready setup marks are an ink thumbs-up on highlighter. A missing item in Setup is a bubblegum button with ink text that goes to where it is added (Add key, Set up); the ink cross on bubblegum remains for a missing item without an action. Running tasks spin in `--primary`; failed tasks use `--destructive`.
 
 Ink on highlighter (16.8:1) and bubblegum (9.7:1) is readable. Highlighter on white (1.1:1) and bubblegum on white (1.9:1) are never text or icons. Links use ink with a 3px highlighter underline; dark-mode links may use highlighter text.
 
