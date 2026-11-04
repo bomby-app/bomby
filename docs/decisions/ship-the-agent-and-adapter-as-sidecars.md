@@ -30,6 +30,14 @@ A one-file build unpacks to a new temp folder on every start, so macOS checks ev
 
 **Choice: PyInstaller, one folder.** 40 s builds, 0.8 s starts, everything loads. Revisit Nuitka only if the folder size or start time becomes a problem.
 
+## Built (2026-11-05, PyInstaller 6.22.3, livekit-agents 1.8.10)
+
+- `just agent freeze` builds `agent/dist/bomby-agent/` from `agent/bundle.py` in about 30 s: 190 MB, the same as the prototype.
+- The frozen probe answers in 0.8 s; its first start after a build took 26 s while macOS checked each native library.
+- The frozen worker spawns its idle job process, which LiveKit starts with `multiprocessing` "spawn" on macOS (`worker.py`, `multiprocessing_context`). It initialized in 1.3 s, because `bundle.py` calls `multiprocessing.freeze_support()` first.
+- The lifeline still stops the whole process group when the app's pipe closes.
+- Frozen, python-dotenv looks for `.env` from the current folder up through every parent (1.2.4, `find_dotenv`), so the packaged agent never loads one (`agent/dev_env.py`).
+
 ## Consequences
 
 - One app download per platform, no runtimes to install.

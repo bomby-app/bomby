@@ -3,12 +3,12 @@ import os
 from pathlib import Path
 from typing import override
 
-from dotenv import load_dotenv
 from google.genai import types
 from livekit import rtc
 from livekit.agents import NOT_GIVEN, Agent, AgentServer, AgentSession, JobContext, cli
 from livekit.plugins import google
 
+import dev_env
 import lifeline
 from acp_client import CallRunners
 from call import Call
@@ -17,7 +17,7 @@ from job import read_metadata
 from task_board import TaskBoard
 from tools import ALL_TOOLS, agents_note
 
-_ = load_dotenv()
+dev_env.load()
 
 logger = logging.getLogger("bomby")
 
@@ -145,6 +145,11 @@ async def entrypoint(ctx: JobContext) -> None:
     await session.start(agent=Assistant(options, runners), room=ctx.room)  # pyright: ignore[reportUnknownMemberType]
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Runs the worker's CLI (`start`, `dev`, `console`, ...), from `sys.argv`."""
     lifeline.exit_with_app()
     cli.run_app(server)
+
+
+if __name__ == "__main__":
+    main()

@@ -28,6 +28,17 @@ adapters:
       bun build --compile --minify "node_modules/@agentclientprotocol/$adapter/dist/index.js" --outfile "bin/$adapter"
     done
 
+# Freeze the agent into one folder for the app to ship (agent/dist/bomby-agent), with
+# PyInstaller (docs/decisions/ship-the-agent-and-adapter-as-sidecars.md). LiveKit's native
+# library and plugins, and the Gemini SDK's data files, aren't found by import analysis.
+[group('build')]
+[working-directory: 'agent']
+freeze:
+    uv run --group freeze pyinstaller bundle.py --name bomby-agent --onedir \
+      --noconfirm --clean --log-level WARN --specpath build \
+      --collect-all livekit --collect-submodules livekit.plugins --collect-data google.genai \
+      --add-data "$PWD/prompts:prompts"
+
 # Talk to the agent by voice in the terminal (no app or LiveKit server needed)
 [group('run')]
 [working-directory: 'agent']
