@@ -206,24 +206,20 @@ fn pick_path(
 }
 
 fn status_of(known: &'static Known, path: Option<PathBuf>) -> AgentStatus {
-    let Some(path) = path else {
-        return AgentStatus {
-            id: known.id,
-            name: known.name,
-            path: None,
-            version: None,
-            setup: None,
-        };
-    };
-    let mut version = Command::new(&path);
-    version.arg("--version");
     AgentStatus {
         id: known.id,
         name: known.name,
-        version: run(version, TIMEOUT).as_ref().and_then(stdout),
-        path: Some(path.display().to_string()),
+        version: path.as_deref().and_then(version_of),
+        path: path.map(|p| p.display().to_string()),
         setup: None,
     }
+}
+
+/// What `program --version` prints, if it answers in time.
+fn version_of(program: &Path) -> Option<String> {
+    let mut command = Command::new(program);
+    command.arg("--version");
+    run(command, TIMEOUT).as_ref().and_then(stdout)
 }
 
 /// Every known agent with its status and setup. The probe and each agent's own checks run
@@ -377,9 +373,10 @@ pub fn usable(agents: &[AgentStatus]) -> Vec<(String, PathBuf)> {
 /// catches up.
 pub fn usable_now<R: Runtime>(app: &AppHandle<R>) -> Vec<(String, PathBuf)> {
     let shown = app.state::<Agents>().cached().unwrap_or_default();
-    let previous: HashMap<_, _> = installed(&shown).into_iter().collect();
+    let shown_installed = installed(&shown);
+    let previous: HashMap<_, _> = shown_installed.iter().cloned().collect();
     let found = programs(find_all(&previous));
-    if installed(&shown) != found {
+    if shown_installed != found {
         let (app, seen) = (app.clone(), found.clone());
         tauri::async_runtime::spawn_blocking(move || refresh(&app, Some(seen)));
     }

@@ -35,7 +35,7 @@ const MIGRATIONS: &[&str] = &[
         ended_at   INTEGER
     );
     CREATE INDEX calls_by_project ON calls(project_id, started_at);
-    -- One transcript line. role: 'user' or 'agent' (later 'claude' for tasks and results).
+    -- One transcript line. role: 'user' or 'agent'.
     CREATE TABLE messages (
         id         INTEGER PRIMARY KEY,
         call_id    INTEGER NOT NULL REFERENCES calls(id) ON DELETE CASCADE,
