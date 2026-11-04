@@ -328,7 +328,7 @@ def test_a_failed_turn_and_a_crash_are_reported_briefly_and_the_next_task_restar
     (failed, crashed, after), _ = run_with_fake(tmp_path, scenario)
 
     stopped = (
-        "Claude stopped before finishing. Say sorry and offer to try again or use "
+        "Claude stopped before finishing. Say sorry and offer to try again or to try "
         "another agent."
     )
     assert failed == crashed == stopped

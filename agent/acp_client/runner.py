@@ -91,7 +91,7 @@ def not_ready(harness: Harness) -> str:
 def stopped(harness: Harness) -> str:
     return (
         f"{harness.short_name} stopped before finishing. Say sorry and offer to try "
-        "again or use another agent."
+        "again or to try another agent."
     )
 
 
