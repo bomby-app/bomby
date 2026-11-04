@@ -14,8 +14,9 @@ pub enum Error {
     Database(#[from] rusqlite::Error),
     #[error("keychain: {0}")]
     Keychain(#[from] keyring::Error),
+    /// The keychain entry isn't the JSON this app writes. Only credentials.rs makes it.
     #[error("stored credentials are unreadable: {0}")]
-    Corrupt(#[from] serde_json::Error),
+    Corrupt(serde_json::Error),
     #[error(transparent)]
     Tauri(#[from] tauri::Error),
     #[error(transparent)]

@@ -86,21 +86,22 @@ fn write<R: Runtime>(app: &AppHandle<R>, keys: &Keys) -> Result<()> {
     if keys.livekit.is_none() && keys.gemini_key.is_none() {
         return remove(&entry);
     }
-    entry.set_password(&serde_json::to_string(keys)?)?;
+    entry.set_password(&serde_json::to_string(keys).map_err(Error::Corrupt)?)?;
     Ok(())
 }
 
 /// Reads the entry, moving the older per-provider entries into it the first time.
 fn read_keychain<R: Runtime>(app: &AppHandle<R>) -> Result<Keys> {
     if let Some(json) = read(&entry(app, ACCOUNT)?)? {
-        return Ok(serde_json::from_str(&json)?);
+        return serde_json::from_str(&json).map_err(Error::Corrupt);
     }
     let livekit_entry = entry(app, LEGACY_LIVEKIT)?;
     let gemini_entry = entry(app, LEGACY_GEMINI)?;
     let keys = Keys {
         livekit: read(&livekit_entry)?
             .map(|json| serde_json::from_str(&json))
-            .transpose()?,
+            .transpose()
+            .map_err(Error::Corrupt)?,
         gemini_key: read(&gemini_entry)?.filter(|key| !key.is_empty()),
     };
     if keys.livekit.is_some() || keys.gemini_key.is_some() {
