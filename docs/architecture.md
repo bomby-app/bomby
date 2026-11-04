@@ -8,7 +8,7 @@ Bomby lets you talk to your agents (Claude Code today). A desktop app holds your
 | --- | --- | --- |
 | Voice agent | `agent/` (Python, LiveKit Agents, Gemini 3.8 Live) | Built |
 | Harnesses | `agent/harnesses/`: one definition per agent (`claude.py` drives `claude-agent-acp`); `agent/acp_client/`: the ACP client and runner they share; `tools/start_task.py` is the voice model's one tool for all of them | Built |
-| Desktop app | `app/` (Tauri v2, React, LiveKit Agents UI) | Shell, settings (setup checks, LiveKit and Gemini keys in the keychain), projects, calls with saved transcripts built; runs the agent from source in dev. See [roadmap](roadmap.md), [app/README.md](../app/README.md) |
+| Desktop app | `app/` (Tauri v2, React, LiveKit Agents UI) | Shell, settings (setup checks, LiveKit and Gemini keys in the keychain), projects, calls with saved transcripts built; runs the agent from source in dev. See [roadmap](roadmap.md), [app/AGENTS.md](../app/AGENTS.md) |
 | App data | One SQLite db in the app data folder, owned by the core: projects, calls, messages | Decided, see [decision](decisions/app-data-in-one-sqlite-db.md) |
 | Packaging | The agent and the adapter as Tauri sidecars, run with the user's own `claude` | Proposed, prototypes first ([decision](decisions/ship-the-agent-and-adapter-as-sidecars.md)) |
 | LiveKit server | LiveKit Cloud or self-hosted; not needed for `just agent console` | External |

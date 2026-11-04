@@ -1,6 +1,6 @@
 # Bomby: the voice agent (agent/) and the desktop app (app/).
 # Each part has its own module: `just agent` and `just app` list their recipes.
-# See docs/README.md.
+# See docs/AGENTS.md.
 
 # The voice agent. See agent.just.
 mod agent
