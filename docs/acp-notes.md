@@ -49,3 +49,20 @@ Probed 2026-11-04 with `initialize` and `session/new`, no prompt. See [detection
 **Instructions.** ACP `session/new` has no instructions field, only `cwd`, `additionalDirectories`, `mcpServers` and `_meta`. Claude's `systemPrompt.append` is adapter-specific. OpenCode reads no `_meta` options, omp reads steering, and goose exposes no ACP route to its internal `system_prompt_extras`. The runner therefore briefs each session once (`briefing()` in `acp_client/runner.py`): system prompt where supported, otherwise a text block before the first task. This also tells omp and goose about extra folders, which they do not expose as `additionalDirectories`.
 
 **Permissions.** Claude uses `bypassPermissions`, goose `auto`, and omp does not ask. OpenCode has no bypass mode, so the client uses `allow_once`, never `allow_always`, which would persist rules. Per-agent settings and voice prompts come later ([decision](decisions/bypass-permissions-for-now.md)).
+
+## Setup signals
+
+Probed 2026-11-04: `initialize` then `session/new` in an empty folder, no prompt, once with the user's setup and once with an empty `HOME` and `XDG_*` folders (an unconfigured install).
+
+| Agent | Unconfigured | `authMethods` |
+| --- | --- | --- |
+| Claude (adapter 0.100.0) | Session opens; `_auth/status_update` pushes `{"kind": "none", "label": "Not logged in"}` | None unless the client offers terminal auth, and those run the adapter itself (`--cli auth login`) |
+| OpenCode 2.1.4 | Session opens on its free models (`model` = `opencode/big-pickle`): ready | `opencode-login`: "Run `opencode auth login` in the terminal" |
+| omp 18.16.0 | Session opens without a `model` config option | `agent`: "Use existing local credentials" |
+| goose 1.57.0 | `session/new` fails: `-32603` "Internal error", `data`: "Failed to resolve provider and model: Configuration value not found: GOOSE_PROVIDER" | `goose-provider`: "Run `goose configure` to set up your AI provider and API key" |
+
+- No agent returns `auth_required` (`-32000`, `acp/exceptions.py`); the useful text is in `RequestError.data`, while `str(error)` is the generic JSON-RPC message.
+- `authMethods` are the same configured or not, so they say how to fix a problem, not whether there is one.
+- A configured session has a config option with `category: "model"`; its `currentValue` is the model in use.
+- `_auth/status_update` is the adapter's interim `authStatus` extension (`dist/auth-status.d.ts`): advertised by an empty `agentCapabilities._meta.authStatus`, pushed after `initialize` (never before its response) and on each `session/new`. `kind` is `account`, `api_key`, `gateway`, `external` or `none`; `label` is a display string such as "Claude Max". Silence means unknown.
+- `session/new` saves a session in the agent's history even without a prompt (OpenCode, omp, goose; Claude saves only once prompted). Claude, OpenCode and goose advertise `sessionCapabilities.delete`; omp only `close`. SDK 0.12.1 has `DeleteSessionRequest` in `acp/schema.py` and `session/delete` in `acp/meta.py`, but no `delete_session` method on `ClientSideConnection`.
