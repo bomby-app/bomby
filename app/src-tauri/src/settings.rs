@@ -65,28 +65,35 @@ pub struct VoiceSettings {
     voices: Vec<Voice>,
 }
 
+/// The value saved under `key`, if any.
+fn get(conn: &Connection, key: &str) -> Result<Option<String>> {
+    Ok(conn
+        .query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| {
+            row.get(0)
+        })
+        .optional()?)
+}
+
+/// Saves `value` under `key`, replacing what was there.
+fn put(conn: &Connection, key: &str, value: &str) -> Result<()> {
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (?1, ?2)
+         ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+        params![key, value],
+    )?;
+    Ok(())
+}
+
 /// The chosen voice, or the default.
 pub fn voice(conn: &Connection) -> Result<String> {
-    let saved: Option<String> = conn
-        .query_row(
-            "SELECT value FROM settings WHERE key = ?1",
-            [VOICE_KEY],
-            |row| row.get(0),
-        )
-        .optional()?;
-    Ok(saved.unwrap_or_else(|| DEFAULT_VOICE.to_owned()))
+    Ok(get(conn, VOICE_KEY)?.unwrap_or_else(|| DEFAULT_VOICE.to_owned()))
 }
 
 fn set(conn: &Connection, name: &str) -> Result<()> {
     if !VOICES.iter().any(|(voice, _, _)| *voice == name) {
         return Err(Error::Invalid(format!("{name} isn't a Gemini voice.")));
     }
-    conn.execute(
-        "INSERT INTO settings (key, value) VALUES (?1, ?2)
-         ON CONFLICT (key) DO UPDATE SET value = excluded.value",
-        params![VOICE_KEY, name],
-    )?;
-    Ok(())
+    put(conn, VOICE_KEY, name)
 }
 
 #[tauri::command(async)]
@@ -108,25 +115,12 @@ pub fn set_voice(db: State<'_, Db>, name: String) -> Result<()> {
 /// Whether this is the first run: the splash shows until it has set up an agent.
 #[tauri::command(async)]
 pub fn first_run(db: State<'_, Db>) -> Result<bool> {
-    let done: Option<String> = db
-        .conn()
-        .query_row(
-            "SELECT value FROM settings WHERE key = ?1",
-            [FIRST_RUN_KEY],
-            |row| row.get(0),
-        )
-        .optional()?;
-    Ok(done.is_none())
+    Ok(get(&db.conn(), FIRST_RUN_KEY)?.is_none())
 }
 
 #[tauri::command(async)]
 pub fn finish_first_run(db: State<'_, Db>) -> Result<()> {
-    db.conn().execute(
-        "INSERT INTO settings (key, value) VALUES (?1, '1')
-         ON CONFLICT (key) DO UPDATE SET value = excluded.value",
-        [FIRST_RUN_KEY],
-    )?;
-    Ok(())
+    put(&db.conn(), FIRST_RUN_KEY, "1")
 }
 
 #[cfg(test)]

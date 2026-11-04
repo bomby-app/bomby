@@ -38,21 +38,8 @@ const RECENT_LINES: usize = 50;
 /// Everything the worker needs to run. A change to any of it means a restart.
 #[derive(PartialEq, Eq)]
 pub struct WorkerConfig {
-    pub livekit_url: String,
-    pub livekit_api_key: String,
-    pub livekit_api_secret: String,
+    pub livekit: LiveKitKeys,
     pub gemini_key: String,
-}
-
-impl WorkerConfig {
-    pub fn new(keys: LiveKitKeys, gemini_key: String) -> Self {
-        Self {
-            livekit_url: keys.url,
-            livekit_api_key: keys.api_key,
-            livekit_api_secret: keys.api_secret,
-            gemini_key,
-        }
-    }
 }
 
 struct Running {
@@ -127,9 +114,9 @@ fn start(config: &WorkerConfig, log_dir: &Path) -> Result<(Child, ChildStdin)> {
 
     let mut command = command(&["agent.py", "start"])?;
     command
-        .env("LIVEKIT_URL", &config.livekit_url)
-        .env("LIVEKIT_API_KEY", &config.livekit_api_key)
-        .env("LIVEKIT_API_SECRET", &config.livekit_api_secret)
+        .env("LIVEKIT_URL", &config.livekit.url)
+        .env("LIVEKIT_API_KEY", &config.livekit.api_key)
+        .env("LIVEKIT_API_SECRET", &config.livekit.api_secret)
         .env("GOOGLE_API_KEY", &config.gemini_key)
         // Exit when this app does, however it ends (`agent/lifeline.py`).
         .env("BOMBY_EXIT_WITH_APP", "1")
