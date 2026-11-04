@@ -34,6 +34,19 @@ const STOP_TIMEOUT: Duration = Duration::from_secs(5);
 const READY_LINE: &str = "registered worker";
 /// How many of the worker's last lines to keep for a failure message.
 const RECENT_LINES: usize = 50;
+/// What livekit-agents logs when a job's entrypoint raises (1.8.10,
+/// `ipc/job_proc_lazy_main.py`, `_on_entry_done`), with the job's `room` and `exc_info`.
+const CRASH_LINE: &str = "unhandled exception while running the job task";
+
+/// A call's job that crashed: its room, and why, in one line.
+#[derive(Debug, PartialEq, Eq)]
+pub struct JobCrash {
+    pub room: String,
+    pub reason: String,
+}
+
+/// Told about every job that crashes, from the thread reading the worker's output.
+pub type OnCrash = Arc<dyn Fn(JobCrash) + Send + Sync>;
 
 /// Everything the worker needs to run. A change to any of it means a restart.
 #[derive(PartialEq, Eq)]
@@ -55,8 +68,9 @@ struct Running {
 pub struct AgentWorker(Mutex<Option<Running>>);
 
 impl AgentWorker {
-    /// Makes sure a worker with `config` is running and registered.
-    pub fn ensure(&self, config: WorkerConfig, log_dir: &Path) -> Result<()> {
+    /// Makes sure a worker with `config` is running and registered. A worker started here
+    /// reports its crashed jobs to `on_crash`.
+    pub fn ensure(&self, config: WorkerConfig, log_dir: &Path, on_crash: OnCrash) -> Result<()> {
         let mut slot = sync::lock(&self.0);
         if let Some(running) = slot.as_mut() {
             let alive = matches!(running.child.try_wait(), Ok(None));
@@ -67,7 +81,7 @@ impl AgentWorker {
         if let Some(old) = slot.take() {
             stop(old.child);
         }
-        let (child, lifeline) = start(&config, log_dir)?;
+        let (child, lifeline) = start(&config, log_dir, on_crash)?;
         *slot = Some(Running {
             child,
             _lifeline: lifeline,
@@ -108,7 +122,7 @@ pub fn command(args: &[&str]) -> Result<Command> {
     }
 }
 
-fn start(config: &WorkerConfig, log_dir: &Path) -> Result<(Child, ChildStdin)> {
+fn start(config: &WorkerConfig, log_dir: &Path, on_crash: OnCrash) -> Result<(Child, ChildStdin)> {
     std::fs::create_dir_all(log_dir)?;
     let log = Arc::new(Mutex::new(File::create(log_dir.join("agent.log"))?));
 
@@ -149,6 +163,7 @@ fn start(config: &WorkerConfig, log_dir: &Path) -> Result<(Child, ChildStdin)> {
     .flatten()
     {
         let (log, ready_tx, recent) = (Arc::clone(&log), ready_tx.clone(), Arc::clone(&recent));
+        let on_crash = Arc::clone(&on_crash);
         thread::spawn(move || {
             for line in BufReader::new(stream)
                 .lines()
@@ -156,6 +171,9 @@ fn start(config: &WorkerConfig, log_dir: &Path) -> Result<(Child, ChildStdin)> {
             {
                 if line.contains(READY_LINE) {
                     let _ = ready_tx.send(());
+                }
+                if let Some(crash) = job_crash(&line) {
+                    on_crash(crash);
                 }
                 if let Ok(mut file) = log.lock() {
                     let _ = writeln!(file, "{line}");
@@ -201,15 +219,38 @@ fn last_error<'a>(lines: impl DoubleEndedIterator<Item = &'a str>) -> Option<Str
         if entry.get("level")?.as_str()? != "ERROR" {
             return None;
         }
-        let text = entry
-            .get("exc_info")
-            .and_then(|e| e.as_str())
-            .or_else(|| entry.get("message")?.as_str())?;
-        text.lines()
-            .rev()
-            .find(|l| !l.trim().is_empty())
-            .map(|l| l.trim().to_owned())
+        error_text(&entry)
     })
+}
+
+/// The crash `line` reports, if it's livekit-agents saying a job crashed. The reason drops
+/// the exception's type: "project folder does not exist: ...", not "ValueError: ...".
+fn job_crash(line: &str) -> Option<JobCrash> {
+    let entry: serde_json::Value = serde_json::from_str(line).ok()?;
+    if entry.get("message")?.as_str()? != CRASH_LINE {
+        return None;
+    }
+    let text = error_text(&entry)?;
+    let reason = match text.split_once(": ") {
+        Some((kind, rest)) if !kind.is_empty() && !kind.contains(' ') => rest.to_owned(),
+        _ => text,
+    };
+    Some(JobCrash {
+        room: entry.get("room")?.as_str()?.to_owned(),
+        reason,
+    })
+}
+
+/// An error entry in one line: its traceback's last line, or its message.
+fn error_text(entry: &serde_json::Value) -> Option<String> {
+    let text = entry
+        .get("exc_info")
+        .and_then(|e| e.as_str())
+        .or_else(|| entry.get("message")?.as_str())?;
+    text.lines()
+        .rev()
+        .find(|l| !l.trim().is_empty())
+        .map(|l| l.trim().to_owned())
 }
 
 /// Asks the worker's process group to stop, then makes sure it has.
@@ -231,7 +272,7 @@ mod tests {
     use std::collections::VecDeque;
     use std::sync::Mutex;
 
-    use super::{RECENT_LINES, last_error, remember};
+    use super::{JobCrash, RECENT_LINES, job_crash, last_error, remember};
 
     #[test]
     fn keeps_only_the_last_lines() {
@@ -257,5 +298,21 @@ mod tests {
             Some("OSError: [Errno 48] address already in use")
         );
         assert_eq!(last_error(["plain text"].into_iter()), None);
+    }
+
+    #[test]
+    fn reads_a_crashed_jobs_room_and_reason() {
+        // As livekit-agents 1.8.10 logs it (agent.log, 2026-11-05), trimmed.
+        let line = r#"{"message": "unhandled exception while running the job task", "level": "ERROR", "name": "livekit.agents", "exc_info": "Traceback (most recent call last):\n  File \"agent.py\"\nValueError: project folder does not exist: /Users/me/gone", "job_id": "AJ_x", "room": "bomby-4-1793832334892"}"#;
+        assert_eq!(
+            job_crash(line),
+            Some(JobCrash {
+                room: "bomby-4-1793832334892".into(),
+                reason: "project folder does not exist: /Users/me/gone".into(),
+            })
+        );
+        let other = r#"{"message": "worker failed", "level": "ERROR", "room": "bomby-4-1"}"#;
+        assert_eq!(job_crash(other), None);
+        assert_eq!(job_crash("not json"), None);
     }
 }

@@ -73,7 +73,7 @@ Researched 2026-11-05 for a floating mascot window (not built). Sources: `tauri`
 - The environment passes LiveKit/Gemini keys and `CLAUDE_CODE_EXECUTABLE`; `child_environment` removes secrets before launching Claude.
 - The worker has its own process group. Normal shutdown uses SIGTERM, five seconds, then SIGKILL.
 - `BOMBY_EXIT_WITH_APP=1` plus a core-held stdin pipe ensures the worker cannot outlive the app. `agent/lifeline.py` stops the group on EOF (SIGTERM, three seconds, SIGKILL), covering crashes and Ctrl-C.
-- Logs go to `agent.log` in `app.path().app_log_dir()`, rewritten per start. The page's `app_log` command writes webview audio facts to `app.log` there. Startup errors surface the worker's last JSON error.
+- Logs go to `agent.log` in `app.path().app_log_dir()`, rewritten per start. The page's `app_log` command writes webview audio facts to `app.log` there. Startup errors surface the worker's last JSON error. A job that crashes logs `unhandled exception while running the job task` with `room` and `exc_info` (livekit-agents 1.8.10, `ipc/job_proc_lazy_main.py`, `_on_entry_done`; seen in agent.log 2026-11-05); the core reports it as `call-agent-crashed`.
 
 ## Finding agents
 
