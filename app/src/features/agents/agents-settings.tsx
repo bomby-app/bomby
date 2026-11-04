@@ -55,7 +55,6 @@ export function AgentsSettings() {
       <div>
         <CheckAgainButton
           checking={checking}
-          disabled={agents === null}
           onClick={() => startChecking(checkAgentsAgain)}
         />
       </div>

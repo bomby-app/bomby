@@ -63,7 +63,6 @@ export function SetupSettings() {
       <div>
         <CheckAgainButton
           checking={checking}
-          disabled={keys === null || agents === null}
           onClick={() =>
             startChecking(async () => {
               await Promise.all([checkKeysAgain(), checkAgentsAgain()])
