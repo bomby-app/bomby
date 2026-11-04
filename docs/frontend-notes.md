@@ -54,6 +54,10 @@ Checked 2026-11-04 against [react.dev](https://react.dev/reference/react) for Re
 - A gradient can't transition by itself; its numbers can. `components/day-glow.css` registers each one with `@property` (`<percentage>`, `<number>`, `<color>`, `inherits: false`) and builds the `radial-gradient` from them, with each stop's alpha from `color-mix(in oklab, <color> calc(<alpha> * 100%), transparent)`. A new `data-stage` then transitions smoothly. Tailwind v4 relies on `@property` too, so the webview supports it.
 - `in oklab` interpolation inside the gradient itself is left out: every stop shares one hue, and a declaration the webview didn't parse would drop the glow.
 
+## Actions
+
+- A one-off async action with its own error, like the splash's Paste all, is a React 19 `useActionState(action, null)`: the action returns the error message or null, a `<form action={...}>` runs it, and its pending flag disables the button. Longer flows (Check again, leaving the splash) use `useTransition` with an async function.
+
 ## Splash sound
 
 - WKWebView plays audio without a user gesture here: wry 0.57.1 sets `mediaTypesRequiringUserActionForPlayback` to none when `autoplay` is on, its default (`src/wkwebview/mod.rs`, `WebViewAttributes::default`), and Tauri 2.12 doesn't turn it off. The splash calls `new Audio(...).play()` on mount.

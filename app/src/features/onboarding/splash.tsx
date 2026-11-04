@@ -1,19 +1,22 @@
 import { ArrowRight } from "lucide-react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, useTransition } from "react"
 
 import music from "@/assets/splash-music.mp3"
 import { DayGlow, type Daypart, useDaypart } from "@/components/day-glow"
 import { Mascot, type MascotState } from "@/components/mascot"
 import { isReady, useAgents } from "@/features/agents/use-agents"
+import { useSavedKeys } from "@/features/credentials/use-saved-keys"
 
 import { finishFirstRun } from "./api"
 import { FirstAgent, firstAgent } from "./first-agent"
+import { KeysStep } from "./keys-step"
 
 /**
  * The first run (Paper "splash", option A): the day's glow rises like a sunrise, Bomby wakes
- * and says hello, then sets up the first agent, or shows the one already set up, with a
- * round arrow to go on. Shown until it has an agent ready.
+ * and says hello, then sets up the first agent and, one more step, the LiveKit and Gemini
+ * keys. Steps already done are skipped. The round arrow to go on comes only once a call
+ * has all three, and there is no way around it: the app can't work without them.
  */
 type Stage = "dawn" | "rise" | "awake" | "setup"
 
@@ -43,13 +46,18 @@ export function Splash({ onDone }: { onDone: () => void }) {
   const still = useReducedMotion() === true
   const daypart = useDaypart()
   const [stage, setStage] = useState<Stage>(still ? "setup" : "dawn")
-  const [leaving, setLeaving] = useState(false)
+  const [leaving, startLeaving] = useTransition()
   // Below the window at dawn, peeking up (Paper: 240 px down in a 520 px window).
   const [dawnY] = useState(() => window.innerHeight / 2 - 20)
   const { agents } = useAgents()
   const [chosen, setChosen] = useState<string | null>(null)
   const agent = firstAgent(agents, chosen)
-  const ready = agent !== null && isReady(agent)
+  const { keys } = useSavedKeys()
+  const agentReady = agent !== null && isReady(agent)
+  const keysReady = keys !== null && keys.livekit && keys.gemini
+  const ready = agentReady && keysReady
+  // The keys come once the agent is ready; with both, the agent's card says all is set.
+  const step = agentReady && keys !== null && !keysReady ? "keys" : "agent"
   const next = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
@@ -72,10 +80,11 @@ export function Splash({ onDone }: { onDone: () => void }) {
     if (stage === "setup" && ready) next.current?.focus()
   }, [stage, ready])
 
-  async function finish() {
-    setLeaving(true)
-    await finishFirstRun()
-    onDone()
+  function finish() {
+    startLeaving(async () => {
+      await finishFirstRun()
+      onDone()
+    })
   }
 
   const mascot = MASCOT[stage]
@@ -133,12 +142,22 @@ export function Splash({ onDone }: { onDone: () => void }) {
           )}
           {stage === "setup" && (
             <motion.div
-              key="setup"
+              key={step}
               initial={still ? false : { opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.6, ease: EASE, delay: 0.1 }}
             >
-              <FirstAgent agents={agents} agent={agent} onChoose={setChosen} />
+              {step === "keys" && keys ? (
+                <KeysStep keys={keys} />
+              ) : (
+                <FirstAgent
+                  agents={agents}
+                  agent={agent}
+                  allSet={ready}
+                  onChoose={setChosen}
+                />
+              )}
             </motion.div>
           )}
         </AnimatePresence>
@@ -159,7 +178,8 @@ export function Splash({ onDone }: { onDone: () => void }) {
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.8 }}
             transition={{ duration: 0.35, ease: EASE, delay: 0.4 }}
-            onClick={() => void finish()}
+            disabled={leaving}
+            onClick={finish}
           >
             <ArrowRight className="size-5" />
           </motion.button>

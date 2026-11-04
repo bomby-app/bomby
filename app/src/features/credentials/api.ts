@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core"
 
-// The core's credentials commands (src-tauri/src/credentials.rs). Only the settings window
-// may call them (capabilities/settings.json). The API secret goes in, never comes back out.
+// The core's credentials commands (src-tauri/src/credentials.rs), for the settings window
+// and the first-run splash (capabilities/). The API secret goes in, never comes back out.
 
 /** What is saved, without the secret. */
 export type CredentialsInfo = {
