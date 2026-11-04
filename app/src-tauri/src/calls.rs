@@ -29,11 +29,11 @@ const RESUME_LINES: i64 = 50;
 /// instead of after the agent's join timeout.
 pub const AGENT_CRASHED: &str = "call-agent-crashed";
 
-/// What the main window hears when a call's agent job crashed.
+/// What the main window hears when a call's agent job crashed. By room, not call: a
+/// resumed call has the same id in a new room, and an earlier room's job may crash late.
 #[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
 struct AgentCrashed {
-    call_id: i64,
+    room: String,
     /// What went wrong, in the agent's words: "project folder does not exist: ...".
     reason: String,
 }
@@ -42,11 +42,6 @@ struct AgentCrashed {
 /// since row ids start over with a new database.
 fn room_name(call_id: i64) -> String {
     format!("bomby-{call_id}-{}", now_ms())
-}
-
-/// The call a room belongs to (`room_name`).
-fn call_of_room(room: &str) -> Option<i64> {
-    room.strip_prefix("bomby-")?.split('-').next()?.parse().ok()
 }
 
 /// Fails the call before it starts when a folder is gone (moved, renamed or deleted since it
@@ -66,17 +61,11 @@ fn folders_are_there(project: &projects::CallProject) -> Result<()> {
     Ok(())
 }
 
-/// Tells the main window about each crashed job, by its call.
+/// Tells the main window about each crashed job, by its room.
 fn report_crashes<R: Runtime>(app: &AppHandle<R>) -> OnCrash {
     let app = app.clone();
     Arc::new(move |JobCrash { room, reason }| {
-        if let Some(call_id) = call_of_room(&room) {
-            let _ = app.emit_to(
-                windows::MAIN,
-                AGENT_CRASHED,
-                AgentCrashed { call_id, reason },
-            );
-        }
+        let _ = app.emit_to(windows::MAIN, AGENT_CRASHED, AgentCrashed { room, reason });
     })
 }
 
@@ -561,12 +550,6 @@ mod tests {
         let config = claims.room_config.unwrap();
         assert_eq!(config.agents[0].agent_name, AGENT_NAME);
         assert_eq!(config.agents[0].metadata, r#"{"project":"samba"}"#);
-    }
-
-    #[test]
-    fn a_room_names_its_call() {
-        assert_eq!(call_of_room(&room_name(42)), Some(42));
-        assert_eq!(call_of_room("someone-elses-room"), None);
     }
 
     #[test]
