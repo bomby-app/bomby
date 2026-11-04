@@ -1,36 +1,22 @@
 import { SquareTerminal } from "lucide-react"
-import { type ReactNode, useCallback, useEffect, useState } from "react"
+import type { ReactNode } from "react"
 
-import { StatusRow } from "@/components/status-row"
-import { Button } from "@/components/ui/button"
+import { CheckAgainButton } from "@/components/check-again-button"
+import { StatusMark, StatusRow } from "@/components/status-row"
 import { AgentLogo } from "./agent-logos"
-import { type AgentStatus, agentsStatus, planName, versionNumber } from "./api"
+import { type AgentStatus, planName, versionNumber } from "./api"
+import { CopyButton } from "./copy-button"
 import { InstallFirstAgent } from "./install-first-agent"
+import { isReady, useAgents } from "./use-agents"
 
 /**
  * The Agents section of the settings window: the agents Bomby can hand work to, as the
- * core finds them on this computer (docs/decisions/detect-acp-native-agents.md). Whatever
+ * core last found them on this computer (docs/decisions/detect-acp-native-agents.md). The
+ * core looks at launch and again when Settings opens, so the list shows at once. Whatever
  * the core reports is listed; a new agent needs no change here.
  */
 export function AgentsSettings() {
-  const [agents, setAgents] = useState<AgentStatus[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  const check = useCallback(async () => {
-    setAgents(null)
-    setError(null)
-    try {
-      setAgents(await agentsStatus())
-    } catch (e) {
-      setError(String(e))
-    }
-  }, [])
-
-  useEffect(() => {
-    void check()
-  }, [check])
-
-  if (error) return <p className="text-sm text-destructive">{error}</p>
+  const { agents, error, refreshing, refresh } = useAgents()
 
   return (
     <div className="flex flex-col gap-6">
@@ -38,6 +24,7 @@ export function AgentsSettings() {
         Bomby hands work to the agents you have installed. A call needs at least
         one.
       </p>
+      {error && <p className="text-sm text-destructive">{error}</p>}
       {agents?.every((agent) => agent.path === null) ? (
         <InstallFirstAgent />
       ) : (
@@ -55,29 +42,35 @@ export function AgentsSettings() {
                 key={agent.id}
                 logo={<AgentLogo id={agent.id} />}
                 name={agent.name}
-                ready={ready(agent)}
+                ready={isReady(agent)}
                 detail={detail(agent)}
+                action={action(agent)}
               />
             ))
           )}
         </ul>
       )}
       <div>
-        <Button
-          variant="outline"
-          disabled={!agents}
-          onClick={() => void check()}
-        >
-          Check again
-        </Button>
+        <CheckAgainButton
+          checking={refreshing}
+          disabled={agents === null}
+          onClick={() => void refresh()}
+        />
       </div>
     </div>
   )
 }
 
-/** Installed, and signed in where the agent can tell us. */
-function ready({ path, signIn }: AgentStatus): boolean {
-  return path !== null && (signIn === null || signIn.signedIn)
+/** What to do about an agent that isn't ready: sign in, or nothing for an optional one. */
+function action({ path, signIn }: AgentStatus): ReactNode {
+  if (!path) return <StatusMark state="off" />
+  if (signIn && !signIn.signedIn)
+    return (
+      <CopyButton text={signIn.login} variant="outline" size="sm">
+        Copy command
+      </CopyButton>
+    )
+  return undefined
 }
 
 function detail({ name, path, version, signIn }: AgentStatus): ReactNode {
