@@ -94,14 +94,16 @@ impl AgentWorker {
     }
 }
 
-/// The command that runs the agent worker in production mode (`start`).
-fn command() -> Result<Command> {
+/// The command that runs one of the agent's programs: `agent.py start` (the worker) or
+/// `probe.py` (setup checks).
+pub fn command(args: &[&str]) -> Result<Command> {
     if cfg!(debug_assertions) {
         // The repo's agent/, next to app/.
         let agent_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../agent");
         let mut command = Command::new("uv");
         command
-            .args(["run", "python", "agent.py", "start"])
+            .args(["run", "python"])
+            .args(args)
             .current_dir(agent_dir);
         Ok(command)
     } else {
@@ -115,7 +117,7 @@ fn start(config: &WorkerConfig, log_dir: &Path) -> Result<(Child, ChildStdin)> {
     std::fs::create_dir_all(log_dir)?;
     let log = Arc::new(Mutex::new(File::create(log_dir.join("agent.log"))?));
 
-    let mut command = command()?;
+    let mut command = command(&["agent.py", "start"])?;
     command
         .env("LIVEKIT_URL", &config.livekit_url)
         .env("LIVEKIT_API_KEY", &config.livekit_api_key)

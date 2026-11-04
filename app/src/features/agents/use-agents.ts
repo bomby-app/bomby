@@ -39,7 +39,7 @@ function start() {
   )
   // One quiet look per page load (Settings is a new page each time it opens), so an agent
   // installed while the app ran shows up unasked. Its result arrives as agents-changed.
-  refreshAgents().catch(() => {})
+  refreshAgents(false).catch(() => {})
 }
 
 function subscribe(listener: () => void) {
@@ -60,18 +60,18 @@ export function useAgents(): Agents {
 }
 
 /**
- * Asks the core to look again (Check again). Resolves when it has, and never rejects: a
- * failure shows as the store's error, with the last list kept.
+ * Asks the core to look again and probe every agent's setup (Check again). Resolves when it
+ * has, and never rejects: a failure shows as the store's error, with the last list kept.
  */
 export async function checkAgentsAgain(): Promise<void> {
   try {
-    set({ agents: await refreshAgents(), error: null })
+    set({ agents: await refreshAgents(true), error: null })
   } catch (e) {
     set({ ...snapshot, error: String(e) })
   }
 }
 
-/** Installed, and signed in where the agent can tell us. */
-export function isReady({ path, signIn }: AgentStatus): boolean {
-  return path !== null && (signIn === null || signIn.signedIn)
+/** Installed, and not found to need setup. An agent not probed yet counts as ready. */
+export function isReady({ path, setup }: AgentStatus): boolean {
+  return path !== null && setup?.ready !== false
 }
