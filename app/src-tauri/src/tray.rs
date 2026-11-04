@@ -1,4 +1,4 @@
-//! The menu bar icon. Dot Dot's eyes follow the call, one template image per state (Paper
+//! The menu bar icon. The mascot's eyes follow the call, one template image per state (Paper
 //! `app assets`, `tray-icon-*-template`); the Motion board's rule is to swap images and never
 //! animate the menu bar. The call lives in the main window's page, so the page reports a
 //! `TrayStatus` with `set_tray_status` and the core draws the icon and menu from it. Menu
@@ -22,7 +22,7 @@ pub const START_CALL: &str = "tray-start-call";
 /// Sent to the main window: end the call.
 pub const END_CALL: &str = "tray-end-call";
 
-/// Dot Dot's state in the menu bar (docs/brand.md, "Mascot states and motion").
+/// The mascot's state in the menu bar (docs/brand.md, "Mascot states and motion").
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TrayState {
@@ -83,7 +83,7 @@ impl TrayStatus {
 #[derive(Default)]
 pub struct Tray(Mutex<TrayStatus>);
 
-/// Puts Dot Dot in the menu bar. Its menu opens on a click, as menu bar items do on macOS.
+/// Puts the mascot in the menu bar. Its menu opens on a click, as menu bar items do on macOS.
 pub fn init<R: Runtime>(app: &AppHandle<R>) -> Result<()> {
     let status = TrayStatus::default();
     TrayIconBuilder::with_id(ID)

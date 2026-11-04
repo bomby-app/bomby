@@ -73,7 +73,7 @@ Only the eyes change, never the bubble shape or colours. States follow `useAgent
 - **Failed**: crossed bubblegum eyes.
 - **Working** and **done**, not wired yet: scanning eyes while a task runs; smiling arcs for 1.2 s when a result arrives.
 
-In the menu bar, Dot Dot swaps one template image per state and never animates (Motion board): no call (dots), waking, listening, thinking, speaking, working (eyes to the left, while an agent works and the voice only listens) and failed (crossed, for five seconds after a call fails). Paper `app assets`, `tray-icon-template` and `tray-icon-<state>-template`, exported at 36 px to `app/src-tauri/icons/tray/` ([Tauri notes](tauri-notes.md#menu-bar-icon)). Its menu: the call's project, Open Bomby, Start a call on the three recent projects (or what's missing), End call, Settings, Quit Bomby.
+In the menu bar, the mascot swaps one template image per state and never animates (Motion board): no call (dots), waking, listening, thinking, speaking, working (eyes to the left, while an agent works and the voice only listens) and failed (crossed, for five seconds after a call fails). Paper `app assets`, `tray-icon-template` and `tray-icon-<state>-template`, exported at 36 px to `app/src-tauri/icons/tray/` ([Tauri notes](tauri-notes.md#menu-bar-icon)). Its menu: the call's project, Open Bomby, Start a call on the three recent projects (or what's missing), End call, Settings, Quit Bomby.
 
 `app/src/components/mascot.tsx` exports `<Mascot state level size />` and `mascotState(agentState)`. Dot Dot sits over LiveKit's bar visualizer on the call screen, replaces a project's folder icon during a call and appears on Start a call. Visualizer bars use `--primary`: highlighter in dark, ink in light (owner, 2026-11-04).
 

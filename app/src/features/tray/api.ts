@@ -3,7 +3,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window"
 
 // The core's menu bar icon (src-tauri/src/tray.rs).
 
-/** Dot Dot's state in the menu bar: one template image each. */
+/** The mascot's state in the menu bar: one template image each. */
 export type TrayState =
   | "idle"
   | "waking"
