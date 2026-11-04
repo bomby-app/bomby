@@ -1,35 +1,89 @@
+<p align="center">
+  <img src=".github/assets/cover.jpg" alt="Bomby: stop typing, start talking" width="100%">
+</p>
+
 # Bomby
 
-Talk to your agents (Claude Code today). You speak to a voice agent (LiveKit Agents and Gemini 3.8 Live); it hands real work to a Claude Code session on your machine over ACP and tells you the result when Claude is done. A call works on one project and can run several Claude sessions in parallel, one per piece of work; each remembers what it did during the call.
+**Stop typing. Start talking.**
 
-A desktop app to manage projects and run calls is planned: see [docs/roadmap.md](docs/roadmap.md).
+Bomby is a desktop app you talk to. Say what you want done, and Bomby hands it to the agent on your computer, keeps the conversation going while it works, and tells you how it went. You can start several things at once, add to a task while it's running, and pick up an earlier call where you left off.
 
-## Setup
+Bomby is in beta and runs on macOS.
+
+## How it works
+
+1. **You talk.** Start a call on a project. Bomby listens and answers out loud, using Gemini Live through LiveKit.
+2. **Your agent works.** Real work goes to an agent installed on your computer, in the project's folders, over the [Agent Client Protocol](https://agentclientprotocol.com) (ACP). Each piece of work gets its own session, and sessions run side by side.
+3. **You hear the result.** When the agent finishes, Bomby tells you what happened. The tasks panel in the call shows what each agent is doing.
+
+Every call is saved with its transcript, so you can read it back or resume it later.
+
+## Agents
+
+Bomby finds these on your computer by itself and lists them in Settings > Agents:
+
+| Agent | How Bomby runs it |
+| --- | --- |
+| [Claude Code](https://claude.com/product/claude-code) | through `claude-agent-acp`, on your own Claude plan |
+| [OpenCode](https://opencode.ai) | `opencode acp` |
+| [goose](https://goose-docs.ai) | `goose acp` |
+| [omp](https://github.com/can1357/oh-my-pi) | `omp acp` |
+
+Claude is the default; ask for another one by name ("ask goose to..."). Each agent works with your own setup: your accounts, models and rules.
+
+## What you need
+
+- A Mac
+- A [LiveKit Cloud](https://cloud.livekit.io) project (the free tier is enough): its URL, API key and API secret
+- A [Gemini API key](https://aistudio.google.com/apikey)
+- At least one agent from the list above. No agent yet? Install Claude Code:
+
+  ```bash
+  curl -fsSL https://claude.ai/install.sh | bash
+  ```
+
+Your keys stay in your macOS keychain. Bomby never sees or stores your agents' logins.
+
+## Run it
+
+Bomby isn't packaged yet, so for now it runs from source. You need [mise](https://mise.jdx.dev) and [just](https://just.systems).
 
 ```bash
-just install                        # lk and claude-agent-acp (mise), agent deps (uv)
-claude                              # sign in to Claude Code once, if you haven't
-cp agent/.env.example agent/.env    # fill in GOOGLE_API_KEY
+just install    # the pinned tools (mise) and every part's dependencies
+just app dev    # start the app
 ```
 
-Claude runs on your Claude plan login. It gets your shell environment minus `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDECODE` and everything in `agent/.env`, and it runs with permissions bypassed: it can reach your whole machine.
+Then open Settings, paste your LiveKit and Gemini keys under Credentials, and check that Setup and Agents look ready. Add a project with its folders and start a call.
 
-## Run
+### Without the app
+
+You can also talk to the voice agent straight from your terminal, with no app and no LiveKit project:
 
 ```bash
-just agent console          # talk to the agent in the terminal
-just agent console-text     # type instead of talking
-just agent console-debug    # also dump raw Gemini Live messages
+cp agent/.env.example agent/.env    # add your GOOGLE_API_KEY
+just agent console                  # talk out loud
+just agent console-text             # or type
 ```
 
-Pick the project for a console call in `agent/.env` with `CLAUDE_PROJECT` and `CLAUDE_FOLDERS` (absolute paths, `:`-separated; the first is Claude's working directory). Without them, Claude works from your home folder. Pick the Gemini model with `MODEL` (`fast` is the one to use; see [the model decision](docs/decisions/gemini-3-8-live-not-extended-thinking.md)).
+## Good to know
 
-## Develop
+- **Agents run with full access.** Permissions are bypassed in every agent, so they can work anywhere on your computer. A project's folders tell an agent where to work; they don't fence it in.
+- **Use wired headphones or speakers.** With Bluetooth headphones as the output, the voice can pick itself up and answer itself.
+- **Long calls.** Gemini Live sessions are limited in length; a very long call may drop and need resuming.
+
+## For developers
+
+| Path | What's there |
+| --- | --- |
+| `app/` | The desktop app: Tauri v2, a React frontend in `src/`, a Rust core in `src-tauri/` |
+| `agent/` | The voice agent: Python, LiveKit Agents and Gemini Live. `harnesses/` defines each agent, `acp_client/` runs them, `tools/` is what the voice can do |
+| `docs/` | Architecture, roadmap, decisions and notes on every library we rely on |
 
 ```bash
-just check    # lint, types, tests in every part: what every change must pass
-just          # the repo-wide commands
-just agent    # the agent's commands
+just          # every command
+just check    # lint, types and tests in every part: what each change must pass
 ```
 
-Start with [docs/README.md](docs/README.md).
+Start with [docs/README.md](docs/README.md), then [docs/architecture.md](docs/architecture.md) and [docs/roadmap.md](docs/roadmap.md). Adding another ACP agent is a few lines; see [the decision on detecting agents](docs/decisions/detect-acp-native-agents.md).
+
+Bomby is built on [LiveKit](https://livekit.io) and [Gemini Live](https://ai.google.dev/gemini-api/docs/live), and works with the agents above. It isn't affiliated with any of them.

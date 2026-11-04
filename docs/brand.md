@@ -5,7 +5,7 @@ The source of truth is the Paper file **claudible** (the app's old name; see [na
 ## Name
 
 - Bomby. Wordmark lowercase `bomby`; in sentences "Bomby". Website `bomby.app`. Renamed from Claudible on 2026-11-04 ([name-bomby.md](decisions/name-bomby.md)).
-- Tagline: open (the old one, "A voice agent that runs Claude Code. Built on LiveKit.", is retired).
+- Tagline: **"Stop typing. Start talking."** (owner, 2026-11-04, from the cover). Line under it: "Say the task out loud. Bomby hands it to your agent and tells you when it's done." The cover (`.github/assets/cover.jpg`, 1280x640, also GitHub's social preview size) heads the README.
 - Never co-brand with Claude, LiveKit or Gemini ("Claude x LiveKit", "Claude LiveKit"); name them only for what Bomby uses. Their logos appear only where Bomby says what it needs (Settings > Setup), in `currentColor` like text.
 
 ## Mark: Dot Dot
@@ -41,7 +41,7 @@ UI mapping onto the shadcn variables (board "07 Colour in UI"), light / dark:
 | `--sidebar-accent` / `-foreground` | `#E8E8E4` / `#121212` | `#242424` / `#F5F5F2` | Sidebar row hover and selection: a lighter (or darker) grey than the sidebar, as in other desktop apps |
 | `--claude` (new) | `#FF9BD2` | `#FF9BD2` | Claude sessions, working indicators. Fill only, ink text on it |
 | `--destructive` | `#D92D20` | `#F97066` | End call, delete. Not for the mascot |
-| `--highlighter` (new) | `#E8FF3A` | `#E8FF3A` | Good-news marks (a requirement is ready): a disc with an ink icon on it, never a bare lime icon or text |
+| `--highlighter` (new) | `#E8FF3A` | `#E8FF3A` | Good-news marks (a requirement is ready, a task done in the call's agents panel): a disc with an ink icon on it, never a bare lime icon or text. Running tasks spin in `--primary`, failed ones are `--destructive` |
 
 Transcript bubbles (owner, 2026-11-04, after the Paper board "In use / the conversation"): Bomby speaks in highlighter with ink text, the user in ink with white text (a raised grey in dark). Bubblegum is kept for Claude's own messages when they show in the call.
 
