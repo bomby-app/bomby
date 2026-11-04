@@ -10,7 +10,13 @@
     "core:window:allow-start-dragging",
     "core:window:allow-set-theme",
     "core:webview:allow-set-webview-zoom",
-    "opener:default",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        { "url": "https://cloud.livekit.io" },
+        { "url": "https://aistudio.google.com/apikey" }
+      ]
+    },
     "dialog:allow-open",
     "allow-open-settings",
     "allow-set-tray-status",

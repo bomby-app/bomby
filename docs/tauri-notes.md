@@ -30,7 +30,7 @@ Checked 2026-11-03/04 against Tauri 2.12.5, `tauri-codegen` 2.7.4, `wry` 0.57.1,
 - `zoomHotkeysEnabled` / `zoom_hotkeys_enabled(true)` enables Cmd/Ctrl + = - 0 and needs `core:webview:allow-set-webview-zoom` on macOS/Linux.
 - `windows/mount.tsx` suppresses the web context menu except in text fields and selections, preserving Cut/Copy/Paste there. Window close from JS needs `core:window:allow-close`.
 - Sync commands run on the main thread; `#[tauri::command(async)]` moves blocking work such as keychain access to the async runtime.
-- `build.rs` lists app commands in `AppManifest::commands`, generating `allow-<command>` permissions. `main.json` grants `open_settings`; only `settings.json` grants credential commands.
+- `build.rs` lists app commands in `AppManifest::commands`, generating `allow-<command>` permissions. Both windows get the credential commands: Settings, and the main window for the first-run splash's keys step.
 - `emit` broadcasts to every webview. Commands return `Result<T, error::Error>`; the page receives the error message as a rejected promise.
 
 ## Menu bar icon
@@ -103,10 +103,11 @@ Researched 2026-11-05 for a floating mascot window (not built). Sources: `tauri`
 - Enable `foreign_keys` per connection for cascades and use WAL for concurrent reads during writes.
 - Use `i64`, not `usize`, for SQL integers. Timestamps are integer epoch milliseconds, read in JS with `new Date(ms)`.
 
-## Dialogs and clipboard
+## Dialogs, clipboard and links
 
 - `tauri-plugin-dialog` 2.8.4 provides the native multi-folder picker: `open({ directory: true, multiple: true })` resolves to `string[] | null`. Only the main window has `dialog:allow-open`.
 - Settings uses `tauri-plugin-clipboard-manager` 2 for Paste all and copying install commands. Scoped read/write permissions avoid WKWebView's separate Paste prompt. Ordinary paste events need no plugin permission.
+- Links open in the browser through `tauri-plugin-opener` 2.7.2. `opener:default` would also allow any `http(s)`, `mailto:` and `tel:` URL and revealing files ([plugin docs](https://v2.tauri.app/plugin/opener/#default-permission)), so the main window gets only `opener:allow-open-url` scoped to the two key pages the splash links to. Each `url` entry is a `glob::Pattern` matched against the whole string the page passes (`src/scope.rs`, `matches_url`), so an exact URL allows only itself.
 
 ## Icons
 
