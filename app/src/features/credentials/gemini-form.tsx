@@ -10,7 +10,8 @@ import {
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 
-import { clearGeminiKey, hasGeminiKey, saveGeminiKey } from "./api"
+import { clearGeminiKey, saveGeminiKey } from "./api"
+import { useSavedKeys } from "./use-saved-keys"
 
 type Status =
   | { kind: "idle" }
@@ -23,7 +24,8 @@ type Status =
  * `focus`, the key field takes focus when the form opens.
  */
 export function GeminiForm({ focus = false }: { focus?: boolean }) {
-  const [saved, setSaved] = useState(false)
+  // Shared with every window: saving or removing it anywhere updates it here.
+  const saved = useSavedKeys().keys?.gemini ?? false
   const [key, setKey] = useState("")
   const [status, setStatus] = useState<Status>({ kind: "idle" })
   const input = useRef<HTMLInputElement>(null)
@@ -32,18 +34,11 @@ export function GeminiForm({ focus = false }: { focus?: boolean }) {
     if (focus) input.current?.focus()
   }, [focus])
 
-  useEffect(() => {
-    hasGeminiKey().then(setSaved, (error: unknown) =>
-      setStatus({ kind: "error", message: String(error) })
-    )
-  }, [])
-
   async function save(event: FormEvent) {
     event.preventDefault()
     setStatus({ kind: "saving" })
     try {
       await saveGeminiKey(key)
-      setSaved(true)
       setKey("")
       setStatus({ kind: "saved" })
     } catch (error) {
@@ -54,7 +49,6 @@ export function GeminiForm({ focus = false }: { focus?: boolean }) {
   async function remove() {
     try {
       await clearGeminiKey()
-      setSaved(false)
       setStatus({ kind: "idle" })
     } catch (error) {
       setStatus({ kind: "error", message: String(error) })
