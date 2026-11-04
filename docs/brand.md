@@ -1,6 +1,6 @@
 # Brand
 
-The source of truth is the Paper file **claudible** (the old app name), pages `branding` and `app assets`. This is the implementation summary. Read 2026-11-03; updated for Bomby on 2026-11-04.
+The source of truth is the Paper file **bomby**, pages `branding` and `app assets`. This is the implementation summary. Read 2026-11-03; updated for Bomby on 2026-11-04.
 
 ## Name
 
