@@ -12,14 +12,16 @@ src/
   windows/                  one folder per window; mount.tsx wraps every window in the shared providers
     main/                   the main window: sidebar, header, main panel
     settings/               the settings window; sections.ts lists its sections
-  features/<feature>/       one folder per feature: theme, credentials, projects, call, agents, setup, voice, onboarding (the first-run splash), tray (the menu bar icon's bridge to the call), notifications (finished tasks)
-  components/               shared components of our own (app-logo, wordmark, mascot, titlebar-spacer, inline-link, error-card)
+  features/<feature>/       one folder per feature: theme, credentials, projects, call, agents, setup, voice, onboarding (the first-run splash), tray (the menu bar icon's bridge to the call), notifications (finished tasks), about (the version and updates)
+  components/               shared components of our own (app-logo, wordmark, mascot, mascot-card, titlebar-spacer, inline-link, error-card)
   components/ui/            shadcn components, from shadcn's registry
   components/agents-ui/     LiveKit Agents UI components, from LiveKit's registry
   hooks/, lib/              shared hooks and helpers (lib/utils.ts: cn; lib/store.ts: page-wide stores that mirror the core; hooks/use-core-event.ts: follow a core event while mounted)
-src-tauri/src/              the Rust core: lib.rs (wiring), db.rs (SQLite, migrations), projects.rs, calls.rs, settings.rs, agents.rs (finding the agents), setup.rs (probing their setup), adapters.rs (installing ACP adapters), agent.rs (the worker), credentials.rs, windows.rs, tray.rs (the menu bar icon), notifications.rs, process.rs (waiting on child programs), sync.rs (locks that outlive a panic), app_log.rs, error.rs
+src-tauri/src/              the Rust core: lib.rs (wiring), db.rs (SQLite, migrations), projects.rs, calls.rs, settings.rs, agents.rs (finding the agents), setup.rs (probing their setup), adapters.rs (installing ACP adapters), agent.rs (the worker), credentials.rs, windows.rs, tray.rs (the menu bar icon), notifications.rs, updates.rs (the version and updates), process.rs (waiting on child programs), sync.rs (locks that outlive a panic), app_log.rs, error.rs
 src-tauri/icons/tray/       the menu bar templates, one per mascot state
 src-tauri/capabilities/     what each window may call: main.json, settings.json
+src-tauri/Entitlements.plist what signed builds may use under hardened runtime: the mic (docs/releasing.md)
+src-tauri/tauri.release.conf.json what release builds add: the signed update bundle
 ```
 
 ## Conventions

@@ -1,0 +1,169 @@
+# Builds Bomby for Apple Silicon, signs it with the Developer ID, notarizes it and attaches
+# the DMG and the update (Bomby.app.tar.gz, latest.json) to a draft GitHub release. Start it from the Actions tab (Release, Run workflow)
+# or by pushing a version tag (v0.1.0). Secrets, and what to check: docs/releasing.md.
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  macos:
+    name: Build, sign and notarize for Apple Silicon
+    # macOS 27 with Xcode 27.
+    runs-on: xcode-27
+    permissions:
+      contents: write # create the draft release and upload the DMG
+    # Repository secrets: environments, which would fence them to this job, need a public
+    # repo or a paid plan (docs/releasing.md).
+    # macOS minutes are paid on a private repo; a hung step shouldn't run for hours.
+    timeout-minutes: 60
+    env:
+      APP: app/src-tauri/target/release/bundle/macos/Bomby.app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check the tag matches the app's version
+        if: github.ref_type == 'tag'
+        run: |
+          version=$(jq -r .version app/src-tauri/tauri.conf.json)
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match version $version in tauri.conf.json"
+            exit 1
+          fi
+
+      # The tools pinned in mise.toml, except the LiveKit CLI, which builds don't use. No
+      # caches anywhere in this workflow: what gets signed is built from scratch, never from
+      # files another workflow could have left (zizmor's cache-poisoning audit).
+      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+        with:
+          install_args: rust bun uv just
+          cache: false
+
+      - name: Install the frontend's dependencies
+        run: just app install
+
+      # A keychain of its own, deleted at the end; the runner is thrown away after the job.
+      - name: Import the signing certificate
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/bomby-signing.keychain-db"
+          password=$(openssl rand -base64 24)
+          echo "::add-mask::$password"
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/bomby-devid.p12"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 7200 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$RUNNER_TEMP/bomby-devid.p12" -k "$keychain" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/bomby-devid.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          identity=$(security find-identity -v -p codesigning "$keychain" \
+            | sed -n 's/.*"\(Developer ID Application: .*\)"/\1/p' | head -n 1)
+          if [ -z "$identity" ]; then
+            echo "::error::APPLE_CERTIFICATE holds no Developer ID Application identity"
+            exit 1
+          fi
+          echo "KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+          echo "APPLE_SIGNING_IDENTITY=$identity" >> "$GITHUB_ENV"
+
+      - name: Write the notarization key
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          key="$RUNNER_TEMP/AuthKey_$APPLE_API_KEY.p8"
+          printf '%s\n' "$APPLE_API_KEY_P8" > "$key"
+          chmod 600 "$key"
+          echo "APPLE_API_KEY_PATH=$key" >> "$GITHUB_ENV"
+
+      # Freezes and signs the agent, then Tauri signs the app, notarizes it and staples it,
+      # and packs it as the update (Bomby.app.tar.gz), signed with the updater key.
+      - name: Build, sign and notarize the app
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: just app build --config src-tauri/tauri.release.conf.json
+
+      # Tauri notarizes only the app; the DMG people download gets its own ticket.
+      - name: Notarize the DMG
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          dmg=$(ls app/src-tauri/target/release/bundle/dmg/*.dmg)
+          auth=(--key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER")
+          result=$(xcrun notarytool submit "$dmg" "${auth[@]}" --wait --timeout 30m --output-format json)
+          echo "$result"
+          if [ "$(jq -r .status <<<"$result")" != "Accepted" ]; then
+            xcrun notarytool log "$(jq -r .id <<<"$result")" "${auth[@]}"
+            exit 1
+          fi
+          xcrun stapler staple "$dmg"
+          echo "DMG=$dmg" >> "$GITHUB_ENV"
+
+      - name: Check what Gatekeeper will see
+        run: |
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          codesign --display --entitlements - "$APP"
+          xcrun stapler validate "$APP"
+          xcrun stapler validate "$DMG"
+          spctl --assess --type execute --verbose=4 "$APP"
+          spctl --assess --type open --context context:primary-signature --verbose=4 "$DMG"
+
+      - name: Check the signed agent runs
+        run: just agent check-frozen "$PWD/$APP/Contents/Resources/agent/bomby-agent"
+
+      # What installed copies read to find this version once the release is published
+      # (plugins.updater.endpoints in tauri.conf.json).
+      - name: Write latest.json
+        run: |
+          version=$(jq -r .version app/src-tauri/tauri.conf.json)
+          jq -n \
+            --arg version "$version" \
+            --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg signature "$(cat "$APP.tar.gz.sig")" \
+            --arg url "https://github.com/$GITHUB_REPOSITORY/releases/download/v$version/Bomby.app.tar.gz" \
+            '{version: $version, pub_date: $date, platforms: {"darwin-aarch64": {signature: $signature, url: $url}}}' \
+            > "$RUNNER_TEMP/latest.json"
+          cat "$RUNNER_TEMP/latest.json"
+
+      # Uploads to the version's draft release, made here if it isn't there yet. A published
+      # release is never changed: bump the version in tauri.conf.json instead.
+      - name: Attach the DMG and the update to the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(jq -r .version app/src-tauri/tauri.conf.json)
+          tag="v$version"
+          files=("$DMG" "$APP.tar.gz" "$RUNNER_TEMP/latest.json")
+          if draft=$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null); then
+            if [ "$draft" != "true" ]; then
+              echo "::error::$tag is already published; bump the version in tauri.conf.json"
+              exit 1
+            fi
+            gh release upload "$tag" "${files[@]}" --clobber
+          else
+            gh release create "$tag" "${files[@]}" --draft --title "Bomby $version" \
+              --target "$GITHUB_SHA" --generate-notes
+          fi
+
+      - name: Remove the keychain and the key
+        if: always()
+        run: |
+          if [ -n "${KEYCHAIN:-}" ]; then security delete-keychain "$KEYCHAIN" || true; fi
+          rm -f "$RUNNER_TEMP"/AuthKey_*.p8

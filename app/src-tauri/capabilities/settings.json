@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "settings",
-  "description": "The settings window: setup, agents, voice, appearance and credentials (the first-run splash in the main window reads and saves credentials too).",
+  "description": "The settings window: setup, agents, voice, appearance, credentials and about (the first-run splash in the main window reads and saves credentials too).",
   "windows": [
     "settings"
   ],
@@ -11,6 +11,10 @@
     "core:window:allow-set-theme",
     "core:webview:allow-set-webview-zoom",
     "core:window:allow-close",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [{ "url": "https://github.com/bomby-app/bomby" }]
+    },
     "clipboard-manager:allow-read-text",
     "clipboard-manager:allow-write-text",
     "allow-credentials-info",
@@ -23,6 +27,9 @@
     "allow-refresh-agents",
     "allow-install-adapters",
     "allow-voice-settings",
-    "allow-set-voice"
+    "allow-set-voice",
+    "allow-about",
+    "allow-check-for-updates",
+    "allow-install-update"
   ]
 }

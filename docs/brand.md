@@ -71,7 +71,10 @@ Only the eyes change, never the bubble shape or colours. States follow `useAgent
 - **Speaking**: glances every 1 to 2.5 s, blinks every 2 to 4 s with occasional double blinks, opens slightly on loud syllables; bubble pulses with voice. No squint: it should feel alive (owner, 2026-11-04).
 - **Asleep** (disconnected): closed and greyed.
 - **Failed**: crossed eyes, bubblegum on the light theme's ink bubble and ink on the dark theme's highlighter bubble, where bubblegum would barely show (owner, 2026-11-05).
-- **Working** and **done**, not wired yet: scanning eyes while a task runs; smiling arcs for 1.2 s when a result arrives.
+- **Done**: smiling arcs (Paper "04 Mascot states", Done) and a little hop, 6px up in 160ms, every 2.8 s while it shows. The update card uses it; the call's 1.2 s pulse when a result arrives isn't wired yet.
+- **Working**, not wired yet: scanning eyes while a task runs.
+
+The mascot speaks to the user on one card, `app/src/components/mascot-card.tsx`: its face, a headline, a line under it and one button. The error card is that card with the failed face; the update card in Settings, About is that card with the done face (Paper page "settings · about").
 
 In the menu bar, the mascot swaps one template image per state and never animates (Motion board): no call (dots), waking, listening, thinking, speaking, working (eyes to the left, while an agent works and the voice only listens) and failed (crossed, for five seconds after a call fails). Paper `app assets`, `tray-icon-template` and `tray-icon-<state>-template`, exported at 36 px to `app/src-tauri/icons/tray/` ([Tauri notes](tauri-notes.md#menu-bar-icon)). Its menu: the call's project, Open Bomby, Start a call on the three recent projects (or what's missing), End call, Settings, Quit Bomby.
 
@@ -112,6 +115,9 @@ Short, everyday sentences with contractions. Name the actor: Claude does the wor
 | A project's folder is gone | The folder samba isn't there any more. Add it again in Project settings. |
 | No mic access | Bomby needs your mic. Turn it on in System Settings. |
 | Call ended | Talk soon. |
+| Update ready | Version 0.2.0 is ready. / Restart Bomby to update. It takes a few seconds. [Restart to update] |
+| Update on its way | Getting version 0.2.0... / 42% · Bomby restarts when it's done. |
+| Update waiting for a call to end | Version 0.2.0 is downloaded. / Restart Bomby to finish, once your call is over. [Restart to update] |
 
 `agent/prompts/voice.md` applies this voice to the spoken agent, written as behaviour rather than adjectives because Gemini Live reads every word as an instruction (owner, 2026-11-04): one-or-two-sentence, outcome-first replies; even tone; no hype; humour only when the user jokes; silence while the user is quiet.
 

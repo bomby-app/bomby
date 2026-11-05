@@ -12,8 +12,7 @@ import logging
 import os
 import sys
 
-from dotenv import load_dotenv
-
+import dev_env
 from acp_client.probe import probe_all
 from harnesses import HARNESSES, installed
 from job import read_metadata
@@ -30,7 +29,12 @@ def main(metadata: str) -> str:
     return json.dumps({id: dataclasses.asdict(s) for id, s in setups.items()})
 
 
-if __name__ == "__main__":
-    _ = load_dotenv()
+def cli(args: list[str]) -> None:
+    """Prints the setups for the metadata in `args[0]` (no agents without one)."""
+    dev_env.load()
     logging.basicConfig(level=logging.WARNING, stream=sys.stderr)
-    print(main(sys.argv[1] if len(sys.argv) > 1 else '{"agents": {}}'))
+    print(main(args[0] if args else '{"agents": {}}'))
+
+
+if __name__ == "__main__":
+    cli(sys.argv[1:])

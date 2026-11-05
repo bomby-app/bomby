@@ -19,12 +19,17 @@ dependencies = [
 dev = [
     "pytest>=9.2.0",
 ]
+freeze = [
+    "pyinstaller>=6.22.3",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
 
 [tool.basedpyright]
+# pyright's defaults, plus PyInstaller's work and output folders (`just agent freeze`).
+exclude = ["**/node_modules", "**/__pycache__", "**/.*", "build", "dist"]
 # The ACP SDK's Client and Agent interfaces take and return `Any` (`**kwargs: Any`,
 # extension params), so implementing them can't avoid it. Everything else stays strict.
 reportAny = false

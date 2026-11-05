@@ -30,6 +30,20 @@ A one-file build unpacks to a new temp folder on every start, so macOS checks ev
 
 **Choice: PyInstaller, one folder.** 40 s builds, 0.8 s starts, everything loads. Revisit Nuitka only if the folder size or start time becomes a problem.
 
+## Built (2026-11-05, PyInstaller 6.22.3, livekit-agents 1.8.10)
+
+- `just agent freeze` builds `agent/dist/bomby-agent/` from `agent/bundle.py` in about 30 s: 190 MB, the same as the prototype.
+- The frozen probe answers in 0.8 s; its first start after a build took 26 s while macOS checked each native library.
+- The frozen worker spawns its idle job process, which LiveKit starts with `multiprocessing` "spawn" on macOS (`worker.py`, `multiprocessing_context`). It initialized in 1.3 s, because `bundle.py` calls `multiprocessing.freeze_support()` first.
+- The lifeline still stops the whole process group when the app's pipe closes.
+- Frozen, python-dotenv looks for `.env` from the current folder up through every parent (1.2.4, `find_dotenv`), so the packaged agent never loads one (`agent/dev_env.py`).
+
+### Signing (2026-11-05)
+
+- `just agent sign` signs the program and every Mach-O file in the folder (104 libraries) with the Developer ID, hardened runtime and a secure timestamp. Tauri doesn't sign files it bundles.
+- **No entitlements.** Under hardened runtime, the agent's Python (uv's CPython 3.13.16, libffi built into `libpython3.13.dylib`) ran ctypes and cffi callbacks and started LiveKit's FFI with no executable-memory entitlement. Library validation needs every library signed with the program's Team ID: an ad-hoc signed copy fails to load `libpython3.13.dylib` ("different Team IDs"). One Developer ID signature passes.
+- Builds are signed and notarized on GitHub's macOS runners, never on a developer's Mac ([releasing.md](../releasing.md)).
+
 ## Consequences
 
 - One app download per platform, no runtimes to install.

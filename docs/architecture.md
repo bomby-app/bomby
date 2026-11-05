@@ -8,9 +8,9 @@ Bomby is a desktop app for talking to coding agents. A call connects Gemini's vo
 | --- | --- | --- |
 | Voice agent | `agent/`: Python, LiveKit Agents, Gemini 3.8 Live | Built |
 | Harnesses | `agent/harnesses/`: Claude Code, Codex, OpenCode, omp and goose; shared ACP client and runner in `agent/acp_client/`; one voice tool, `start_task` | Built |
-| Desktop app | `app/`: Tauri v2, React, LiveKit Agents UI; settings, projects, calls and saved transcripts | In progress; runs the agent from source in dev |
+| Desktop app | `app/`: Tauri v2, React, LiveKit Agents UI; settings, projects, calls and saved transcripts | In progress; runs the agent from source in dev, the packaged agent in release builds |
 | App data | One core-owned SQLite database for projects, calls and messages | Built ([decision](decisions/app-data-in-one-sqlite-db.md)) |
-| Packaging | Agent and Claude adapter as Tauri sidecars, using the user's `claude` | Prototypes passed; shipping later ([decision](decisions/ship-the-agent-and-adapter-as-sidecars.md)) |
+| Packaging | The agent frozen with PyInstaller into the app's resources; adapters installed on Set up | Bundled in release builds; signed and notarized by the Release workflow ([releasing.md](releasing.md), [decision](decisions/ship-the-agent-and-adapter-as-sidecars.md)) |
 | LiveKit server | LiveKit Cloud or self-hosted; not needed for `just agent console` | External |
 
 ```mermaid
@@ -85,6 +85,8 @@ The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS)
 **Menu bar.** The main window's page reports `set_tray_status({ state, call, starting, recent, blocked })` whenever the call changes; End call is offered only once the call has started (`features/tray/tray-bridge.tsx`); the core draws the icon and menu from it (`src-tauri/src/tray.rs`) and sends `tray-start-call` (a project id) and `tray-end-call` back to the main window. Closing the main window hides it, so a call keeps running.
 
 **Notifications.** The main window's page watches `bomby.tasks`; when a task it saw `working` turns `done` or `failed`, it calls `task_finished({ projectId, agentName, session, status, task })` (`features/notifications/task-notifier.tsx`). The core notifies only when no Bomby window is focused ("Claude's done · fix-login", the task as the body), and a click sends `open-project` back (`src-tauri/src/notifications.rs`).
+
+**Updates.** Settings, About reads `about()` (the version and an update status) and follows `update-status` events, sent to every window (`features/about/`). Release builds check once at launch; `check_for_updates()` checks again and `install_update()` downloads, installs and restarts. It never cuts off a call: the core tracks calls under the update's own lock (`open_call` registers one, `end_call` forgets it), so installing is refused while one is on, a call that starts during the download leaves the update `downloaded` until the user restarts, and `open_call` refuses new calls once Bomby is restarting (`src-tauri/src/updates.rs`). Updates come from the latest published GitHub release's `latest.json` ([releasing.md](releasing.md)).
 
 **Claude's environment.** The runner removes `agent/.env` keys, `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` and `CLAUDECODE`, so Claude uses its plan login. Sessions run in `bypassPermissions` with the user's settings, hooks and `CLAUDE.md` files.
 

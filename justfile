@@ -20,7 +20,13 @@ tools:
     mise install
 
 # Everything a change must pass, in every part
-check: agent::check app::check
+check: agent::check app::check lint-workflows
+
+# Lint the GitHub workflows: actionlint for mistakes, zizmor for security
+[group('check')]
+lint-workflows:
+    uvx --from actionlint-py@1.7.12.25 actionlint
+    uvx zizmor@1.31.1 --offline .github/workflows
 
 # Talk to the agent from a browser with LiveKit's own agent starter (localhost:3000): Chrome vs Safari separates WebKit (Tauri) from React and LiveKit. Ctrl-C stops both.
 [group('debug')]

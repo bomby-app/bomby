@@ -51,20 +51,18 @@ export function SettingsWindow() {
           <SidebarGroup>
             <SidebarGroupContent>
               <SidebarMenu>
-                {SECTIONS.map(({ id, label, icon: Icon }) => (
-                  <SidebarMenuItem key={id}>
-                    <SidebarMenuButton
-                      isActive={id === section.id}
-                      // The open section stays as it is: rebuilding it would drop
-                      // what the user typed there.
-                      onClick={() => {
-                        if (id !== section.id) setPlace({ section: id })
-                      }}
-                    >
-                      <Icon />
-                      <span>{label}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
+                {SECTIONS.map((entry) => (
+                  <SectionItem
+                    key={entry.id}
+                    entry={entry}
+                    active={entry.id === section.id}
+                    // The open section stays as it is: rebuilding it would drop what the
+                    // user typed there.
+                    onSelect={() => {
+                      if (entry.id !== section.id)
+                        setPlace({ section: entry.id })
+                    }}
+                  />
                 ))}
               </SidebarMenu>
             </SidebarGroupContent>
@@ -91,5 +89,28 @@ export function SettingsWindow() {
         </div>
       </main>
     </SidebarProvider>
+  )
+}
+
+/** One section in the sidebar, with its badge if it has one. */
+function SectionItem({
+  entry,
+  active,
+  onSelect,
+}: {
+  entry: (typeof SECTIONS)[number]
+  active: boolean
+  onSelect: () => void
+}) {
+  const Icon = entry.icon
+  const Badge = "badge" in entry ? entry.badge : undefined
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton isActive={active} onClick={onSelect}>
+        <Icon />
+        <span>{entry.label}</span>
+      </SidebarMenuButton>
+      {Badge && <Badge />}
+    </SidebarMenuItem>
   )
 }

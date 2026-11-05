@@ -7,9 +7,10 @@
 //! app's log folder. It holds a pipe from us on its stdin and exits when that closes, so it
 //! never outlives the app, even when the app is killed (`agent/lifeline.py`).
 //!
-//! Debug builds run the agent from source with uv (`just app dev`). Release builds will run
-//! the packaged sidecar (docs/decisions/ship-the-agent-and-adapter-as-sidecars.md); until
-//! then they report that there is no agent.
+//! Debug builds run the agent from source with uv (`just app dev`). Release builds run the
+//! packaged agent, frozen by `just agent freeze` and shipped in the app's resources
+//! (docs/decisions/ship-the-agent-and-adapter-as-sidecars.md). Both run the same entry,
+//! `agent/bundle.py`.
 
 use std::collections::VecDeque;
 use std::fs::File;
@@ -100,26 +101,48 @@ impl AgentWorker {
     }
 }
 
-/// The command that runs one of the agent's programs: `agent.py start` (the worker) or
-/// `probe.py` (setup checks).
+/// The command that runs the agent with `args`: `start` (the worker) or `probe` and its
+/// metadata (setup checks), as `agent/bundle.py` reads them.
 pub fn command(args: &[&str]) -> Result<Command> {
-    if cfg!(debug_assertions) {
+    let mut command = if cfg!(debug_assertions) {
         // The repo's agent/, next to app/.
         let agent_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../agent");
         let mut command = Command::new("uv");
         command
-            .args(["run", "python"])
-            .args(args)
+            .args(["run", "python", "bundle.py"])
             .current_dir(agent_dir);
-        // The adapters the app installed (adapters.rs), not the repo's.
-        if let Some(adapters) = crate::adapters::bin_dir() {
-            command.env("BOMBY_ADAPTERS", adapters);
-        }
-        Ok(command)
+        command
     } else {
-        Err(Error::Invalid(
-            "This build doesn't include the agent yet. Run Bomby with `just app dev`.".into(),
-        ))
+        packaged()?
+    };
+    command.args(args);
+    // The adapters the app installed (adapters.rs), not the repo's.
+    if let Some(adapters) = crate::adapters::bin_dir() {
+        command.env("BOMBY_ADAPTERS", adapters);
+    }
+    Ok(command)
+}
+
+/// The packaged agent: `bundle.macOS.files` in tauri.conf.json puts its folder in
+/// `Contents/Resources/agent`, next to `Contents/MacOS`, which holds this program. That's
+/// the folder Tauri's `resource_dir` names, found here without an `AppHandle`.
+fn packaged() -> Result<Command> {
+    let exe = std::env::current_exe()?;
+    let dir = exe
+        .parent()
+        .and_then(Path::parent)
+        .map(|contents| contents.join("Resources").join("agent"));
+    let program = dir.as_ref().map(|dir| dir.join("bomby-agent"));
+    match (dir, program) {
+        (Some(dir), Some(program)) if program.is_file() => {
+            let mut command = Command::new(program);
+            // Its own folder, as from source, never wherever Bomby was opened from.
+            command.current_dir(dir);
+            Ok(command)
+        }
+        _ => Err(Error::Invalid(
+            "This copy of Bomby is missing its voice agent. Install Bomby again.".into(),
+        )),
     }
 }
 
@@ -127,7 +150,7 @@ fn start(config: &WorkerConfig, log_dir: &Path, on_crash: OnCrash) -> Result<(Ch
     std::fs::create_dir_all(log_dir)?;
     let log = Arc::new(Mutex::new(File::create(log_dir.join("agent.log"))?));
 
-    let mut command = command(&["agent.py", "start"])?;
+    let mut command = command(&["start"])?;
     command
         .env("LIVEKIT_URL", &config.livekit.url)
         .env("LIVEKIT_API_KEY", &config.livekit.api_key)

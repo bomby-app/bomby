@@ -69,11 +69,40 @@ Researched 2026-11-05 for a floating mascot window (not built). Sources: `tauri`
 ## Agent worker
 
 - `src-tauri/src/agent.rs` keeps one worker per app run. The first `open_call` starts it; credential or `claude` path changes, or its death, restart it; app exit stops it.
-- Debug runs `uv run python agent.py start` in `agent/`, found at build time from `CARGO_MANIFEST_DIR`. Release builds await the sidecar.
+- Both builds run the same entry, `agent/bundle.py`, with `start` (the worker) or `probe` and the metadata (setup). Debug runs it from source, `uv run python bundle.py` in `agent/`, found at build time from `CARGO_MANIFEST_DIR`. Release runs the packaged agent, `Contents/Resources/agent/bomby-agent`, found from `current_exe()` (`Contents/MacOS`), with its own folder as the working directory.
 - The environment passes LiveKit/Gemini keys and `CLAUDE_CODE_EXECUTABLE`; `child_environment` removes secrets before launching Claude.
 - The worker has its own process group. Normal shutdown uses SIGTERM, five seconds, then SIGKILL.
 - `BOMBY_EXIT_WITH_APP=1` plus a core-held stdin pipe ensures the worker cannot outlive the app. `agent/lifeline.py` stops the group on EOF (SIGTERM, three seconds, SIGKILL), covering crashes and Ctrl-C.
 - Logs go to `agent.log` in `app.path().app_log_dir()`, rewritten per start. The page's `app_log` command writes webview audio facts to `app.log` there. Startup errors surface the worker's last JSON error. A job that crashes logs `unhandled exception while running the job task` with `room` and `exc_info` (livekit-agents 1.8.10, `ipc/job_proc_lazy_main.py`, `_on_entry_done`; seen in agent.log 2026-11-05); the core reports it as `call-agent-crashed`.
+
+## Bundling the agent
+
+Checked 2026-11-05 in the bundler of `@tauri-apps/cli` 2.12.4 (`crates/tauri-bundler/src/bundle/macos/app.rs`, `utils/fs_utils.rs`, `settings.rs`).
+
+- `bundle.resources` copies each file with `fs::copy`, so a symlink becomes a second copy of its target. PyInstaller's folder has 17 symlinked libraries (PyAV's), so the agent goes in through `bundle.macOS.files` instead (`"Resources/agent": "../../agent/dist/bomby-agent"`), whose `copy_dir` recreates symlinks.
+- Signing (when an identity is set) covers `bundle.macOS.frameworks`, `externalBin` sidecars and the main binary, then the `.app`. It doesn't sign files from `resources` or `macOS.files`, so the agent folder's libraries need their own signature before `tauri build`.
+- `just app build` runs `just agent freeze` first. The folder is 190 MB.
+
+## Signing and notarizing
+
+Checked 2026-11-05 in `@tauri-apps/cli` 2.12.4 (`crates/tauri-bundler/src/bundle/macos/sign.rs`, `app.rs`, `dmg/mod.rs`; `crates/tauri-macos-sign/src/keychain.rs`) and v2.tauri.app/distribute/sign/macos. How releases use it: [releasing.md](releasing.md).
+
+- **Identity.** `APPLE_CERTIFICATE` and `APPLE_CERTIFICATE_PASSWORD` make Tauri import the `.p12` into a temporary keychain for the build. Without them, `APPLE_SIGNING_IDENTITY` (or `bundle.macOS.signingIdentity`) is used from the keychain search list. The workflow imports the certificate itself, because the agent is signed before Tauri runs.
+- **codesign.** `codesign --force -s <identity> [--options runtime] [--entitlements <file>] <path>`, with no `--timestamp`. Hardened runtime is on by default (`bundle.macOS.hardenedRuntime`, default `true`). Every target gets the same `bundle.macOS.entitlements` file.
+- **Notarizing.** With `APPLE_API_KEY`, `APPLE_API_ISSUER` and `APPLE_API_KEY_PATH` (or an `AuthKey_<id>.p8` in `~/private_keys` and similar folders), Tauri zips the app with `ditto`, submits it to `notarytool`, waits and staples it. Without credentials it only logs "skipping app notarization", so the workflow checks with `xcrun stapler validate`.
+- **DMG.** The DMG is signed (unless the identity is `-`) but not notarized; the workflow notarizes and staples it with `notarytool` directly.
+- **Unsigned builds.** With no identity, nothing is signed: the main binary keeps the linker's ad-hoc signature, and its designated requirement is its `cdhash`. Each rebuild is a new app to the keychain, which asks again for the saved keys; a Developer ID build is identified by its Team ID, so one Always Allow lasts across updates.
+- **Mic.** Hardened runtime blocks the mic without `com.apple.security.device.audio-input` (Apple, "Audio Input Entitlement"), in `src-tauri/Entitlements.plist`.
+
+## Updates
+
+Checked 2026-11-05 in `tauri-plugin-updater` 2.14.0 (`src/updater.rs`, `src/config.rs`), `@tauri-apps/cli` 2.12.4 (`crates/tauri-cli/src/bundle.rs`, `helpers/updater_signature.rs`) and v2.tauri.app/plugin/updater. How releases publish them: [releasing.md](releasing.md).
+
+- The core alone uses the plugin (`src-tauri/src/updates.rs`: `about`, `check_for_updates`, `install_update`, the `update-status` event), so no window gets `updater:` permissions and the npm package isn't installed. Development builds report `development` and never check.
+- `plugins.updater` in `tauri.conf.json`: `pubkey` (the key's contents, not a path; minisign key id `CFD42E07E63E0804`), `endpoints` (HTTPS only in release; the next is tried only on a non-2xx), `requireSignedVersion`. The plugin won't start without this block.
+- `latest.json`: `version`, `pub_date`, and `platforms["darwin-aarch64"]` with `signature` (the `.sig` file's contents) and `url`. The key is `{os}-{arch}`; a `{target}-{installer}` key is tried first. An update is offered when its version is greater than the app's, unless `version_comparator` says otherwise.
+- **Signing updates.** The CLI signs updater bundles only when `bundle.createUpdaterArtifacts` is on, with `TAURI_SIGNING_PRIVATE_KEY` (contents or path) and `_PASSWORD`; without the key it fails ("A public key has been found, but no private key"). CLI 2.12.4 writes the app version into the signature's trusted comment, which `requireSignedVersion` checks against the announced version, so a stale `latest.json` can't downgrade anyone. Local builds leave the setting off (`tauri.release.conf.json` turns it on for releases).
+- On macOS the bundle is `Bomby.app.tar.gz` next to the `.app`; `download_and_install` replaces the running bundle in place, then the app must restart. `AppHandle::request_restart` from another thread goes through `RunEvent::Exit`, so the agent worker is stopped first (tauri 2.12.5, `app.rs`).
 
 ## Finding agents
 

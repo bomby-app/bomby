@@ -6,6 +6,7 @@ Every doc has one job; keep it that way.
 | --- | --- |
 | [architecture.md](architecture.md) | The pieces, how a call flows through them, and the contracts between them. Read first. |
 | [roadmap.md](roadmap.md) | The build steps, their status, and what is deliberately not done yet. |
+| [releasing.md](releasing.md) | How a signed, notarized release is built on GitHub, its secrets and its cost. |
 | [brand.md](brand.md) | Bomby's name, logo, colours, type, mascot and voice; points at the Paper file. |
 | [decisions/](decisions/) | One short record per decision: what we chose, why, and what it costs. |
 | [acp-notes.md](acp-notes.md) | ACP and `claude-agent-acp` facts, checked against the installed source. |

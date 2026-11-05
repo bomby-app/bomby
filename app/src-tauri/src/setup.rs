@@ -12,7 +12,8 @@ use serde::{Deserialize, Serialize};
 use crate::agent;
 use crate::agents::run;
 
-/// Starting every agent and opening a session takes seconds; `uv run` can add a sync.
+/// Starting every agent and opening a session takes seconds; `uv run` can add a sync, and
+/// the packaged agent's first start after an install takes about 30 s.
 const TIMEOUT: Duration = Duration::from_secs(60);
 
 /// What the probe found for one agent (`Setup` in `agent/acp_client/probe.py`).
@@ -31,15 +32,14 @@ pub struct Setup {
     pub adapter: Option<String>,
 }
 
-/// Probes `agents` (id and program), all at once. `None` when the probe couldn't run: a
-/// release build without the agent yet, or a failure.
+/// Probes `agents` (id and program), all at once. `None` when the probe couldn't run.
 pub fn probe(agents: &[(String, PathBuf)]) -> Option<HashMap<String, Setup>> {
     if agents.is_empty() {
         return Some(HashMap::new());
     }
     let programs: HashMap<_, _> = agents.iter().map(|(id, path)| (id, path)).collect();
     let metadata = serde_json::json!({ "agents": programs }).to_string();
-    let command = agent::command(&["probe.py", &metadata]).ok()?;
+    let command = agent::command(&["probe", &metadata]).ok()?;
     let output = run(command, TIMEOUT)?;
     if !output.status.success() {
         return None;
