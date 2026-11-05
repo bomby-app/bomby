@@ -13,7 +13,7 @@ A call works on one project (its folders), through one `claude-agent-acp` proces
 - A new name opens a new Claude session; different sessions run in parallel.
 - A name in use continues that session, so Claude keeps the context. Names are normalized (lowercase, dashes), so "Landing page" and "landing-page" are one session.
 - Idle session: the request becomes a new prompt turn.
-- Busy session: the request is steered into the running turn with the adapter's `_session/steering` extension (`idleBehavior: promptRequired`), and the tool returns at once; the running turn's result covers it. If the adapter doesn't advertise steering, the request waits for that session's running turn.
+- Busy session: the request is steered into the running turn with the adapter's `_session/steering` extension (`idleBehavior: promptRequired`), and the tool call stays open until that turn ends, then returns a short note beside the turn's result, which covers it. It used to return at once, and Gemini took that result as the work being done (owner's call, 2026-11-05). If the adapter doesn't advertise steering, the request waits for that session's running turn.
 - Cancel stops the turn and keeps the session.
 - Every session closes when the call ends.
 

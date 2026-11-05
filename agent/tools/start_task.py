@@ -29,8 +29,8 @@ async def start_task(
 
     Work is organized in named sessions. Each session is one conversation with the agent
     that remembers everything it did in this call; sessions run in parallel. A task sent to
-    a session that is still working reaches it mid-task and returns at once; the running
-    task's result covers it.
+    a session that is still working reaches it mid-task and returns when that task ends,
+    beside its result, which covers both. Every result means that work is finished.
 
     Args:
         task: What the user wants, with every detail they gave, as one clear request. The

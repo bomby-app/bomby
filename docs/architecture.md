@@ -77,7 +77,7 @@ The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS)
 **`start_task`** ([decision](decisions/one-tool-for-every-agent.md)):
 
 - `task` is the full request; `session` is a short name normalized to lowercase with dashes; `agent` is an `AgentName` matching `HARNESSES`.
-- New names open parallel sessions. Idle sessions start another prompt turn. Busy sessions take `_session/steering` where supported: the call returns at once with a note, and the running turn's result covers both. Otherwise the task waits for the running turn.
+- New names open parallel sessions. Idle sessions start another prompt turn. Busy sessions take `_session/steering` where supported: the call stays open until the running turn ends, then returns a note beside that turn's result, which covers both. A result always means the work is done. Otherwise the task waits for the running turn and runs after it.
 - Cancelling with `lk_agents_cancel_task` stops the turn but keeps the session.
 
 **Briefing.** Each session receives `prompts/harness-briefing.md` plus the project name, folders and instructions once (never again with follow-ups or steering): through the system prompt when supported, otherwise before its first task. It requires a short, plain-text, outcome-first final report for speech.

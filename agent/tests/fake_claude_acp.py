@@ -16,7 +16,8 @@ Prompts:
 
 - "reply <text>": narrate, run a tool call, then send "Done: <text>" as the final message
 - "permission": ask for permission, then report the option the client chose
-- "hang": wait until the client cancels, then stop with `cancelled`
+- "hang": take steered messages and wait until the client cancels, then stop with
+  `cancelled`
 - "wait <text>": wait for a steered message, then reply "Done: <text> + <steered text>"
 - "turns": reply with how many prompts this session has had, e.g. "turn 2"
 - "fail <text>": fail the turn with <text> as the error's details
@@ -238,7 +239,11 @@ class FakeClaude:
             return PromptResponse(stop_reason="end_turn")
 
         if text == "hang":
-            _ = await session.cancelled.wait()
+            session.steered = asyncio.Queue()
+            try:
+                _ = await session.cancelled.wait()
+            finally:
+                session.steered = None
             return PromptResponse(stop_reason="cancelled")
 
         if text.startswith("wait "):

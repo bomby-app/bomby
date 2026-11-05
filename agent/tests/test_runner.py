@@ -13,7 +13,13 @@ from livekit.agents.llm import ToolError
 
 from acp_client import AcpRunner
 from acp_client.client import pick_allow
-from acp_client.runner import Turn, briefing, child_environment, steered_note
+from acp_client.runner import (
+    Turn,
+    briefing,
+    child_environment,
+    steered_note,
+    stopped,
+)
 from harnesses import CLAUDE_CODE, Harness
 from project import Project
 
@@ -209,6 +215,8 @@ def test_a_request_mid_turn_is_steered_into_it(tmp_path: Path) -> None:
     async def scenario(runner: AcpRunner) -> tuple[str, Turn]:
         first = await until_prompted(runner, "wait landing page", "page")
         steered = await runner.run("make the header blue", "page")
+        # A steered request answers only once the turn it joined has ended.
+        assert first.done()
         return await first, steered
 
     (first, steered), events = run_with_fake(tmp_path, scenario)
@@ -219,6 +227,23 @@ def test_a_request_mid_turn_is_steered_into_it(tmp_path: Path) -> None:
     assert steer["idle_behavior"] == "promptRequired"
     assert steer["injected"] is True
     assert names(events).count("prompt") == 1
+
+
+def test_a_steered_request_fails_when_the_turn_it_joined_is_stopped(
+    tmp_path: Path,
+) -> None:
+    async def scenario(runner: AcpRunner) -> str:
+        first = await until_prompted(runner, "hang", "page")
+        steered = asyncio.create_task(runner.run("make the header blue", "page"))
+        await asyncio.sleep(0.2)  # let the steer reach the agent
+        _ = first.cancel()
+        with pytest.raises(ToolError) as stopped_error:
+            _ = await steered
+        return str(stopped_error.value)
+
+    message, _ = run_with_fake(tmp_path, scenario)
+
+    assert message == stopped(CLAUDE_CODE)
 
 
 PLAIN = dataclasses.replace(
