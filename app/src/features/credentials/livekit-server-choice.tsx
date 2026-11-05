@@ -14,20 +14,17 @@ const CHOICES: { value: LiveKitServer; title: string; description: string }[] =
   [
     {
       value: "thisMac",
-      title: "On this Mac",
-      description: "Bomby runs LiveKit itself. Nothing to set up.",
+      title: "Local",
+      description: "Runs on this Mac. Nothing to set up.",
     },
     {
       value: "theirs",
-      title: "LiveKit Cloud or your own server",
-      description: "Your own LiveKit project or server, with its keys.",
+      title: "Cloud",
+      description: "Your own LiveKit Cloud project and its keys.",
     },
   ]
 
-/**
- * Where calls' LiveKit server runs (docs/decisions/livekit-on-this-mac-or-cloud.md). A
- * change applies from the next call; one under way keeps its server.
- */
+/** Applies from the next call; one under way keeps its server. */
 export function LiveKitServerChoice() {
   const { keys } = useSavedKeys()
   if (!keys) return null

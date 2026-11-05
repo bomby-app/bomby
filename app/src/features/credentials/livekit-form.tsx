@@ -1,5 +1,5 @@
 import { readText } from "@tauri-apps/plugin-clipboard-manager"
-import { ClipboardPaste } from "lucide-react"
+import { Info } from "lucide-react"
 import {
   type ChangeEvent,
   type ClipboardEvent,
@@ -11,12 +11,17 @@ import {
 import { Button } from "@/components/ui/button"
 import {
   Field,
-  FieldDescription,
   FieldError,
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import { LiveKitLogo } from "@/features/setup/provider-logos"
 
 import {
   type CredentialsInfo,
@@ -143,25 +148,38 @@ export function LiveKitForm({ focus = false }: { focus?: boolean }) {
   return (
     <form onSubmit={save}>
       <FieldGroup>
-        <div className="flex items-start justify-between gap-4">
-          <FieldDescription>
-            From your LiveKit Cloud project, under Settings, API keys. Copy the
-            Environment variables box and paste it here. The free plan is
-            enough.
-          </FieldDescription>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => void pasteAll()}
-          >
-            <ClipboardPaste />
-            Paste all
-          </Button>
-        </div>
-
         <Field>
-          <FieldLabel htmlFor="livekit-url">Server URL</FieldLabel>
+          <div className="flex items-center justify-between gap-2">
+            <FieldLabel htmlFor="livekit-url">Server URL</FieldLabel>
+            <div className="flex items-center gap-1">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Where to find these"
+                  >
+                    <Info />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-64">
+                  From your LiveKit Cloud project, under Settings, API keys.
+                  Copy the Environment variables box and paste it here. The free
+                  plan is enough.
+                </TooltipContent>
+              </Tooltip>
+              <Button
+                type="button"
+                variant="claude"
+                size="sm"
+                onClick={() => void pasteAll()}
+              >
+                <LiveKitLogo />
+                Paste all
+              </Button>
+            </div>
+          </div>
           <Input
             id="livekit-url"
             placeholder="wss://your-project.livekit.cloud"
