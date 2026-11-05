@@ -6,8 +6,10 @@ fields it needs: the project (`project.py`), the installed agents
 lists (`probe.py`), and the voice and history (`call_options.py`). Console runs have no
 metadata, and each part falls back to the environment.
 
-`Pick` and `Line` are what the rest of the agent works with too, so they're dataclasses
-(pydantic's, checked the same way) that take their fields in order.
+`Pick` and `Line` are pydantic dataclasses rather than models: they're checked inside
+`JobMetadata` like any field, and the rest of the agent builds them by position too. The
+stdlib dataclasses in `acp_client/settings.py` (`Setting`, `Skipped`, `Applied`) are built
+from ACP's own types, never read from JSON.
 """
 
 from pathlib import Path

@@ -20,7 +20,7 @@ from typing import final
 
 from acp import RequestError, text_block
 from acp.client.connection import ClientSideConnection
-from acp.schema import InitializeResponse, NewSessionResponse
+from acp.schema import AgentCapabilities, InitializeResponse, NewSessionResponse
 from dotenv import dotenv_values
 from livekit.agents.llm import ToolError
 
@@ -31,6 +31,7 @@ from project import Project
 from sections import join, section
 
 from .client import HarnessClient, Reply, connect
+from .sessions import close_session, discard_session
 from .settings import Applied, apply, needs_pick
 
 logger = logging.getLogger("bomby.acp_client.runner")
@@ -38,7 +39,6 @@ logger = logging.getLogger("bomby.acp_client.runner")
 AGENT_ROOT = Path(__file__).resolve().parent.parent
 # What every harness is told about working behind a voice assistant.
 BRIEFING = (AGENT_ROOT / "prompts" / "harness-briefing.md").read_text().rstrip()
-CLOSE_TIMEOUT_S = 5
 # Never passed to any harness: the desktop app starts this agent with the user's LiveKit
 # and Gemini keys in its environment (not in .env), and GEMINI_API_KEY may come from the
 # user's own shell. Each harness blocks its own on top.
@@ -218,7 +218,7 @@ class AcpRunner:
         self._stack: AsyncExitStack | None = None
         self._conn: ClientSideConnection | None = None
         self._process: asyncio.subprocess.Process | None = None
-        self._can_close = False
+        self._capabilities: AgentCapabilities | None = None
         self._can_steer = False
         self._conn_failed = False  # a request saw the connection drop
         self._closed = False  # the call ended: refuse new work
@@ -297,8 +297,10 @@ class AcpRunner:
         for s in list(self._sessions.values()):
             async with s.open_lock:
                 session_id, conn, s.id, s.conn = s.id, s.conn, None, None
-                if session_id is not None and conn is not None:
-                    await self._close_session(conn, session_id)
+                # Closed, not deleted: the call's sessions stay in the agent's history.
+                # One whose process is gone is gone with it.
+                if session_id is not None and conn is not None and conn is self._conn:
+                    await close_session(conn, session_id, self._capabilities)
         async with self._lock:
             await self._teardown()
 
@@ -342,11 +344,11 @@ class AcpRunner:
                 raise
             if needs_pick(self._harness, applied, self._picks):
                 logger.warning(
-                    "%s needs its model picked; closing session %s",
+                    "%s needs its model picked; discarding session %s",
                     self._harness.id,
                     created.session_id,
                 )
-                await self._close_session(conn, created.session_id)
+                await discard_session(conn, created.session_id, self._capabilities)
                 raise ToolError(no_model_picked(self._harness))
             s.id, s.conn = created.session_id, conn
             s.briefed = self._harness.system_prompt_append
@@ -476,9 +478,7 @@ class AcpRunner:
         return f"The call is ending; {self._harness.short_name} takes no new work."
 
     def _read_capabilities(self, init: InitializeResponse) -> None:
-        capabilities = init.agent_capabilities
-        sessions = capabilities.session_capabilities if capabilities else None
-        self._can_close = sessions is not None and sessions.close is not None
+        self._capabilities = init.agent_capabilities
         steering: object = (init.field_meta or {}).get("steering")
         self._can_steer = (
             self._harness.steer_method is not None
@@ -531,19 +531,6 @@ class AcpRunner:
                 "setting %s failed (%s); approving permission requests instead", mode, e
             )
 
-    async def _close_session(self, conn: ClientSideConnection, session_id: str) -> None:
-        if not self._can_close or conn is not self._conn:
-            return  # the agent can't close sessions, or its process is already gone
-        try:
-            _ = await asyncio.wait_for(
-                asyncio.shield(conn.close_session(session_id=session_id)),
-                CLOSE_TIMEOUT_S,
-            )
-        except (RequestError, ConnectionError, TimeoutError) as e:
-            logger.warning(
-                "closing %s session %s failed: %s", self._harness.id, session_id, e
-            )
-
     async def _teardown(self) -> None:
         stack, self._stack, self._conn, self._process = self._stack, None, None, None
         if stack is not None:
@@ -564,9 +551,13 @@ class CallRunners:
         picks: Mapping[str, Sequence[Pick]] | None = None,
     ) -> None:
         self._project = project
-        self._installed = dict(installed)
         self._environ = dict(environ)
         self._picks = dict(picks or {})
+        self._installed = {
+            id: program
+            for id, program in installed.items()
+            if self._offered(HARNESSES[id])
+        }
         self._runners: dict[str, AcpRunner] = {}
 
     @classmethod
@@ -583,6 +574,18 @@ class CallRunners:
     @property
     def project(self) -> Project:
         return self._project
+
+    def _offered(self, harness: Harness) -> bool:
+        """Whether a call can use `harness`: not one that requires a model pick before any
+        is made, as on a console run, which has no picks. The app leaves those out itself
+        (the probe)."""
+        if harness.model_selection_required and not self._picks.get(harness.id):
+            logger.warning(
+                "%s is left out of the call: its model isn't picked (Settings)",
+                harness.id,
+            )
+            return False
+        return True
 
     @property
     def available(self) -> list[Harness]:

@@ -183,20 +183,26 @@ def test_a_pick_the_agent_refuses_never_fails_the_task(tmp_path: Path) -> None:
     assert names(events).count("new_session") == 1, "no session left behind to retry"
 
 
-def test_an_agent_whose_model_pick_is_gone_takes_no_task(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("env", "ended"),
+    [({}, "close_session"), ({"FAKE_ACP_CAN_DELETE": "1"}, "delete_session")],
+    ids=["closed", "deleted where it can be"],
+)
+def test_an_agent_whose_model_pick_is_gone_takes_no_task(
+    tmp_path: Path, env: dict[str, str], ended: str
+) -> None:
     pick_required = dataclasses.replace(CLAUDE_CODE, model_selection_required=True)
 
     message, events = run_with_fake(
         tmp_path,
         tool_error,
-        env={"FAKE_ACP_MODEL": "m1"},
+        env={**env, "FAKE_ACP_MODEL": "m1"},
         harness=pick_required,
         picks=(Pick("model", "retired"),),
     )
 
     assert message == no_model_picked(pick_required)
-    assert "prompt" not in names(events)
-    assert names(events).count("close_session") == 1, "the session it opened is closed"
+    assert names(events) == ["initialize", "new_session", "set_session_mode", ended]
 
 
 def test_project_folders_become_cwd_and_extra_directories(tmp_path: Path) -> None:

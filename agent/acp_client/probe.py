@@ -11,7 +11,6 @@ closed afterwards: an agent like omp offers no models without a session.
 
 import asyncio
 import contextlib
-import logging
 import re
 import tempfile
 from collections.abc import Collection, Mapping, Sequence
@@ -34,9 +33,8 @@ from job import Pick
 
 from .client import HarnessClient, connect
 from .runner import launch
+from .sessions import can_delete, discard_session
 from .settings import Setting, Skipped, apply, model_name, needs_pick
-
-logger = logging.getLogger("bomby.acp_client.probe")
 
 TIMEOUT_S = 30
 # claude-agent-acp gives its own `claude auth status` run 5 s (`dist/auth-status.d.ts`).
@@ -145,7 +143,7 @@ async def _check(
     listing: bool,
 ) -> Setup:
     fix = setup_command(harness, init.auth_methods or [])
-    deletable = _can_delete(init.agent_capabilities)
+    deletable = can_delete(init.agent_capabilities)
     if not deletable and not listing:
         await _wait_for_auth(client, init)
         return _setup(
@@ -181,10 +179,7 @@ async def _check(
             settings=applied.settings if listing else (),
         )
     finally:
-        if deletable:
-            await _delete(conn, session.session_id)
-        else:
-            await _close(conn, session.session_id, init.agent_capabilities)
+        await discard_session(conn, session.session_id, init.agent_capabilities)
 
 
 async def _wait_for_auth(client: HarnessClient, init: InitializeResponse) -> None:
@@ -217,34 +212,6 @@ def _setup(
 def _reports_auth(capabilities: AgentCapabilities | None) -> bool:
     meta = capabilities.field_meta if capabilities else None
     return "authStatus" in (meta or {})
-
-
-def _can_delete(capabilities: AgentCapabilities | None) -> bool:
-    sessions = capabilities.session_capabilities if capabilities else None
-    return sessions is not None and sessions.delete is not None
-
-
-async def _close(
-    conn: ClientSideConnection, session_id: str, capabilities: AgentCapabilities | None
-) -> None:
-    """Closes a session the agent can't delete; it stays in the agent's history."""
-    sessions = capabilities.session_capabilities if capabilities else None
-    if sessions is None or sessions.close is None:
-        return
-    try:
-        _ = await conn.close_session(session_id=session_id)
-    except (RequestError, ConnectionError) as e:
-        logger.warning("closing probe session %s failed: %s", session_id, e)
-
-
-async def _delete(conn: ClientSideConnection, session_id: str) -> None:
-    try:
-        # SDK 0.12.1 has the schema but no method for it (docs/acp-notes.md).
-        _ = await conn._conn.send_request(  # pyright: ignore[reportPrivateUsage]
-            "session/delete", {"sessionId": session_id}
-        )
-    except (RequestError, ConnectionError) as e:
-        logger.warning("deleting probe session %s failed: %s", session_id, e)
 
 
 def detail(error: BaseException) -> str:

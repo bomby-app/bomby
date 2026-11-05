@@ -51,7 +51,7 @@ def test_an_agent_with_a_model_is_ready(tmp_path: Path) -> None:
 
     assert setup.step == "ready"
     assert setup.model == "Fake m1"
-    assert events == ["initialize", "new_session"]
+    assert events == ["initialize", "new_session", "delete_session"]
 
 
 def test_listing_offers_the_model_and_effort_not_the_mode(tmp_path: Path) -> None:

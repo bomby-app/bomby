@@ -12,8 +12,7 @@ initialize, like an adapter without it. Setup scenarios, by environment variable
   "p2-model"), all settable, but the provider "p3", listed, is refused; `none` leaves all
   of them out
 - FAKE_ACP_AUTH_STATUS=<kind>: advertise `authStatus` and push that kind after initialize
-- FAKE_ACP_CAN_DELETE=1: advertise `session/delete` (the SDK routes no such method, so it
-  fails; only the advertisement matters)
+- FAKE_ACP_CAN_DELETE=1: advertise `session/delete`, which it serves either way
 
 Prompts:
 
@@ -35,6 +34,7 @@ import os
 import sys
 from typing import Any, Literal, final
 
+import acp.agent.connection
 from acp import (
     PROTOCOL_VERSION,
     RequestError,
@@ -43,13 +43,17 @@ from acp import (
     text_block,
     update_agent_message,
 )
+from acp.agent.router import build_agent_router
 from acp.interfaces import Client
+from acp.router import MessageRouter
 from acp.schema import (
     AgentCapabilities,
     AgentMessageChunk,
     AllowedOutcome,
     AuthMethodAgent,
     CloseSessionResponse,
+    DeleteSessionRequest,
+    DeleteSessionResponse,
     EnvVarAuthMethod,
     InitializeResponse,
     NewSessionResponse,
@@ -353,8 +357,27 @@ class FakeClaude:
         log("close_session", session_id=session_id)
         return CloseSessionResponse()
 
+    async def delete_session(
+        self, session_id: str, **_kwargs: Any
+    ) -> DeleteSessionResponse:
+        log("delete_session", session_id=session_id)
+        return DeleteSessionResponse()
+
+
+def _router_with_delete(
+    agent: Any, use_unstable_protocol: bool = False
+) -> MessageRouter:
+    """The SDK's router, plus `session/delete`, which SDK 0.12.1 doesn't route."""
+    router = build_agent_router(agent, use_unstable_protocol)
+    _ = router.route_request(
+        "session/delete", DeleteSessionRequest, agent, "delete_session"
+    )
+    return router
+
 
 if __name__ == "__main__":
+    # The connection builds its router by this name; swapping it adds `session/delete`.
+    acp.agent.connection.build_agent_router = _router_with_delete  # pyright: ignore[reportPrivateImportUsage]
     # session/close is "unstable" in the Python SDK's agent router; claude-agent-acp
     # serves it on ACP v1.
     asyncio.run(run_agent(FakeClaude(), use_unstable_protocol=True))  # pyright: ignore[reportArgumentType]

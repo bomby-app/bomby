@@ -1,19 +1,24 @@
 """The probe's answer, as the app reads it: a real answer with every field set, pinned in
 `fixtures/probe-answer.json`, which the core's test reads too (`reads_the_probes_answer` in
 app/src-tauri/src/setup.rs). A field added or renamed on one side fails a test until the
-other side follows. Regenerate the file with `UPDATE_FIXTURES=1 just agent test`."""
+other side follows. Regenerate the file with `UPDATE_FIXTURES=1 just agent test`. The
+steps are pinned the same way, against the page's `Step` (generated from the core's)."""
 
 import json
 import os
+import re
 from pathlib import Path
+from typing import get_args
 
 import pytest
 
 import probe as probe_cli
-from acp_client.probe import Setup
+from acp_client.probe import Setup, Step
 from acp_client.settings import Option, Setting, Skipped
 
-FIXTURE = Path(__file__).resolve().parent / "fixtures" / "probe-answer.json"
+TESTS = Path(__file__).resolve().parent
+FIXTURE = TESTS / "fixtures" / "probe-answer.json"
+PAGE_TYPES = TESTS.parent.parent / "app" / "src" / "generated" / "agents.ts"
 
 # Every field set, none at its default, so a dropped field shows.
 EVERYTHING = Setup(
@@ -51,4 +56,17 @@ def test_the_probes_answer_matches_the_fixture_the_core_reads(
     assert answer == FIXTURE.read_text(), (
         "the probe's answer changed: run UPDATE_FIXTURES=1 just agent test, then update "
         + "Setup in app/src-tauri/src/setup.rs to match"
+    )
+
+
+def test_the_steps_match_the_ones_the_page_reads() -> None:
+    found = re.search(
+        r"^export type Step = (.+);$", PAGE_TYPES.read_text(), re.MULTILINE
+    )
+    assert found, f"no Step in {PAGE_TYPES}"
+    page_steps = tuple(re.findall(r'"([a-z_]+)"', found.group(1)))
+
+    assert get_args(Step.__value__) == page_steps, (
+        "the steps changed: update Step in app/src-tauri/src/setup.rs, then run "
+        + "just app types"
     )

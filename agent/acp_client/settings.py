@@ -114,10 +114,11 @@ async def apply(
     while pick := next((pending[s.id] for s in settings if s.id in pending), None):
         del pending[pick.setting]
         setting = next(s for s in settings if s.id == pick.setting)
+        # Current first: an agent can be on a value it doesn't list.
+        if setting.current == pick.value:
+            continue
         if setting.option(pick.value) is None:
             skipped.append(Skipped(pick.setting, setting.name, pick.value, "gone"))
-            continue
-        if setting.current == pick.value:
             continue
         try:
             response = await conn.set_config_option(
