@@ -61,6 +61,7 @@ The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS)
   "folders": ["/Users/me/Dev/samba", "/Users/me/Dev/shared"],
   "instructions": "A music app: the API is in Go, the site in Svelte.",
   "agents": {"claude": "/Users/me/.local/bin/claude", "opencode": "/Users/me/.opencode/bin/opencode"},
+  "choices": {"claude": [{"setting": "model", "value": "opus"}], "opencode": [{"setting": "model", "value": "provider/model-id"}]},
   "voice": "Charon",
   "user_name": "Sam",
   "history": [{"role": "user", "text": "fix the login"}, {"role": "agent", "text": "Claude's on it."}]
@@ -69,7 +70,8 @@ The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS)
 
 - All fields are optional. `folders` must be absolute, existing paths; the first is the working directory and the rest become ACP `additionalDirectories`. Defaults are the home folder, project `home`, and voice `GEMINI_VOICE` or Charon.
 - `instructions` is what the user wrote about the project in its settings, up to 5,000 characters; empty when they wrote nothing, and then neither the voice model nor the coding agents hear of it.
-- `agents` maps installed harness ids to programs. The voice model can use only agents in this list; console runs find them on PATH ([decision](decisions/detect-acp-native-agents.md)).
+- `agents` maps installed harness ids to programs: only the agents the user set up and the probe finds ready. The voice model can use only agents in this list; console runs find them on PATH ([decision](decisions/detect-acp-native-agents.md)).
+- `choices` holds each agent's setup: the session settings the user picked (model, effort, goose's provider), which the runner applies in order to every session it opens with `session/set_config_option`. A choice the agent no longer offers makes it not ready ([decision](decisions/set-up-every-agent-the-same-way.md)).
 - `user_name` is what the user asked to be called in Settings, Intro, up to 50 characters; empty when they'd rather not say, and then the prompt doesn't mention a name. Only the voice model gets it ([decision](decisions/the-users-name-only-for-the-voice.md)).
 - `history` appears only when resuming a call and contains its last 50 lines ([decision](decisions/resume-a-call-with-its-last-lines.md)).
 - The agent reads it once (`agent/job.py`); the project, the installed agents and the call options each take their fields from that. Console runs use `BOMBY_PROJECT`, `BOMBY_FOLDERS`, `BOMBY_INSTRUCTIONS` and `BOMBY_USER_NAME` from `agent/.env`. Invalid metadata fails the call at start.

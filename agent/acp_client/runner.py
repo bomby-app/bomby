@@ -31,6 +31,7 @@ from project import Project
 from sections import join, section
 
 from .client import HarnessClient, Reply, connect
+from .settings import Choice, ChoiceGone, apply, saved_choices
 
 logger = logging.getLogger("bomby.acp_client.runner")
 
@@ -197,8 +198,10 @@ class AcpRunner:
         env: Mapping[str, str],
         command: str,
         args: Sequence[str] = (),
+        choices: Sequence[Choice] = (),
     ) -> None:
         self._harness = harness
+        self._choices = tuple(choices)  # what the user picked when setting it up
         self._command = command
         self._args = tuple(args)
         self._project = project
@@ -326,6 +329,7 @@ class AcpRunner:
                     **options,
                 )
                 await self._bypass_permissions(conn, created)
+                await self._apply_choices(conn, created)
             except ConnectionError:
                 self._connection_lost(conn)
                 raise
@@ -469,6 +473,23 @@ class AcpRunner:
         if not self._can_steer:
             logger.warning("%s can't steer: mid-turn requests will wait", self._command)
 
+    async def _apply_choices(
+        self, conn: ClientSideConnection, session: NewSessionResponse
+    ) -> None:
+        """Gives the session the model and effort the user set the agent up with."""
+        try:
+            _ = await apply(
+                conn,
+                session.session_id,
+                self._harness,
+                session.config_options,
+                self._choices,
+            )
+        except ChoiceGone as e:
+            # Settings shows it too: the probe finds the same, and asks to set it up again.
+            logger.warning("%s: %s", self._harness.id, e)
+            raise ToolError(not_ready(self._harness)) from e
+
     async def _bypass_permissions(
         self, conn: ClientSideConnection, session: NewSessionResponse
     ) -> None:
@@ -520,20 +541,24 @@ class CallRunners:
         project: Project,
         installed: Mapping[str, Path],
         environ: Mapping[str, str],
+        choices: Mapping[str, Sequence[Choice]] | None = None,
     ) -> None:
         self._project = project
         self._installed = dict(installed)
         self._environ = dict(environ)
+        self._choices = dict(choices or {})
         self._runners: dict[str, AcpRunner] = {}
 
     @classmethod
     def for_job(cls, fields: JobFields) -> "CallRunners":
-        """Runners for the project and the installed agents in the job's metadata (see
-        `Project.from_job` and `harnesses.installed`)."""
+        """Runners for the project and the installed agents in the job's metadata, with
+        each agent's setup choices (see `Project.from_job`, `harnesses.installed` and
+        `settings.saved_choices`)."""
         return cls(
             Project.from_job(fields, os.environ),
             installed(fields, HARNESSES, os.environ),
             os.environ,
+            saved_choices(fields),
         )
 
     @property
@@ -554,7 +579,12 @@ class CallRunners:
             raise ToolError(not_ready(harness))
         command, args, env = launch(harness, program, self._environ)
         runner = self._runners[harness.id] = AcpRunner(
-            harness=harness, project=self._project, env=env, command=command, args=args
+            harness=harness,
+            project=self._project,
+            env=env,
+            command=command,
+            args=args,
+            choices=self._choices.get(harness.id, ()),
         )
         return runner
 

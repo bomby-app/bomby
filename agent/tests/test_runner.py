@@ -18,9 +18,11 @@ from acp_client.runner import (
     briefing,
     child_environment,
     no_report,
+    not_ready,
     steered_note,
     stopped,
 )
+from acp_client.settings import Choice
 from harnesses import CLAUDE_CODE, Harness
 from project import Project
 
@@ -34,6 +36,7 @@ def run_with_fake(
     folders: tuple[Path, ...] | None = None,
     env: Mapping[str, str] | None = None,
     harness: Harness = CLAUDE_CODE,
+    choices: tuple[Choice, ...] = (),
 ) -> tuple[Any, list[dict[str, Any]]]:
     """Run `scenario` against the fake ACP agent; return its result and the agent's log."""
     log = tmp_path / "acp.jsonl"
@@ -43,6 +46,7 @@ def run_with_fake(
         args=[str(FAKE_AGENT)],
         project=Project(name="test", folders=folders or (tmp_path,)),
         env={**os.environ, **(env or {}), "FAKE_ACP_LOG": str(log)},
+        choices=choices,
     )
 
     async def main() -> Any:
@@ -119,6 +123,44 @@ def test_a_turn_without_a_final_message_fails_instead_of_reading_as_done(
     message, _ = run_with_fake(tmp_path, scenario)
 
     assert message == no_report(CLAUDE_CODE)
+
+
+def test_each_session_gets_the_model_and_effort_the_agent_was_set_up_with(
+    tmp_path: Path,
+) -> None:
+    choices = (Choice("model", "m2"), Choice("effort", "high"))
+
+    _, events = run_with_fake(
+        tmp_path,
+        lambda r: text(r.run("reply ok")),
+        env={"FAKE_ACP_MODEL": "m1"},
+        choices=choices,
+    )
+
+    set_ = [
+        (e["config_id"], e["value"])
+        for e in events
+        if e["event"] == "set_config_option"
+    ]
+    assert set_ == [("model", "m2"), ("effort", "high")]
+    assert names(events).index("set_config_option") < names(events).index("prompt")
+
+
+def test_a_saved_choice_the_agent_dropped_makes_it_not_ready(tmp_path: Path) -> None:
+    async def scenario(runner: AcpRunner) -> str:
+        with pytest.raises(ToolError) as error:
+            _ = await runner.run("reply ok")
+        return str(error.value)
+
+    message, events = run_with_fake(
+        tmp_path,
+        scenario,
+        env={"FAKE_ACP_MODEL": "m1"},
+        choices=(Choice("model", "retired"),),
+    )
+
+    assert message == not_ready(CLAUDE_CODE)
+    assert "prompt" not in names(events)
 
 
 def test_project_folders_become_cwd_and_extra_directories(tmp_path: Path) -> None:
