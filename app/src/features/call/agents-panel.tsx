@@ -1,8 +1,8 @@
 import {
   Check,
   CircleSlash,
-  Clock,
   Inbox,
+  ListEnd,
   LoaderCircle,
   Plus,
   X,
@@ -17,6 +17,11 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { AgentLogo } from "@/features/agents/agent-logos"
 import { cn } from "@/lib/utils"
 
@@ -88,39 +93,43 @@ function TaskRow({ task }: { task: Task }) {
   )
 }
 
+/**
+ * Each status is one icon, its label a tooltip and what screen readers hear. Good news (done,
+ * added to a running task) is an ink mark on a highlighter disc (docs/brand.md).
+ */
 const STATUS = {
-  queued: { label: "Queued", Icon: Clock },
-  working: { label: "Working", Icon: LoaderCircle },
-  added: { label: "Added", Icon: Plus },
-  done: { label: "Done", Icon: Check },
-  failed: { label: "Failed", Icon: X },
-  stopped: { label: "Stopped", Icon: CircleSlash },
+  queued: { label: "Queued", Icon: ListEnd, disc: false },
+  working: { label: "Working", Icon: LoaderCircle, disc: false },
+  added: { label: "Added to the running task", Icon: Plus, disc: true },
+  done: { label: "Done", Icon: Check, disc: true },
+  failed: { label: "Failed", Icon: X, disc: false },
+  stopped: { label: "Stopped", Icon: CircleSlash, disc: false },
 } as const
 
 function TaskStatus({ status }: { status: Task["status"] }) {
-  const { label, Icon } = STATUS[status] ?? STATUS.done
+  const { label, Icon, disc } = STATUS[status] ?? STATUS.done
   return (
-    <span
-      className={cn(
-        "ml-auto flex shrink-0 items-center gap-1 text-xs text-muted-foreground",
-        status === "failed" && "text-destructive"
-      )}
-    >
-      {status === "done" ? (
-        // Good news is an ink mark on a highlighter disc (docs/brand.md).
-        <span className="flex size-3.5 items-center justify-center rounded-full bg-highlighter text-highlighter-foreground">
-          <Icon className="size-2.5" strokeWidth={3} />
-        </span>
-      ) : (
-        <Icon
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
           className={cn(
-            "size-3.5",
-            // Highlighter in dark mode, ink in light (never highlighter on white).
-            status === "working" && "animate-spin text-primary"
+            "ml-auto flex size-4 shrink-0 items-center justify-center text-muted-foreground",
+            disc && "rounded-full bg-highlighter text-highlighter-foreground",
+            status === "failed" && "text-destructive"
           )}
-        />
-      )}
-      {label}
-    </span>
+        >
+          <Icon
+            className={cn(
+              disc ? "size-2.5" : "size-3.5",
+              // Highlighter in dark mode, ink in light (never highlighter on white).
+              status === "working" && "animate-spin text-primary"
+            )}
+            strokeWidth={disc ? 3 : 2}
+          />
+          <span className="sr-only">{label}</span>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
   )
 }
