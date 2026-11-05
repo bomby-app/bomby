@@ -20,5 +20,5 @@ An installed agent can still be unusable: goose with no provider, omp with no mo
 
 - A new ACP agent gets setup checks and friendly errors with no code of its own; a harness adds `setup_command` only when its `authMethods` don't name one.
 - A look takes about as long as the slowest agent's start, 2 to 3 s, in the background.
-- omp gets one session in its history per launch, and one per Check again; later looks keep what that one found.
+- omp gets one session in its history per launch, and one per Check again (Refresh models in Settings, Agents); later looks keep what that one found.
 - A setup that changes while the app runs shows after Check again; until then a call says sorry and offers another agent.
