@@ -9,6 +9,7 @@ Every doc has one job; keep it that way.
 | [releasing.md](releasing.md) | How a signed, notarized release is built on GitHub, its secrets and its cost. |
 | [brand.md](brand.md) | Bomby's name, logo, colours, type, mascot and voice; points at the Paper file. |
 | [decisions/](decisions/) | One short record per decision: what we chose, why, and what it costs. |
+| [plans/](plans/) | Working plans for work not started yet. When the work lands, its lasting parts move into decisions and notes, and the plan is deleted. |
 | [acp-notes.md](acp-notes.md) | ACP and `claude-agent-acp` facts, checked against the installed source. |
 | [livekit-notes.md](livekit-notes.md) | LiveKit Agents facts we rely on (async tools, dispatch, data to the frontend). |
 | [tauri-notes.md](tauri-notes.md) | How a Tauri app fits together, and the Tauri facts we rely on (mic permissions, window, bundling, signing, updates). |
