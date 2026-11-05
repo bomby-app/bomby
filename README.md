@@ -12,7 +12,7 @@ Bomby is in beta and runs on macOS.
 
 ## How it works
 
-1. **You talk.** Start a call on a project. Bomby listens and answers out loud, using Gemini Live through LiveKit.
+1. **You talk.** Start a call on a project. Bomby listens and answers out loud, using Gemini Live through LiveKit. Give the project instructions, and Bomby and your agent know what it is before you say a word.
 2. **Your agent works.** Real work goes to an agent installed on your computer, in the project's folders, over the [Agent Client Protocol](https://agentclientprotocol.com) (ACP). Each piece of work gets its own session, and sessions run side by side.
 3. **You hear the result.** When the agent finishes, Bomby tells you what happened. The tasks panel in the call shows what each agent is doing.
 
@@ -53,7 +53,7 @@ just install    # the pinned tools (mise) and every part's dependencies
 just app dev    # start the app
 ```
 
-Then open Settings, paste your LiveKit and Gemini keys under Credentials, and check that Setup and Agents look ready. Add a project with its folders and start a call.
+Then open Settings, paste your LiveKit and Gemini keys under Credentials, and check that Setup and Agents look ready. Tell Bomby what to call you under Intro if you like. Add a project with its folders (and, if you want, a few words about it) and start a call.
 
 ### Without the app
 
