@@ -43,11 +43,13 @@ export function IntroSettings() {
   }, [])
 
   async function chooseTone(next: Tone) {
+    const previous = tone
     setError(null)
     setToneState(next)
     try {
       await setTone(next)
     } catch (e) {
+      setToneState(previous)
       setError(String(e))
     }
   }

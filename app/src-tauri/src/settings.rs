@@ -202,14 +202,22 @@ pub fn set_user_name(db: State<'_, Db>, name: String) -> Result<String> {
     save_user_name(&db.conn(), &name)
 }
 
-/// Until chosen: theirs if their keys are saved, so existing installs stay on them.
+/// Until chosen: theirs if their keys are saved, so existing installs stay on them. Saved
+/// on first read, so removing the keys later doesn't switch calls to this Mac.
 pub(crate) fn livekit_server(conn: &Connection, has_their_keys: bool) -> Result<LiveKitServer> {
-    Ok(match get(conn, LIVEKIT_SERVER_KEY)?.as_deref() {
-        Some("this_mac") => LiveKitServer::ThisMac,
-        Some("theirs") => LiveKitServer::Theirs,
-        _ if has_their_keys => LiveKitServer::Theirs,
-        _ => LiveKitServer::ThisMac,
-    })
+    match get(conn, LIVEKIT_SERVER_KEY)?.as_deref() {
+        Some("this_mac") => Ok(LiveKitServer::ThisMac),
+        Some("theirs") => Ok(LiveKitServer::Theirs),
+        _ => {
+            let server = if has_their_keys {
+                LiveKitServer::Theirs
+            } else {
+                LiveKitServer::ThisMac
+            };
+            save_livekit_server(conn, server)?;
+            Ok(server)
+        }
+    }
 }
 
 pub(crate) fn save_livekit_server(conn: &Connection, server: LiveKitServer) -> Result<()> {
@@ -290,8 +298,12 @@ mod tests {
         let db = Db::in_memory().unwrap();
         let conn = db.conn();
         assert_eq!(livekit_server(&conn, true).unwrap(), LiveKitServer::Theirs);
+        // Saved once worked out: removing the keys later keeps it.
+        assert_eq!(livekit_server(&conn, false).unwrap(), LiveKitServer::Theirs);
+
+        let fresh = Db::in_memory().unwrap();
         assert_eq!(
-            livekit_server(&conn, false).unwrap(),
+            livekit_server(&fresh.conn(), false).unwrap(),
             LiveKitServer::ThisMac
         );
 

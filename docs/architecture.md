@@ -76,7 +76,7 @@ The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS)
 - `tone` is `sharp` (the default), `chatty` or `playful`, from Settings, Bomby; an unknown one is `sharp` ([decision](decisions/tones-as-whole-prompts.md)).
 - `user_name` is what the user asked to be called in Settings, Bomby, up to 50 characters; empty when they'd rather not say, and then the prompt doesn't mention a name. Only the voice model gets it ([decision](decisions/the-users-name-only-for-the-voice.md)).
 - `history` appears only when resuming a call and contains its last 50 lines ([decision](decisions/resume-a-call-with-its-last-lines.md)).
-- The agent reads and checks it once against one typed contract (`JobMetadata` in `agent/job.py`, pydantic); the project, the installed agents, the picks and the call options each take their fields from that. Console runs use `BOMBY_PROJECT`, `BOMBY_FOLDERS`, `BOMBY_INSTRUCTIONS` and `BOMBY_USER_NAME` from `agent/.env`. Invalid metadata fails the call at start.
+- The agent reads and checks it once against one typed contract (`JobMetadata` in `agent/job.py`, pydantic); the project, the installed agents, the picks and the call options each take their fields from that. Console runs use `BOMBY_PROJECT`, `BOMBY_FOLDERS`, `BOMBY_INSTRUCTIONS`, `BOMBY_USER_NAME` and `BOMBY_TONE` from `agent/.env`. Invalid metadata fails the call at start.
 
 **`start_task`** ([decision](decisions/one-tool-for-every-agent.md)):
 

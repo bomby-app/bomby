@@ -6,6 +6,7 @@ use std::net::{TcpListener, TcpStream, UdpSocket};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -33,9 +34,19 @@ struct Running {
 
 pub struct LocalServer {
     running: Mutex<Option<Running>>,
+    /// Held while a server starts, so `running` is never held that long.
+    starting: Mutex<()>,
+    /// Bumped by `stop`, so a start it overlapped doesn't keep its server.
+    stops: AtomicU64,
     program: PathBuf,
     data_dir: PathBuf,
     log_dir: PathBuf,
+}
+
+impl Drop for LocalServer {
+    fn drop(&mut self) {
+        self.stop();
+    }
 }
 
 /// tauri-build puts the sidecar next to the app's program, in dev too.
@@ -49,6 +60,8 @@ impl LocalServer {
         stop_left_behind(&data_dir.join(PID_FILE), &program);
         Self {
             running: Mutex::new(None),
+            starting: Mutex::new(()),
+            stops: AtomicU64::new(0),
             program,
             data_dir,
             log_dir,
@@ -56,16 +69,30 @@ impl LocalServer {
     }
 
     pub fn ensure(&self) -> Result<LiveKitKeys> {
-        let mut slot = sync::lock(&self.running);
-        if let Some(running) = slot.as_mut()
-            && matches!(running.child.try_wait(), Ok(None))
-        {
-            return Ok(running.keys.clone());
-        }
-        if let Some(old) = slot.take() {
+        let _starting = sync::lock(&self.starting);
+        let dead = {
+            let mut slot = sync::lock(&self.running);
+            if let Some(running) = slot.as_mut()
+                && matches!(running.child.try_wait(), Ok(None))
+            {
+                return Ok(running.keys.clone());
+            }
+            slot.take()
+        };
+        if let Some(old) = dead {
             process::stop_group(old.child, STOP_TIMEOUT);
         }
+        let stops = self.stops.load(Ordering::SeqCst);
         let running = self.start()?;
+        let mut slot = sync::lock(&self.running);
+        if self.stops.load(Ordering::SeqCst) != stops {
+            drop(slot);
+            process::stop_group(running.child, STOP_TIMEOUT);
+            let _ = fs::remove_file(self.data_dir.join(PID_FILE));
+            return Err(Error::Invalid(
+                "Bomby is stopping its LiveKit server.".into(),
+            ));
+        }
         let keys = running.keys.clone();
         *slot = Some(running);
         Ok(keys)
@@ -78,7 +105,9 @@ impl LocalServer {
     }
 
     pub fn stop(&self) {
-        if let Some(running) = sync::lock(&self.running).take() {
+        self.stops.fetch_add(1, Ordering::SeqCst);
+        let running = sync::lock(&self.running).take();
+        if let Some(running) = running {
             process::stop_group(running.child, STOP_TIMEOUT);
             let _ = fs::remove_file(self.data_dir.join(PID_FILE));
         }
@@ -235,14 +264,28 @@ fn stop_left_behind(pid_file: &Path, program: &Path) {
         return;
     };
     if is_program(pid, program) {
-        // SAFETY: only sends a signal.
-        #[cfg(unix)]
-        unsafe {
-            libc::killpg(pid, libc::SIGTERM)
-        };
+        stop_group_by_pid(pid);
     }
     let _ = fs::remove_file(pid_file);
 }
+
+/// Like `process::stop_group` for a process that isn't our child: SIGTERM, then SIGKILL.
+#[cfg(unix)]
+fn stop_group_by_pid(pid: i32) {
+    // SAFETY: only sends signals; signal 0 only checks the process exists.
+    let alive = || unsafe { libc::kill(pid, 0) } == 0;
+    unsafe { libc::killpg(pid, libc::SIGTERM) };
+    let started = Instant::now();
+    while alive() && started.elapsed() < STOP_TIMEOUT {
+        thread::sleep(READY_POLL);
+    }
+    if alive() {
+        unsafe { libc::killpg(pid, libc::SIGKILL) };
+    }
+}
+
+#[cfg(not(unix))]
+fn stop_group_by_pid(_pid: i32) {}
 
 #[cfg(target_os = "macos")]
 fn is_program(pid: i32, program: &Path) -> bool {
@@ -300,6 +343,22 @@ mod tests {
 
         server.stop();
         assert_eq!(server.current(), None);
+        assert!(!answers_ok(port));
+        assert!(!dir.join(PID_FILE).exists());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn the_next_launch_stops_a_server_a_crashed_run_left() {
+        let dir = temp_dir("left");
+        let crashed = LocalServer::new(built(), dir.clone(), dir.clone());
+        let keys = crashed.ensure().unwrap();
+        let port: u16 = keys.url.rsplit(':').next().unwrap().parse().unwrap();
+        // A crash never runs Drop.
+        std::mem::forget(crashed);
+
+        let _next = LocalServer::new(built(), dir.clone(), dir.clone());
+
         assert!(!answers_ok(port));
         assert!(!dir.join(PID_FILE).exists());
         let _ = fs::remove_dir_all(dir);

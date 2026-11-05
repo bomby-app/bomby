@@ -79,11 +79,14 @@ async def until_prompted(
     def prompts() -> int:
         if not log.exists():
             return 0
-        return sum(
-            e.get("text") == task
-            for e in map(json.loads, log.read_text().splitlines())
-            if e["event"] == "prompt"
-        )
+        count = 0
+        # Only whole lines: the fake may be part-way through writing the last one.
+        for line in log.read_text().splitlines(keepends=True):
+            if not line.endswith("\n"):
+                continue
+            event = json.loads(line)
+            count += event["event"] == "prompt" and event.get("text") == task
+        return count
 
     before = prompts()
     running = asyncio.create_task(text(runner.run(task, session)))
