@@ -5,6 +5,7 @@ import {
   agentsStatus,
   onAgentsChanged,
   refreshAgents,
+  type Step,
 } from "./api"
 
 /**
@@ -46,7 +47,22 @@ export async function checkAgentsAgain(): Promise<void> {
   }
 }
 
-/** Installed, and not found to need setup. One the core couldn't probe counts as ready. */
-export function isReady({ path, setup }: AgentStatus): boolean {
-  return path !== null && setup?.ready !== false
+/** Installed and not found to need setup. One the core couldn't probe counts as ready. */
+export function isReady(agent: AgentStatus): boolean {
+  return setupStep(agent) === "ready"
+}
+
+/**
+ * What an agent needs before a call can use it, the same for every agent: installing (none
+ * on this Mac), or the step the core's probe decided (`Step`): its ACP adapter (`connect`,
+ * which Set up installs), what its own setup lacks (`sign_in`: the agent's fix, in
+ * Terminal), a model pick for an agent whose harness requires one (`pick`, in
+ * `ModelPicker`), or an answer (`unreachable`: check again). Any other agent's model can be
+ * changed there, but never has to be.
+ */
+export type SetupStep = "missing" | Step
+
+export function setupStep({ path, setup }: AgentStatus): SetupStep {
+  if (path === null) return "missing"
+  return setup?.step ?? "ready"
 }

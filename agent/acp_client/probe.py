@@ -1,7 +1,13 @@
 """Whether a harness is set up, checked the same way for every agent: start it, open a
 session in an empty folder and look at what comes back, without sending a prompt
-(docs/decisions/check-agent-setup-with-an-acp-probe.md). A session lands in the agent's
-history, so it's only opened when the agent can delete it again.
+(docs/decisions/check-agent-setup-with-an-acp-probe.md). The user's picks (`settings.py`)
+are applied first, so it shows the model a call's session would run on, and which picks the
+agent no longer offers. For the model picker it also lists what can be picked.
+
+A session lands in the agent's history, so the background check opens one only when the
+agent can delete it again, or when the app asks for one (`open_session`): it does once per launch
+for an agent that can't (omp), so even that one's setup and model are checked, not assumed.
+The model picker, which the user opens, gets one either way. Either is closed afterwards.
 """
 
 import asyncio
@@ -9,9 +15,10 @@ import contextlib
 import logging
 import re
 import tempfile
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Collection, Mapping, Sequence
+from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Literal
 
 from acp import RequestError
 from acp.client.connection import ClientSideConnection
@@ -20,16 +27,16 @@ from acp.schema import (
     AuthMethodAgent,
     EnvVarAuthMethod,
     InitializeResponse,
-    NewSessionResponse,
-    SessionConfigOptionSelect,
-    SessionConfigSelectGroup,
     TerminalAuthMethod,
 )
 
 from harnesses.harness import Harness
+from job import Pick
 
 from .client import HarnessClient, connect
 from .runner import launch
+from .sessions import can_delete, discard_session
+from .settings import Setting, Skipped, apply, model_name, needs_pick
 
 logger = logging.getLogger("bomby.acp_client.probe")
 
@@ -41,11 +48,24 @@ _COMMAND = re.compile(r"`([^`]+)`")
 _MAX_DETAIL = 300
 
 
+type Step = Literal["connect", "sign_in", "pick", "unreachable", "ready"]
+"""What the user does next for an agent, the first that applies:
+- `connect`: install its ACP adapter, which the app does (`adapter`).
+- `unreachable`: try again later; it didn't answer in time, quit while starting, or
+  couldn't be started (`problem`).
+- `sign_in`: fix the agent's own setup, in the agent (`fix`, in Terminal): it isn't signed
+  in, refused to open a session, or has no model set.
+- `pick`: pick its model; its harness requires one (`model_selection_required`) and no
+  model pick holds.
+- `ready`: nothing; a call can use it.
+"""
+
+
 @dataclass(frozen=True)
 class Setup:
     """What Settings shows about an installed agent."""
 
-    ready: bool
+    step: Step
     problem: str | None = None
     """What's wrong, in the agent's words where it gave any."""
     fix: str | None = None
@@ -53,17 +73,34 @@ class Setup:
     account: str | None = None
     """Who it runs as, as the agent labels it: "Claude Max"."""
     model: str | None = None
-    """The model a new session uses, by its display name."""
+    """The model a new session uses, picks applied, by its display name."""
     adapter: str | None = None
     """The ACP adapter it needs and doesn't have yet, which the app installs: "codex-acp"."""
+    skipped: tuple[Skipped, ...] = ()
+    """Picks that didn't apply (gone or refused); sessions keep its default for them."""
+    session: bool = False
+    """Whether a session was opened, so `model` and `skipped` are known. The background
+    check opens none in an agent that can't delete it (omp)."""
+    settings: tuple[Setting, ...] = ()
+    """What the user can pick, with the picks applied; only when listing."""
 
 
-async def probe(harness: Harness, program: Path, environ: Mapping[str, str]) -> Setup:
-    """Checks `harness`, started from `program` the way a call would start it."""
+async def probe(
+    harness: Harness,
+    program: Path,
+    environ: Mapping[str, str],
+    picks: Sequence[Pick] = (),
+    listing: bool = False,
+    open_session: bool = False,
+) -> Setup:
+    """Checks `harness`, started from `program` the way a call would start it, with the
+    user's `picks` applied in order. `listing` is for the model picker: it returns the
+    settings that can be picked, opening a session even in an agent that can't delete it.
+    `open_session` opens one there too, without the settings."""
     adapter = harness.adapter_path(environ)
     if adapter is not None and not Path(adapter).is_file():
         return Setup(
-            ready=False, problem="Its ACP adapter isn't set up", adapter=harness.adapter
+            "connect", problem="Its ACP adapter isn't set up", adapter=harness.adapter
         )
     command, args, env = launch(harness, program, environ)
     client = HarnessClient(harness)
@@ -75,23 +112,47 @@ async def probe(harness: Harness, program: Path, environ: Mapping[str, str]) -> 
                 _,
                 init,
             ):
-                return await _check(harness, conn, client, init)
+                return await _check(
+                    harness, conn, client, init, picks, listing, open_session
+                )
     except TimeoutError:
-        return Setup(ready=False, problem="It didn't answer in time")
+        return Setup("unreachable", problem="It didn't answer in time")
     # Before OSError, which ConnectionError is a kind of.
     except (RequestError, ConnectionError) as e:
-        return Setup(ready=False, problem=f"It quit while starting: {detail(e)}")
+        return Setup("unreachable", problem=f"It quit while starting: {detail(e)}")
     except OSError as e:
-        return Setup(ready=False, problem=f"It couldn't be started: {detail(e)}")
+        return Setup("unreachable", problem=f"It couldn't be started: {detail(e)}")
+    # Anything else (an answer the SDK can't read) fails only this agent.
+    except Exception as e:
+        logger.exception("probing %s failed", harness.id)
+        return Setup(
+            "unreachable", problem=f"It answered in a way Bomby can't read: {detail(e)}"
+        )
 
 
 async def probe_all(
-    agents: Mapping[str, tuple[Harness, Path]], environ: Mapping[str, str]
+    agents: Mapping[str, tuple[Harness, Path]],
+    environ: Mapping[str, str],
+    picks: Mapping[str, Sequence[Pick]] | None = None,
+    listing: Collection[str] = (),
+    sessions: Collection[str] = (),
 ) -> dict[str, Setup]:
-    """Checks every agent at once."""
+    """Checks every agent at once, each with its own `picks`, listing the settings of
+    those in `listing`, and opening a session in those in `sessions` even if they can't
+    delete it."""
     ids = list(agents)
     setups = await asyncio.gather(
-        *(probe(harness, program, environ) for harness, program in agents.values())
+        *(
+            probe(
+                harness,
+                program,
+                environ,
+                (picks or {}).get(id, ()),
+                id in listing,
+                id in sessions,
+            )
+            for id, (harness, program) in agents.items()
+        )
     )
     return dict(zip(ids, setups, strict=True))
 
@@ -101,81 +162,80 @@ async def _check(
     conn: ClientSideConnection,
     client: HarnessClient,
     init: InitializeResponse,
+    picks: Sequence[Pick],
+    listing: bool,
+    open_session: bool,
 ) -> Setup:
     fix = setup_command(harness, init.auth_methods or [])
-    session = None
-    if _can_delete(init.agent_capabilities):
-        try:
-            session = await conn.new_session(cwd=str(FOLDER), mcp_servers=[])
-        except RequestError as e:
-            return Setup(ready=False, problem=detail(e), fix=fix)
+    deletable = can_delete(init.agent_capabilities)
+    if not deletable and not listing and not open_session:
+        await _wait_for_auth(client, init)
+        return _setup(
+            client.auth_status,
+            fix,
+            lacks_model=False,
+            # Without a session the model setting is unknown: any pick counts.
+            lacks_pick=harness.model_selection_required and not picks,
+        )
     try:
-        if _reports_auth(init.agent_capabilities):
-            with contextlib.suppress(TimeoutError):
-                _ = await asyncio.wait_for(client.auth_reported.wait(), AUTH_WAIT_S)
-        return _judge(session, client.auth_status, fix)
+        session = await conn.new_session(cwd=str(FOLDER), mcp_servers=[])
+    except RequestError as e:
+        return Setup("sign_in", problem=detail(e), fix=fix)
+    try:
+        applied = await apply(
+            conn, session.session_id, harness, session.config_options, picks
+        )
+        await _wait_for_auth(client, init)
+        model = model_name(applied.settings)
+        setup = _setup(
+            client.auth_status,
+            fix,
+            # No model among its options, or none at all where its harness needs a pick.
+            lacks_model=model is None
+            and (bool(session.config_options) or harness.model_selection_required),
+            lacks_pick=needs_pick(harness, applied, picks),
+        )
+        return replace(
+            setup,
+            session=True,
+            model=model,
+            skipped=applied.skipped,
+            settings=applied.settings if listing else (),
+        )
     finally:
-        if session is not None:
-            await _delete(conn, session.session_id)
+        await discard_session(conn, session.session_id, init.agent_capabilities)
 
 
-def _judge(
-    session: NewSessionResponse | None,
+async def _wait_for_auth(client: HarnessClient, init: InitializeResponse) -> None:
+    """Gives an agent that reports its sign-in time to report it."""
+    if _reports_auth(init.agent_capabilities):
+        with contextlib.suppress(TimeoutError):
+            _ = await asyncio.wait_for(client.auth_reported.wait(), AUTH_WAIT_S)
+
+
+def _setup(
     auth: Mapping[str, object] | None,
     fix: str | None,
+    *,
+    lacks_model: bool,
+    lacks_pick: bool,
 ) -> Setup:
-    account = auth.get("label") if auth else None
-    account = account if isinstance(account, str) else None
+    """An agent that started, by the first thing it lacks: a sign-in (by its reported
+    `auth`), a model, a model pick."""
     if auth and auth.get("kind") == "none":
-        return Setup(ready=False, problem="Not signed in", fix=fix)
-    options = session.config_options if session else None
-    model = next(
-        (
-            o
-            for o in options or []
-            if isinstance(o, SessionConfigOptionSelect) and o.category == "model"
-        ),
-        None,
-    )
-    if options and model is None:
-        return Setup(ready=False, problem="No model is set", fix=fix, account=account)
-    return Setup(
-        ready=True, account=account, model=_display_name(model) if model else None
-    )
-
-
-def _display_name(option: SessionConfigOptionSelect) -> str:
-    choices = [
-        choice
-        for entry in option.options
-        for choice in (
-            entry.options if isinstance(entry, SessionConfigSelectGroup) else [entry]
-        )
-    ]
-    return next(
-        (c.name for c in choices if c.value == option.current_value),
-        option.current_value,
-    )
+        return Setup("sign_in", problem="Not signed in", fix=fix)
+    label = auth.get("label") if auth else None
+    account = label if isinstance(label, str) else None
+    if lacks_model:
+        return Setup("sign_in", problem="No model is set", fix=fix, account=account)
+    if lacks_pick:
+        return Setup("pick", problem="Pick its model", account=account)
+    return Setup("ready", account=account)
 
 
 def _reports_auth(capabilities: AgentCapabilities | None) -> bool:
     meta = capabilities.field_meta if capabilities else None
     return "authStatus" in (meta or {})
-
-
-def _can_delete(capabilities: AgentCapabilities | None) -> bool:
-    sessions = capabilities.session_capabilities if capabilities else None
-    return sessions is not None and sessions.delete is not None
-
-
-async def _delete(conn: ClientSideConnection, session_id: str) -> None:
-    try:
-        # SDK 0.12.1 has the schema but no method for it (docs/acp-notes.md).
-        _ = await conn._conn.send_request(  # pyright: ignore[reportPrivateUsage]
-            "session/delete", {"sessionId": session_id}
-        )
-    except (RequestError, ConnectionError) as e:
-        logger.warning("deleting probe session %s failed: %s", session_id, e)
 
 
 def detail(error: BaseException) -> str:

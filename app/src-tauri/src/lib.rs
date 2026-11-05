@@ -4,6 +4,7 @@
 
 mod adapters;
 mod agent;
+mod agent_picks;
 mod agents;
 mod app_log;
 mod calls;
@@ -51,6 +52,7 @@ pub fn run() {
             app.manage(agent::AgentWorker::default());
             app.manage(credentials::Vault::default());
             app.manage(agents::Agents::default());
+            app.manage(agent_picks::Listings::default());
             app.manage(calls::CallAgents::default());
             app.manage(updates::Updates::default());
             tray::init(app.handle())?;
@@ -87,6 +89,8 @@ pub fn run() {
             credentials::clear_gemini_key,
             agents::agents_status,
             agents::refresh_agents,
+            agent_picks::agent_settings,
+            agent_picks::pick_agent_settings,
             adapters::install_adapters,
             calls::open_call,
             calls::call_token,

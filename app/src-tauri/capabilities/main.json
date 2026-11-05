@@ -42,6 +42,8 @@
     "allow-clear-gemini-key",
     "allow-agents-status",
     "allow-refresh-agents",
+    "allow-agent-settings",
+    "allow-pick-agent-settings",
     "allow-install-adapters",
     "allow-first-run",
     "allow-finish-first-run"

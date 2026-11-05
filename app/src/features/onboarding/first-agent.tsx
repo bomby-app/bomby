@@ -11,9 +11,15 @@ import { AgentLogo } from "@/features/agents/agent-logos"
 import type { AgentStatus } from "@/features/agents/api"
 import { CopyButton } from "@/features/agents/copy-button"
 import { CLAUDE_INSTALL } from "@/features/agents/install-first-agent"
+import { ModelPicker } from "@/features/agents/model-picker"
 import { SetUpButton } from "@/features/agents/set-up-button"
 import { useAdapterInstall } from "@/features/agents/use-adapter-install"
-import { checkAgentsAgain, isReady } from "@/features/agents/use-agents"
+import {
+  checkAgentsAgain,
+  isReady,
+  type SetupStep,
+  setupStep,
+} from "@/features/agents/use-agents"
 import { cn } from "@/lib/utils"
 
 import {
@@ -47,16 +53,15 @@ export function firstAgent(
   )
 }
 
-type Phase = "looking" | "none" | "adapter" | "fix" | "ready"
+/** Where the agent is: its setup step, or still looking for one. */
+type Phase = SetupStep | "looking"
 
 function phaseOf(
   agents: AgentStatus[] | null,
   agent: AgentStatus | null
 ): Phase {
   if (agents === null) return "looking"
-  if (agent === null || agent.path === null) return "none"
-  if (agent.setup?.adapter) return "adapter"
-  return isReady(agent) ? "ready" : "fix"
+  return agent === null ? "missing" : setupStep(agent)
 }
 
 const COPY: Record<Phase, (name: string) => [string, string]> = {
@@ -64,17 +69,25 @@ const COPY: Record<Phase, (name: string) => [string, string]> = {
     "Set up your first agent",
     "I pass what you say to a coding agent already on your Mac. Let me look for one.",
   ],
-  none: () => [
+  missing: () => [
     "Let's get you an agent",
     "I pass what you say to a coding agent on your Mac. Claude Code is a good first one.",
   ],
-  adapter: () => [
+  connect: () => [
     "Set up your first agent",
     "I pass what you say to a coding agent already on your Mac. I found one for us.",
   ],
-  fix: (name) => [
+  sign_in: (name) => [
     "Almost there",
     `${name} is on your Mac, but it needs one thing first.`,
+  ],
+  unreachable: (name) => [
+    "Almost there",
+    `${name} is on your Mac, but it didn't answer. Let's check again.`,
+  ],
+  pick: (name) => [
+    "One last pick",
+    `${name} is on your Mac. Pick the model it runs on, and we're set.`,
   ],
   ready: (name) => [
     "You're all set",
@@ -88,12 +101,15 @@ export function FirstAgent({
   agent,
   allSet,
   onChoose,
+  onPicking,
 }: {
   agents: AgentStatus[] | null
   agent: AgentStatus | null
   /** The agent and the keys are ready: the splash is done. */
   allSet: boolean
   onChoose: (id: string) => void
+  /** Whether the agent's model picker is open. */
+  onPicking: (open: boolean) => void
 }) {
   const phase = phaseOf(agents, agent)
   const [title, body] =
@@ -107,7 +123,7 @@ export function FirstAgent({
     <div className="flex flex-col items-center">
       <StepHeading title={title} body={body} />
 
-      <AgentCard agent={agent} phase={phase} />
+      <AgentCard agent={agent} phase={phase} onPicking={onPicking} />
 
       <div className="mt-7 flex min-h-[18px] flex-col items-center gap-3">
         {install.error && (
@@ -115,7 +131,17 @@ export function FirstAgent({
             {install.error}
           </p>
         )}
-        {(phase === "fix" || phase === "none") && <CheckAgain />}
+        {(phase === "sign_in" ||
+          phase === "unreachable" ||
+          phase === "missing") && (
+          <CheckAgain
+            // Something to run first: an install, or the agent's own fix.
+            afterCommand={
+              phase === "missing" ||
+              (phase === "sign_in" && !!agent?.setup?.fix)
+            }
+          />
+        )}
         {/* Another agent can always be picked, also while this one needs fixing. */}
         {others.some((other) => other.path !== null) && (
           <OtherAgents agents={others} onChoose={onChoose} />
@@ -128,9 +154,11 @@ export function FirstAgent({
 function AgentCard({
   agent,
   phase,
+  onPicking,
 }: {
   agent: AgentStatus | null
   phase: Phase
+  onPicking: (open: boolean) => void
 }) {
   return (
     <SetupCard
@@ -138,7 +166,7 @@ function AgentCard({
       tile={<AgentTile id={agent?.id ?? "claude"} />}
       name={agent?.name ?? "Claude Code"}
       status={<StatusLine tone={toneOf(phase)} text={statusOf(agent, phase)} />}
-      action={<Action agent={agent} phase={phase} />}
+      action={<Action agent={agent} phase={phase} onPicking={onPicking} />}
     />
   )
 }
@@ -161,7 +189,7 @@ function AgentTile({ id, small = false }: { id: string; small?: boolean }) {
 
 function toneOf(phase: Phase): Tone {
   if (phase === "looking") return "looking"
-  return phase === "fix" || phase === "none" ? "todo" : "done"
+  return phase === "ready" ? "done" : "todo"
 }
 
 function statusOf(agent: AgentStatus | null, phase: Phase): string {
@@ -169,15 +197,17 @@ function statusOf(agent: AgentStatus | null, phase: Phase): string {
   switch (phase) {
     case "looking":
       return "Looking on this Mac"
-    case "none":
+    case "missing":
       return "Not on this Mac yet"
     case "ready":
-      return ["Ready", setup?.account ?? setup?.model]
-        .filter(Boolean)
-        .join(" · ")
-    case "fix":
+      return ["Ready", setup?.account].filter(Boolean).join(" · ")
+    case "sign_in":
       return setup?.problem ?? "Needs setting up"
-    default:
+    case "unreachable":
+      return setup?.problem ?? "Didn't answer"
+    case "pick":
+      return "Pick its model"
+    case "connect":
       return "Found on this Mac"
   }
 }
@@ -185,38 +215,63 @@ function statusOf(agent: AgentStatus | null, phase: Phase): string {
 /** The same, in the list of other agents, where there's room for less. */
 function shortStatusOf(agent: AgentStatus, phase: Phase): string {
   switch (phase) {
-    case "none":
+    case "looking":
+      return "Looking"
+    case "missing":
       return "Not on this Mac"
     case "ready":
       return "Ready"
-    case "fix":
+    case "sign_in":
       return agent.setup?.problem ?? "Needs setting up"
-    default:
+    case "unreachable":
+      return "Didn't answer"
+    case "pick":
+      return "Pick its model"
+    case "connect":
       return "Needs setting up"
   }
 }
 
-function Action({ agent, phase }: { agent: AgentStatus | null; phase: Phase }) {
-  if (phase === "adapter")
+/** The card's next step, in place; a ready agent shows its model, to change if wanted. */
+function Action({
+  agent,
+  phase,
+  onPicking,
+}: {
+  agent: AgentStatus | null
+  phase: Phase
+  onPicking: (open: boolean) => void
+}) {
+  const primary = cn(
+    CARD_BUTTON,
+    "bg-primary text-primary-foreground hover:bg-primary/90"
+  )
+  if (phase === "connect")
     return (
-      <SetUpButton
-        size="default"
-        className={cn(
-          CARD_BUTTON,
-          "bg-primary text-primary-foreground hover:bg-primary/90"
-        )}
-      >
+      <SetUpButton size="default" className={primary}>
         Set up now
       </SetUpButton>
     )
-  if (phase === "none")
+  if ((phase === "pick" || phase === "ready") && agent)
+    return (
+      <ModelPicker
+        // Each agent's own settings, not the last one's (`useAgentSettings`).
+        key={agent.id}
+        agent={agent}
+        size="default"
+        // A width of its own, for the model's name to fit or slide in.
+        className={cn(CARD_BUTTON, "w-48")}
+        onOpenChange={onPicking}
+      />
+    )
+  if (phase === "missing")
     return (
       <CopyButton text={CLAUDE_INSTALL} className={CARD_BUTTON}>
         Copy install
       </CopyButton>
     )
   const fix = agent?.setup?.fix
-  if (phase === "fix" && fix)
+  if (phase === "sign_in" && fix)
     return (
       <CopyButton text={fix} className={CARD_BUTTON}>
         Copy {fix}
@@ -226,16 +281,21 @@ function Action({ agent, phase }: { agent: AgentStatus | null; phase: Phase }) {
 }
 
 /** After running a command in Terminal: look again. */
-function CheckAgain() {
+/** "Run it in Terminal, then check again", or just "Check again" with nothing to run. */
+function CheckAgain({ afterCommand }: { afterCommand: boolean }) {
   const [checking, startChecking] = useTransition()
   return (
     <span className="flex items-center gap-1.5 text-[13px] leading-[18px] text-foreground/55">
-      Run it in Terminal, then
+      {afterCommand && "Run it in Terminal, then"}
       <InlineLink
         disabled={checking}
         onClick={() => startChecking(checkAgentsAgain)}
       >
-        {checking ? "checking..." : "check again"}
+        {checking
+          ? "checking..."
+          : afterCommand
+            ? "check again"
+            : "Check again"}
       </InlineLink>
     </span>
   )

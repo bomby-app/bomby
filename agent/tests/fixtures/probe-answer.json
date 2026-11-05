@@ -1,0 +1,34 @@
+{
+  "goose": {
+    "step": "pick",
+    "problem": "Pick its model",
+    "fix": "goose configure",
+    "account": "Fake Pro",
+    "model": "Kimi K3.1 Pro",
+    "adapter": "codex-acp",
+    "skipped": [
+      {
+        "setting": "provider",
+        "name": "Provider",
+        "value": "p3",
+        "why": "refused"
+      }
+    ],
+    "session": true,
+    "settings": [
+      {
+        "id": "model",
+        "name": "Model",
+        "category": "model",
+        "current": "kimi",
+        "options": [
+          {
+            "value": "kimi",
+            "name": "Kimi K3.1 Pro",
+            "group": "Kimi"
+          }
+        ]
+      }
+    ]
+  }
+}

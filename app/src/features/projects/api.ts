@@ -1,28 +1,12 @@
 import { invoke } from "@tauri-apps/api/core"
 import { open } from "@tauri-apps/plugin-dialog"
 
+import type { Project, ProjectInput } from "@/generated/projects"
+
 // The core's project commands (src-tauri/src/projects.rs), backed by the app's SQLite db.
+// The types are generated from the core's structs (`just app types`).
 
-export type CallSummary = {
-  id: number
-  /** Milliseconds since the epoch. */
-  startedAt: number
-  endedAt: number | null
-}
-
-export type Project = {
-  id: number
-  name: string
-  /** In order; the first is the agents' working folder. */
-  folders: string[]
-  /** What the user wrote about the project; empty if nothing. */
-  instructions: string
-  createdAt: number
-  /** Newest first. */
-  calls: CallSummary[]
-}
-
-export type ProjectInput = Pick<Project, "name" | "folders" | "instructions">
+export type { CallSummary, Project, ProjectInput } from "@/generated/projects"
 
 /** The longest instructions the core keeps (`MAX_INSTRUCTIONS_LEN` in projects.rs). */
 export const MAX_INSTRUCTIONS_LENGTH = 5000

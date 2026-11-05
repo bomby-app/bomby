@@ -2,7 +2,12 @@
 the same metadata it gives a call, and reads one JSON object back, by agent id:
 
     python probe.py '{"agents": {"goose": "/abs/path/goose"}}'
-    {"goose": {"ready": false, "problem": "...", "fix": "goose configure", ...}}
+    {"goose": {"step": "sign_in", "problem": "...", "fix": "goose configure", ...}}
+
+The metadata may also hold each agent's picks, applied before judging (`"picks":
+{"goose": [{"setting": "provider", "value": "openrouter"}]}`), and the agents whose
+settings the model picker lists (`"listing": ["omp"]`), and those to open a session in even
+though they can't delete it (`"sessions": ["omp"]`).
 """
 
 import asyncio
@@ -19,13 +24,15 @@ from job import read_metadata
 
 
 def main(metadata: str) -> str:
+    fields = read_metadata(metadata)
     agents = {
         id: (HARNESSES[id], program)
-        for id, program in installed(
-            read_metadata(metadata), HARNESSES, os.environ
-        ).items()
+        for id, program in installed(fields, HARNESSES, os.environ).items()
     }
-    setups = asyncio.run(probe_all(agents, os.environ))
+    picks = fields.picks if fields else {}
+    listing = fields.listing if fields else ()
+    sessions = fields.sessions if fields else ()
+    setups = asyncio.run(probe_all(agents, os.environ, picks, listing, sessions))
     return json.dumps({id: dataclasses.asdict(s) for id, s in setups.items()})
 
 

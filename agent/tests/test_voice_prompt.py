@@ -1,7 +1,8 @@
 from pathlib import Path
 
-from call_options import CallOptions, Line
+from call_options import CallOptions
 from harnesses import HARNESSES
+from job import Line
 from project import Project
 from tools import agents_note
 from voice_prompt import VOICE, voice_instructions

@@ -12,6 +12,7 @@ dependencies = [
     "google-genai>=2.34.0",
     "livekit-agents>=1.8.10",
     "livekit-plugins-google>=1.8.10",
+    "pydantic>=2.14.2",
     "python-dotenv>=1.2.4",
 ]
 

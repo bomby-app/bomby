@@ -1,22 +1,12 @@
 import { invoke } from "@tauri-apps/api/core"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 
+import type { CredentialsInfo, CredentialsInput } from "@/generated/credentials"
+
 // The core's credentials commands (src-tauri/src/credentials.rs), for the settings window
 // and the first-run splash (capabilities/). The API secret goes in, never comes back out.
 
-/** What is saved, without the secret. */
-export type CredentialsInfo = {
-  url: string
-  apiKey: string
-  hasSecret: boolean
-}
-
-export type CredentialsInput = {
-  url: string
-  apiKey: string
-  /** Omit to keep the saved secret. */
-  apiSecret?: string
-}
+export type { CredentialsInfo, CredentialsInput } from "@/generated/credentials"
 
 export function credentialsInfo(): Promise<CredentialsInfo | null> {
   return invoke("credentials_info")

@@ -5,7 +5,6 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
 
 from job import JobFields
 
@@ -43,34 +42,22 @@ class Project:
         `BOMBY_FOLDERS` (separated by `os.pathsep`) and `BOMBY_INSTRUCTIONS` stand in.
         Without folders, the project is the home folder.
         """
-        name: object
-        folders: object
-        instructions: object
         if fields is not None:
-            name, folders = fields.get("project"), fields.get("folders")
-            instructions = fields.get("instructions")
-            if folders is None:
-                folders = []
+            name, folders = fields.project, fields.folders
+            instructions = fields.instructions
         else:
-            name = environ.get("BOMBY_PROJECT")
-            folders = [
-                f for f in environ.get("BOMBY_FOLDERS", "").split(os.pathsep) if f
-            ]
-            instructions = environ.get("BOMBY_INSTRUCTIONS")
+            name = environ.get("BOMBY_PROJECT", "").strip()
+            folders = tuple(
+                Path(f) for f in environ.get("BOMBY_FOLDERS", "").split(os.pathsep) if f
+            )
+            instructions = environ.get("BOMBY_INSTRUCTIONS", "").strip()
 
-        items = cast(list[object], folders) if isinstance(folders, list) else None
-        if items is None or not all(isinstance(f, str) for f in items):
-            raise ValueError("project folders must be a list of paths")
-        paths = tuple(Path(cast(str, f)) for f in items) or (Path.home(),)
+        paths = folders or (Path.home(),)
         for path in paths:
             if not path.is_absolute():
                 raise ValueError(f"project folder must be an absolute path: {path}")
             if not path.is_dir():
                 raise ValueError(f"project folder does not exist: {path}")
-        if not isinstance(name, str) or not name.strip():
-            name = DEFAULT_PROJECT
-        if instructions is not None and not isinstance(instructions, str):
-            raise ValueError("project instructions must be text")
         return cls(
-            name=name.strip(), folders=paths, instructions=(instructions or "").strip()
+            name=name or DEFAULT_PROJECT, folders=paths, instructions=instructions
         )

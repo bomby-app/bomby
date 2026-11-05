@@ -1,25 +1,11 @@
 import { invoke } from "@tauri-apps/api/core"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 
+import type { About, UpdateStatus } from "@/generated/about"
+
 // The core's version and updates (src-tauri/src/updates.rs, docs/releasing.md).
 
-export type UpdateStatus =
-  | { kind: "development" }
-  | { kind: "idle" }
-  | { kind: "checking" }
-  | { kind: "upToDate" }
-  | { kind: "available"; version: string }
-  | { kind: "downloading"; version: string; percent: number | null }
-  /** Downloaded and waiting for a restart: a call started during the download. */
-  | { kind: "downloaded"; version: string }
-  | { kind: "restarting" }
-  | { kind: "failed"; message: string }
-
-export type About = {
-  /** The app's version, which a release's tag must match. */
-  version: string
-  status: UpdateStatus
-}
+export type { About, UpdateStatus } from "@/generated/about"
 
 export function about(): Promise<About> {
   return invoke("about")

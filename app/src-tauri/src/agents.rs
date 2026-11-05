@@ -4,7 +4,8 @@
 //!
 //! Adding one is a row in `KNOWN` here and a harness definition in `agent/harnesses/`,
 //! under the same id. Whether it is set up comes from the harness, through the probe
-//! ([`setup`](crate::setup)).
+//! ([`setup`](crate::setup)), which applies the model and effort the user picked, if any
+//! ([`agent_picks`](crate::agent_picks)).
 //!
 //! Finding them runs the user's login shell and each agent's own program, which takes
 //! seconds, so the core does it once at launch, in the background, and keeps the result in
@@ -12,20 +13,25 @@
 //! kept and looks again on Check again; each call looks up the programs again before it
 //! opens.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::fs::{self, File};
+use std::io::{Read, Seek, SeekFrom};
 use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
-use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread;
 use std::time::Duration;
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
+use crate::agent_picks;
+use crate::db::Db;
 use crate::error::Result;
 use crate::process;
-use crate::setup::{self, Setup};
+use crate::setup::{self, Pick, Setup, Step};
 use crate::sync;
 
 /// The event every window gets with the new list when a look finds something different.
@@ -102,6 +108,7 @@ const KNOWN: &[Known] = &[
 
 /// What Settings shows for one agent.
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "agents.ts"))]
 #[serde(rename_all = "camelCase")]
 pub struct AgentStatus {
     id: &'static str,
@@ -115,18 +122,50 @@ pub struct AgentStatus {
 
 /// Runs `command` and returns its output if it finishes within `timeout`; kills it
 /// otherwise.
+///
+/// Its output goes to a file, not a pipe: a pipe holds only 64 KiB, so a program writing more
+/// waits for a reader, and a program it starts (a daemon from the shell's rc files) can hold
+/// a pipe open after it exits, keeping any reader waiting. A file has neither problem, and
+/// it's unlinked at once, so nothing is left behind.
 pub fn run(mut command: Command, timeout: Duration) -> Option<Output> {
+    let mut out = unlinked_file().ok()?;
     let mut child = command
         .stdin(Stdio::null())
-        .stdout(Stdio::piped())
+        .stdout(out.try_clone().ok()?)
         .stderr(Stdio::null())
         .spawn()
         .ok()?;
-    if let Ok(Some(_)) = process::wait_timeout(&mut child, timeout) {
-        return child.wait_with_output().ok();
-    }
-    process::kill(&mut child);
-    None
+    let Ok(Some(status)) = process::wait_timeout(&mut child, timeout) else {
+        process::kill(&mut child);
+        return None;
+    };
+    let mut stdout = Vec::new();
+    out.seek(SeekFrom::Start(0)).ok()?;
+    out.read_to_end(&mut stdout).ok()?;
+    Some(Output {
+        status,
+        stdout,
+        stderr: Vec::new(),
+    })
+}
+
+/// A new file in the temp folder, removed from it at once: it lives as long as an open
+/// handle to it (macOS and Linux).
+fn unlinked_file() -> std::io::Result<File> {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let name = format!(
+        "bomby-run-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    );
+    let path = std::env::temp_dir().join(name);
+    let file = File::options()
+        .read(true)
+        .write(true)
+        .create_new(true)
+        .open(&path)?;
+    fs::remove_file(&path)?;
+    Ok(file)
 }
 
 fn stdout(output: &Output) -> Option<String> {
@@ -222,13 +261,25 @@ fn version_of(program: &Path) -> Option<String> {
     run(command, TIMEOUT).as_ref().and_then(stdout)
 }
 
-/// Every known agent with its status and setup. The probe and each agent's own checks run
-/// side by side, so a look takes about as long as the shell and the slowest of them.
-fn detect_all(previous: &HashMap<String, PathBuf>) -> Vec<AgentStatus> {
+/// Every known agent with its status and setup, the probe applying each one's `saved`
+/// picks. The probe and each agent's own checks run side by side, so a look takes about
+/// as long as the shell and the slowest of them.
+fn detect_all(
+    previous: &HashMap<String, PathBuf>,
+    saved: &HashMap<String, Vec<Pick>>,
+    checked: &HashSet<String>,
+) -> Vec<AgentStatus> {
     let found = find_all(previous);
     let installed = programs(found.clone());
+    // Once per launch, a session even in one that can't delete it (omp): checked, not assumed.
+    let sessions: Vec<String> = installed
+        .iter()
+        .map(|(id, _)| id.clone())
+        .filter(|id| !checked.contains(id))
+        .collect();
     thread::scope(|scope| {
-        let probe = scope.spawn(|| setup::probe(&installed).unwrap_or_default());
+        let probe =
+            scope.spawn(|| setup::probe(&installed, saved, None, &sessions).unwrap_or_default());
         let checks: Vec<_> = found
             .into_iter()
             .map(|(known, path)| (known, scope.spawn(move || status_of(known, path))))
@@ -237,12 +288,17 @@ fn detect_all(previous: &HashMap<String, PathBuf>) -> Vec<AgentStatus> {
             .into_iter()
             .map(|(known, check)| check.join().unwrap_or_else(|_| status_of(known, None)))
             .collect();
-        let setups = probe.join().unwrap_or_default();
+        let mut setups = probe.join().unwrap_or_default();
         for agent in &mut agents {
-            agent.setup = setups.get(agent.id).cloned();
+            agent.setup = setups.remove(agent.id).map(|listed| listed.setup);
         }
         agents
     })
+}
+
+/// The name the user knows agent `id` by: "Claude Code".
+pub fn name(id: &str) -> Option<&'static str> {
+    KNOWN.iter().find(|k| k.id == id).map(|k| k.name)
 }
 
 /// The installed ones among `agents`, by id with their programs: what a call hands the voice
@@ -260,6 +316,8 @@ pub fn installed(agents: &[AgentStatus]) -> Vec<(String, PathBuf)> {
 pub struct Agents {
     state: Mutex<Detection>,
     finished: Condvar,
+    /// One pick or picker listing per agent at a time (`agent_picks`), by agent id.
+    picking: Mutex<HashMap<String, Arc<Mutex<()>>>>,
 }
 
 #[derive(Default)]
@@ -274,6 +332,27 @@ struct Detection {
     /// Programs a call found that the next look starts from, so a login shell that fails
     /// then doesn't lose them.
     seen: HashMap<String, PathBuf>,
+    /// How often each agent's picks changed, so a look that started before a pick doesn't
+    /// put back what that agent ran on before it.
+    picks: HashMap<String, u64>,
+    /// The agents a session has checked this launch (a look, the model picker or a pick):
+    /// later looks open none in one that can't delete it, and keep what it found.
+    checked: HashSet<String>,
+}
+
+impl Detection {
+    fn replace_setup(&mut self, id: &str, setup: &Setup) -> Option<Vec<AgentStatus>> {
+        if setup.session {
+            self.checked.insert(id.to_owned());
+        }
+        let found = self.found.as_mut()?;
+        let agent = found.iter_mut().find(|a| a.id == id)?;
+        if agent.setup.as_ref() == Some(setup) {
+            return None;
+        }
+        agent.setup = Some(setup.clone());
+        Some(found.clone())
+    }
 }
 
 impl Agents {
@@ -281,9 +360,36 @@ impl Agents {
         sync::lock(&self.state)
     }
 
+    /// The lock that keeps agent `id` to one pick or listing at a time, so two windows can't
+    /// leave its saved picks and its row apart. Each takes a probe of seconds; other agents'
+    /// don't wait on it.
+    pub fn one_at_a_time(&self, id: &str) -> Arc<Mutex<()>> {
+        Arc::clone(sync::lock(&self.picking).entry(id.to_owned()).or_default())
+    }
+
+    /// Has the next look check every agent with a session again, omp too (a full check).
+    pub fn forget_checks(&self) {
+        self.lock().checked.clear();
+    }
+
     /// What the last look found, if one has finished.
     pub fn cached(&self) -> Option<Vec<AgentStatus>> {
         self.lock().found.clone()
+    }
+
+    /// Puts `setup`, which the model picker just found for agent `id`, in place of its
+    /// setup, and returns the new list when that changed it; `None` when it didn't, or no
+    /// look has found that agent.
+    pub fn replace_setup(&self, id: &str, setup: &Setup) -> Option<Vec<AgentStatus>> {
+        self.lock().replace_setup(id, setup)
+    }
+
+    /// [`Agents::replace_setup`] right after the user picked agent `id`'s settings: a look
+    /// that started before the pick keeps this setup over its own.
+    pub fn picked(&self, id: &str, setup: &Setup) -> Option<Vec<AgentStatus>> {
+        let mut state = self.lock();
+        *state.picks.entry(id.to_owned()).or_default() += 1;
+        state.replace_setup(id, setup)
     }
 
     /// Looks again, or waits for the look already running, and returns what it found and
@@ -292,8 +398,16 @@ impl Agents {
     /// With `seen`, the programs a call just found, the answer comes from a look that starts
     /// after this one asked, and that look starts from them: a look already running began
     /// before they were found, so it may miss them.
-    pub fn detect(&self, seen: Option<Vec<(String, PathBuf)>>) -> (Vec<AgentStatus>, bool) {
-        self.detect_with(seen, detect_all)
+    ///
+    /// `saved` reads the user's picks. It's called once the look has started, so a pick saved
+    /// before it is in the look, and one saved after it is kept over the look's answer.
+    pub fn detect(
+        &self,
+        seen: Option<Vec<(String, PathBuf)>>,
+        saved: impl FnOnce() -> HashMap<String, Vec<Pick>>,
+    ) -> (Vec<AgentStatus>, bool) {
+        let checked = self.lock().checked.clone();
+        self.detect_with(seen, |previous| detect_all(previous, &saved(), &checked))
     }
 
     fn detect_with(
@@ -328,6 +442,7 @@ impl Agents {
             .collect();
         let seen = std::mem::take(&mut state.seen);
         previous.extend(seen.clone());
+        let picks = state.picks.clone();
         drop(state);
 
         // A look that panics keeps what was found before, and never leaves waiters waiting.
@@ -336,6 +451,13 @@ impl Agents {
         let mut state = self.lock();
         let changed = match found {
             Ok(found) => {
+                let picked_since = |id: &str| state.picks.get(id) != picks.get(id);
+                let found = keep_what_the_look_missed(found, state.found.as_deref(), picked_since);
+                for agent in &found {
+                    if agent.setup.as_ref().is_some_and(|s| s.session) {
+                        state.checked.insert(agent.id.to_owned());
+                    }
+                }
                 let changed = state.found.as_ref() != Some(&found);
                 state.found = Some(found);
                 changed
@@ -355,12 +477,47 @@ impl Agents {
     }
 }
 
+/// `found`, a look's answer, with what it couldn't know taken from `before`, the list it
+/// replaces: the setup of an agent whose settings were picked while it ran, and, for an
+/// agent it opened no session in (omp can't delete one), the setup last found with a
+/// session, by a look, the model picker or a pick.
+fn keep_what_the_look_missed(
+    mut found: Vec<AgentStatus>,
+    before: Option<&[AgentStatus]>,
+    picked_since: impl Fn(&str) -> bool,
+) -> Vec<AgentStatus> {
+    for agent in &mut found {
+        let Some(old) = before
+            .unwrap_or_default()
+            .iter()
+            .find(|a| a.id == agent.id)
+            .and_then(|a| a.setup.as_ref())
+        else {
+            continue;
+        };
+        // A problem with the agent itself (signed out, not answering) shows: no pick changes it.
+        if agent
+            .setup
+            .as_ref()
+            .is_some_and(|s| !matches!(s.step, Step::Ready | Step::Pick))
+        {
+            continue;
+        }
+        let sessionless = !agent.setup.as_ref().is_some_and(|s| s.session);
+        // Without a session a look knows only the sign-in: the last session's answer stands.
+        if picked_since(agent.id) || (sessionless && old.session) {
+            agent.setup = Some(old.clone());
+        }
+    }
+    found
+}
+
 /// The installed ones among `agents` a call can use: all but those the probe found not set
 /// up. One not probed yet stays, so a probe that can't run never hides an agent.
 pub fn usable(agents: &[AgentStatus]) -> Vec<(String, PathBuf)> {
     let ready: Vec<_> = agents
         .iter()
-        .filter(|a| a.setup.as_ref().is_none_or(|s| s.ready))
+        .filter(|a| a.setup.as_ref().is_none_or(|s| s.step == Step::Ready))
         .cloned()
         .collect();
     installed(&ready)
@@ -411,7 +568,9 @@ fn refresh<R: Runtime>(
     app: &AppHandle<R>,
     seen: Option<Vec<(String, PathBuf)>>,
 ) -> Vec<AgentStatus> {
-    let (found, changed) = app.state::<Agents>().detect(seen);
+    // Without the database (only if it can't be read), every agent shows its defaults.
+    let saved = || agent_picks::saved(&app.state::<Db>().conn()).unwrap_or_default();
+    let (found, changed) = app.state::<Agents>().detect(seen, saved);
     if changed {
         // Only fails for an invalid event name or payload; a window that misses it still
         // gets the list when it asks.
@@ -447,12 +606,38 @@ pub async fn agents_status<R: Runtime>(app: AppHandle<R>) -> Result<Vec<AgentSta
 /// Looks for the agents again (Check again) and returns what it found.
 #[tauri::command]
 pub async fn refresh_agents<R: Runtime>(app: AppHandle<R>) -> Result<Vec<AgentStatus>> {
+    // A full check: a session in every agent again, and its models asked again on next open.
+    app.state::<Agents>().forget_checks();
+    app.state::<agent_picks::Listings>().forget();
     refresh_in_background(app).await
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::mpsc;
+    use std::time::Instant;
+
     use super::*;
+
+    #[test]
+    fn reads_output_longer_than_a_pipe_holds() {
+        // The setup probe's answer lists every model an agent offers: hundreds of KiB.
+        let mut command = Command::new("sh");
+        command.args(["-c", "head -c 300000 /dev/zero"]);
+        let output = run(command, Duration::from_secs(5)).expect("finished in time");
+        assert_eq!(output.stdout.len(), 300_000);
+    }
+
+    #[test]
+    fn reads_what_a_program_wrote_while_one_it_started_still_holds_its_output() {
+        // The shell exits at once; the sleep it left behind still holds its output.
+        let mut command = Command::new("sh");
+        command.args(["-c", "sleep 5 & echo started"]);
+        let started = Instant::now();
+        let output = run(command, Duration::from_secs(1)).expect("it exited");
+        assert_eq!(output.stdout, b"started\n");
+        assert!(started.elapsed() < Duration::from_secs(4));
+    }
 
     #[test]
     fn reads_known_programs_from_the_shell_and_skips_noise() {
@@ -559,7 +744,6 @@ mod tests {
     #[test]
     fn asking_while_a_look_runs_waits_for_it_instead_of_starting_another() {
         use std::sync::atomic::{AtomicUsize, Ordering};
-        use std::sync::mpsc;
 
         let (agents, looks) = (&Agents::default(), &AtomicUsize::new(0));
         let found = &vec![status("omp", Some("/Users/me/.local/bin/omp"))];
@@ -619,7 +803,6 @@ mod tests {
     #[test]
     fn news_from_a_call_waits_for_the_running_look_then_looks_again() {
         use std::sync::atomic::{AtomicUsize, Ordering};
-        use std::sync::mpsc;
 
         let (agents, looks) = (&Agents::default(), &AtomicUsize::new(0));
         let goose = &PathBuf::from("/Users/me/.local/bin/goose");
@@ -663,7 +846,6 @@ mod tests {
     #[test]
     fn a_change_on_disk_waits_for_the_running_look_then_looks_again() {
         use std::sync::atomic::{AtomicUsize, Ordering};
-        use std::sync::mpsc;
 
         let (agents, looks) = (&Agents::default(), &AtomicUsize::new(0));
         let (started, wait_for_start) = mpsc::channel();
@@ -708,23 +890,151 @@ mod tests {
 
     fn ready(model: &str) -> Setup {
         Setup {
-            ready: true,
-            problem: None,
-            fix: None,
-            account: None,
             model: Some(model.into()),
-            adapter: None,
+            session: true,
+            ..Setup::default()
         }
     }
 
     fn needs_setup() -> Setup {
         Setup {
-            ready: false,
+            step: Step::SignIn,
             problem: Some("No model is set".into()),
-            fix: None,
-            account: None,
-            model: None,
-            adapter: None,
+            session: true,
+            ..Setup::default()
+        }
+    }
+
+    #[test]
+    fn a_pick_replaces_only_that_agents_setup() {
+        let agents = Agents::default();
+        assert_eq!(
+            agents.picked("goose", &ready("x")),
+            None,
+            "nothing found yet"
+        );
+
+        let shown = vec![
+            status("goose", Some("/b/goose")),
+            status("omp", Some("/b/omp")),
+        ];
+        agents.detect_with(None, |_| shown.clone());
+        let found = agents.picked("goose", &ready("Kimi")).unwrap();
+
+        assert_eq!(found[0].setup, Some(ready("Kimi")));
+        assert_eq!(found[1], shown[1], "the others stay as they were");
+        assert_eq!(agents.cached(), Some(found));
+        assert_eq!(
+            agents.replace_setup("goose", &ready("Kimi")),
+            None,
+            "nothing changed, so there's nothing to tell the windows"
+        );
+    }
+
+    #[test]
+    fn a_look_that_started_before_a_pick_keeps_the_pick() {
+        let agents = Agents::default();
+        let goose = |setup| AgentStatus {
+            setup: Some(setup),
+            ..status("goose", Some("/b/goose"))
+        };
+        agents.detect_with(None, |_| vec![goose(ready("old"))]);
+
+        let (found, _) = agents.detect_with(None, |_| {
+            // The user picks while the look runs; the look saw the picks from before.
+            agents.picked("goose", &ready("picked"));
+            vec![goose(ready("old"))]
+        });
+        assert_eq!(found, vec![goose(ready("picked"))]);
+
+        let (found, _) = agents.detect_with(None, |_| vec![goose(ready("next"))]);
+        assert_eq!(
+            found,
+            vec![goose(ready("next"))],
+            "a later look decides again"
+        );
+    }
+
+    #[test]
+    fn a_problem_found_while_picking_still_shows() {
+        let signed_out = Setup {
+            step: Step::SignIn,
+            problem: Some("Not signed in".into()),
+            fix: Some("goose configure".into()),
+            ..Setup::default()
+        };
+        let timed_out = Setup {
+            step: Step::Unreachable,
+            problem: Some("It didn't answer in time".into()),
+            ..Setup::default()
+        };
+        for problem in [signed_out, timed_out] {
+            let agents = Agents::default();
+            let goose = |setup| AgentStatus {
+                setup: Some(setup),
+                ..status("goose", Some("/b/goose"))
+            };
+            agents.detect_with(None, |_| vec![goose(ready("old"))]);
+
+            let (found, _) = agents.detect_with(None, |_| {
+                agents.picked("goose", &ready("picked"));
+                vec![goose(problem.clone())]
+            });
+            assert_eq!(found, vec![goose(problem)]);
+            assert!(usable(&found).is_empty(), "calls don't get it");
+        }
+    }
+
+    #[test]
+    fn a_look_keeps_its_answer_over_a_listing_made_while_it_ran() {
+        let agents = Agents::default();
+        let goose = |setup| AgentStatus {
+            setup: Some(setup),
+            ..status("goose", Some("/b/goose"))
+        };
+        agents.detect_with(None, |_| vec![goose(ready("old"))]);
+
+        let (found, _) = agents.detect_with(None, |_| {
+            // The picker opens while the look runs: it changes nothing the look misses.
+            agents.replace_setup("goose", &ready("listed"));
+            vec![goose(ready("looked"))]
+        });
+        assert_eq!(found, vec![goose(ready("looked"))]);
+    }
+
+    #[test]
+    fn an_agent_is_checked_with_a_session_once_per_launch() {
+        let agents = Agents::default();
+        let omp = |setup| AgentStatus {
+            setup: Some(setup),
+            ..status("omp", Some("/b/omp"))
+        };
+        agents.detect_with(None, |_| vec![omp(Setup::default())]);
+        assert!(agents.lock().checked.is_empty(), "no session yet");
+
+        agents.detect_with(None, |_| vec![omp(ready("Kimi"))]);
+        assert!(agents.lock().checked.contains("omp"));
+    }
+
+    #[test]
+    fn a_look_without_a_session_keeps_what_the_last_session_found() {
+        let omp = |setup| AgentStatus {
+            setup: Some(setup),
+            ..status("omp", Some("/b/omp"))
+        };
+        let no_model = Setup {
+            step: Step::SignIn,
+            problem: Some("No model is set".into()),
+            session: true,
+            ..Setup::default()
+        };
+        for checked in [ready("Kimi"), no_model] {
+            let agents = Agents::default();
+            agents.detect_with(None, |_| vec![omp(checked.clone())]);
+
+            // A later look opens no session: it sees only that omp starts.
+            let (found, _) = agents.detect_with(None, |_| vec![omp(Setup::default())]);
+            assert_eq!(found, vec![omp(checked)]);
         }
     }
 

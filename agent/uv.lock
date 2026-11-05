@@ -255,6 +255,7 @@ dependencies = [
     { name = "google-genai" },
     { name = "livekit-agents" },
     { name = "livekit-plugins-google" },
+    { name = "pydantic" },
     { name = "python-dotenv" },
 ]
 
@@ -272,6 +273,7 @@ requires-dist = [
     { name = "google-genai", specifier = ">=2.34.0" },
     { name = "livekit-agents", specifier = ">=1.8.10" },
     { name = "livekit-plugins-google", specifier = ">=1.8.10" },
+    { name = "pydantic", specifier = ">=2.14.2" },
     { name = "python-dotenv", specifier = ">=1.2.4" },
 ]
 

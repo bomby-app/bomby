@@ -6,7 +6,6 @@ import logging
 import shutil
 from collections.abc import Mapping
 from pathlib import Path
-from typing import cast
 
 from job import JobFields
 
@@ -25,16 +24,12 @@ def installed(
         found = {id: shutil.which(h.program, path=path) for id, h in known.items()}
         return {id: Path(p) for id, p in found.items() if p}
 
-    raw: object = fields.get("agents") or {}
-    items = cast(dict[str, object], raw) if isinstance(raw, dict) else None
-    if items is None:
-        raise ValueError("agents must be an object of program paths")
     agents: dict[str, Path] = {}
-    for id, value in items.items():
+    for id, program in fields.agents.items():
         if id not in known:
             logger.warning("ignoring unknown agent %r", id)
             continue
-        if not isinstance(value, str) or not Path(value).is_absolute():
+        if not program.is_absolute():
             raise ValueError(f"agent {id} needs an absolute program path")
-        agents[id] = Path(value)
+        agents[id] = program
     return agents

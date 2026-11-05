@@ -1,21 +1,11 @@
 import { invoke } from "@tauri-apps/api/core"
 import { getCurrentWindow } from "@tauri-apps/api/window"
 
+import type { CallToken, Message as SavedMessage } from "@/generated/call"
+
 // The core's call commands (src-tauri/src/calls.rs).
 
-/** What joining a call needs: a token for a new room, which dispatches the agent. */
-export type CallToken = {
-  serverUrl: string
-  participantToken: string
-}
-
-/** A saved transcript line. */
-export type SavedMessage = {
-  id: number
-  role: "user" | "agent"
-  text: string
-  createdAt: number
-}
+export type { CallToken, Message as SavedMessage } from "@/generated/call"
 
 /**
  * Starts the agent if needed and opens a new call on the project, or reopens its earlier

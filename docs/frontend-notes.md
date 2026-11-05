@@ -19,6 +19,14 @@ The app's web half is `app/src`. Checked 2026-11-03/04 against installed shadcn 
 - Compose with `asChild`, including nested tooltip and dialog triggers. `TooltipProvider` accepts `delayDuration`.
 - `ToggleGroup type="single"` returns `""` when the selected item is pressed again. `Select` values are strings or `undefined`, never null; `SelectContent position="popper"` drops below the trigger.
 - State attributes are `data-state` (`open`/`closed`, `on`/`off`); Agents UI and sidebar rows style against them.
+- `Collapsible` (Settings, Agents rows) animates with tw-animate-css's `animate-collapsible-down`/`-up`, which read `--radix-collapsible-content-height`.
+
+## Combobox
+
+- shadcn's radix-nova Combobox is built on Base UI (`@base-ui/react` 1.9.0), not Radix (`bun x shadcn view combobox`, checked 2026-11-05). The model picker's searchable setting uses its pop-up form: a `ComboboxTrigger` rendered as a `Button`, with `ComboboxInput showTrigger={false}` inside `ComboboxContent` ([shadcn](https://ui.shadcn.com/docs/components/radix/combobox#popup), [Base UI](https://base-ui.com/react/components/combobox#input-inside-popup)).
+- Base UI highlights an item only on hover or arrow keys: `autoHighlight` (the first match while filtering) is off by default. The highlighted item carries `data-highlighted`.
+- Object items: `itemToStringLabel` names them, `isItemEqualToValue` compares them (default `Object.is`), `filter(item, query)` replaces the default match. Groups are `{ value, items }` objects, rendered with `ComboboxGroup items` and `ComboboxCollection`.
+- `ComboboxContent` limits itself to `--available-height` and `--available-width`, so it never runs out of the window.
 - Tooltip content styles nested `Kbd`; group keys with `KbdGroup`.
 
 ## Tailwind v4

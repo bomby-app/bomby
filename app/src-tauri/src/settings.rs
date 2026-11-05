@@ -57,6 +57,7 @@ pub const VOICES: [(&str, &str, &str); 30] = [
 ];
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "voice.ts"))]
 pub struct Voice {
     name: &'static str,
     style: &'static str,
@@ -64,6 +65,7 @@ pub struct Voice {
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "voice.ts"))]
 pub struct VoiceSettings {
     voice: String,
     voices: Vec<Voice>,

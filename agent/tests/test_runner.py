@@ -17,11 +17,14 @@ from acp_client.runner import (
     Turn,
     briefing,
     child_environment,
+    no_model_picked,
     no_report,
+    not_ready,
     steered_note,
     stopped,
 )
 from harnesses import CLAUDE_CODE, Harness
+from job import Pick
 from project import Project
 
 FAKE_AGENT = Path(__file__).resolve().parent / "fake_claude_acp.py"
@@ -34,6 +37,7 @@ def run_with_fake(
     folders: tuple[Path, ...] | None = None,
     env: Mapping[str, str] | None = None,
     harness: Harness = CLAUDE_CODE,
+    picks: tuple[Pick, ...] = (),
 ) -> tuple[Any, list[dict[str, Any]]]:
     """Run `scenario` against the fake ACP agent; return its result and the agent's log."""
     log = tmp_path / "acp.jsonl"
@@ -43,6 +47,7 @@ def run_with_fake(
         args=[str(FAKE_AGENT)],
         project=Project(name="test", folders=folders or (tmp_path,)),
         env={**os.environ, **(env or {}), "FAKE_ACP_LOG": str(log)},
+        picks=picks,
     )
 
     async def main() -> Any:
@@ -119,6 +124,99 @@ def test_a_turn_without_a_final_message_fails_instead_of_reading_as_done(
     message, _ = run_with_fake(tmp_path, scenario)
 
     assert message == no_report(CLAUDE_CODE)
+
+
+def test_each_session_gets_the_model_and_effort_the_agent_was_set_up_with(
+    tmp_path: Path,
+) -> None:
+    picks = (Pick("model", "m2"), Pick("effort", "high"))
+
+    _, events = run_with_fake(
+        tmp_path,
+        lambda r: text(r.run("reply ok")),
+        env={"FAKE_ACP_MODEL": "m1"},
+        picks=picks,
+    )
+
+    set_ = [
+        (e["config_id"], e["value"])
+        for e in events
+        if e["event"] == "set_config_option"
+    ]
+    assert set_ == [("model", "m2"), ("effort", "high")]
+    assert names(events).index("set_config_option") < names(events).index("prompt")
+
+
+@pytest.mark.parametrize("dropped", [Pick("model", "retired"), Pick("mode", "x")])
+def test_a_pick_the_agent_dropped_leaves_its_default(
+    tmp_path: Path, dropped: Pick
+) -> None:
+    result, events = run_with_fake(
+        tmp_path,
+        lambda r: text(r.run("reply ok")),
+        env={"FAKE_ACP_MODEL": "m1"},
+        picks=(dropped, Pick("effort", "high")),
+    )
+
+    assert result == "Done: ok"
+    set_ = [
+        (e["config_id"], e["value"])
+        for e in events
+        if e["event"] == "set_config_option"
+    ]
+    assert set_ == [("effort", "high")]
+
+
+def test_a_pick_the_agent_refuses_never_fails_the_task(tmp_path: Path) -> None:
+    goose_like = dataclasses.replace(
+        CLAUDE_CODE, pickable_settings=frozenset({"provider"})
+    )
+
+    result, events = run_with_fake(
+        tmp_path,
+        lambda r: text(r.run("reply ok")),
+        env={"FAKE_ACP_MODEL": "m1"},
+        harness=goose_like,
+        picks=(Pick("provider", "p3"),),
+    )
+
+    assert result == "Done: ok"
+    assert names(events).count("new_session") == 1, "no session left behind to retry"
+
+
+@pytest.mark.parametrize(
+    ("env", "ended"),
+    [({}, "close_session"), ({"FAKE_ACP_CAN_DELETE": "1"}, "delete_session")],
+    ids=["closed", "deleted where it can be"],
+)
+def test_an_agent_whose_model_pick_is_gone_takes_no_task(
+    tmp_path: Path, env: dict[str, str], ended: str
+) -> None:
+    pick_required = dataclasses.replace(CLAUDE_CODE, model_selection_required=True)
+
+    message, events = run_with_fake(
+        tmp_path,
+        tool_error,
+        env={**env, "FAKE_ACP_MODEL": "m1"},
+        harness=pick_required,
+        picks=(Pick("model", "retired"),),
+    )
+
+    assert message == no_model_picked(pick_required)
+    assert names(events) == ["initialize", "new_session", "set_session_mode", ended]
+
+
+def test_an_agent_that_requires_a_pick_but_lists_no_model_isnt_ready(
+    tmp_path: Path,
+) -> None:
+    # Nothing to pick: its own setup lacks a model, as Settings says.
+    pick_required = dataclasses.replace(CLAUDE_CODE, model_selection_required=True)
+
+    message, _ = run_with_fake(
+        tmp_path, tool_error, harness=pick_required, picks=(Pick("model", "m1"),)
+    )
+
+    assert message == not_ready(pick_required)
 
 
 def test_project_folders_become_cwd_and_extra_directories(tmp_path: Path) -> None:

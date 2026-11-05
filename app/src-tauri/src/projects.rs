@@ -18,6 +18,7 @@ pub(crate) const MAX_INSTRUCTIONS_LEN: usize = 5000;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "projects.ts"))]
 pub struct Project {
     id: i64,
     name: String,
@@ -31,6 +32,7 @@ pub struct Project {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "projects.ts"))]
 pub struct CallSummary {
     id: i64,
     started_at: i64,
@@ -39,6 +41,7 @@ pub struct CallSummary {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "projects.ts"))]
 pub struct ProjectInput {
     name: String,
     folders: Vec<String>,

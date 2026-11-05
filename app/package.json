@@ -12,6 +12,7 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@base-ui/react": "^1.9.0",
     "@fontsource/bricolage-grotesque": "^5.3.0",
     "@gsap/react": "2.1.2",
     "@livekit/components-react": "^2.0.0",

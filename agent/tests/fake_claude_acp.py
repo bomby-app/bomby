@@ -7,10 +7,12 @@ initialize, like an adapter without it. Setup scenarios, by environment variable
 - FAKE_ACP_REFUSE_SESSION=<text>: `session/new` fails with <text> as the error's data
 - FAKE_ACP_AUTH_REQUIRED=1: `session/new` fails with `auth_required`
 - FAKE_ACP_AUTH_METHODS=<description>: initialize offers one auth method with it
-- FAKE_ACP_MODEL=<model>: sessions offer a model option set to it; `none` leaves it out
+- FAKE_ACP_MODEL=<model>: sessions offer a model option set to it, beside "m2", an effort
+  option (low, high) and an uncategorized provider (p1, p2; on p2 the only model is
+  "p2-model"), all settable, but the provider "p3", listed, is refused; `none` leaves all
+  of them out
 - FAKE_ACP_AUTH_STATUS=<kind>: advertise `authStatus` and push that kind after initialize
-- FAKE_ACP_CAN_DELETE=1: advertise `session/delete` (the SDK routes no such method, so it
-  fails; only the advertisement matters)
+- FAKE_ACP_CAN_DELETE=1: advertise `session/delete`, which it serves either way
 
 Prompts:
 
@@ -30,8 +32,9 @@ import asyncio
 import json
 import os
 import sys
-from typing import Any, final
+from typing import Any, Literal, final
 
+import acp.agent.connection
 from acp import (
     PROTOCOL_VERSION,
     RequestError,
@@ -40,13 +43,17 @@ from acp import (
     text_block,
     update_agent_message,
 )
+from acp.agent.router import build_agent_router
 from acp.interfaces import Client
+from acp.router import MessageRouter
 from acp.schema import (
     AgentCapabilities,
     AgentMessageChunk,
     AllowedOutcome,
     AuthMethodAgent,
     CloseSessionResponse,
+    DeleteSessionRequest,
+    DeleteSessionResponse,
     EnvVarAuthMethod,
     InitializeResponse,
     NewSessionResponse,
@@ -60,6 +67,7 @@ from acp.schema import (
     SessionDeleteCapabilities,
     SessionMode,
     SessionModeState,
+    SetSessionConfigOptionResponse,
     SetSessionModeResponse,
     TerminalAuthMethod,
     ToolCallUpdate,
@@ -77,31 +85,39 @@ def message(text: str, message_id: str) -> AgentMessageChunk:
     return chunk
 
 
-def config_options() -> (
-    list[SessionConfigOptionSelect | SessionConfigOptionBoolean] | None
-):
+def _select(
+    id: str,
+    category: Literal["mode", "model", "thought_level"] | None,
+    current: str,
+    values: list[str],
+) -> SessionConfigOptionSelect:
+    return SessionConfigOptionSelect(
+        id=id,
+        name=id.capitalize(),
+        category=category,
+        type="select",
+        current_value=current,
+        options=[SessionConfigSelectOption(value=v, name=f"Fake {v}") for v in values],
+    )
+
+
+def config_options(
+    values: dict[str, str],
+) -> list[SessionConfigOptionSelect | SessionConfigOptionBoolean] | None:
+    """The session's options for its current `values` (see FAKE_ACP_MODEL)."""
     model = os.getenv("FAKE_ACP_MODEL")
     if model is None:
         return None
-    mode = SessionConfigOptionSelect(
-        id="mode",
-        name="Mode",
-        category="mode",
-        type="select",
-        current_value="default",
-        options=[SessionConfigSelectOption(value="default", name="Default")],
-    )
+    mode = _select("mode", "mode", "default", ["default"])
     if model == "none":
         return [mode]
-    chosen = SessionConfigOptionSelect(
-        id="model",
-        name="Model",
-        category="model",
-        type="select",
-        current_value=model,
-        options=[SessionConfigSelectOption(value=model, name=f"Fake {model}")],
-    )
-    return [mode, chosen]
+    models = ["p2-model"] if values["provider"] == "p2" else [model, "m2"]
+    return [
+        mode,
+        _select("provider", None, values["provider"], ["p1", "p2", "p3"]),
+        _select("model", "model", values["model"], models),
+        _select("effort", "thought_level", values["effort"], ["low", "high"]),
+    ]
 
 
 @final
@@ -109,6 +125,11 @@ class _Session:
     def __init__(self) -> None:
         self.turns = 0
         self.cancelled = asyncio.Event()
+        self.values = {
+            "provider": "p1",
+            "model": os.getenv("FAKE_ACP_MODEL", ""),
+            "effort": "low",
+        }
         self.steered: asyncio.Queue[str] | None = None  # set while a "wait" turn runs
 
 
@@ -188,7 +209,27 @@ class FakeClaude:
             ],
         )
         return NewSessionResponse(
-            session_id=session_id, modes=modes, config_options=config_options()
+            session_id=session_id,
+            modes=modes,
+            config_options=config_options(self._sessions[session_id].values),
+        )
+
+    async def set_config_option(
+        self, config_id: str, session_id: str, value: str | bool, **_kwargs: Any
+    ) -> SetSessionConfigOptionResponse:
+        log(
+            "set_config_option", session_id=session_id, config_id=config_id, value=value
+        )
+        if value == "p3":
+            raise RequestError(-32603, "Internal error", {"details": "no key for p3"})
+        values = self._sessions[session_id].values
+        values[config_id] = str(value)
+        if config_id == "provider":
+            values["model"] = (
+                "p2-model" if value == "p2" else os.getenv("FAKE_ACP_MODEL", "")
+            )
+        return SetSessionConfigOptionResponse(
+            config_options=config_options(values) or []
         )
 
     async def set_session_mode(
@@ -316,8 +357,27 @@ class FakeClaude:
         log("close_session", session_id=session_id)
         return CloseSessionResponse()
 
+    async def delete_session(
+        self, session_id: str, **_kwargs: Any
+    ) -> DeleteSessionResponse:
+        log("delete_session", session_id=session_id)
+        return DeleteSessionResponse()
+
+
+def _router_with_delete(
+    agent: Any, use_unstable_protocol: bool = False
+) -> MessageRouter:
+    """The SDK's router, plus `session/delete`, which SDK 0.12.1 doesn't route."""
+    router = build_agent_router(agent, use_unstable_protocol)
+    _ = router.route_request(
+        "session/delete", DeleteSessionRequest, agent, "delete_session"
+    )
+    return router
+
 
 if __name__ == "__main__":
+    # The connection builds its router by this name; swapping it adds `session/delete`.
+    acp.agent.connection.build_agent_router = _router_with_delete  # pyright: ignore[reportPrivateImportUsage]
     # session/close is "unstable" in the Python SDK's agent router; claude-agent-acp
     # serves it on ACP v1.
     asyncio.run(run_agent(FakeClaude(), use_unstable_protocol=True))  # pyright: ignore[reportArgumentType]

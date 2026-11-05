@@ -4,7 +4,8 @@ use serde::{Serialize, Serializer};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    /// Input the user can fix; the message is shown as is.
+    /// A message for the user, shown as is: input they can fix, or an agent that didn't
+    /// answer or take a pick.
     #[error("{0}")]
     Invalid(String),
     /// The thing the page asked for is gone (deleted in another window, say).

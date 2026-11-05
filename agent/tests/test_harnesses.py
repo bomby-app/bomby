@@ -8,8 +8,8 @@ from livekit.agents.llm import ToolError
 
 from acp_client import CallRunners
 from harnesses import CLAUDE_CODE, CODEX, HARNESSES, OMP, OPENCODE, installed
-from harnesses.harness import ADAPTERS
-from job import read_metadata
+from harnesses.harness import ADAPTERS, Harness
+from job import Pick, read_metadata
 from project import Project
 
 
@@ -31,7 +31,7 @@ def test_installed_agents_come_from_the_job_metadata() -> None:
 
 
 def test_a_call_with_no_agents_has_none() -> None:
-    assert installed({"project": "samba"}, HARNESSES, {}) == {}
+    assert installed(read_metadata('{"project": "samba"}'), HARNESSES, {}) == {}
 
 
 @pytest.mark.parametrize(
@@ -99,12 +99,43 @@ def test_an_adapter_override_in_agent_env_is_used_but_not_passed_on(
 def test_only_installed_agents_are_available(tmp_path: Path) -> None:
     runners = CallRunners(
         Project(name="test", folders=(tmp_path,)),
-        {"opencode": executable(tmp_path, "opencode")},
+        {"omp": executable(tmp_path, "omp")},
         os.environ,
     )
 
-    assert runners.available == [OPENCODE]
-    assert runners.get(OPENCODE) is runners.get(OPENCODE)
+    assert runners.available == [OMP]
+    assert runners.get(OMP) is runners.get(OMP)
     with pytest.raises(ToolError, match="Claude isn't ready right now"):
         _ = runners.get(CLAUDE_CODE)
     asyncio.run(runners.aclose())
+
+
+@pytest.mark.parametrize(
+    ("picks", "available"),
+    [
+        ({}, [CLAUDE_CODE]),
+        ({"opencode": (Pick("model", "m1"),)}, [CLAUDE_CODE, OPENCODE]),
+    ],
+    ids=["nothing picked, as on a console run", "its model picked"],
+)
+def test_an_agent_that_requires_a_pick_is_offered_only_once_something_is_picked(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    picks: dict[str, tuple[Pick, ...]],
+    available: list[Harness],
+) -> None:
+    runners = CallRunners(
+        Project(name="test", folders=(tmp_path,)),
+        {
+            "claude": executable(tmp_path, "claude"),
+            "opencode": executable(tmp_path, "opencode"),
+        },
+        os.environ,
+        picks,
+    )
+
+    assert runners.available == available
+    assert ("left out of the call" in caplog.text) == (OPENCODE not in available)
+    if OPENCODE not in available:
+        with pytest.raises(ToolError, match="OpenCode isn't ready right now"):
+            _ = runners.get(OPENCODE)

@@ -63,11 +63,23 @@ icon:
 add +components:
     bun x shadcn add --yes {{components}}
 
-# Run the Rust core's unit tests
+# Run the Rust core's unit tests, and check the TypeScript types generated from its structs are current
 [group('check')]
 [working-directory: 'app']
-test:
-    cargo test --manifest-path src-tauri/Cargo.toml
+test: (cargo-test "src-tauri/target/ts-rs")
+    diff -r src-tauri/target/ts-rs src/generated || { echo "The generated types are out of date: run just app types"; exit 1; }
+
+# Write the TypeScript types generated from the core's structs (ts-rs) to src/generated, where the page imports them
+[group('check')]
+types: (cargo-test "src/generated" "export_bindings")
+
+# The core's tests matching `filter`, ts-rs writing the page's types into `types`
+# (docs/tauri-notes.md#generated-types); 64-bit integers as numbers, never past 2^53
+[private]
+[working-directory: 'app']
+cargo-test types filter="":
+    rm -rf {{ types }}
+    TS_RS_EXPORT_DIR="$PWD/{{ types }}" TS_RS_LARGE_INT=number cargo test --manifest-path src-tauri/Cargo.toml {{ filter }}
 
 # Everything a change must pass: format, lint and types for both halves, tests
 [group('check')]

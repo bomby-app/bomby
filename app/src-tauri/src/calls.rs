@@ -3,6 +3,7 @@
 //! LiveKit keeps no transcripts, so the page sends each line here as it arrives
 //! (docs/decisions/app-data-in-one-sqlite-db.md).
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
@@ -16,8 +17,9 @@ use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use crate::agent::{AgentWorker, JobCrash, OnCrash, WorkerConfig};
 use crate::db::{Db, now_ms};
 use crate::error::{Error, Result};
+use crate::setup::Pick;
 use crate::sync;
-use crate::{agents, credentials, projects, settings, updates, windows};
+use crate::{agent_picks, agents, credentials, projects, settings, updates, windows};
 
 /// The agent's name in `agent/agent.py` (`AGENT_NAME`), which the token dispatches.
 const AGENT_NAME: &str = "bomby";
@@ -69,26 +71,35 @@ fn report_crashes<R: Runtime>(app: &AppHandle<R>) -> OnCrash {
     })
 }
 
-/// The agents the current call opened with. Every token for that call carries the same
-/// ones, so a reconnect mid-call never hands the voice agent a different list, whatever
-/// looking for agents finds meanwhile (`agents::Agents`). The app runs one call at a time
-/// (one LiveKit session), so opening the next one replaces it.
+/// The agents the current call opened with, and their picks. Every token for that call
+/// carries the same ones, so a reconnect mid-call never hands the voice agent a different
+/// list or model, whatever looking for agents or picking finds meanwhile
+/// (`agents::Agents`, `agent_picks`); a pick made during a call applies from the next one.
+/// The app runs one call at a time (one LiveKit session), so opening the next one replaces
+/// it.
 #[derive(Default)]
 pub struct CallAgents(Mutex<Option<CurrentCall>>);
 
-/// A call id and the agents, by id with their programs, it opened with.
-type CurrentCall = (i64, Vec<(String, PathBuf)>);
+/// What a call opened with: its agents by id with their programs, and their picks.
+#[derive(Debug, Clone, PartialEq)]
+struct OpenedWith {
+    agents: Vec<(String, PathBuf)>,
+    picks: HashMap<String, Vec<Pick>>,
+}
+
+/// A call id and what it opened with.
+type CurrentCall = (i64, OpenedWith);
 
 impl CallAgents {
-    fn set(&self, call_id: i64, agents: Vec<(String, PathBuf)>) {
-        *self.lock() = Some((call_id, agents));
+    fn set(&self, call_id: i64, opened: OpenedWith) {
+        *self.lock() = Some((call_id, opened));
     }
 
-    fn get(&self, call_id: i64) -> Option<Vec<(String, PathBuf)>> {
+    fn get(&self, call_id: i64) -> Option<OpenedWith> {
         self.lock()
             .as_ref()
             .filter(|(id, _)| *id == call_id)
-            .map(|(_, agents)| agents.clone())
+            .map(|(_, opened)| opened.clone())
     }
 
     fn lock(&self) -> MutexGuard<'_, Option<CurrentCall>> {
@@ -99,6 +110,7 @@ impl CallAgents {
 /// What the page needs to join the call.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "call.ts"))]
 pub struct CallToken {
     server_url: String,
     participant_token: String,
@@ -106,8 +118,11 @@ pub struct CallToken {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "call.ts"))]
 pub struct Message {
     id: i64,
+    /// `user` or `agent`.
+    #[cfg_attr(test, ts(type = "\"user\" | \"agent\""))]
     role: String,
     text: String,
     created_at: i64,
@@ -131,16 +146,22 @@ struct HistoryLine {
 }
 
 /// The job metadata the agent reads: the project with what the user wrote about it
-/// (`Project.from_job` in `agent/project.py`), the agents found on this computer by id with their programs, the
-/// voice, what the user likes to be called and, on a resumed call, the conversation so far
-/// (`CallOptions.from_job` in
+/// (`Project.from_job` in `agent/project.py`), the agents found on this computer by id with
+/// their programs and the picks each session gets (`JobMetadata.picks` in `agent/job.py`,
+/// applied by `apply` in `agent/acp_client/settings.py`), the voice, what the user likes to
+/// be called and, on a resumed call, the conversation so far (`CallOptions.from_job` in
 /// `agent/call_options.py`).
 fn dispatch_metadata(
     project: &projects::CallProject,
     agents: &[(String, PathBuf)],
+    picks: &HashMap<String, Vec<Pick>>,
     settings: &settings::CallSettings,
     history: &[HistoryLine],
 ) -> String {
+    let picks: HashMap<_, _> = agents
+        .iter()
+        .filter_map(|(id, _)| Some((id, picks.get(id)?)))
+        .collect();
     let agents: serde_json::Map<_, _> = agents
         .iter()
         .map(|(id, path)| (id.clone(), path.display().to_string().into()))
@@ -150,6 +171,7 @@ fn dispatch_metadata(
         "folders": project.folders,
         "instructions": project.instructions,
         "agents": agents,
+        "picks": picks,
         "voice": settings.voice,
         "user_name": settings.user_name,
         "history": history,
@@ -261,6 +283,8 @@ pub fn open_call<R: Runtime>(
     )?;
 
     let conn = db.conn();
+    // Read before the call is recorded, so a failed read leaves no call without its agents.
+    let picks = agent_picks::saved(&conn)?;
     let call_id = match resume_call_id {
         Some(call_id) => {
             reopen(&conn, project_id, call_id)?;
@@ -274,7 +298,13 @@ pub fn open_call<R: Runtime>(
             conn.last_insert_rowid()
         }
     };
-    call_agents.set(call_id, found);
+    call_agents.set(
+        call_id,
+        OpenedWith {
+            agents: found,
+            picks,
+        },
+    );
     opening.opened(call_id);
     Ok(call_id)
 }
@@ -311,10 +341,14 @@ pub fn call_token<R: Runtime>(
     };
     let room = room_name(call_id);
     // A call opened in this run has its own list; any other gets the last one found.
-    let agents = call_agents
-        .get(call_id)
-        .unwrap_or_else(|| agents::usable(&found.cached().unwrap_or_default()));
-    let metadata = dispatch_metadata(&project, &agents, &settings, &history);
+    let OpenedWith { agents, picks } = match call_agents.get(call_id) {
+        Some(opened) => opened,
+        None => OpenedWith {
+            agents: agents::usable(&found.cached().unwrap_or_default()),
+            picks: agent_picks::saved(&db.conn())?,
+        },
+    };
+    let metadata = dispatch_metadata(&project, &agents, &picks, &settings, &history);
     Ok(CallToken {
         participant_token: token(&keys, &room, metadata)?,
         server_url: keys.url,
@@ -391,17 +425,30 @@ mod tests {
     #[test]
     fn the_current_call_keeps_its_agents_until_the_next_one_opens() {
         let agents = CallAgents::default();
-        let claude = vec![(
-            "claude".to_owned(),
-            PathBuf::from("/Users/me/.local/bin/claude"),
-        )];
+        let claude = OpenedWith {
+            agents: vec![(
+                "claude".to_owned(),
+                PathBuf::from("/Users/me/.local/bin/claude"),
+            )],
+            picks: HashMap::from([(
+                "claude".to_owned(),
+                vec![Pick {
+                    setting: "model".into(),
+                    value: "opus".into(),
+                }],
+            )]),
+        };
         agents.set(1, claude.clone());
         assert_eq!(agents.get(1), Some(claude));
         assert_eq!(agents.get(2), None);
 
-        agents.set(2, vec![]);
+        let none = OpenedWith {
+            agents: vec![],
+            picks: HashMap::new(),
+        };
+        agents.set(2, none.clone());
         assert_eq!(agents.get(1), None);
-        assert_eq!(agents.get(2), Some(vec![]));
+        assert_eq!(agents.get(2), Some(none));
     }
     use livekit_api::access_token::TokenVerifier;
 
@@ -532,9 +579,20 @@ mod tests {
             voice: "Kore".into(),
             user_name: "Sam".into(),
         };
-        let metadata: serde_json::Value =
-            serde_json::from_str(&dispatch_metadata(&project, &agents, &settings, &history))
-                .unwrap();
+        let picks = HashMap::from([
+            (
+                "claude".to_owned(),
+                vec![Pick {
+                    setting: "model".into(),
+                    value: "opus".into(),
+                }],
+            ),
+            ("goose".to_owned(), Vec::new()),
+        ]);
+        let metadata: serde_json::Value = serde_json::from_str(&dispatch_metadata(
+            &project, &agents, &picks, &settings, &history,
+        ))
+        .unwrap();
         assert_eq!(
             metadata,
             serde_json::json!({
@@ -542,6 +600,8 @@ mod tests {
                 "folders": ["/tmp"],
                 "instructions": "A music app.",
                 "agents": { "claude": "/usr/local/bin/claude" },
+                // Only the call's agents' picks go along.
+                "picks": { "claude": [{ "setting": "model", "value": "opus" }] },
                 "voice": "Kore",
                 "user_name": "Sam",
                 "history": [{ "role": "agent", "text": "Hi." }],
