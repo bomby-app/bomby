@@ -86,8 +86,9 @@ function ListPicker({ id, setting, disabled, onChange }: PickerProps) {
         <SelectValue>{currentName(setting)}</SelectValue>
       </SelectTrigger>
       <SelectContent position="popper" className="max-h-80">
-        {grouped(setting.options).map(([group, options]) => (
-          <SelectGroup key={group ?? ""}>
+        {grouped(setting.options).map(([group, options], index) => (
+          // By place: a group named "" may sit next to the ungrouped options.
+          <SelectGroup key={index}>
             {group && <SelectLabel>{group}</SelectLabel>}
             {options.map((option) => (
               <SelectItem key={option.value} value={option.value}>
@@ -124,8 +125,8 @@ function SearchPicker({ id, setting, disabled, onChange }: PickerProps) {
           <CommandInput placeholder={`Search ${setting.name.toLowerCase()}`} />
           <CommandList className="max-h-72">
             <CommandEmpty>Nothing matches.</CommandEmpty>
-            {grouped(setting.options).map(([group, options]) => (
-              <CommandGroup key={group ?? ""} heading={group ?? undefined}>
+            {grouped(setting.options).map(([group, options], index) => (
+              <CommandGroup key={index} heading={group ?? undefined}>
                 {options.map((option) => (
                   <CommandItem
                     key={option.value}

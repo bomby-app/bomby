@@ -14,12 +14,12 @@
 //! opens.
 
 use std::collections::HashMap;
-use std::io::Read;
+use std::io::{ErrorKind, Read};
 use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::mpsc;
-use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -132,24 +132,33 @@ pub fn run(mut command: Command, timeout: Duration) -> Option<Output> {
     // waits for a reader, so waiting for it to exit first would wait out the timeout.
     let deadline = Instant::now() + timeout;
     let mut stdout = child.stdout.take()?;
-    let (read, output) = mpsc::channel();
+    let read = Arc::new(Mutex::new(Vec::new()));
+    let (ended, end) = mpsc::channel();
+    let reading = Arc::clone(&read);
+    // Ends once the pipe closes: when the program exits, or the last program holding it.
     thread::spawn(move || {
-        let mut out = Vec::new();
+        let mut chunk = [0; 16 * 1024];
+        loop {
+            match stdout.read(&mut chunk) {
+                Ok(0) => break,
+                Ok(n) => sync::lock(&reading).extend_from_slice(&chunk[..n]),
+                Err(e) if e.kind() == ErrorKind::Interrupted => {}
+                Err(_) => break,
+            }
+        }
         // Only fails once `run` has stopped waiting.
-        let _ = read.send(stdout.read_to_end(&mut out).map(|_| out));
+        let _ = ended.send(());
     });
     let Ok(Some(status)) = process::wait_timeout(&mut child, timeout) else {
-        // The reader ends once the pipe closes.
         process::kill(&mut child);
         return None;
     };
-    // The timeout covers the output too: a program it started (a daemon from the shell's rc
-    // files) can hold the pipe open after it exits. A second at least, for the last of it.
+    // The timeout covers the output too. A program it started (a daemon from the shell's rc
+    // files) can hold the pipe open after it exits; what it wrote is all there by then. A
+    // second at least, for the last of it.
     let left = deadline.saturating_duration_since(Instant::now());
-    let stdout = output
-        .recv_timeout(left.max(Duration::from_secs(1)))
-        .ok()?
-        .ok()?;
+    let _ = end.recv_timeout(left.max(Duration::from_secs(1)));
+    let stdout = std::mem::take(&mut *sync::lock(&read));
     Some(Output {
         status,
         stdout,
@@ -297,6 +306,8 @@ pub fn installed(agents: &[AgentStatus]) -> Vec<(String, PathBuf)> {
 pub struct Agents {
     state: Mutex<Detection>,
     finished: Condvar,
+    /// One pick or picker listing per agent at a time (`agent_picks`), by agent id.
+    picking: Mutex<HashMap<String, Arc<Mutex<()>>>>,
 }
 
 #[derive(Default)]
@@ -331,6 +342,13 @@ impl Detection {
 impl Agents {
     fn lock(&self) -> MutexGuard<'_, Detection> {
         sync::lock(&self.state)
+    }
+
+    /// The lock that keeps agent `id` to one pick or listing at a time, so two windows can't
+    /// leave its saved picks and its row apart. Each takes a probe of seconds; other agents'
+    /// don't wait on it.
+    pub fn one_at_a_time(&self, id: &str) -> Arc<Mutex<()>> {
+        Arc::clone(sync::lock(&self.picking).entry(id.to_owned()).or_default())
     }
 
     /// What the last look found, if one has finished.
@@ -581,12 +599,13 @@ mod tests {
     }
 
     #[test]
-    fn gives_up_on_output_a_program_it_started_holds_open() {
+    fn reads_what_a_program_wrote_while_one_it_started_holds_the_pipe() {
         // The shell exits at once; the sleep it left behind keeps the pipe open.
         let mut command = Command::new("sh");
         command.args(["-c", "sleep 5 & echo started"]);
         let started = Instant::now();
-        assert!(run(command, Duration::from_secs(1)).is_none());
+        let output = run(command, Duration::from_secs(1)).expect("it exited");
+        assert_eq!(output.stdout, b"started\n");
         assert!(started.elapsed() < Duration::from_secs(4));
     }
 

@@ -194,7 +194,7 @@ function statusOf(agent: AgentStatus | null, phase: Phase): string {
       return setup?.problem ?? "Didn't answer"
     case "pick":
       return "Pick its model"
-    default:
+    case "connect":
       return "Found on this Mac"
   }
 }
@@ -202,6 +202,8 @@ function statusOf(agent: AgentStatus | null, phase: Phase): string {
 /** The same, in the list of other agents, where there's room for less. */
 function shortStatusOf(agent: AgentStatus, phase: Phase): string {
   switch (phase) {
+    case "looking":
+      return "Looking"
     case "missing":
       return "Not on this Mac"
     case "ready":
@@ -212,7 +214,7 @@ function shortStatusOf(agent: AgentStatus, phase: Phase): string {
       return "Didn't answer"
     case "pick":
       return "Pick its model"
-    default:
+    case "connect":
       return "Needs setting up"
   }
 }

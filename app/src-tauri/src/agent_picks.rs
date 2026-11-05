@@ -6,25 +6,15 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, LazyLock, Mutex};
 
 use rusqlite::{Connection, params};
-use tauri::{AppHandle, Emitter, Manager, Runtime, State};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 use crate::agents::{self, Agents, CHANGED};
 use crate::db::Db;
 use crate::error::{Error, Result};
 use crate::setup::{self, Listed, Pick, Why};
 use crate::sync;
-
-/// One pick or listing per agent at a time, so two windows can't leave its saved picks and
-/// its row apart. Each takes a probe of seconds; other agents' don't wait on it.
-static PICKING: LazyLock<Mutex<HashMap<String, Arc<Mutex<()>>>>> = LazyLock::new(Default::default);
-
-/// `agent`'s lock in [`PICKING`].
-fn one_at_a_time(agent: &str) -> Arc<Mutex<()>> {
-    Arc::clone(sync::lock(&PICKING).entry(agent.to_owned()).or_default())
-}
 
 /// Every agent's picks, in the order they're applied. An agent on its defaults has none.
 pub fn saved(conn: &Connection) -> Result<HashMap<String, Vec<Pick>>> {
@@ -107,22 +97,23 @@ fn show<R: Runtime>(app: &AppHandle<R>, found: Option<Vec<agents::AgentStatus>>)
 /// What the model picker shows for `agent` when it opens: its settings, its picks applied.
 /// Its row follows, so it shows a pick found gone, and the model of an agent the looks open
 /// no session in (omp).
-#[tauri::command(async)]
-pub fn agent_settings<R: Runtime>(
-    app: AppHandle<R>,
-    db: State<'_, Db>,
-    agent: String,
-) -> Result<Listed> {
-    let lock = one_at_a_time(&agent);
-    let _one = sync::lock(&lock);
-    let listed = list(&app, &agent, &saved_for(&db.conn(), &agent)?)?;
-    if listed.setup.session {
-        show(
-            &app,
-            app.state::<Agents>().replace_setup(&agent, &listed.setup),
-        );
-    }
-    Ok(listed)
+#[tauri::command]
+pub async fn agent_settings<R: Runtime>(app: AppHandle<R>, agent: String) -> Result<Listed> {
+    // A probe of seconds: off the async runtime, like every look (docs/tauri-notes.md).
+    tauri::async_runtime::spawn_blocking(move || {
+        let lock = app.state::<Agents>().one_at_a_time(&agent);
+        let _one = sync::lock(&lock);
+        let picks = saved_for(&app.state::<Db>().conn(), &agent)?;
+        let listed = list(&app, &agent, &picks)?;
+        if listed.setup.session {
+            show(
+                &app,
+                app.state::<Agents>().replace_setup(&agent, &listed.setup),
+            );
+        }
+        Ok(listed)
+    })
+    .await?
 }
 
 /// Adds `pick` to `agent`'s saved picks, in place of an earlier one for the same setting, and
@@ -132,31 +123,37 @@ pub fn agent_settings<R: Runtime>(
 ///
 /// Saved only once the agent has answered with a session and taken `pick`; until then the
 /// saved picks stay as they were, and the error says why. Only this agent's row changes.
-#[tauri::command(async)]
-pub fn pick_agent_settings<R: Runtime>(
+#[tauri::command]
+pub async fn pick_agent_settings<R: Runtime>(
     app: AppHandle<R>,
-    db: State<'_, Db>,
     agent: String,
     pick: Pick,
 ) -> Result<Listed> {
-    let lock = one_at_a_time(&agent);
-    let _one = sync::lock(&lock);
-    let mut picks = saved_for(&db.conn(), &agent)?;
-    picks.retain(|p| p.setting != pick.setting);
-    picks.push(pick.clone());
-    let listed = list(&app, &agent, &picks)?;
-    if !listed.setup.session {
-        // It didn't get as far as a session (it timed out, say).
-        return Err(Error::Invalid(
-            listed.setup.problem.unwrap_or_else(|| UNREACHABLE.into()),
-        ));
-    }
-    if let Some(why) = not_taken(&listed, &pick, &agent) {
-        return Err(Error::Invalid(why));
-    }
-    save(&mut db.conn(), &agent, &held(picks, &listed))?;
-    show(&app, app.state::<Agents>().picked(&agent, &listed.setup));
-    Ok(listed)
+    tauri::async_runtime::spawn_blocking(move || {
+        let lock = app.state::<Agents>().one_at_a_time(&agent);
+        let _one = sync::lock(&lock);
+        let db = app.state::<Db>();
+        let mut picks = saved_for(&db.conn(), &agent)?;
+        picks.retain(|p| p.setting != pick.setting);
+        picks.push(pick.clone());
+        let mut listed = list(&app, &agent, &picks)?;
+        if !listed.setup.session {
+            // It didn't get as far as a session (it timed out, say).
+            return Err(Error::Invalid(
+                listed.setup.problem.unwrap_or_else(|| UNREACHABLE.into()),
+            ));
+        }
+        if let Some(why) = not_taken(&listed, &pick, &agent) {
+            return Err(Error::Invalid(why));
+        }
+        save(&mut db.conn(), &agent, &held(picks, &listed))?;
+        // Those were picks that fell away with this one (a model gone with its provider):
+        // no longer saved, so nothing of the user's is skipped.
+        listed.setup.skipped.clear();
+        show(&app, app.state::<Agents>().picked(&agent, &listed.setup));
+        Ok(listed)
+    })
+    .await?
 }
 
 /// Why the agent didn't take `pick`, if it didn't: "Codex wouldn't take that model".

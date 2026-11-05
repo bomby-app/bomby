@@ -20,7 +20,9 @@ const TIMEOUT: Duration = Duration::from_secs(60);
 
 /// What the probe found for one agent (`Setup` in `agent/acp_client/probe.py`). The probe
 /// writes snake_case, the page reads camelCase.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+// Only tests build one from nothing: anywhere else that would claim an agent is ready.
+#[cfg_attr(test, derive(Default))]
 // ts-rs ignores serde's split rename_all, so it's told the page's names itself.
 #[cfg_attr(
     test,
@@ -50,7 +52,8 @@ pub struct Setup {
 /// What an agent needs before a call can use it, as the probe decides it (`Step` in
 /// `agent/acp_client/probe.py`); the page and the looks read it, rather than guessing from
 /// the other fields.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(Default))]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "agents.ts"))]
 pub enum Step {
@@ -63,7 +66,7 @@ pub enum Step {
     /// It didn't answer: it timed out, quit or couldn't start.
     Unreachable,
     /// Nothing: calls can use it.
-    #[default]
+    #[cfg_attr(test, default)]
     Ready,
 }
 
@@ -159,7 +162,19 @@ pub fn probe(
     if !output.status.success() {
         return None;
     }
-    serde_json::from_slice(&output.stdout).ok()
+    read_answer(&output.stdout)
+}
+
+/// The probe's answer, agent by agent, so one the core can't read (a step it doesn't know
+/// yet) costs only that agent its setup, which then counts as not probed.
+fn read_answer(stdout: &[u8]) -> Option<HashMap<String, Listed>> {
+    let answers: HashMap<String, serde_json::Value> = serde_json::from_slice(stdout).ok()?;
+    Some(
+        answers
+            .into_iter()
+            .filter_map(|(id, answer)| Some((id, serde_json::from_value(answer).ok()?)))
+            .collect(),
+    )
 }
 
 #[cfg(test)]
@@ -207,6 +222,17 @@ mod tests {
         walk(value, "", name, &mut found);
         found.sort();
         found
+    }
+
+    #[test]
+    fn an_answer_it_cant_read_costs_only_that_agent() {
+        let answer = format!(r#"{{"goose": {}, "omp": {{"step": "someday"}}}}"#, {
+            let all: Value = serde_json::from_str(ANSWER).unwrap();
+            all["goose"].to_string()
+        });
+        let listed = read_answer(answer.as_bytes()).unwrap();
+        assert!(listed.contains_key("goose"));
+        assert!(!listed.contains_key("omp"));
     }
 
     #[test]
