@@ -62,14 +62,14 @@ The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS)
   "instructions": "A music app: the API is in Go, the site in Svelte.",
   "agents": {"claude": "/Users/me/.local/bin/claude", "opencode": "/Users/me/.opencode/bin/opencode"},
   "picks": {"claude": [{"setting": "model", "value": "opus"}], "opencode": [{"setting": "model", "value": "provider/model-id"}]},
-  "voice": "Charon",
+  "voice": "Leda",
   "user_name": "Sam",
   "tone": "chatty",
   "history": [{"role": "user", "text": "fix the login"}, {"role": "agent", "text": "Claude's on it."}]
 }
 ```
 
-- All fields are optional; one sent as null counts as left out, and unknown fields are ignored. `folders` must be absolute, existing paths; the first is the working directory and the rest become ACP `additionalDirectories`. Defaults are the home folder, project `home`, and voice `GEMINI_VOICE` or Charon.
+- All fields are optional; one sent as null counts as left out, and unknown fields are ignored. `folders` must be absolute, existing paths; the first is the working directory and the rest become ACP `additionalDirectories`. Defaults are the home folder, project `home`, and voice `GEMINI_VOICE` or Leda.
 - `instructions` is what the user wrote about the project in its settings, up to 5,000 characters; empty when they wrote nothing, and then neither the voice model nor the coding agents hear of it.
 - `agents` maps installed harness ids to programs: all but those the setup probe found not ready (one not probed yet stays). The voice model can use only agents in this list; console runs find them on PATH ([decision](decisions/detect-acp-native-agents.md)).
 - `picks` holds the session settings the user picked for each agent, if any (model, effort, goose's provider), which the runner applies to every session it opens with `session/set_config_option`, in the agent's own order (provider before model). One the agent no longer offers, or refuses, is skipped, leaving its default; for an agent whose harness requires a model pick, a session without one fails the task (`no_model_picked`) ([decision](decisions/pick-agent-settings-like-buzz-and-zed.md)).

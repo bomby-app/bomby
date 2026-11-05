@@ -13,8 +13,8 @@ from typing import Literal
 
 from job import JobFields, Line
 
-# The voice the agent has always had; the app defaults to it too (`settings.rs`).
-DEFAULT_VOICE = "Charon"
+# The app defaults to it too (`settings.rs`).
+DEFAULT_VOICE = "Leda"
 
 Tone = Literal["sharp", "chatty", "playful"]
 TONES: tuple[Tone, ...] = ("sharp", "chatty", "playful")

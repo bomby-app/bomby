@@ -57,8 +57,8 @@ impl LiveKitServer {
     }
 }
 
-/// Used when none is chosen: the voice the agent has always had (`agent/call_options.py`).
-pub const DEFAULT_VOICE: &str = "Charon";
+/// Used when none is chosen; the agent defaults to it too (`agent/call_options.py`).
+pub const DEFAULT_VOICE: &str = "Leda";
 
 /// Gemini's 30 prebuilt voices: name, style and pitch, as Google lists them for Gemini 3.8
 /// (ai.google.dev/gemini-api/docs/speech-generation#voices, and AI Studio for the pitch,
@@ -250,7 +250,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn defaults_to_charon_and_keeps_a_chosen_voice() {
+    fn defaults_to_leda_and_keeps_a_chosen_voice() {
         let db = Db::in_memory().unwrap();
         let conn = db.conn();
         assert_eq!(voice(&conn).unwrap(), DEFAULT_VOICE);
