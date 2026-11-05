@@ -130,8 +130,8 @@ struct HistoryLine {
     text: String,
 }
 
-/// The job metadata the agent reads: the project (`Project.from_job` in
-/// `agent/project.py`), the agents found on this computer by id with their programs, the
+/// The job metadata the agent reads: the project with what the user wrote about it
+/// (`Project.from_job` in `agent/project.py`), the agents found on this computer by id with their programs, the
 /// voice and, on a resumed call, the conversation so far (`CallOptions.from_job` in
 /// `agent/call_options.py`).
 fn dispatch_metadata(
@@ -147,6 +147,7 @@ fn dispatch_metadata(
     serde_json::json!({
         "project": project.name,
         "folders": project.folders,
+        "instructions": project.instructions,
         "agents": agents,
         "voice": voice,
         "history": history,
@@ -509,7 +510,8 @@ mod tests {
         let db = Db::in_memory().unwrap();
         let conn = db.conn();
         conn.execute(
-            "INSERT INTO projects (name, created_at) VALUES ('samba', 0)",
+            "INSERT INTO projects (name, instructions, created_at)
+             VALUES ('samba', 'A music app.', 0)",
             [],
         )
         .unwrap();
@@ -531,6 +533,7 @@ mod tests {
             serde_json::json!({
                 "project": "samba",
                 "folders": ["/tmp"],
+                "instructions": "A music app.",
                 "agents": { "claude": "/usr/local/bin/claude" },
                 "voice": "Kore",
                 "history": [{ "role": "agent", "text": "Hi." }],
@@ -562,6 +565,7 @@ mod tests {
         let project = |folders: Vec<String>| projects::CallProject {
             name: "samba".into(),
             folders,
+            instructions: String::new(),
         };
         assert!(folders_are_there(&project(vec![here.clone()])).is_ok());
         let gone = folders_are_there(&project(vec![here, "/Users/me/Dev/gone".into()]));

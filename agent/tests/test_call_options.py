@@ -32,20 +32,8 @@ def test_reads_the_voice_and_history_from_the_app() -> None:
     assert options.resumed
 
 
-def test_a_new_call_keeps_the_instructions_as_they_are() -> None:
-    options = CallOptions.from_job({"voice": "Kore", "history": []}, {})
-    assert not options.resumed
-    assert options.instructions("Be brief.") == "Be brief."
-
-
-def test_a_resumed_call_appends_the_previous_conversation() -> None:
-    options = CallOptions(
-        voice="Kore",
-        history=(Line("user", "fix the login"), Line("agent", "Done.")),
-    )
-    text = options.instructions("Be brief.")
-    assert text.startswith("Be brief.\n\n## Previous conversation\n\n")
-    assert text.endswith("User: fix the login\nYou: Done.")
+def test_a_call_without_history_is_new() -> None:
+    assert not CallOptions.from_job({"voice": "Kore", "history": []}, {}).resumed
 
 
 @pytest.mark.parametrize(

@@ -39,8 +39,8 @@ flowchart LR
 
 ## A call, start to end
 
-1. **Start.** The core starts or restarts the agent worker, looks for the installed agents (leaving out any the setup probe found not set up) and records the call with `open_call`, then mints a read-only token with `call_token`. The token's room configuration dispatches `bomby` with the project, folders and the agents found when the call opened as job metadata; every token for the call carries the same agents. The entrypoint reads `ctx.job.metadata`.
-2. **Talk.** Gemini 3.8 Live handles speech both ways, using `agent/prompts/voice.md`.
+1. **Start.** The core starts or restarts the agent worker, looks for the installed agents (leaving out any the setup probe found not set up) and records the call with `open_call`, then mints a read-only token with `call_token`. The token's room configuration dispatches `bomby` with the project, its folders and instructions, and the agents found when the call opened as job metadata; every token for the call carries the same agents. The entrypoint reads `ctx.job.metadata`.
+2. **Talk.** Gemini 3.8 Live handles speech both ways. Its instructions are `agent/prompts/voice.md` plus what the call adds, each part left out when it has nothing to say: the agents it can use, the project's instructions (`## Project context`) and, on a resumed call, the earlier conversation (`agent/voice_prompt.py`).
 3. **Work.** Gemini calls `start_task(task, session, agent)`. Its first `ctx.update()` makes the tool non-blocking, so the conversation continues.
 4. **Agent sessions.** Each selected harness gets one `AcpRunner` and one ACP process per call, started on its first task. A new session name opens a session; a known name continues it. Sessions run in parallel, and supported harnesses accept steering mid-turn.
 5. **Result.** The agent's final message becomes the tool result. Gemini reads it out; no other agent output reaches the voice conversation.
@@ -59,6 +59,7 @@ The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS)
 {
   "project": "samba",
   "folders": ["/Users/me/Dev/samba", "/Users/me/Dev/shared"],
+  "instructions": "A music app: the API is in Go, the site in Svelte.",
   "agents": {"claude": "/Users/me/.local/bin/claude", "opencode": "/Users/me/.opencode/bin/opencode"},
   "voice": "Charon",
   "history": [{"role": "user", "text": "fix the login"}, {"role": "agent", "text": "Claude's on it."}]
@@ -66,9 +67,10 @@ The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS)
 ```
 
 - All fields are optional. `folders` must be absolute, existing paths; the first is the working directory and the rest become ACP `additionalDirectories`. Defaults are the home folder, project `home`, and voice `GEMINI_VOICE` or Charon.
+- `instructions` is what the user wrote about the project in its settings, up to 5,000 characters; empty when they wrote nothing, and then neither the voice model nor the coding agents hear of it.
 - `agents` maps installed harness ids to programs. The voice model can use only agents in this list; console runs find them on PATH ([decision](decisions/detect-acp-native-agents.md)).
 - `history` appears only when resuming a call and contains its last 50 lines ([decision](decisions/resume-a-call-with-its-last-lines.md)).
-- The agent reads it once (`agent/job.py`); the project, the installed agents and the call options each take their fields from that. Console runs use `BOMBY_PROJECT` and `BOMBY_FOLDERS` from `agent/.env`. Invalid metadata fails the call at start.
+- The agent reads it once (`agent/job.py`); the project, the installed agents and the call options each take their fields from that. Console runs use `BOMBY_PROJECT`, `BOMBY_FOLDERS` and `BOMBY_INSTRUCTIONS` from `agent/.env`. Invalid metadata fails the call at start.
 
 **`start_task`** ([decision](decisions/one-tool-for-every-agent.md)):
 
@@ -76,7 +78,7 @@ The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS)
 - New names open parallel sessions. Idle sessions start another prompt turn. Busy sessions take `_session/steering` where supported: the call returns at once with a note, and the running turn's result covers both. Otherwise the task waits for the running turn.
 - Cancelling with `lk_agents_cancel_task` stops the turn but keeps the session.
 
-**Briefing.** Each session receives `prompts/harness-briefing.md` plus the project name and folders once: through the system prompt when supported, otherwise before its first task. It requires a short, plain-text, outcome-first final report for speech.
+**Briefing.** Each session receives `prompts/harness-briefing.md` plus the project name, folders and instructions once (never again with follow-ups or steering): through the system prompt when supported, otherwise before its first task. It requires a short, plain-text, outcome-first final report for speech.
 
 **Agent errors.** A harness that fails fails the task with one short line for the voice model, "<agent> isn't ready right now" or "<agent> stopped before finishing", plus an instruction to say sorry and offer another agent (`not_ready` and `stopped` in `agent/acp_client/runner.py`, owner's choice, 2026-11-04). The details go to `agent.log`; Settings shows what to fix, from the setup probe ([decision](decisions/check-agent-setup-with-an-acp-probe.md)).
 

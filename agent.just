@@ -5,7 +5,8 @@
 #     just agent console        talk to the agent in the terminal
 #     just agent check          lint, types and tests, before every commit
 #
-# Set the console call's project in agent/.env (BOMBY_PROJECT, BOMBY_FOLDERS).
+# Set the console call's project in agent/.env (BOMBY_PROJECT, BOMBY_FOLDERS,
+# BOMBY_INSTRUCTIONS).
 
 # List the agent recipes
 default:

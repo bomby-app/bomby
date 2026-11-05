@@ -1,5 +1,6 @@
 """What the app sends with a call besides the project (`project.py`, `Project`): the
-voice to speak in and, when the user resumes an earlier call, its last lines.
+voice to speak in and, when the user resumes an earlier call, its last lines. How they
+reach the voice model's instructions is `voice_prompt.py`.
 
 The job's metadata (`job.py`) has `{"voice": "Kore", "history": [{"role": "user", "text": "..."}]}`.
 Console runs have none: `GEMINI_VOICE`
@@ -8,7 +9,7 @@ stands in for the voice, and there is no history.
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Literal, cast
+from typing import Literal, cast, get_args
 
 from job import JobFields
 
@@ -16,7 +17,7 @@ from job import JobFields
 DEFAULT_VOICE = "Charon"
 
 Speaker = Literal["user", "agent"]
-SPEAKER_LABEL: dict[Speaker, str] = {"user": "User", "agent": "You"}
+SPEAKERS: tuple[Speaker, ...] = get_args(Speaker)
 
 
 @dataclass(frozen=True)
@@ -48,7 +49,7 @@ class CallOptions:
         for item in items:
             entry = cast(dict[str, object], item) if isinstance(item, dict) else {}
             role, text = entry.get("role"), entry.get("text")
-            if role not in SPEAKER_LABEL or not isinstance(text, str):
+            if role not in SPEAKERS or not isinstance(text, str):
                 raise ValueError(f"not a history line: {item!r}")
             if text.strip():
                 history.append(Line(role, text.strip()))
@@ -58,17 +59,3 @@ class CallOptions:
     @property
     def resumed(self) -> bool:
         return bool(self.history)
-
-    def instructions(self, base: str) -> str:
-        """`base`, plus the earlier conversation when this call resumes one."""
-        if not self.history:
-            return base
-        lines = "\n".join(f"{SPEAKER_LABEL[l.speaker]}: {l.text}" for l in self.history)
-        return (
-            f"{base}\n\n## Previous conversation\n\n"
-            "You're picking up an earlier conversation with the user; its last lines are "
-            "below. Carry on as if it never stopped. The agents don't remember it, though "
-            "anything they did then is still done, so when you hand off a follow-up, tell "
-            "the agent what it needs to know.\n\n"
-            f"{lines}"
-        )

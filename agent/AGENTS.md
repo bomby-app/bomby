@@ -10,7 +10,8 @@ A LiveKit Agents worker on Gemini 3.8 Live. It talks with the user, hands work t
 - `adapters/`: the ACP adapters for agents without ACP of their own (Claude Code, Codex), pinned in `package.json`. The app installs them on Set up; `just agent install` builds them into `adapters/bin` for console runs ([decision](../docs/decisions/install-adapters-on-setup.md)).
 - `acp_client/`: the ACP client and runner every harness shares (sessions, steering, the briefing). A failing harness reaches the voice as one short line (`not_ready`, `stopped`); the details go to the log.
 - `tools/start_task.py`: the voice model's one tool. `task_board.py`: the call's tasks, sent to the app.
-- `prompts/`: `voice.md` (Gemini's instructions) and `harness-briefing.md` (what every coding agent is told).
+- `prompts/`: `voice.md` (Gemini's instructions) and `harness-briefing.md` (what every coding agent is told). `voice_prompt.py` adds what each call brings to `voice.md`, and `briefing` in `acp_client/runner.py` adds the project to `harness-briefing.md`; both build their sections with `sections.py`, leaving out the empty ones.
+- `project.py`, `call_options.py`: what the app sends with each call, read once from the job's metadata (`job.py`).
 - `tests/`: unit tests, with a fake ACP agent.
 
 ## Rules

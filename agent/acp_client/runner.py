@@ -27,6 +27,7 @@ from harnesses import HARNESSES, installed
 from harnesses.harness import Harness
 from job import JobFields
 from project import Project
+from sections import join, section
 
 from .client import HarnessClient, Reply, connect
 
@@ -90,15 +91,23 @@ def stopped(harness: Harness) -> str:
 
 
 def briefing(project: Project) -> str:
-    """What a harness is told once per session: how its result is used, and the folders
-    it works in. Every harness gets it, whether or not it reads ACP's
-    `additionalDirectories`."""
+    """What a harness is told once per session: how its result is used, the folders it
+    works in (every harness gets them, whether or not it reads ACP's
+    `additionalDirectories`) and the user's description of the project, if any."""
     folders = f"You're working in {project.cwd}"
     if project.extra_folders:
         folders += ", and this project also includes " + ", ".join(
             project.extra_folders
         )
-    return f"{BRIEFING}\n\n## This project\n\n{project.name}. {folders}."
+    description = (
+        join("The user's description of this project:", project.instructions)
+        if project.instructions
+        else ""
+    )
+    return join(
+        BRIEFING,
+        section("This project", join(f"{project.name}. {folders}.", description)),
+    )
 
 
 def session_name(name: str) -> str:

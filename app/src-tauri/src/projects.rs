@@ -1,5 +1,5 @@
-//! Projects: a name and the folders Claude may work in (the first is its working directory),
-//! each with its calls. The sidebar tree is `list_projects`.
+//! Projects: a name, the folders the agents work in (the first is the working directory),
+//! what the user wrote about the project, and its calls. The sidebar tree is `list_projects`.
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -12,6 +12,9 @@ use crate::db::{Db, now_ms};
 use crate::error::{Error, Result};
 
 const MAX_NAME_LEN: usize = 80;
+/// Room for a good description of a project, about 1,250 tokens of English, without
+/// crowding the voice agent's instructions or the coding agents' briefing.
+pub(crate) const MAX_INSTRUCTIONS_LEN: usize = 5000;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -19,6 +22,8 @@ pub struct Project {
     id: i64,
     name: String,
     folders: Vec<String>,
+    /// What the user wrote about the project; empty if nothing.
+    instructions: String,
     created_at: i64,
     /// Newest first.
     calls: Vec<CallSummary>,
@@ -37,11 +42,20 @@ pub struct CallSummary {
 pub struct ProjectInput {
     name: String,
     folders: Vec<String>,
+    #[serde(default)]
+    instructions: String,
+}
+
+/// A project as the page sent it, trimmed and checked.
+struct Valid {
+    name: String,
+    folders: Vec<String>,
+    instructions: String,
 }
 
 /// Trims and checks what the page sent. The folder rules match the agent's
 /// (`agent/project.py`, `Project.from_job`): absolute paths to existing folders.
-fn validate(input: ProjectInput) -> Result<(String, Vec<String>)> {
+fn validate(input: ProjectInput) -> Result<Valid> {
     let name = input.name.trim().to_owned();
     if name.is_empty() {
         return Err(Error::Invalid("Give the project a name.".into()));
@@ -68,7 +82,18 @@ fn validate(input: ProjectInput) -> Result<(String, Vec<String>)> {
         }
         folders.push(folder);
     }
-    Ok((name, folders))
+
+    let instructions = input.instructions.trim().to_owned();
+    if instructions.chars().count() > MAX_INSTRUCTIONS_LEN {
+        return Err(Error::Invalid(format!(
+            "Keep the instructions under {MAX_INSTRUCTIONS_LEN} characters."
+        )));
+    }
+    Ok(Valid {
+        name,
+        folders,
+        instructions,
+    })
 }
 
 fn ensure_unique_name(conn: &Connection, name: &str, except: Option<i64>) -> Result<()> {
@@ -98,23 +123,28 @@ fn write_folders(conn: &Connection, project_id: i64, folders: &[String]) -> Resu
     Ok(())
 }
 
-/// What a call needs of a project: what it's called and where it lives.
+/// What a call needs of a project: what it's called, where it lives and what the user
+/// wrote about it.
 pub(crate) struct CallProject {
     pub(crate) name: String,
     pub(crate) folders: Vec<String>,
+    pub(crate) instructions: String,
 }
 
-/// The project's name and folders, without its calls.
+/// The project's name, folders and instructions, without its calls.
 pub(crate) fn for_call(conn: &Connection, id: i64) -> Result<CallProject> {
-    let name = conn
-        .query_row("SELECT name FROM projects WHERE id = ?1", [id], |row| {
-            row.get(0)
-        })
+    let (name, instructions) = conn
+        .query_row(
+            "SELECT name, instructions FROM projects WHERE id = ?1",
+            [id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
         .optional()?
         .ok_or(Error::NotFound("project"))?;
     Ok(CallProject {
         name,
         folders: folders(conn, id)?,
+        instructions,
     })
 }
 
@@ -126,11 +156,11 @@ fn folders(conn: &Connection, id: i64) -> Result<Vec<String>> {
 }
 
 fn load(conn: &Connection, id: i64) -> Result<Project> {
-    let (name, created_at) = conn
+    let (name, instructions, created_at) = conn
         .query_row(
-            "SELECT name, created_at FROM projects WHERE id = ?1",
+            "SELECT name, instructions, created_at FROM projects WHERE id = ?1",
             [id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()?
         .ok_or(Error::NotFound("project"))?;
@@ -155,6 +185,7 @@ fn load(conn: &Connection, id: i64) -> Result<Project> {
         id,
         name,
         folders,
+        instructions,
         created_at,
         calls,
     })
@@ -169,31 +200,31 @@ fn list(conn: &Connection) -> Result<Vec<Project>> {
 }
 
 fn create(conn: &mut Connection, input: ProjectInput) -> Result<Project> {
-    let (name, folders) = validate(input)?;
+    let project = validate(input)?;
     let tx = conn.transaction()?;
-    ensure_unique_name(&tx, &name, None)?;
+    ensure_unique_name(&tx, &project.name, None)?;
     tx.execute(
-        "INSERT INTO projects (name, created_at) VALUES (?1, ?2)",
-        params![name, now_ms()],
+        "INSERT INTO projects (name, instructions, created_at) VALUES (?1, ?2, ?3)",
+        params![project.name, project.instructions, now_ms()],
     )?;
     let id = tx.last_insert_rowid();
-    write_folders(&tx, id, &folders)?;
+    write_folders(&tx, id, &project.folders)?;
     tx.commit()?;
     load(conn, id)
 }
 
 fn update(conn: &mut Connection, id: i64, input: ProjectInput) -> Result<Project> {
-    let (name, folders) = validate(input)?;
+    let project = validate(input)?;
     let tx = conn.transaction()?;
-    ensure_unique_name(&tx, &name, Some(id))?;
+    ensure_unique_name(&tx, &project.name, Some(id))?;
     let changed = tx.execute(
-        "UPDATE projects SET name = ?1 WHERE id = ?2",
-        params![name, id],
+        "UPDATE projects SET name = ?1, instructions = ?2 WHERE id = ?3",
+        params![project.name, project.instructions, id],
     )?;
     if changed == 0 {
         return Err(Error::NotFound("project"));
     }
-    write_folders(&tx, id, &folders)?;
+    write_folders(&tx, id, &project.folders)?;
     tx.commit()?;
     load(conn, id)
 }
@@ -238,6 +269,14 @@ mod tests {
         ProjectInput {
             name: name.into(),
             folders: folders.iter().map(|f| (*f).to_owned()).collect(),
+            instructions: String::new(),
+        }
+    }
+
+    fn with_instructions(name: &str, folders: &[&str], instructions: &str) -> ProjectInput {
+        ProjectInput {
+            instructions: instructions.into(),
+            ..input(name, folders)
         }
     }
 
@@ -269,6 +308,36 @@ mod tests {
     }
 
     #[test]
+    fn keeps_the_instructions_trimmed_and_lets_them_be_cleared() {
+        let db = Db::in_memory().unwrap();
+        let mut conn = db.conn();
+        let (a, _) = folders();
+
+        let samba = create(&mut conn, input("samba", &[&a])).unwrap();
+        assert_eq!(
+            samba.instructions, "",
+            "a project starts without instructions"
+        );
+
+        let text = "A music app.\n\nThe API is in Go.";
+        let described = update(
+            &mut conn,
+            samba.id,
+            with_instructions("samba", &[&a], &format!("  {text}\n ")),
+        )
+        .unwrap();
+        assert_eq!(described.instructions, text);
+        assert_eq!(for_call(&conn, samba.id).unwrap().instructions, text);
+
+        let cleared = update(&mut conn, samba.id, with_instructions("samba", &[&a], "  ")).unwrap();
+        assert_eq!(cleared.instructions, "");
+
+        let at_limit = "x".repeat(MAX_INSTRUCTIONS_LEN);
+        let full = create(&mut conn, with_instructions("full", &[&a], &at_limit)).unwrap();
+        assert_eq!(full.instructions, at_limit);
+    }
+
+    #[test]
     fn names_are_unique_ignoring_case() {
         let db = Db::in_memory().unwrap();
         let mut conn = db.conn();
@@ -292,6 +361,7 @@ mod tests {
             input("samba", &["/no/such/folder/anywhere"]),
             input("samba", &[&a, &a]),
             input(&"x".repeat(MAX_NAME_LEN + 1), &[&a]),
+            with_instructions("samba", &[&a], &"x".repeat(MAX_INSTRUCTIONS_LEN + 1)),
         ] {
             assert!(matches!(validate(bad), Err(Error::Invalid(_))));
         }

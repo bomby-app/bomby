@@ -136,6 +136,25 @@ def test_without_a_system_prompt_the_briefing_goes_with_the_first_task(
     assert new_session["system_prompt"] is None
 
 
+def test_the_briefing_ends_with_the_project_and_its_description(tmp_path: Path) -> None:
+    project = Project(name="samba", folders=(tmp_path,), instructions="A music app.")
+
+    expected = (
+        f"## This project\n\nsamba. You're working in {tmp_path}.\n\n"
+        "The user's description of this project:\n\nA music app."
+    )
+    assert briefing(project).endswith(expected)
+
+
+def test_the_briefing_says_nothing_of_a_description_the_user_never_wrote(
+    tmp_path: Path,
+) -> None:
+    text = briefing(Project(name="samba", folders=(tmp_path,)))
+
+    assert text.endswith(f"## This project\n\nsamba. You're working in {tmp_path}.")
+    assert "description" not in text
+
+
 def test_follow_ups_continue_the_same_session(tmp_path: Path) -> None:
     async def scenario(runner: AcpRunner) -> list[str]:
         return [(await runner.run("turns")).text, (await runner.run("turns")).text]
