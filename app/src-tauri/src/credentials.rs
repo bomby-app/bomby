@@ -44,6 +44,7 @@ struct Keys {
 /// What the page may see.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "credentials.ts"))]
 pub struct CredentialsInfo {
     url: String,
     api_key: String,
@@ -53,9 +54,12 @@ pub struct CredentialsInfo {
 /// What the page sends. No `api_secret` keeps the saved one.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "credentials.ts"))]
 pub struct CredentialsInput {
     url: String,
     api_key: String,
+    /// Left out to keep the saved secret.
+    #[cfg_attr(test, ts(optional))]
     api_secret: Option<String>,
 }
 

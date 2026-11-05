@@ -26,6 +26,7 @@ pub const END_CALL: &str = "tray-end-call";
 /// The mascot's state in the menu bar (docs/brand.md, "Mascot states and motion").
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "tray.ts"))]
 pub enum TrayState {
     /// No call.
     #[default]
@@ -56,6 +57,7 @@ impl TrayState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "tray.ts"))]
 pub struct RecentProject {
     pub id: i64,
     pub name: String,
@@ -64,6 +66,7 @@ pub struct RecentProject {
 /// What the page knows and the tray shows.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "tray.ts"))]
 pub struct TrayStatus {
     pub state: TrayState,
     /// The project on a call, while there is one.

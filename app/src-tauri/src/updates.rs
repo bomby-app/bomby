@@ -29,6 +29,7 @@ const EVENT: &str = "update-status";
 /// Where updating stands.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "about.ts"))]
 pub enum UpdateStatus {
     /// A development build (`just app dev`): it runs the repo, so it never updates.
     Development,
@@ -96,6 +97,7 @@ impl Default for Updates {
 /// What Settings, About shows.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "about.ts"))]
 pub struct About {
     /// `version` in tauri.conf.json, which a release's tag must match.
     pub version: String,

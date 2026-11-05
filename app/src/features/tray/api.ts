@@ -1,29 +1,11 @@
 import { invoke } from "@tauri-apps/api/core"
 import { getCurrentWindow } from "@tauri-apps/api/window"
 
+import type { TrayStatus } from "@/generated/tray"
+
 // The core's menu bar icon (src-tauri/src/tray.rs).
 
-/** The mascot's state in the menu bar: one template image each. */
-export type TrayState =
-  | "idle"
-  | "waking"
-  | "listening"
-  | "thinking"
-  | "speaking"
-  | "working"
-  | "failed"
-
-export type TrayStatus = {
-  state: TrayState
-  /** The project on a call, while there is one. */
-  call: string | null
-  /** Whether that call is still starting; it can't be ended until it has. */
-  starting: boolean
-  /** Projects to start a call on, the newest call first. */
-  recent: { id: number; name: string }[]
-  /** Why a call can't start yet, if it can't. */
-  blocked: string | null
-}
+export type { TrayState, TrayStatus } from "@/generated/tray"
 
 export function setTrayStatus(status: TrayStatus): Promise<void> {
   return invoke("set_tray_status", { status })

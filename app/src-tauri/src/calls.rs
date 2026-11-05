@@ -101,6 +101,7 @@ impl CallAgents {
 /// What the page needs to join the call.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "call.ts"))]
 pub struct CallToken {
     server_url: String,
     participant_token: String,
@@ -108,8 +109,11 @@ pub struct CallToken {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "call.ts"))]
 pub struct Message {
     id: i64,
+    /// `user` or `agent`.
+    #[cfg_attr(test, ts(type = "\"user\" | \"agent\""))]
     role: String,
     text: String,
     created_at: i64,

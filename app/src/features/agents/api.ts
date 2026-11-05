@@ -1,9 +1,10 @@
 import { invoke } from "@tauri-apps/api/core"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
-// The core's view of the agents on this computer (src-tauri/src/agents.rs). The types are
-// generated from the core's own structs (`just app types`), so the two can't drift apart.
 
 import type { AgentStatus, Listed, Pick } from "@/generated/agents"
+
+// The core's view of the agents on this computer (src-tauri/src/agents.rs). The types are
+// generated from the core's own structs (`just app types`), so the two can't drift apart.
 
 export type {
   AgentStatus,
