@@ -554,6 +554,7 @@ def test_child_environment_drops_the_keys_the_app_passes() -> None:
         "LIVEKIT_API_KEY": "k",
         "LIVEKIT_API_SECRET": "s",
         "GOOGLE_API_KEY": "g",
+        "ZEP_API_KEY": "z",
         "CLAUDE_CODE_EXECUTABLE": "/usr/local/bin/claude",
     }
 

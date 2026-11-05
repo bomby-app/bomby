@@ -32,6 +32,9 @@ class CallOptions:
     # Empty when the user hasn't said what to call them.
     user_name: str = ""
     tone: Tone = DEFAULT_TONE
+    # Empty when memory across calls is off.
+    memory_user: str = ""
+    memory_incognito: bool = False
     history: tuple[Line, ...] = ()
 
     @classmethod
@@ -42,12 +45,16 @@ class CallOptions:
                 voice=fallback,
                 user_name=environ.get("BOMBY_USER_NAME", "").strip(),
                 tone=tone(environ.get("BOMBY_TONE", "").strip()),
+                memory_user=environ.get("BOMBY_MEMORY_USER", "").strip(),
+                memory_incognito=environ.get("BOMBY_MEMORY_INCOGNITO") == "1",
             )
 
         return cls(
             voice=fields.voice or fallback,
             user_name=fields.user_name,
             tone=tone(fields.tone),
+            memory_user=fields.memory_user,
+            memory_incognito=fields.memory_incognito,
             history=tuple(line for line in fields.history if line.text),
         )
 

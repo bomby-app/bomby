@@ -57,6 +57,11 @@ Sources:
 - Google's best practices: persona first (name, role, character, language), then conversational rules in the order to follow them, tool calls each in their own sentence inside that flow, then guardrails with "if X happens, do Y" examples. Use "unmistakably" where the model must be precise. One prompt per persona, no multi-page prompts.
 - Tool docstrings say when to invoke the tool, not only what it does. The Live API waits for the user before speaking, so `on_enter` prompts the greeting.
 
+## Google Search
+
+- `livekit-plugins-google` 1.8.10 has Gemini's built-in tools as `ProviderTool`s in `tools.py`: `GoogleSearch()` (id `gemini_google_search`), `GoogleMaps`, `URLContext`, `FileSearch`. Passed in the agent's tools beside function tools; `utils.create_tools_config` sends both, which Google allows on the Gemini 3 Developer API only, not Vertex AI. Search runs on Google's side, with nothing for the agent to answer.
+- Every Bomby call has it (`agent/tools/__init__.py`, owner, 2026-11-06); Gemini decides when to search.
+
 ## Tool schemas
 
 A one-value Python `Literal` becomes JSON Schema `const`; the Google plugin rewrites it to a one-value `enum`, which Gemini accepts. Multi-value literals become `enum` (`livekit/plugins/google/utils.py`).

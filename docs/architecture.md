@@ -40,7 +40,7 @@ flowchart LR
 ## A call, start to end
 
 1. **Start.** The core makes sure the call's LiveKit server runs (this Mac's, started on the first call, or the user's own) and starts or restarts the agent worker on it, while it looks for the installed agents side by side (leaving out any the setup probe found not set up; a call with none still opens, and the voice says how to get one), then records the call with `open_call`, then mints a read-only token with `call_token`. The token's room configuration dispatches `bomby` with the project, its folders and instructions, and the agents found when the call opened as job metadata; every token for the call carries the same server, agents and picks. The entrypoint reads `ctx.job.metadata`.
-2. **Talk.** Gemini 3.8 Live handles speech both ways. Its instructions are the prompt for the user's tone (`agent/prompts/sharp.md`, `chatty.md` or `playful.md`) plus what the call adds, each part left out when it has nothing to say: what to call the user (`## The user`), the agents it can use, the project's instructions (`## Project context`) and, on a resumed call, the earlier conversation (`agent/voice_prompt.py`).
+2. **Talk.** Gemini 3.8 Live handles speech both ways. It can search the web with Gemini's own Google Search. Its instructions are the prompt for the user's tone (`agent/prompts/sharp.md`, `chatty.md` or `playful.md`) plus what the call adds, each part left out when it has nothing to say: the date, time and time zone when the call starts (`## Date and time`, from the Mac's clock), what to call the user (`## The user`), the agents it can use, the project's instructions (`## Project context`) and, on a resumed call, the earlier conversation (`agent/voice_prompt.py`).
 3. **Work.** Gemini calls `start_task(task, session, agent)`. Its first `ctx.update()` makes the tool non-blocking, so the conversation continues.
 4. **Agent sessions.** Each selected harness gets one `AcpRunner` and one ACP process per call, started on its first task. A new session name opens a session; a known name continues it. Sessions run in parallel, and supported harnesses accept steering mid-turn.
 5. **Result.** The agent's final message becomes the tool result. Gemini reads it out; no other agent output reaches the voice conversation.
@@ -65,6 +65,8 @@ The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS)
   "voice": "Leda",
   "user_name": "Sam",
   "tone": "chatty",
+  "memory_user": "bomby-0123456789abcdef",
+  "memory_incognito": false,
   "history": [{"role": "user", "text": "fix the login"}, {"role": "agent", "text": "Claude's on it."}]
 }
 ```
@@ -73,6 +75,7 @@ The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS)
 - `instructions` is what the user wrote about the project in its settings, up to 5,000 characters; empty when they wrote nothing, and then neither the voice model nor the coding agents hear of it.
 - `agents` maps installed harness ids to programs: all but those the setup probe found not ready (one not probed yet stays). The voice model can use only agents in this list; console runs find them on PATH ([decision](decisions/detect-acp-native-agents.md)).
 - `picks` holds the session settings the user picked for each agent, if any (model, effort, goose's provider), which the runner applies to every session it opens with `session/set_config_option`, in the agent's own order (provider before model). One the agent no longer offers, or refuses, is skipped, leaving its default; for an agent whose harness requires a model pick, a session without one fails the task (`no_model_picked`) ([decision](decisions/pick-agent-settings-like-buzz-and-zed.md)).
+- `memory_user` is the install's Zep user when Settings, Memory is on and a Zep key is saved, and empty otherwise; the worker then runs with `ZEP_API_KEY` ([decision](decisions/memory-across-calls-with-zep.md)). `memory_incognito` (Settings, Memory, Incognito) reads memory but saves nothing from the call.
 - `tone` is `sharp` (the default), `chatty` or `playful`, from Settings, Bomby; an unknown one is `sharp` ([decision](decisions/tones-as-whole-prompts.md)).
 - `user_name` is what the user asked to be called in Settings, Bomby, up to 50 characters; empty when they'd rather not say, and then the prompt doesn't mention a name. Only the voice model gets it ([decision](decisions/the-users-name-only-for-the-voice.md)).
 - `history` appears only when resuming a call and contains its last 50 lines ([decision](decisions/resume-a-call-with-its-last-lines.md)).
@@ -91,6 +94,8 @@ The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS)
 **A crashed job.** When a call's job raises, livekit-agents logs `unhandled exception while running the job task` with the job's `room` (`bomby-<call id>-<ms>`). The core reads it from the worker's output (`job_crash` in `src-tauri/src/agent.rs`) and sends `call-agent-crashed` (`{ room, reason }`) to the main window, which fails the call at once if it's in that room (a resumed call joins a new room, so a late crash from an earlier one is ignored) instead of waiting out the 30 s join timeout (`call-provider.tsx`): the page says "Bomby couldn't start the call. Try again?" and the reason goes to `app.log`. A folder that's gone is caught before the call starts (`open_call`), so it never gets that far.
 
 **The LiveKit server.** Settings, Credentials and the splash choose it with `livekit_server()` and `set_livekit_server(server)` (`thisMac` or `theirs`; until chosen, `theirs` when the user's keys are saved), which also sends `keys-changed` (`src-tauri/src/call_server.rs`). This Mac's runs from the bundled sidecar on 127.0.0.1 with free ports and keys made at each start, given through `LIVEKIT_CONFIG` and `LIVEKIT_KEYS`; it logs to `livekit.log`, stops with the app or when calls move to the user's own, and its pid in `livekit-server.pid` lets the next launch stop one a killed run left (`src-tauri/src/local_server.rs`).
+
+**Memory across calls.** With `memory_user` and `ZEP_API_KEY`, the agent reads Zep's summary and facts about the user before Gemini connects (`## What you remember` in the voice prompt), adds `recall_about_user`, and writes each exchange in the background (`agent/memory.py`). Settings, Memory turns it on (`memory_setting`, `set_memory_setting`), sets incognito (`memory_incognito`, `set_memory_incognito`) and keeps the key (`has_zep_key`, `save_zep_key`, `clear_zep_key`).
 
 **Menu bar.** The main window's page reports `set_tray_status({ state, call, starting, recent, blocked })` whenever the call changes; End call is offered only once the call has started (`features/tray/tray-bridge.tsx`); the core draws the icon and menu from it (`src-tauri/src/tray.rs`) and sends `tray-start-call` (a project id) and `tray-end-call` back to the main window. Closing the main window hides it, so a call keeps running.
 

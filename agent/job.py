@@ -62,6 +62,10 @@ class JobMetadata(BaseModel):
     ) = None
     user_name: Text = ""
     tone: Text = ""
+    # The install's Zep user when calls remember across conversations; empty otherwise.
+    memory_user: Text = ""
+    # Read memory, save nothing from this call.
+    memory_incognito: bool = False
     history: tuple[Line, ...] = ()
 
     @model_validator(mode="before")

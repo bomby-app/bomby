@@ -14,6 +14,23 @@ const VOICE_KEY: &str = "voice";
 const USER_NAME_KEY: &str = "user_name";
 const MAX_USER_NAME_LEN: usize = 50;
 const TONE_KEY: &str = "tone";
+const MEMORY_KEY: &str = "memory";
+/// This install's user in Zep, made once.
+const MEMORY_USER_KEY: &str = "memory_user";
+/// Read memory, save nothing ("1"); missing or anything else is off.
+const INCOGNITO_KEY: &str = "memory_incognito";
+
+/// Whether Bomby remembers the user across calls. A resumed call replays its last lines
+/// either way.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "memory.ts"))]
+pub enum Memory {
+    #[default]
+    Off,
+    /// In the user's own Zep project.
+    Zep,
+}
 
 /// How Bomby talks: each picks its own voice prompt (`agent/prompts/<tone>.md`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -224,6 +241,59 @@ pub(crate) fn save_livekit_server(conn: &Connection, server: LiveKitServer) -> R
     put(conn, LIVEKIT_SERVER_KEY, server.as_str())
 }
 
+pub(crate) fn memory(conn: &Connection) -> Result<Memory> {
+    Ok(match get(conn, MEMORY_KEY)?.as_deref() {
+        Some("zep") => Memory::Zep,
+        _ => Memory::Off,
+    })
+}
+
+pub(crate) fn incognito(conn: &Connection) -> Result<bool> {
+    Ok(get(conn, INCOGNITO_KEY)?.as_deref() == Some("1"))
+}
+
+#[tauri::command(async)]
+pub fn memory_incognito(db: State<'_, Db>) -> Result<bool> {
+    incognito(&db.conn())
+}
+
+/// Applies from the next call.
+#[tauri::command(async)]
+pub fn set_memory_incognito(db: State<'_, Db>, on: bool) -> Result<()> {
+    put(&db.conn(), INCOGNITO_KEY, if on { "1" } else { "0" })
+}
+
+/// This install's id in Zep: one user, made the first time it's needed.
+pub(crate) fn memory_user(conn: &Connection) -> Result<String> {
+    if let Some(id) = get(conn, MEMORY_USER_KEY)? {
+        return Ok(id);
+    }
+    let mut bytes = [0u8; 8];
+    getrandom::fill(&mut bytes)
+        .map_err(|e| Error::Invalid(format!("Couldn't make the memory id: {e}")))?;
+    let id = format!(
+        "bomby-{}",
+        bytes.iter().map(|b| format!("{b:02x}")).collect::<String>()
+    );
+    put(conn, MEMORY_USER_KEY, &id)?;
+    Ok(id)
+}
+
+#[tauri::command(async)]
+pub fn memory_setting(db: State<'_, Db>) -> Result<Memory> {
+    memory(&db.conn())
+}
+
+/// Applies from the next call.
+#[tauri::command(async)]
+pub fn set_memory_setting(db: State<'_, Db>, memory: Memory) -> Result<()> {
+    let value = match memory {
+        Memory::Off => "off",
+        Memory::Zep => "zep",
+    };
+    put(&db.conn(), MEMORY_KEY, value)
+}
+
 fn read_tone(conn: &Connection) -> Result<Tone> {
     Ok(match get(conn, TONE_KEY)?.as_deref() {
         Some("chatty") => Tone::Chatty,
@@ -322,6 +392,23 @@ mod tests {
         assert_eq!(for_call(&conn).unwrap().tone, Tone::Sharp);
         put(&conn, TONE_KEY, Tone::Playful.as_str()).unwrap();
         assert_eq!(for_call(&conn).unwrap().tone, Tone::Playful);
+    }
+
+    #[test]
+    fn memory_is_off_until_turned_on_and_its_user_is_made_once() {
+        let db = Db::in_memory().unwrap();
+        let conn = db.conn();
+        assert_eq!(memory(&conn).unwrap(), Memory::Off);
+        put(&conn, MEMORY_KEY, "zep").unwrap();
+        assert_eq!(memory(&conn).unwrap(), Memory::Zep);
+
+        assert!(!incognito(&conn).unwrap());
+        put(&conn, INCOGNITO_KEY, "1").unwrap();
+        assert!(incognito(&conn).unwrap());
+
+        let first = memory_user(&conn).unwrap();
+        assert!(first.starts_with("bomby-") && first.len() == 22, "{first}");
+        assert_eq!(memory_user(&conn).unwrap(), first);
     }
 
     #[test]

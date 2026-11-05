@@ -1,5 +1,8 @@
 import type { SVGProps } from "react"
 
+import zepLogo from "@/assets/zep-logo.svg"
+import { cn } from "@/lib/utils"
+
 // The logos of the services a call needs, for Settings > Setup (agents have theirs in
 // features/agents). Drawn in `currentColor`, so they follow the theme like text. Each names
 // what Bomby uses, never a co-brand (docs/brand.md).
@@ -23,5 +26,17 @@ export function GeminiLogo(props: SVGProps<SVGSVGElement>) {
         fill="currentColor"
       />
     </svg>
+  )
+}
+
+/** Zep's mark from its file, painted in the text colour like the others (a CSS mask). */
+export function ZepLogo({ className }: { className?: string }) {
+  const mask = `url(${zepLogo}) center / contain no-repeat`
+  return (
+    <span
+      aria-hidden="true"
+      className={cn("inline-block shrink-0 bg-current", className)}
+      style={{ mask, WebkitMask: mask }}
+    />
   )
 }

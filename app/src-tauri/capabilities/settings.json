@@ -19,7 +19,8 @@
         { "url": "https://learn.chatgpt.com/docs/codex/cli" },
         { "url": "https://opencode.ai/docs/" },
         { "url": "https://omp.sh/docs/quickstart" },
-        { "url": "https://goose-docs.ai/docs/quickstart/" }
+        { "url": "https://goose-docs.ai/docs/quickstart/" },
+        { "url": "https://app.getzep.com" }
       ]
     },
     "clipboard-manager:allow-read-text",
@@ -29,6 +30,13 @@
     "allow-has-gemini-key",
     "allow-save-gemini-key",
     "allow-clear-gemini-key",
+    "allow-has-zep-key",
+    "allow-save-zep-key",
+    "allow-clear-zep-key",
+    "allow-memory-setting",
+    "allow-set-memory-setting",
+    "allow-memory-incognito",
+    "allow-set-memory-incognito",
     "allow-livekit-server",
     "allow-set-livekit-server",
     "allow-agents-status",

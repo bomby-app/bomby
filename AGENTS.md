@@ -4,7 +4,7 @@
 
 Bomby is a macOS desktop app you talk to. You say what you want done, and Bomby's voice agent hands it to a coding agent already installed on the computer (Claude Code, Codex, OpenCode, omp or goose), keeps the conversation going while it works, and tells you the result when it's done. You can run several tasks at once, add to one while it runs, and resume an earlier call. A project can carry instructions, so Bomby and the agent know what it is from the first word, and Bomby can call you by name.
 
-Why: talking is the fastest way to hand off work ("Stop typing. Start talking."). Bomby works with the agent the user already has, on their own setup, and with their own Gemini key, running LiveKit on their Mac (or their own LiveKit Cloud), so we host nothing and hold no one's keys or logins.
+Why: talking is the fastest way to hand off work ("Stop typing. Start talking."). Bomby works with the agent the user already has, on their own setup, and with their own Gemini key, running LiveKit on their Mac (or their own LiveKit Cloud), and their own Zep project if they want Bomby to remember them across calls, so we host nothing and hold no one's keys or logins.
 
 It is in beta: releases are signed, notarized DMGs for Apple Silicon Macs, and developers run it from source. The owner designs and tests it; agents write the code.
 

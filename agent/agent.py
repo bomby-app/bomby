@@ -13,8 +13,9 @@ from acp_client import CallRunners
 from call import Call
 from call_options import CallOptions
 from job import read_metadata
+from memory import Memory
 from task_board import TaskBoard
-from tools import ALL_TOOLS
+from tools import ALL_TOOLS, MEMORY_TOOLS
 from voice_prompt import voice_instructions
 
 dev_env.load()
@@ -51,12 +52,21 @@ LANGUAGE_CODES = ["en-US"]
 
 
 class Assistant(Agent):
-    def __init__(self, options: CallOptions, runners: CallRunners) -> None:
+    def __init__(
+        self,
+        options: CallOptions,
+        runners: CallRunners,
+        remembers: bool = False,
+        remembered: str = "",
+    ) -> None:
         self._resumed: bool = options.resumed
-        instructions = voice_instructions(runners.project, options, runners.available)
+        instructions = voice_instructions(
+            runners.project, options, runners.available, remembered
+        )
+        tools = ALL_TOOLS + MEMORY_TOOLS if remembers else ALL_TOOLS
         # LiveKit's own signatures are partially untyped; the ignores below are theirs.
         super().__init__(  # pyright: ignore[reportUnknownMemberType]
-            instructions=instructions, tools=ALL_TOOLS
+            instructions=instructions, tools=tools
         )
 
     @override
@@ -108,7 +118,12 @@ async def entrypoint(ctx: JobContext) -> None:
     async def publish(attributes: dict[str, str]) -> None:
         await ctx.room.local_participant.set_attributes(attributes)
 
-    call = Call(runners, TaskBoard(publish))
+    # Read before Gemini connects: its instructions are final once it does.
+    memory = await Memory.open(
+        options.memory_user, os.environ, saves=not options.memory_incognito
+    )
+    remembered = await memory.remembered() if memory else ""
+    call = Call(runners, TaskBoard(publish), memory)
     ctx.add_shutdown_callback(call.aclose)
 
     # Which audio the agent gets, from whom: the first thing to check on an audio problem.
@@ -142,7 +157,10 @@ async def entrypoint(ctx: JobContext) -> None:
         ),
     )
 
-    await session.start(agent=Assistant(options, runners), room=ctx.room)  # pyright: ignore[reportUnknownMemberType]
+    if memory:
+        memory.attach(session)
+    assistant = Assistant(options, runners, memory is not None, remembered)
+    await session.start(agent=assistant, room=ctx.room)  # pyright: ignore[reportUnknownMemberType]
 
 
 def main() -> None:
