@@ -128,16 +128,18 @@ async def apply(
     options: ConfigOptions | None,
     picks: Sequence[Pick],
 ) -> Applied:
-    """Sets each pick on the session, in order, skipping one the agent no longer offers or
-    refuses, and one that's already current. A refused pick never fails the session: the
-    user can always change it."""
+    """Sets the picks on the session in the agent's own order, so one another depends on
+    goes first (goose's provider, then its model), re-reading the settings after each.
+    Skips a pick the agent no longer offers or refuses, and one that's already current. A
+    refused pick never fails the session: the user can always change it."""
     settings = pickable(harness, options)
+    pending = {pick.setting: pick for pick in picks}
     skipped: list[Skipped] = []
-    for pick in picks:
-        setting = next((s for s in settings if s.id == pick.setting), None)
-        if setting is None or setting.option(pick.value) is None:
-            name = setting.name if setting else pick.setting
-            skipped.append(Skipped(pick.setting, name, pick.value, "gone"))
+    while pick := next((pending[s.id] for s in settings if s.id in pending), None):
+        del pending[pick.setting]
+        setting = next(s for s in settings if s.id == pick.setting)
+        if setting.option(pick.value) is None:
+            skipped.append(Skipped(pick.setting, setting.name, pick.value, "gone"))
             continue
         if setting.current == pick.value:
             continue
@@ -152,6 +154,10 @@ async def apply(
             skipped.append(Skipped(pick.setting, setting.name, pick.value, "refused"))
             continue
         settings = pickable(harness, response.config_options)
+    # What's left is for a setting the agent doesn't list any more.
+    skipped.extend(
+        Skipped(p.setting, p.setting, p.value, "gone") for p in pending.values()
+    )
     return Applied(settings, tuple(skipped))
 
 

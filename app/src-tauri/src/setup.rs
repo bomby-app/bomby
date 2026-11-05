@@ -51,8 +51,17 @@ pub struct Skipped {
     /// The setting's name, as the agent gives it: "Model".
     pub name: String,
     pub value: String,
-    /// `gone` (no longer offered) or `refused` (offered, but the agent wouldn't take it).
-    pub why: String,
+    pub why: Why,
+}
+
+/// Why a pick didn't apply.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Why {
+    /// The agent no longer offers it: a model removed or renamed.
+    Gone,
+    /// The agent offers it but wouldn't take it: a provider with no key, say.
+    Refused,
 }
 
 /// What the model picker shows: an agent's setup, and the settings it lets the user pick
@@ -138,7 +147,7 @@ mod tests {
                     setting: "model".into(),
                     name: "Model".into(),
                     value: "x".into(),
-                    why: "gone".into(),
+                    why: Why::Gone,
                 }],
                 needs_pick: true,
                 session: true,

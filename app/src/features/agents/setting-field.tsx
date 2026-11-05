@@ -78,7 +78,8 @@ function ListPicker({ id, setting, disabled, onChange }: PickerProps) {
       }}
     >
       <SelectTrigger id={id} className="w-full">
-        <SelectValue />
+        {/* The agent's current value, even one it doesn't list as an option. */}
+        <SelectValue>{currentName(setting)}</SelectValue>
       </SelectTrigger>
       <SelectContent position="popper" className="max-h-80">
         {grouped(setting.options).map(([group, options]) => (
@@ -98,7 +99,6 @@ function ListPicker({ id, setting, disabled, onChange }: PickerProps) {
 
 function SearchPicker({ id, setting, disabled, onChange }: PickerProps) {
   const [open, setOpen] = useState(false)
-  const current = setting.options.find((o) => o.value === setting.current)
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -108,7 +108,7 @@ function SearchPicker({ id, setting, disabled, onChange }: PickerProps) {
           disabled={disabled}
           className="w-full justify-between font-normal"
         >
-          <span className="truncate">{current?.name ?? setting.current}</span>
+          <span className="truncate">{currentName(setting)}</span>
           <ChevronsUpDown className="opacity-50" />
         </Button>
       </PopoverTrigger>
@@ -149,6 +149,14 @@ function SearchPicker({ id, setting, disabled, onChange }: PickerProps) {
         </Command>
       </PopoverContent>
     </Popover>
+  )
+}
+
+/** The current value's name, or the value itself when the agent doesn't list it. */
+function currentName(setting: Setting): string {
+  return (
+    setting.options.find((o) => o.value === setting.current)?.name ??
+    setting.current
   )
 }
 

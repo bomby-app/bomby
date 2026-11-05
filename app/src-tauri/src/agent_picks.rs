@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 use rusqlite::{Connection, params};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
@@ -14,6 +15,10 @@ use crate::agents::{self, Agents, CHANGED};
 use crate::db::Db;
 use crate::error::{Error, Result};
 use crate::setup::{self, Listed, Pick};
+use crate::sync;
+
+/// One pick at a time, so two windows picking can't leave the saved picks and the row apart.
+static PICKING: Mutex<()> = Mutex::new(());
 
 /// Every agent's picks, in the order they're applied. An agent on its defaults has none.
 pub fn saved(conn: &Connection) -> Result<HashMap<String, Vec<Pick>>> {
@@ -60,6 +65,8 @@ fn program<R: Runtime>(app: &AppHandle<R>, agent: &str) -> Result<PathBuf> {
         .ok_or(Error::NotFound("agent"))
 }
 
+const UNREACHABLE: &str = "Bomby couldn't reach the agent. Try again?";
+
 /// What `agent` lets the user pick, with `picks` applied, asked of the agent itself (one
 /// short-lived probe, a few seconds).
 fn list<R: Runtime>(app: &AppHandle<R>, agent: &str, picks: &[Pick]) -> Result<Listed> {
@@ -67,7 +74,7 @@ fn list<R: Runtime>(app: &AppHandle<R>, agent: &str, picks: &[Pick]) -> Result<L
     let picks = HashMap::from([(agent.to_owned(), picks.to_vec())]);
     setup::probe(&[(agent.to_owned(), path)], &picks, Some(agent))
         .and_then(|mut listed| listed.remove(agent))
-        .ok_or_else(|| Error::Unreachable("Bomby couldn't reach the agent. Try again?".into()))
+        .ok_or_else(|| Error::Invalid(UNREACHABLE.into()))
 }
 
 /// What the model picker shows for `agent` when it opens: its settings, its picks applied.
@@ -81,25 +88,50 @@ pub fn agent_settings<R: Runtime>(
     list(&app, &agent, &picks)
 }
 
-/// Applies `agent`'s picks, saves them once the agent has answered, and returns its settings
-/// with them applied. A pick can change what the next one offers (goose's models follow its
-/// provider), so the picker shows this answer. Only this agent's row changes: the windows get
-/// the list with its new setup.
+/// Adds `pick` to `agent`'s saved picks, in place of an earlier one for the same setting, and
+/// returns its settings with them applied. Only what the user picked is saved: a setting they
+/// never touched keeps following the agent's own default. A pick can change what the next
+/// one offers (goose's models follow its provider), so the picker shows this answer. Saved
+/// only once the agent has answered with a session; only this agent's row changes.
 #[tauri::command(async)]
 pub fn pick_agent_settings<R: Runtime>(
     app: AppHandle<R>,
     db: State<'_, Db>,
     agent: String,
-    picks: Vec<Pick>,
+    pick: Pick,
 ) -> Result<Listed> {
-    // Asked first, so a pick is saved only with a setup to show for it.
+    let _one = sync::lock(&PICKING);
+    let mut picks = saved(&db.conn())?.remove(&agent).unwrap_or_default();
+    picks.retain(|p| p.setting != pick.setting);
+    picks.push(pick);
     let listed = list(&app, &agent, &picks)?;
-    save(&mut db.conn(), &agent, &picks)?;
+    if !listed.setup.session {
+        // It didn't get as far as a session (it timed out, say): keep what was saved.
+        return Err(Error::Invalid(
+            listed.setup.problem.unwrap_or_else(|| UNREACHABLE.into()),
+        ));
+    }
+    save(&mut db.conn(), &agent, &held(picks, &listed))?;
     if let Some(found) = app.state::<Agents>().replace_setup(&agent, &listed.setup) {
         // Only fails for an invalid event name or payload.
         let _ = app.emit(CHANGED, &found);
     }
     Ok(listed)
+}
+
+/// The `picks` that held in `listed`, in the agent's own order: one it skipped (gone, or
+/// refused) leaves its default rather than being saved.
+fn held(mut picks: Vec<Pick>, listed: &Listed) -> Vec<Pick> {
+    picks.retain(|p| !listed.setup.skipped.iter().any(|s| s.setting == p.setting));
+    let order = |p: &Pick| {
+        listed
+            .settings
+            .iter()
+            .position(|s| s.id == p.setting)
+            .unwrap_or(usize::MAX)
+    };
+    picks.sort_by_key(order);
+    picks
 }
 
 #[cfg(test)]
@@ -134,6 +166,39 @@ mod tests {
         assert!(
             !saved(&conn).unwrap().contains_key("claude"),
             "back on its defaults"
+        );
+    }
+
+    #[test]
+    fn keeps_only_the_picks_that_held_in_the_agents_order() {
+        let setting = |id: &str| setup::Setting {
+            id: id.into(),
+            name: id.into(),
+            category: None,
+            current: String::new(),
+            options: Vec::new(),
+        };
+        let listed = Listed {
+            setup: setup::Setup {
+                skipped: vec![setup::Skipped {
+                    setting: "effort".into(),
+                    name: "Effort".into(),
+                    value: "max".into(),
+                    why: setup::Why::Refused,
+                }],
+                ..setup::Setup::default()
+            },
+            settings: vec![setting("provider"), setting("model"), setting("effort")],
+        };
+        let picks = vec![
+            pick("model", "kimi"),
+            pick("effort", "max"),
+            pick("provider", "p"),
+        ];
+
+        assert_eq!(
+            held(picks, &listed),
+            [pick("provider", "p"), pick("model", "kimi")]
         );
     }
 }

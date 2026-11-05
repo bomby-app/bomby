@@ -82,15 +82,13 @@ export function agentSettings(agent: string): Promise<Listed> {
 }
 
 /**
- * Saves `agent`'s picks and resolves with its settings once they're applied: a pick can
- * change what the next one offers (goose's models follow its provider). The agents list
- * follows through `agents-changed`.
+ * Adds `pick` to `agent`'s saved picks and resolves with its settings once they're applied:
+ * a pick can change what the next one offers (goose's models follow its provider). Settings
+ * never picked keep the agent's own defaults. The agents list follows through
+ * `agents-changed`.
  */
-export function pickAgentSettings(
-  agent: string,
-  picks: Pick[]
-): Promise<Listed> {
-  return invoke("pick_agent_settings", { agent, picks })
+export function pickAgentSettings(agent: string, pick: Pick): Promise<Listed> {
+  return invoke("pick_agent_settings", { agent, pick })
 }
 
 /** Installs every ACP adapter into the app's folder; resolves once the agents are rechecked. */

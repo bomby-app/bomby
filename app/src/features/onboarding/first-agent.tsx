@@ -200,6 +200,8 @@ function shortStatusOf(agent: AgentStatus, phase: Phase): string {
       return "Ready"
     case "sign-in":
       return agent.setup?.problem ?? "Needs setting up"
+    case "pick":
+      return "Pick its model"
     default:
       return "Needs setting up"
   }

@@ -94,6 +94,20 @@ def test_saved_choices_are_applied_in_order_and_the_settings_follow(
     assert events.count("set_config_option") == 1
 
 
+def test_picks_apply_in_the_agents_order_whatever_order_they_were_saved_in(
+    tmp_path: Path,
+) -> None:
+    harness = dataclasses.replace(FAKE, pickable_settings=frozenset({"provider"}))
+    # The model only exists once the provider is p2, which the agent lists first.
+    picks = (Pick("model", "p2-model"), Pick("provider", "p2"))
+
+    setup, _ = run_probe(
+        tmp_path, {**CAN_DELETE, "FAKE_ACP_MODEL": "m1"}, harness, picks
+    )
+
+    assert (setup.model, setup.skipped) == ("Fake p2-model", ())
+
+
 def test_a_pick_the_agent_no_longer_offers_leaves_its_default(tmp_path: Path) -> None:
     setup, _ = run_probe(
         tmp_path,

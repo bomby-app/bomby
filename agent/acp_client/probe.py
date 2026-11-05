@@ -143,9 +143,9 @@ async def _check(
     deletable = _can_delete(init.agent_capabilities)
     if not deletable and not listing:
         await _wait_for_auth(client, init)
+        setup = _signed_in(client.auth_status, fix)
         # Without a session there's no telling which setting is the model: any pick counts.
-        needs_pick = harness.model_selection_required and not picks
-        return _judge(client.auth_status, fix, needs_pick=needs_pick)
+        return _gate(setup, needs_pick=harness.model_selection_required and not picks)
     try:
         session = await conn.new_session(cwd=str(FOLDER), mcp_servers=[])
     except RequestError as e:
@@ -155,18 +155,21 @@ async def _check(
             conn, session.session_id, harness, session.config_options, picks
         )
         await _wait_for_auth(client, init)
-        # An agent that lists config options but no model has none set up yet.
-        lacks_model = (
-            bool(session.config_options) and model_name(applied.settings) is None
+        setup = replace(
+            _signed_in(client.auth_status, fix),
+            session=True,
+            model=model_name(applied.settings),
+            skipped=applied.skipped,
+            settings=applied.settings if listing else (),
         )
-        needs_pick = harness.model_selection_required and not _model_picked(
-            applied, picks
+        return _gate(
+            setup,
+            fix,
+            # An agent that lists config options but no model has none set up yet.
+            lacks_model=bool(session.config_options) and setup.model is None,
+            needs_pick=harness.model_selection_required
+            and not _model_picked(applied, picks),
         )
-        return _judge(
-            client.auth_status, fix, applied, lacks_model, needs_pick, listing
-        )
-    except RequestError as e:
-        return Setup(ready=False, problem=detail(e), fix=fix)
     finally:
         if deletable:
             await _delete(conn, session.session_id)
@@ -181,29 +184,23 @@ async def _wait_for_auth(client: HarnessClient, init: InitializeResponse) -> Non
             _ = await asyncio.wait_for(client.auth_reported.wait(), AUTH_WAIT_S)
 
 
-def _judge(
-    auth: Mapping[str, object] | None,
-    fix: str | None,
-    applied: Applied | None = None,
-    lacks_model: bool = False,
-    needs_pick: bool = False,
-    listing: bool = False,
-) -> Setup:
-    """The setup, from the sign-in the agent reported and, with a session (`applied`), the
-    settings it runs on."""
-    label = auth.get("label") if auth else None
-    account = label if isinstance(label, str) else None
+def _signed_in(auth: Mapping[str, object] | None, fix: str | None) -> Setup:
+    """The setup as far as the agent's reported sign-in goes."""
     if auth and auth.get("kind") == "none":
         return Setup(ready=False, problem="Not signed in", fix=fix)
-    setup = Setup(ready=True, account=account)
-    if applied is not None:
-        setup = replace(
-            setup,
-            session=True,
-            model=model_name(applied.settings),
-            skipped=applied.skipped,
-            settings=applied.settings if listing else (),
-        )
+    label = auth.get("label") if auth else None
+    return Setup(ready=True, account=label if isinstance(label, str) else None)
+
+
+def _gate(
+    setup: Setup,
+    fix: str | None = None,
+    lacks_model: bool = False,
+    needs_pick: bool = False,
+) -> Setup:
+    """`setup`, not ready when the agent has no model or still needs one picked."""
+    if not setup.ready:
+        return setup
     if lacks_model:
         return replace(setup, ready=False, problem="No model is set", fix=fix)
     if needs_pick:

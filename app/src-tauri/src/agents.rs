@@ -259,9 +259,9 @@ fn detect_all(
             .into_iter()
             .map(|(known, check)| check.join().unwrap_or_else(|_| status_of(known, None)))
             .collect();
-        let setups = probe.join().unwrap_or_default();
+        let mut setups = probe.join().unwrap_or_default();
         for agent in &mut agents {
-            agent.setup = setups.get(agent.id).map(|listed| listed.setup.clone());
+            agent.setup = setups.remove(agent.id).map(|listed| listed.setup);
         }
         agents
     })
@@ -328,12 +328,15 @@ impl Agents {
     /// With `seen`, the programs a call just found, the answer comes from a look that starts
     /// after this one asked, and that look starts from them: a look already running began
     /// before they were found, so it may miss them.
+    ///
+    /// `saved` reads the user's picks. It's called once the look has started, so a pick saved
+    /// before it is in the look, and one saved after it is kept over the look's answer.
     pub fn detect(
         &self,
         seen: Option<Vec<(String, PathBuf)>>,
-        saved: &HashMap<String, Vec<Pick>>,
+        saved: impl FnOnce() -> HashMap<String, Vec<Pick>>,
     ) -> (Vec<AgentStatus>, bool) {
-        self.detect_with(seen, |previous| detect_all(previous, saved))
+        self.detect_with(seen, |previous| detect_all(previous, &saved()))
     }
 
     fn detect_with(
@@ -416,6 +419,14 @@ fn keep_what_the_look_missed(
         else {
             continue;
         };
+        // A sign-in problem the look found still shows, as it is.
+        if agent
+            .setup
+            .as_ref()
+            .is_some_and(|s| !s.ready && !s.needs_pick && s.fix.is_some())
+        {
+            continue;
+        }
         if picked_since(agent.id) {
             agent.setup = Some(old.clone());
         } else if let Some(new) = agent.setup.as_mut().filter(|s| !s.session) {
@@ -483,8 +494,8 @@ fn refresh<R: Runtime>(
     seen: Option<Vec<(String, PathBuf)>>,
 ) -> Vec<AgentStatus> {
     // Without the database (only if it can't be read), every agent shows its defaults.
-    let saved = agent_picks::saved(&app.state::<Db>().conn()).unwrap_or_default();
-    let (found, changed) = app.state::<Agents>().detect(seen, &saved);
+    let saved = || agent_picks::saved(&app.state::<Db>().conn()).unwrap_or_default();
+    let (found, changed) = app.state::<Agents>().detect(seen, saved);
     if changed {
         // Only fails for an invalid event name or payload; a window that misses it still
         // gets the list when it asks.
@@ -493,10 +504,10 @@ fn refresh<R: Runtime>(
     found
 }
 
-/// [`refresh`] after something on disk changed (adapters installed), for callers already
-/// on a blocking thread. The answer comes from a look that starts now: one already
-/// running began before the change, so it may miss it (an empty `seen` asks for that, as a
-/// call's news does).
+/// [`refresh`] after something on disk changed (adapters installed), for callers already on
+/// a blocking thread. The answer comes from a look that starts now: one already running
+/// began before the change, so it may miss it (an empty `seen` asks for that, as a call's
+/// news does).
 pub fn refresh_after_change<R: Runtime>(app: &AppHandle<R>) {
     refresh(app, Some(Vec::new()));
 }
@@ -848,6 +859,27 @@ mod tests {
             vec![goose(ready("next"))],
             "a later look decides again"
         );
+    }
+
+    #[test]
+    fn a_sign_out_found_while_picking_still_shows() {
+        let agents = Agents::default();
+        let goose = |setup| AgentStatus {
+            setup: Some(setup),
+            ..status("goose", Some("/b/goose"))
+        };
+        agents.detect_with(None, |_| vec![goose(ready("old"))]);
+        let signed_out = Setup {
+            problem: Some("Not signed in".into()),
+            fix: Some("goose configure".into()),
+            ..Setup::default()
+        };
+
+        let (found, _) = agents.detect_with(None, |_| {
+            agents.replace_setup("goose", &ready("picked"));
+            vec![goose(signed_out.clone())]
+        });
+        assert_eq!(found, vec![goose(signed_out)]);
     }
 
     #[test]

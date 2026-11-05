@@ -45,6 +45,8 @@ export function ModelPicker({
   }
 
   function failed(e: unknown) {
+    // Back to what the agent last confirmed, not the pick that didn't save.
+    setListed(lastListed.get(agent.id) ?? null)
     setError(String(e))
     setBusy(false)
   }
@@ -58,21 +60,16 @@ export function ModelPicker({
     agentSettings(agent.id).then(shown, failed)
   }
 
-  /** A pick for the setting at `index`; the ones after it go back to what the agent offers. */
-  function pick(index: number, value: string) {
+  /** A pick for one setting. Shown at once; the agent's answer follows, with anything the
+   * pick changed (goose's models follow its provider). */
+  function pick(setting: string, value: string) {
     if (!listed) return
-    const settings = listed.settings.map((setting, i) =>
-      i === index ? { ...setting, current: value } : setting
+    const settings = listed.settings.map((s) =>
+      s.id === setting ? { ...s, current: value } : s
     )
-    // Shown at once; the agent's answer follows, with anything the pick changed.
     setListed({ ...listed, settings })
     setBusy(true)
-    // The ones before it are saved too: a later setting can depend on them (goose's models
-    // on its provider), so its value only means something with theirs.
-    const picks = settings
-      .slice(0, index + 1)
-      .map((s) => ({ setting: s.id, value: s.current }))
-    pickAgentSettings(agent.id, picks).then(shown, failed)
+    pickAgentSettings(agent.id, { setting, value }).then(shown, failed)
   }
 
   // An agent that must have its model picked asks for it, in bubblegum like everything a
@@ -125,7 +122,7 @@ function Settings({
   listed: Listed
   name: string
   busy: boolean
-  onPick: (index: number, value: string) => void
+  onPick: (setting: string, value: string) => void
 }) {
   if (listed.settings.length === 0)
     return (
@@ -143,12 +140,12 @@ function Settings({
           {skippedNote(skipped, name)}
         </p>
       ))}
-      {listed.settings.map((setting, index) => (
+      {listed.settings.map((setting) => (
         <SettingField
           key={setting.id}
           setting={setting}
           disabled={busy}
-          onChange={(value) => onPick(index, value)}
+          onChange={(value) => onPick(setting.id, value)}
         />
       ))}
     </FieldGroup>
