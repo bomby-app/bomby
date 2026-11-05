@@ -1,8 +1,6 @@
 import type { ReactNode } from "react"
 
-import { cn } from "@/lib/utils"
-
-import { Mascot } from "./mascot"
+import { MascotCard } from "./mascot-card"
 
 /**
  * An error the user should see, with the mascot's failed face (Paper "04 Mascot states",
@@ -23,20 +21,14 @@ export function ErrorCard({
 }) {
   const [headline, detail] = splitMessage(message)
   return (
-    <div
-      role="alert"
-      className={cn(
-        "flex items-center gap-4 rounded-xl border bg-card px-4 py-3.5 text-card-foreground",
-        className
-      )}
-    >
-      <Mascot state="failed" size={40} className="shrink-0" />
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <p className="text-sm font-medium">{headline}</p>
-        {detail && <p className="text-sm text-muted-foreground">{detail}</p>}
-      </div>
-      {action && <div className="shrink-0">{action}</div>}
-    </div>
+    <MascotCard
+      state="failed"
+      headline={headline}
+      detail={detail}
+      action={action}
+      announce="alert"
+      className={className}
+    />
   )
 }
 

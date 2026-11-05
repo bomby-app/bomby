@@ -11,8 +11,9 @@ import { cn } from "@/lib/utils"
  * With `depth`, it is the lit version from the splash (Paper "splash"): gradients, a rim
  * of light and catchlights in the eyes, in the theme's mascot colours.
  *
- * Working and done (a Claude session running, a result arriving) join when Claude's status
- * events reach the app.
+ * Done is smiling eyes with a little hop (Paper "04 Mascot states" and "05 Motion": up
+ * 6px in 160ms), every few seconds while it lasts. Working (a Claude session running) joins
+ * when Claude's status events reach the app.
  */
 export type MascotState =
   | "waking"
@@ -22,6 +23,7 @@ export type MascotState =
   | "speaking"
   | "asleep"
   | "failed"
+  | "done"
 
 // The mark in a 120 viewBox: one square corner (bottom left), two eyes.
 const BUBBLE =
@@ -151,6 +153,7 @@ export function Mascot({
       className={cn(
         "shrink-0 overflow-visible",
         state === "failed" && "motion-safe:animate-dotdot-shake",
+        state === "done" && !still && "motion-safe:animate-mascot-hop",
         className
       )}
       style={lit ? { filter: "var(--mascot-shadow)" } : undefined}
@@ -244,7 +247,8 @@ function Eye({
   // opening crossfades them into round eyes that open from a squint. The blink is its own
   // layer, so it stays quick while opening is slow.
   if (lit && state !== "asleep" && state !== "failed") {
-    const closed = state === "waking"
+    // Done shows the same lids, as smiling eyes.
+    const closed = state === "waking" || state === "done"
     const r =
       state === "listening" ? 10.5 : state === "speaking" ? 7 + 1.2 * level : 7
     return (
@@ -313,6 +317,18 @@ function Eye({
       />
     )
   }
+  // Done: smiling eyes (Paper "04 Mascot states", Done: 5 thick, round ends).
+  if (state === "done") {
+    return (
+      <path
+        d={`M${cx - 7} ${EYE_Y + 3} Q${cx} ${EYE_Y - 7} ${cx + 7} ${EYE_Y + 3}`}
+        fill="none"
+        stroke={fill}
+        strokeWidth={5}
+        strokeLinecap="round"
+      />
+    )
+  }
   // Failed: crossed eyes (Paper "04 Mascot states", Failed: 10 wide, 4.5 thick), bubblegum on
   // the light theme's ink bubble and ink on the dark theme's highlighter one (--mascot-failed).
   if (state === "failed") {
@@ -348,7 +364,7 @@ function Eye({
 }
 
 /** The mascot's state for LiveKit's agent state (`useAgent().state`). */
-export function mascotState(agent: string): MascotState {
+export function mascotState(agent: string): Exclude<MascotState, "done"> {
   switch (agent) {
     case "listening":
       return "listening"

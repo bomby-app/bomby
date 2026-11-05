@@ -1,5 +1,5 @@
 # Builds Bomby for Apple Silicon, signs it with the Developer ID, notarizes it and attaches
-# the DMG to a draft GitHub release. Start it from the Actions tab (Release, Run workflow)
+# the DMG and the update (Bomby.app.tar.gz, latest.json) to a draft GitHub release. Start it from the Actions tab (Release, Run workflow)
 # or by pushing a version tag (v0.1.0). Secrets, and what to check: docs/releasing.md.
 name: Release
 
@@ -89,12 +89,15 @@ jobs:
           chmod 600 "$key"
           echo "APPLE_API_KEY_PATH=$key" >> "$GITHUB_ENV"
 
-      # Freezes and signs the agent, then Tauri signs the app, notarizes it and staples it.
+      # Freezes and signs the agent, then Tauri signs the app, notarizes it and staples it,
+      # and packs it as the update (Bomby.app.tar.gz), signed with the updater key.
       - name: Build, sign and notarize the app
         env:
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-        run: just app build
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: just app build --config src-tauri/tauri.release.conf.json
 
       # Tauri notarizes only the app; the DMG people download gets its own ticket.
       - name: Notarize the DMG
@@ -125,22 +128,37 @@ jobs:
       - name: Check the signed agent runs
         run: just agent check-frozen "$PWD/$APP/Contents/Resources/agent/bomby-agent"
 
+      # What installed copies read to find this version once the release is published
+      # (plugins.updater.endpoints in tauri.conf.json).
+      - name: Write latest.json
+        run: |
+          version=$(jq -r .version app/src-tauri/tauri.conf.json)
+          jq -n \
+            --arg version "$version" \
+            --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg signature "$(cat "$APP.tar.gz.sig")" \
+            --arg url "https://github.com/$GITHUB_REPOSITORY/releases/download/v$version/Bomby.app.tar.gz" \
+            '{version: $version, pub_date: $date, platforms: {"darwin-aarch64": {signature: $signature, url: $url}}}' \
+            > "$RUNNER_TEMP/latest.json"
+          cat "$RUNNER_TEMP/latest.json"
+
       # Uploads to the version's draft release, made here if it isn't there yet. A published
       # release is never changed: bump the version in tauri.conf.json instead.
-      - name: Attach the DMG to the draft release
+      - name: Attach the DMG and the update to the draft release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           version=$(jq -r .version app/src-tauri/tauri.conf.json)
           tag="v$version"
+          files=("$DMG" "$APP.tar.gz" "$RUNNER_TEMP/latest.json")
           if draft=$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null); then
             if [ "$draft" != "true" ]; then
               echo "::error::$tag is already published; bump the version in tauri.conf.json"
               exit 1
             fi
-            gh release upload "$tag" "$DMG" --clobber
+            gh release upload "$tag" "${files[@]}" --clobber
           else
-            gh release create "$tag" "$DMG" --draft --title "Bomby $version" \
+            gh release create "$tag" "${files[@]}" --draft --title "Bomby $version" \
               --target "$GITHUB_SHA" --generate-notes
           fi
 

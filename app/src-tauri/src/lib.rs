@@ -1,4 +1,4 @@
-//! The Tauri core of the desktop app: windows, the menu bar icon, notifications, the permission prompt for the mic, the app's
+//! The Tauri core of the desktop app: windows, the menu bar icon, notifications, updates, the permission prompt for the mic, the app's
 //! database, and the commands the page calls. Each command's module documents it;
 //! capabilities/ grants them.
 
@@ -17,6 +17,7 @@ mod settings;
 mod setup;
 mod sync;
 mod tray;
+mod updates;
 mod windows;
 
 use tauri::Manager;
@@ -24,7 +25,12 @@ use tauri::webview::{PermissionKind, PermissionResponse};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // Only release builds update (updates.rs), so only they load the updater, which won't
+    // start without plugins.updater in tauri.conf.json.
+    #[cfg(not(debug_assertions))]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    builder
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -46,11 +52,13 @@ pub fn run() {
             app.manage(credentials::Vault::default());
             app.manage(agents::Agents::default());
             app.manage(calls::CallAgents::default());
+            app.manage(updates::Updates::default());
             tray::init(app.handle())?;
             notifications::init(app.handle())?;
             // Look for the agents now, so Settings and the first call find them ready.
             tauri::async_runtime::spawn(agents::refresh_in_background(app.handle().clone()));
             adapters::update_in_background(app.handle());
+            updates::check_in_background(app.handle());
             Ok(())
         })
         // Closing the main window hides it: the app, and any call in it, keeps running in
@@ -67,6 +75,9 @@ pub fn run() {
             windows::open_settings,
             tray::set_tray_status,
             notifications::task_finished,
+            updates::about,
+            updates::check_for_updates,
+            updates::install_update,
             app_log::app_log,
             credentials::credentials_info,
             credentials::save_credentials,

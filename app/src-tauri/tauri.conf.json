@@ -31,6 +31,15 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IENGRDQyRTA3RTYzRTA4MDQKUldRRUNEN21CeTdVendja0RkWVdqN0w3dGVlQ1lnT0RJTExOSjVwMlRGM0JmYmVmSFVTakNHQngK",
+      "endpoints": [
+        "https://github.com/bomby-app/bomby/releases/latest/download/latest.json"
+      ],
+      "requireSignedVersion": true
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",

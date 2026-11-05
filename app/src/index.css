@@ -24,6 +24,18 @@
      one fail shake. Sine for loops, ease-out for one-offs, nothing overshoots. */
   --animate-dotdot-wander: dotdot-wander 2.4s ease-in-out infinite;
   --animate-dotdot-shake: dotdot-shake 300ms ease-out 1;
+  /* Done's hop (Paper "05 Motion": up 6px in 160ms, then down), once every 2.8s. */
+  --animate-mascot-hop: mascot-hop 2.8s ease-in-out infinite;
+  @keyframes mascot-hop {
+    0%,
+    11.4%,
+    100% {
+      transform: translateY(0);
+    }
+    5.7% {
+      transform: translateY(-6px);
+    }
+  }
   @keyframes dotdot-wander {
     0%,
     100% {

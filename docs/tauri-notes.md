@@ -94,6 +94,16 @@ Checked 2026-11-05 in `@tauri-apps/cli` 2.12.4 (`crates/tauri-bundler/src/bundle
 - **Unsigned builds.** With no identity, nothing is signed: the main binary keeps the linker's ad-hoc signature, and its designated requirement is its `cdhash`. Each rebuild is a new app to the keychain, which asks again for the saved keys; a Developer ID build is identified by its Team ID, so one Always Allow lasts across updates.
 - **Mic.** Hardened runtime blocks the mic without `com.apple.security.device.audio-input` (Apple, "Audio Input Entitlement"), in `src-tauri/Entitlements.plist`.
 
+## Updates
+
+Checked 2026-11-05 in `tauri-plugin-updater` 2.14.0 (`src/updater.rs`, `src/config.rs`), `@tauri-apps/cli` 2.12.4 (`crates/tauri-cli/src/bundle.rs`, `helpers/updater_signature.rs`) and v2.tauri.app/plugin/updater. How releases publish them: [releasing.md](releasing.md).
+
+- The core alone uses the plugin (`src-tauri/src/updates.rs`: `about`, `check_for_updates`, `install_update`, the `update-status` event), so no window gets `updater:` permissions and the npm package isn't installed. Development builds report `development` and never check.
+- `plugins.updater` in `tauri.conf.json`: `pubkey` (the key's contents, not a path; minisign key id `CFD42E07E63E0804`), `endpoints` (HTTPS only in release; the next is tried only on a non-2xx), `requireSignedVersion`. The plugin won't start without this block.
+- `latest.json`: `version`, `pub_date`, and `platforms["darwin-aarch64"]` with `signature` (the `.sig` file's contents) and `url`. The key is `{os}-{arch}`; a `{target}-{installer}` key is tried first. An update is offered when its version is greater than the app's, unless `version_comparator` says otherwise.
+- **Signing updates.** The CLI signs updater bundles only when `bundle.createUpdaterArtifacts` is on, with `TAURI_SIGNING_PRIVATE_KEY` (contents or path) and `_PASSWORD`; without the key it fails ("A public key has been found, but no private key"). CLI 2.12.4 writes the app version into the signature's trusted comment, which `requireSignedVersion` checks against the announced version, so a stale `latest.json` can't downgrade anyone. Local builds leave the setting off (`tauri.release.conf.json` turns it on for releases).
+- On macOS the bundle is `Bomby.app.tar.gz` next to the `.app`; `download_and_install` replaces the running bundle in place, then the app must restart. `AppHandle::request_restart` from another thread goes through `RunEvent::Exit`, so the agent worker is stopped first (tauri 2.12.5, `app.rs`).
+
 ## Finding agents
 
 - Finder launches provide launchd's PATH, not the shell's. `src-tauri/src/agents.rs` queries the login shell once (`$SHELL -ilc`, eight-second timeout), ignores rc-file noise, then checks known install locations.
