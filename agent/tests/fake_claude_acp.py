@@ -20,6 +20,7 @@ Prompts:
 - "hang": take steered messages and wait until the client cancels, then stop with
   `cancelled`
 - "wait <text>": wait for a steered message, then reply "Done: <text> + <steered text>"
+- "cutoff <text>": wait for a steered message, then say <text> and stop with `max_tokens`
 - "turns": reply with how many prompts this session has had, e.g. "turn 2"
 - "fail <text>": fail the turn with <text> as the error's details
 - "crash <text>": print <text> to stderr and exit
@@ -262,6 +263,15 @@ class FakeClaude:
                 session.steered = None
             await say(f"Done: {text[5:]} + {steered}")
             return PromptResponse(stop_reason="end_turn")
+
+        if text.startswith("cutoff "):
+            session.steered = asyncio.Queue()
+            try:
+                _ = await session.steered.get()
+            finally:
+                session.steered = None
+            await say(text[7:])
+            return PromptResponse(stop_reason="max_tokens")
 
         if text == "turns":
             await say(f"turn {session.turns}")

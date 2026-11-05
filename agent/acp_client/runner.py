@@ -267,7 +267,7 @@ class AcpRunner:
                 if on_start is not None:
                     await on_start()
                 conn, session_id = await self._open(s)
-                text = await self._prompt(conn, s, session_id, task)
+                text, finished = await self._prompt(conn, s, session_id, task)
             except ToolError as e:
                 running.end(error=str(e))
                 raise
@@ -276,7 +276,9 @@ class AcpRunner:
                 raise
             finally:
                 s.running = None
-            running.end()
+            # The original request hears how it stopped; one steered in only that it didn't
+            # get done.
+            running.end(error=None if finished else stopped(self._harness))
             return Turn(text)
 
     async def aclose(self) -> None:
@@ -341,7 +343,8 @@ class AcpRunner:
 
     async def _prompt(
         self, conn: ClientSideConnection, s: _Session, session_id: str, task: str
-    ) -> str:
+    ) -> tuple[str, bool]:
+        """Runs one turn: the agent's final message, and whether the turn ended normally."""
         name = self._harness.short_name
         reply = self._client.replies[session_id] = Reply()
         logger.info("%s turn in %s started: %s", self._harness.id, s.name, task)
@@ -376,10 +379,11 @@ class AcpRunner:
             )
             raise ToolError(no_report(self._harness))
         text = reply.text
-        if response.stop_reason != "end_turn":
+        finished = response.stop_reason == "end_turn"
+        if not finished:
             text = f"{name} stopped early ({response.stop_reason}). Its last message: {text}"
         logger.info("%s turn in %s result: %s", self._harness.id, s.name, text)
-        return text
+        return text, finished
 
     async def _steer(
         self, conn: ClientSideConnection, s: _Session, session_id: str, task: str

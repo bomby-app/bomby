@@ -260,6 +260,21 @@ def test_a_steered_request_fails_when_the_turn_it_joined_is_stopped(
     assert message == stopped(CLAUDE_CODE)
 
 
+def test_a_steered_request_fails_when_the_turn_it_joined_stops_early(
+    tmp_path: Path,
+) -> None:
+    async def scenario(runner: AcpRunner) -> tuple[str, str]:
+        first = await until_prompted(runner, "cutoff Half done.", "page")
+        with pytest.raises(ToolError) as error:
+            _ = await runner.run("make the header blue", "page")
+        return await first, str(error.value)
+
+    (first, steered), _ = run_with_fake(tmp_path, scenario)
+
+    assert first.startswith("Claude stopped early (max_tokens)")
+    assert steered == stopped(CLAUDE_CODE)
+
+
 PLAIN = dataclasses.replace(
     CLAUDE_CODE, id="plain", steer_method=None, bypass_mode=None
 )
