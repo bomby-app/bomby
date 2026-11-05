@@ -9,9 +9,10 @@ A LiveKit Agents worker on Gemini 3.8 Live. It talks with the user, hands work t
 - `harnesses/`: one definition per coding agent. To add one, follow [these steps](../docs/decisions/detect-acp-native-agents.md#adding-an-agent).
 - `adapters/`: the ACP adapters for agents without ACP of their own (Claude Code, Codex), pinned in `package.json`. The app installs them on Set up; `just agent install` builds them into `adapters/bin` for console runs ([decision](../docs/decisions/install-adapters-on-setup.md)).
 - `acp_client/`: the ACP client and runner every harness shares (sessions, steering, the briefing). A failing harness reaches the voice as one short line (`not_ready`, `stopped`); the details go to the log.
-- `tools/start_task.py`: the voice model's one tool. `task_board.py`: the call's tasks, sent to the app.
+- `tools/start_task.py`: the voice model's one tool. At the top level, `call.py`: what a call's tools share (the runners and the task board); `task_board.py`: the call's tasks, sent to the app; `lifeline.py`: stops the worker when the app does.
 - `prompts/`: `voice.md` (Gemini's instructions) and `harness-briefing.md` (what every coding agent is told). `voice_prompt.py` adds what each call brings to `voice.md`, and `briefing` in `acp_client/runner.py` adds the project to `harness-briefing.md`; both build their sections with `sections.py`, leaving out the empty ones.
 - `project.py`, `call_options.py`: what the app sends with each call, read once from the job's metadata (`job.py`).
+- `check_frozen.py`: checks a frozen agent runs (`just agent check-frozen`).
 - `tests/`: unit tests, with a fake ACP agent.
 
 ## Rules

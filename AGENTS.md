@@ -6,7 +6,7 @@ Bomby is a macOS desktop app you talk to. You say what you want done, and Bomby'
 
 Why: talking is the fastest way to hand off work ("Stop typing. Start talking."). Bomby works with the agent the user already has, on their own setup, and with their own LiveKit and Gemini keys, so we host nothing and hold no one's keys or logins.
 
-It is in beta and runs from source; packaging comes later. The owner designs and tests it; agents write the code.
+It is in beta: releases are signed, notarized DMGs for Apple Silicon Macs, and developers run it from source. The owner designs and tests it; agents write the code.
 
 > Keep this section true whenever the product changes.
 

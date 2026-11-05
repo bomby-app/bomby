@@ -8,7 +8,7 @@
 
 Bomby is a desktop app you talk to. Say what you want done, and Bomby hands it to the agent on your computer, keeps the conversation going while it works, and tells you how it went. You can start several things at once, add to a task while it's running, and pick up an earlier call where you left off.
 
-Bomby is in beta and runs on macOS.
+Bomby is in beta and runs on Apple Silicon Macs.
 
 ## How it works
 
@@ -25,6 +25,7 @@ Bomby finds these on your computer by itself and lists them in Settings > Agents
 | Agent | How Bomby runs it |
 | --- | --- |
 | [Claude Code](https://claude.com/product/claude-code) | through `claude-agent-acp`, on your own Claude plan |
+| [Codex](https://developers.openai.com/codex/cli) | through `codex-acp`, on your own login |
 | [OpenCode](https://opencode.ai) | `opencode acp` |
 | [goose](https://goose-docs.ai) | `goose acp` |
 | [omp](https://github.com/can1357/oh-my-pi) | `omp acp` |
@@ -33,7 +34,7 @@ Claude is the default; ask for another one by name ("ask goose to..."). Each age
 
 ## What you need
 
-- A Mac
+- A Mac with Apple Silicon
 - A [LiveKit Cloud](https://cloud.livekit.io) project (the free tier is enough): its URL, API key and API secret
 - A [Gemini API key](https://aistudio.google.com/apikey)
 - At least one agent from the list above. No agent yet? Install Claude Code:
@@ -46,7 +47,9 @@ Your keys stay in your macOS keychain. Bomby never sees or stores your agents' l
 
 ## Run it
 
-Bomby isn't packaged yet, so for now it runs from source. You need [mise](https://mise.jdx.dev) and [just](https://just.systems).
+Download the DMG from [Releases](https://github.com/bomby-app/bomby/releases), open it and drag Bomby to Applications. Bomby keeps itself up to date from there.
+
+Until the first release is out, or to work on Bomby, run it from source. You need [mise](https://mise.jdx.dev) and [just](https://just.systems).
 
 ```bash
 just install    # the pinned tools (mise) and every part's dependencies
