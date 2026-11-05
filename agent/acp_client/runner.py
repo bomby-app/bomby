@@ -222,6 +222,12 @@ class AcpRunner:
     def env(self) -> Mapping[str, str]:
         return self._env
 
+    @property
+    def can_steer(self) -> bool:
+        """Whether a request to a busy session joins its running turn instead of waiting.
+        Known once the agent has started, which a busy session always has."""
+        return self._can_steer
+
     def is_busy(self, name: str) -> bool:
         """Whether the session called `name` has a turn running."""
         session = self._sessions.get(session_name(name))
