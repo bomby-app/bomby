@@ -28,9 +28,10 @@ adapters:
       bun build --compile --minify "node_modules/@agentclientprotocol/$adapter/dist/index.js" --outfile "bin/$adapter"
     done
 
-# Freeze the agent into one folder for the app to ship (agent/dist/bomby-agent), with
-# PyInstaller (docs/decisions/ship-the-agent-and-adapter-as-sidecars.md). LiveKit's native
-# library and plugins, and the Gemini SDK's data files, aren't found by import analysis.
+# docs/decisions/ship-the-agent-and-adapter-as-sidecars.md. LiveKit's native library and
+# plugins, and the Gemini SDK's data files, aren't found by import analysis.
+
+# Freeze the agent with PyInstaller into one folder for the app to ship (agent/dist/bomby-agent)
 [group('build')]
 [working-directory: 'agent']
 freeze:
@@ -38,6 +39,35 @@ freeze:
       --noconfirm --clean --log-level WARN --specpath build \
       --collect-all livekit --collect-submodules livekit.plugins --collect-data google.genai \
       --add-data "$PWD/prompts:prompts"
+
+# Sign the frozen agent with the Developer ID in APPLE_SIGNING_IDENTITY, for notarization
+[group('build')]
+[working-directory: 'agent/dist/bomby-agent']
+sign:
+    #!/usr/bin/env bash
+    # Hardened runtime and a secure timestamp, as notarization requires. Tauri signs only its
+    # own binaries, not the files it bundles (docs/tauri-notes.md#bundling-the-agent). No
+    # entitlements: everything the agent loads is signed with the same Team ID.
+    set -euo pipefail
+    : "${APPLE_SIGNING_IDENTITY:?set it to the Developer ID Application identity}"
+    sign() { codesign --force --sign "$APPLE_SIGNING_IDENTITY" --options runtime --timestamp "$1"; }
+    # The libraries first, the program last (a signature covers what the program loads).
+    # Symlinks point at files signed here.
+    count=0
+    while IFS= read -r -d '' file; do
+      if [[ $(file -b "$file") == Mach-O* ]]; then
+        sign "$file" >/dev/null 2>&1 || sign "$file"
+        count=$((count + 1))
+      fi
+    done < <(find _internal -type f -print0)
+    sign bomby-agent
+    echo "Signed bomby-agent and $count libraries"
+
+# Check a frozen agent runs: the probe, a job process, and stopping with the app (default: agent/dist)
+[group('check')]
+[working-directory: 'agent']
+check-frozen program="dist/bomby-agent/bomby-agent":
+    uv run --no-project python check_frozen.py {{ program }}
 
 # Talk to the agent by voice in the terminal (no app or LiveKit server needed)
 [group('run')]

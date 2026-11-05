@@ -20,6 +20,7 @@ src/
 src-tauri/src/              the Rust core: lib.rs (wiring), db.rs (SQLite, migrations), projects.rs, calls.rs, settings.rs, agents.rs (finding the agents), setup.rs (probing their setup), adapters.rs (installing ACP adapters), agent.rs (the worker), credentials.rs, windows.rs, tray.rs (the menu bar icon), notifications.rs, process.rs (waiting on child programs), sync.rs (locks that outlive a panic), app_log.rs, error.rs
 src-tauri/icons/tray/       the menu bar templates, one per mascot state
 src-tauri/capabilities/     what each window may call: main.json, settings.json
+src-tauri/Entitlements.plist what signed builds may use under hardened runtime: the mic (docs/releasing.md)
 ```
 
 ## Conventions

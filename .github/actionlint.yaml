@@ -1,0 +1,5 @@
+# Runner labels newer than actionlint's own list (1.7.12): GitHub's macOS 27 image, generally
+# available since 2026-10-15 (docs.github.com, GitHub-hosted runners reference).
+self-hosted-runner:
+  labels:
+    - xcode-27

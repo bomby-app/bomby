@@ -83,6 +83,17 @@ Checked 2026-11-05 in the bundler of `@tauri-apps/cli` 2.12.4 (`crates/tauri-bun
 - Signing (when an identity is set) covers `bundle.macOS.frameworks`, `externalBin` sidecars and the main binary, then the `.app`. It doesn't sign files from `resources` or `macOS.files`, so the agent folder's libraries need their own signature before `tauri build`.
 - `just app build` runs `just agent freeze` first. The folder is 190 MB.
 
+## Signing and notarizing
+
+Checked 2026-11-05 in `@tauri-apps/cli` 2.12.4 (`crates/tauri-bundler/src/bundle/macos/sign.rs`, `app.rs`, `dmg/mod.rs`; `crates/tauri-macos-sign/src/keychain.rs`) and v2.tauri.app/distribute/sign/macos. How releases use it: [releasing.md](releasing.md).
+
+- **Identity.** `APPLE_CERTIFICATE` and `APPLE_CERTIFICATE_PASSWORD` make Tauri import the `.p12` into a temporary keychain for the build. Without them, `APPLE_SIGNING_IDENTITY` (or `bundle.macOS.signingIdentity`) is used from the keychain search list. The workflow imports the certificate itself, because the agent is signed before Tauri runs.
+- **codesign.** `codesign --force -s <identity> [--options runtime] [--entitlements <file>] <path>`, with no `--timestamp`. Hardened runtime is on by default (`bundle.macOS.hardenedRuntime`, default `true`). Every target gets the same `bundle.macOS.entitlements` file.
+- **Notarizing.** With `APPLE_API_KEY`, `APPLE_API_ISSUER` and `APPLE_API_KEY_PATH` (or an `AuthKey_<id>.p8` in `~/private_keys` and similar folders), Tauri zips the app with `ditto`, submits it to `notarytool`, waits and staples it. Without credentials it only logs "skipping app notarization", so the workflow checks with `xcrun stapler validate`.
+- **DMG.** The DMG is signed (unless the identity is `-`) but not notarized; the workflow notarizes and staples it with `notarytool` directly.
+- **Unsigned builds.** With no identity, nothing is signed: the main binary keeps the linker's ad-hoc signature, and its designated requirement is its `cdhash`. Each rebuild is a new app to the keychain, which asks again for the saved keys; a Developer ID build is identified by its Team ID, so one Always Allow lasts across updates.
+- **Mic.** Hardened runtime blocks the mic without `com.apple.security.device.audio-input` (Apple, "Audio Input Entitlement"), in `src-tauri/Entitlements.plist`.
+
 ## Finding agents
 
 - Finder launches provide launchd's PATH, not the shell's. `src-tauri/src/agents.rs` queries the login shell once (`$SHELL -ilc`, eight-second timeout), ignores rc-file noise, then checks known install locations.

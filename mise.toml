@@ -5,3 +5,7 @@
 rust = "1.99.1"
 # JS package manager and runtime for the app's frontend (app/)
 bun = "1.4.4"
+# Python for the voice agent (agent/): uv runs it, its dependencies and PyInstaller
+uv = "0.13.4"
+# The command runner for every recipe (justfile)
+just = "1.59.0"

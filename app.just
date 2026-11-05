@@ -22,12 +22,16 @@ install:
 dev:
     bun run tauri dev
 
-# Build the release app bundle (.app and .dmg on macOS) into app/src-tauri/target/release/bundle,
-# with the voice agent frozen first (`just agent freeze`), which the bundle ships
+# The agent is frozen first (`just agent freeze`). With the APPLE_* variables set
+# (docs/releasing.md), the agent is signed before it's bundled and Tauri signs and notarizes
+# the app; without them, the build is unsigned, for testing on this Mac.
+
+# Build the release app bundle, with the voice agent, into app/src-tauri/target/release/bundle (.app and .dmg)
 [group('run')]
 [working-directory: 'app']
 build:
     {{ just_executable() }} --justfile {{ justfile_directory() }}/justfile agent freeze
+    if [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then {{ just_executable() }} --justfile {{ justfile_directory() }}/justfile agent sign; fi
     bun run tauri build
 
 # Format-check, lint and type-check the frontend (Vite+: Oxfmt, Oxlint, tsgolint) and the Rust core (clippy, rustfmt); warnings fail
