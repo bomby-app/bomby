@@ -17,6 +17,7 @@ from acp_client.runner import (
     Turn,
     briefing,
     child_environment,
+    no_report,
     steered_note,
     stopped,
 )
@@ -105,6 +106,19 @@ def test_new_session_appends_system_prompt_and_bypasses_permissions(
     assert prompt["blocks"] == ["reply ok"]  # already in the system prompt
     mode = next(e for e in events if e["event"] == "set_session_mode")
     assert mode["mode_id"] == "bypassPermissions"
+
+
+def test_a_turn_without_a_final_message_fails_instead_of_reading_as_done(
+    tmp_path: Path,
+) -> None:
+    async def scenario(runner: AcpRunner) -> str:
+        with pytest.raises(ToolError) as error:
+            _ = await runner.run("silent")
+        return str(error.value)
+
+    message, _ = run_with_fake(tmp_path, scenario)
+
+    assert message == no_report(CLAUDE_CODE)
 
 
 def test_project_folders_become_cwd_and_extra_directories(tmp_path: Path) -> None:

@@ -15,6 +15,7 @@ initialize, like an adapter without it. Setup scenarios, by environment variable
 Prompts:
 
 - "reply <text>": narrate, run a tool call, then send "Done: <text>" as the final message
+- "silent": narrate, run a tool call, then end the turn with no final message
 - "permission": ask for permission, then report the option the client chose
 - "hang": take steered messages and wait until the client cancels, then stop with
   `cancelled`
@@ -216,6 +217,13 @@ class FakeClaude:
             )
             await say("Done: ", "m2")
             await say(text[6:], "m2")
+            return PromptResponse(stop_reason="end_turn")
+
+        if text == "silent":
+            await say("Let me look. ")
+            await self._client.session_update(
+                session_id, start_tool_call("t1", "Read file")
+            )
             return PromptResponse(stop_reason="end_turn")
 
         if text == "permission":

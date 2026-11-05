@@ -84,6 +84,14 @@ def not_ready(harness: Harness) -> str:
     )
 
 
+def no_report(harness: Harness) -> str:
+    return (
+        f"{harness.short_name} ended without reporting back, so there's no sign it did "
+        "the work. Don't say it's done: tell the user, and offer to try again or to try "
+        "another agent."
+    )
+
+
 def stopped(harness: Harness) -> str:
     return (
         f"{harness.short_name} stopped before finishing. Say sorry and offer to try "
@@ -354,7 +362,14 @@ class AcpRunner:
         logger.info(
             "%s turn in %s ended: %s", self._harness.id, s.name, response.stop_reason
         )
-        text = reply.text or f"{name} finished without a final message."
+        if not reply.text:
+            # Some models end a turn with nothing to say; passing that on as a result
+            # reads as done (OpenCode on one OpenRouter model, 2026-11-05).
+            logger.warning(
+                "%s turn in %s ended without a final message", self._harness.id, s.name
+            )
+            raise ToolError(no_report(self._harness))
+        text = reply.text
         if response.stop_reason != "end_turn":
             text = f"{name} stopped early ({response.stop_reason}). Its last message: {text}"
         logger.info("%s turn in %s result: %s", self._harness.id, s.name, text)
