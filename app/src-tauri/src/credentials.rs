@@ -34,6 +34,16 @@ pub struct LiveKitKeys {
     pub api_secret: String,
 }
 
+/// Never prints the secret.
+impl std::fmt::Debug for LiveKitKeys {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LiveKitKeys")
+            .field("url", &self.url)
+            .field("api_key", &self.api_key)
+            .finish_non_exhaustive()
+    }
+}
+
 /// Everything in the keychain entry.
 #[derive(Clone, Default, Serialize, Deserialize)]
 struct Keys {

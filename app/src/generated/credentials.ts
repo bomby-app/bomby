@@ -13,3 +13,5 @@ export type CredentialsInput = { url: string, apiKey: string,
  * Left out to keep the saved secret.
  */
 apiSecret?: string, };
+
+export type LiveKitServer = "thisMac" | "theirs";

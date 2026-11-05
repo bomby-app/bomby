@@ -1,16 +1,20 @@
-"""The voice model's instructions for one call: `prompts/voice.md`, then what this call
-adds. Each added section is left out when it has nothing to say."""
+"""The voice model's instructions for one call: the prompt for the user's tone
+(`prompts/sharp.md`, `chatty.md` or `playful.md`), then what this call adds. Each added
+section is left out when it has nothing to say."""
 
 from pathlib import Path
 
-from call_options import CallOptions
+from call_options import TONES, CallOptions, Tone
 from harnesses.harness import Harness
 from job import Line, Speaker
 from project import Project
 from sections import join, section
 from tools import agents_note
 
-VOICE = (Path(__file__).resolve().parent / "prompts" / "voice.md").read_text().rstrip()
+PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
+PROMPTS: dict[Tone, str] = {
+    t: (PROMPTS_DIR / f"{t}.md").read_text().rstrip() for t in TONES
+}
 
 SPEAKER_LABEL: dict[Speaker, str] = {"user": "User", "agent": "You"}
 RESUME_NOTE = (
@@ -25,7 +29,7 @@ def voice_instructions(
     project: Project, options: CallOptions, agents: list[Harness]
 ) -> str:
     return join(
-        VOICE,
+        PROMPTS[options.tone],
         the_user(options.user_name),
         agents_note(agents),
         project_context(project),

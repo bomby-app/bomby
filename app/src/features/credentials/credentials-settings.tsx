@@ -5,6 +5,8 @@ import { useSettingsNavigation } from "@/lib/settings-navigation"
 
 import { GeminiForm } from "./gemini-form"
 import { LiveKitForm } from "./livekit-form"
+import { LiveKitServerChoice } from "./livekit-server-choice"
+import { useSavedKeys } from "./use-saved-keys"
 
 /**
  * The Credentials section of the settings window: the keys the user brings. Both live in
@@ -13,6 +15,7 @@ import { LiveKitForm } from "./livekit-form"
  */
 export function CredentialsSettings() {
   const { place } = useSettingsNavigation()
+  const { keys } = useSavedKeys()
   const field = place?.section === "credentials" ? place.field : undefined
   const gemini = useRef<HTMLFieldSetElement>(null)
 
@@ -25,7 +28,10 @@ export function CredentialsSettings() {
     <div className="flex flex-col gap-10">
       <FieldSet>
         <FieldLegend>LiveKit</FieldLegend>
-        <LiveKitForm focus={field === "livekit"} />
+        <LiveKitServerChoice />
+        {keys?.server === "theirs" && (
+          <LiveKitForm focus={field === "livekit"} />
+        )}
       </FieldSet>
       <FieldSet ref={gemini}>
         <FieldLegend>Gemini</FieldLegend>

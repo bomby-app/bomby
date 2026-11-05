@@ -1,5 +1,5 @@
 # Bomby: the voice agent (agent/) and the desktop app (app/).
-# Each part has its own module: `just agent` and `just app` list their recipes.
+# Each part has its own module: `just agent`, `just app` and `just livekit` list their recipes.
 # See docs/AGENTS.md.
 
 # The voice agent. See agent.just.
@@ -8,12 +8,15 @@ mod agent
 # The desktop app. See app.just.
 mod app
 
+# The LiveKit server the app bundles, built from source. See livekit.just.
+mod livekit
+
 # List the recipes
 default:
     @just --list --unsorted
 
-# Install the tools pinned in mise.toml (lk, rust, bun, uv, just) and every part's dependencies, the ACP adapters included
-install: tools agent::install app::install
+# Install the tools pinned in mise.toml (lk, go, rust, bun, uv, just) and every part's dependencies, the ACP adapters included
+install: tools agent::install livekit::build app::install
 
 # Install the tools pinned in mise.toml
 tools:

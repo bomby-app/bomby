@@ -12,12 +12,15 @@ export function SetupCard({
   name,
   status,
   action,
+  collapsed = false,
   className,
 }: {
   tile: ReactNode
   name: string
-  status: ReactNode
+  status?: ReactNode
   action?: ReactNode
+  /** Only the tile shows; the name and status fade out. */
+  collapsed?: boolean
   className?: string
 }) {
   return (
@@ -28,7 +31,12 @@ export function SetupCard({
       )}
     >
       {tile}
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
+      <div
+        className={cn(
+          "flex min-w-0 flex-1 flex-col gap-1 whitespace-nowrap transition-opacity duration-300",
+          collapsed && "opacity-0"
+        )}
+      >
         <span className="text-base leading-5 font-semibold">{name}</span>
         {status}
       </div>
@@ -62,7 +70,7 @@ export function Tile({
   )
 }
 
-export type Tone = "looking" | "todo" | "done"
+export type Tone = "looking" | "todo" | "done" | "cloud"
 
 /** The card's status: a dot (bubblegum while something's missing) and a mono line. */
 export function StatusLine({ tone, text }: { tone: Tone; text: string }) {
@@ -74,13 +82,17 @@ export function StatusLine({ tone, text }: { tone: Tone; text: string }) {
         <span
           className={cn(
             "size-1.5 shrink-0 rounded-full",
-            tone === "todo" ? "bg-claude" : "bg-primary"
+            tone === "todo"
+              ? "bg-claude"
+              : tone === "cloud"
+                ? "bg-livekit-cloud"
+                : "bg-primary"
           )}
         />
       )}
       <span
         title={text}
-        className="truncate font-mono text-xs leading-4 text-foreground/55"
+        className="truncate font-mono text-xs leading-4 text-muted-foreground"
       >
         {text}
       </span>
@@ -99,7 +111,7 @@ export function StepHeading({ title, body }: { title: string; body: string }) {
       <h1 className="pt-1.5 font-heading text-[34px] leading-[38px] font-bold tracking-[-0.03em]">
         {title}
       </h1>
-      <p className="mt-2.5 w-[400px] text-center text-[15px] leading-[22px] text-foreground/60">
+      <p className="mt-2.5 w-[400px] text-center text-[15px] leading-[22px] text-muted-foreground">
         {body}
       </p>
     </>

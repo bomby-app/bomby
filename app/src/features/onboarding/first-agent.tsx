@@ -285,7 +285,7 @@ function Action({
 function CheckAgain({ afterCommand }: { afterCommand: boolean }) {
   const [checking, startChecking] = useTransition()
   return (
-    <span className="flex items-center gap-1.5 text-[13px] leading-[18px] text-foreground/55">
+    <span className="flex items-center gap-1.5 text-[13px] leading-[18px] text-muted-foreground">
       {afterCommand && "Run it in Terminal, then"}
       <InlineLink
         disabled={checking}
@@ -320,7 +320,7 @@ function OtherAgents({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="flex items-center gap-1 text-[13px] leading-[18px] text-foreground/55 outline-none hover:text-foreground focus-visible:text-foreground"
+          className="flex items-center gap-1 text-[13px] leading-[18px] text-muted-foreground outline-none hover:text-foreground focus-visible:text-foreground"
         >
           Use {list} instead
           <ChevronDown className="size-3.5" />

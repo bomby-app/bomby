@@ -7,10 +7,12 @@ mod agent;
 mod agent_picks;
 mod agents;
 mod app_log;
+mod call_server;
 mod calls;
 mod credentials;
 mod db;
 mod error;
+mod local_server;
 mod notifications;
 mod process;
 mod projects;
@@ -50,6 +52,11 @@ pub fn run() {
             adapters::init(&dir);
             app.manage(db::Db::open(&dir.join(db::FILE_NAME))?);
             app.manage(agent::AgentWorker::default());
+            app.manage(local_server::LocalServer::new(
+                local_server::bundled()?,
+                dir.clone(),
+                app.path().app_log_dir()?,
+            ));
             app.manage(credentials::Vault::default());
             app.manage(agents::Agents::default());
             app.manage(agent_picks::Listings::default());
@@ -87,6 +94,8 @@ pub fn run() {
             credentials::has_gemini_key,
             credentials::save_gemini_key,
             credentials::clear_gemini_key,
+            call_server::livekit_server,
+            call_server::set_livekit_server,
             agents::agents_status,
             agents::refresh_agents,
             agent_picks::agent_settings,
@@ -102,6 +111,8 @@ pub fn run() {
             settings::set_voice,
             settings::user_name,
             settings::set_user_name,
+            settings::tone,
+            settings::set_tone,
             settings::first_run,
             settings::finish_first_run,
             projects::list_projects,
@@ -112,8 +123,11 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building the app")
         .run(|app, event| match event {
-            // The agent worker is ours to stop: it would outlive the app otherwise.
-            tauri::RunEvent::Exit => app.state::<agent::AgentWorker>().shutdown(),
+            // The agent worker and the LiveKit server would outlive the app otherwise.
+            tauri::RunEvent::Exit => {
+                app.state::<agent::AgentWorker>().shutdown();
+                app.state::<local_server::LocalServer>().stop();
+            }
             // A click on the Dock icon brings the (maybe hidden) main window back.
             #[cfg(target_os = "macos")]
             tauri::RunEvent::Reopen { .. } => {

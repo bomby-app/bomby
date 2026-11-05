@@ -15,11 +15,13 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
 use crate::agent::{AgentWorker, JobCrash, OnCrash, WorkerConfig};
+use crate::credentials::LiveKitKeys;
 use crate::db::{Db, now_ms};
 use crate::error::{Error, Result};
+use crate::local_server::LocalServer;
 use crate::setup::Pick;
 use crate::sync;
-use crate::{agent_picks, agents, credentials, projects, settings, updates, windows};
+use crate::{agent_picks, agents, call_server, credentials, projects, settings, updates, windows};
 
 /// The agent's name in `agent/agent.py` (`AGENT_NAME`), which the token dispatches.
 const AGENT_NAME: &str = "bomby";
@@ -83,6 +85,8 @@ pub struct CallAgents(Mutex<Option<CurrentCall>>);
 /// What a call opened with: its agents by id with their programs, and their picks.
 #[derive(Debug, Clone, PartialEq)]
 struct OpenedWith {
+    /// Kept too, so a reconnect never lands on another server.
+    server: LiveKitKeys,
     agents: Vec<(String, PathBuf)>,
     picks: HashMap<String, Vec<Pick>>,
 }
@@ -174,6 +178,7 @@ fn dispatch_metadata(
         "picks": picks,
         "voice": settings.voice,
         "user_name": settings.user_name,
+        "tone": settings.tone,
         "history": history,
     })
     .to_string()
@@ -209,16 +214,7 @@ fn reopen(conn: &Connection, project_id: i64, call_id: i64) -> Result<()> {
     Ok(())
 }
 
-fn livekit_keys<R: Runtime>(
-    app: &AppHandle<R>,
-    vault: &credentials::Vault,
-) -> Result<credentials::LiveKitKeys> {
-    vault
-        .livekit(app)?
-        .ok_or_else(|| Error::Invalid("Add your LiveKit keys in Settings first.".into()))
-}
-
-fn token(keys: &credentials::LiveKitKeys, room: &str, metadata: String) -> Result<String> {
+fn token(keys: &LiveKitKeys, room: &str, metadata: String) -> Result<String> {
     AccessToken::with_api_key(&keys.api_key, &keys.api_secret)
         .with_identity("user")
         .with_name("You")
@@ -248,11 +244,13 @@ fn token(keys: &credentials::LiveKitKeys, room: &str, metadata: String) -> Resul
 /// making sure the agent worker runs (it can take a few seconds the first time). Joining is
 /// `call_token`'s job.
 #[tauri::command(async)]
+#[allow(clippy::too_many_arguments)] // Tauri passes each state as an argument.
 pub fn open_call<R: Runtime>(
     app: AppHandle<R>,
     db: State<'_, Db>,
     worker: State<'_, AgentWorker>,
     vault: State<'_, credentials::Vault>,
+    local: State<'_, LocalServer>,
     call_agents: State<'_, CallAgents>,
     project_id: i64,
     resume_call_id: Option<i64>,
@@ -260,7 +258,6 @@ pub fn open_call<R: Runtime>(
     // Holds off an update's restart while the call opens; refused if one is under way.
     let opening = updates::CallOpening::begin(&app)?;
     folders_are_there(&projects::for_call(&db.conn(), project_id)?)?;
-    let keys = livekit_keys(&app, &vault)?;
     let gemini = vault
         .gemini_key(&app)?
         .ok_or_else(|| Error::Invalid("Add your Gemini API key in Settings first.".into()))?;
@@ -272,10 +269,12 @@ pub fn open_call<R: Runtime>(
             "Bomby can't find an agent that's ready to work. See Settings, Agents.".into(),
         ));
     }
+    // Last, so this Mac's server starts only for a call that can open.
+    let server = call_server::for_new_call(&app, &db, &vault, &local)?;
     let log_dir = app.path().app_log_dir()?;
     worker.ensure(
         WorkerConfig {
-            livekit: keys,
+            livekit: server.clone(),
             gemini_key: gemini,
         },
         &log_dir,
@@ -301,6 +300,7 @@ pub fn open_call<R: Runtime>(
     call_agents.set(
         call_id,
         OpenedWith {
+            server,
             agents: found,
             picks,
         },
@@ -318,11 +318,11 @@ pub fn call_token<R: Runtime>(
     app: AppHandle<R>,
     db: State<'_, Db>,
     vault: State<'_, credentials::Vault>,
+    local: State<'_, LocalServer>,
     found: State<'_, agents::Agents>,
     call_agents: State<'_, CallAgents>,
     call_id: i64,
 ) -> Result<CallToken> {
-    let keys = livekit_keys(&app, &vault)?;
     let (project, history, settings) = {
         let conn = db.conn();
         let project_id: i64 = conn
@@ -341,17 +341,22 @@ pub fn call_token<R: Runtime>(
     };
     let room = room_name(call_id);
     // A call opened in this run has its own list; any other gets the last one found.
-    let OpenedWith { agents, picks } = match call_agents.get(call_id) {
+    let OpenedWith {
+        server,
+        agents,
+        picks,
+    } = match call_agents.get(call_id) {
         Some(opened) => opened,
         None => OpenedWith {
+            server: call_server::current(&app, &db, &vault, &local)?,
             agents: agents::usable(&found.cached().unwrap_or_default()),
             picks: agent_picks::saved(&db.conn())?,
         },
     };
     let metadata = dispatch_metadata(&project, &agents, &picks, &settings, &history);
     Ok(CallToken {
-        participant_token: token(&keys, &room, metadata)?,
-        server_url: keys.url,
+        participant_token: token(&server, &room, metadata)?,
+        server_url: server.url,
     })
 }
 
@@ -423,9 +428,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_current_call_keeps_its_agents_until_the_next_one_opens() {
+    fn the_current_call_keeps_its_server_and_agents_until_the_next_one_opens() {
         let agents = CallAgents::default();
+        let server = LiveKitKeys {
+            url: "ws://127.0.0.1:41000".into(),
+            api_key: "bomby".into(),
+            api_secret: "secret".into(),
+        };
         let claude = OpenedWith {
+            server: server.clone(),
             agents: vec![(
                 "claude".to_owned(),
                 PathBuf::from("/Users/me/.local/bin/claude"),
@@ -443,6 +454,7 @@ mod tests {
         assert_eq!(agents.get(2), None);
 
         let none = OpenedWith {
+            server,
             agents: vec![],
             picks: HashMap::new(),
         };
@@ -578,6 +590,7 @@ mod tests {
         let settings = settings::CallSettings {
             voice: "Kore".into(),
             user_name: "Sam".into(),
+            tone: settings::Tone::Chatty,
         };
         let picks = HashMap::from([
             (
@@ -604,6 +617,7 @@ mod tests {
                 "picks": { "claude": [{ "setting": "model", "value": "opus" }] },
                 "voice": "Kore",
                 "user_name": "Sam",
+                "tone": "chatty",
                 "history": [{ "role": "agent", "text": "Hi." }],
             })
         );
@@ -611,7 +625,7 @@ mod tests {
 
     #[test]
     fn the_token_joins_the_room_and_dispatches_the_agent_with_the_project() {
-        let keys = credentials::LiveKitKeys {
+        let keys = LiveKitKeys {
             url: "wss://x.livekit.cloud".into(),
             api_key: "key".into(),
             api_secret: "a-secret-long-enough-for-hs256-signing".into(),

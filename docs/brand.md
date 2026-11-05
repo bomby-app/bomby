@@ -53,7 +53,7 @@ Owner's choices, 2026-11-04:
 
 Ready setup marks are an ink thumbs-up on highlighter. A missing item in Setup is a bubblegum button with ink text that goes to where it is added (Add key, Set up); the ink cross on bubblegum remains for a missing item without an action. In the agents panel each task's status is one ink icon on a disc, its label a tooltip: bubblegum while it waits or joins a running task (queued, added), highlighter for working (spinning), done, failed and stopped (owner, 2026-11-05).
 
-Ink on highlighter (16.8:1) and bubblegum (9.7:1) is readable. Highlighter on white (1.1:1) and bubblegum on white (1.9:1) are never text or icons. Links use ink with a 3px highlighter underline; dark-mode links may use highlighter text.
+Ink on highlighter (16.8:1) and bubblegum (9.7:1) is readable. Highlighter on white (1.1:1) and bubblegum on white (1.9:1) are never text or icons. Links are full-contrast text (ink in light, white in dark) in medium weight, underlined only on hover, beside muted body text (owner, 2026-11-05).
 
 ## Type
 
@@ -84,14 +84,14 @@ Motion uses CSS transforms on one SVG. Eyes lead; only sound scales the bubble. 
 
 ## First run
 
-Paper page `splash`, option A (owner, 2026-11-04), in `app/src/features/onboarding/`. It shows until a call has everything it needs, and nothing gets past it before that: an agent that's set up, the LiveKit keys and the Gemini key (owner, 2026-11-05).
+Paper page `splash`, option A (owner, 2026-11-04), in `app/src/features/onboarding/`. It shows until a call has everything it needs, and nothing gets past it before that: an agent that's set up, LiveKit (on this Mac, or the user's keys) and the Gemini key (owner, 2026-11-05).
 
 - **Glow.** `components/day-glow.tsx`: a glow rising from the bottom, by the Mac's clock: highlighter in the morning (5 to 12), option B's bubblegum glow around a highlighter core in the afternoon (12 to 17), bubblegum in option A's shape in the evening. Dark mode uses the dark boards. Its `rest` stage is the projects view's glow (page `projects view`), for reuse there.
 - **Sequence.** One GSAP timeline, each move after the last, slow in and slow out (sine), as the owner asked (2026-11-05): the glow comes up from nothing while Dot Dot floats up from below with its eyes closed (3.2 s, slowing as it arrives); as it arrives its eyes open and it settles to full size, then it looks left, right and back at you; "Good morning, I'm bomby." and "Let's set up your first agent." fade in under it, stay 2.4 s and fade out; then Dot Dot moves up, small and listening, and the setup fades in with a slight rise. A new step fades the old one out first. About 11 s in all, with the six-second opening sound (`app/src/assets/splash-music.mp3`) at the start; reduced motion starts at the setup.
 - **Film grain.** `components/film-grain.tsx`: moving grain over the glow, one tiny WebGL shader with no libraries, at 24 frames a second, blended with overlay at 9% (12% in dark); one still frame with reduced motion.
 - **Mascot with depth.** `<Mascot depth />`: Paper's lit bubble (a gradient from above, a rim of light, catchlights in the eyes, a soft shadow), an ink bubble with highlighter eyes in light and the reverse in dark (`--mascot-*` tokens). Its closed eyes are the curved lids of the Done state; waking crossfades them into round eyes that open from a squint (560 ms), with the blink on its own layer. `look` turns the eyes left or right.
 - **The agent step.** Claude Code when it's installed, ready or not, else Codex, else the first ready agent (owner, 2026-11-05), with Set up now (installs its adapter), the command it needs, or Ready; "Use … instead" picks another. Claude's tile keeps Claude's own colours, as the owner's board shows (`--agent-claude`).
-- **Just one more step.** The LiveKit and Gemini keys on the same cards: Paste all reads LiveKit Cloud's Environment variables box from the clipboard, Paste key the Gemini key; "type them in" opens the Settings forms in a dialog. Steps already done are skipped.
+- **Just one more step.** LiveKit as two cards in one row, then Gemini (Paper "05 Keys · LiveKit choice" and "Cloud · A widens", owner, 2026-11-05). Local (white logo) is selected by default; choosing Cloud (blue logo) eases Local down to its tile and widens Cloud, whose Paste all reads LiveKit Cloud's Environment variables box from the clipboard. Paste key takes the Gemini key; the paste buttons share one width, and a saved key says "Saved". "type them in" opens one form with one Save. The heading's line and the footnote never change. With every key in, the step says "You're all set" and the round arrow goes on; it doesn't go back to the agent's card.
 - **Done.** With all three, the agent's card says "You're all set" and the round continue arrow appears, bottom right. It opens the projects home.
 
 ## Projects home
@@ -119,7 +119,7 @@ Short, everyday sentences with contractions. Name the actor: Claude does the wor
 | Update on its way | Getting version 0.2.0... / 42% · Bomby restarts when it's done. |
 | Update waiting for a call to end | Version 0.2.0 is downloaded. / Restart Bomby to finish, once your call is over. [Restart to update] |
 
-`agent/prompts/voice.md` applies this voice to the spoken agent, written as behaviour rather than adjectives because Gemini Live reads every word as an instruction (owner, 2026-11-04): one-or-two-sentence, outcome-first replies; even tone; no hype; humour only when the user jokes; silence while the user is quiet.
+`agent/prompts/sharp.md` (and its tone variants, `chatty.md` and `playful.md`) applies this voice to the spoken agent, written as behaviour rather than adjectives because Gemini Live reads every word as an instruction (owner, 2026-11-04): one-or-two-sentence, outcome-first replies; even tone; no hype; humour only when the user jokes; silence while the user is quiet.
 
 ## App assets
 

@@ -86,9 +86,12 @@ export function Splash({ onDone }: { onDone: () => void }) {
     agent !== null &&
     pickingFor === agent.id &&
     ["pick", "ready"].includes(setupStep(agent))
-  // The keys come once the agent is ready; with both, the agent's card says all is set.
-  const step =
-    agentReady && !picking && keys !== null && !keysReady ? "keys" : "agent"
+  // The keys come once the agent is ready.
+  const keysMissing = agentReady && !picking && keys !== null && !keysReady
+  // Once shown, the keys step stays and says all is set itself.
+  const [keysShown, setKeysShown] = useState(false)
+  if (keysMissing && !keysShown) setKeysShown(true)
+  const step = keysMissing || (keysShown && ready) ? "keys" : "agent"
   // The step on screen: it follows `step`, fading out, then in.
   const [shown, setShown] = useState(step)
   const latestStep = useRef(step)
@@ -260,7 +263,7 @@ export function Splash({ onDone }: { onDone: () => void }) {
         <h1 className="font-heading text-[40px] leading-[44px] font-bold tracking-[-0.035em]">
           {GREETING[daypart]}, I'm bomby.
         </h1>
-        <p className="text-[15px] leading-5 text-foreground/60">
+        <p className="text-[15px] leading-5 text-muted-foreground">
           Let's set up your first agent.
         </p>
       </div>
@@ -271,7 +274,7 @@ export function Splash({ onDone }: { onDone: () => void }) {
         style={{ top: SETUP_TOP }}
       >
         {shown === "keys" && keys ? (
-          <KeysStep keys={keys} />
+          <KeysStep keys={keys} allSet={ready} />
         ) : (
           <FirstAgent
             agents={agents}

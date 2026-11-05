@@ -16,10 +16,15 @@ default:
 install:
     bun install
 
+# tauri-build won't compile the core without the bundled LiveKit server.
+[private]
+livekit-server:
+    {{ just_executable() }} --justfile {{ justfile_directory() }}/justfile livekit build
+
 # Run the app with hot reload: Vite serves the frontend, cargo builds and opens the window
 [group('run')]
 [working-directory: 'app']
-dev:
+dev: livekit-server
     bun run tauri dev
 
 # The agent is frozen first (`just agent freeze`). With the APPLE_* variables set
@@ -30,7 +35,7 @@ dev:
 # Build the release app bundle, with the voice agent, into app/src-tauri/target/release/bundle (.app and .dmg)
 [group('run')]
 [working-directory: 'app']
-build *args:
+build *args: livekit-server
     {{ just_executable() }} --justfile {{ justfile_directory() }}/justfile agent freeze
     if [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then {{ just_executable() }} --justfile {{ justfile_directory() }}/justfile agent sign; fi
     bun run tauri build {{ args }}
@@ -38,7 +43,7 @@ build *args:
 # Format-check, lint and type-check the frontend (Vite+: Oxfmt, Oxlint, tsgolint) and the Rust core (clippy, rustfmt); warnings fail
 [group('check')]
 [working-directory: 'app']
-lint:
+lint: livekit-server
     bun x vp check --deny-warnings
     cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
     cargo fmt --manifest-path src-tauri/Cargo.toml --check
@@ -77,7 +82,7 @@ types: (cargo-test "src/generated" "export_bindings")
 # (docs/tauri-notes.md#generated-types); 64-bit integers as numbers, never past 2^53
 [private]
 [working-directory: 'app']
-cargo-test types filter="":
+cargo-test types filter="": livekit-server
     rm -rf {{ types }}
     TS_RS_EXPORT_DIR="$PWD/{{ types }}" TS_RS_LARGE_INT=number cargo test --manifest-path src-tauri/Cargo.toml {{ filter }}
 

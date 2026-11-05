@@ -1,9 +1,9 @@
 //! App settings that aren't secrets, kept in the database's `settings` table: the agent's
-//! voice and what the user likes to be called, both sent with every call
+//! voice, what the user likes to be called and the tone they prefer, all sent with every call
 //! (`calls::call_token`), and whether the first run is done.
 
 use rusqlite::{Connection, OptionalExtension, params};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::db::Db;
@@ -13,11 +13,52 @@ const VOICE_KEY: &str = "voice";
 /// What the user likes to be called; empty or missing when they'd rather not say.
 const USER_NAME_KEY: &str = "user_name";
 const MAX_USER_NAME_LEN: usize = 50;
+const TONE_KEY: &str = "tone";
+
+/// How Bomby talks: each picks its own voice prompt (`agent/prompts/<tone>.md`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "voice.ts"))]
+pub enum Tone {
+    #[default]
+    Sharp,
+    Chatty,
+    Playful,
+}
+
+impl Tone {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Sharp => "sharp",
+            Self::Chatty => "chatty",
+            Self::Playful => "playful",
+        }
+    }
+}
 /// Set once the first-run splash has set up an agent.
 const FIRST_RUN_KEY: &str = "first_run_done";
+const LIVEKIT_SERVER_KEY: &str = "livekit_server";
 
-/// Used when none is chosen: the voice the agent has always had (`agent/call_options.py`).
-pub const DEFAULT_VOICE: &str = "Charon";
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "credentials.ts"))]
+pub enum LiveKitServer {
+    ThisMac,
+    /// LiveKit Cloud or a server they run, with their keys.
+    Theirs,
+}
+
+impl LiveKitServer {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::ThisMac => "this_mac",
+            Self::Theirs => "theirs",
+        }
+    }
+}
+
+/// Used when none is chosen; the agent defaults to it too (`agent/call_options.py`).
+pub const DEFAULT_VOICE: &str = "Leda";
 
 /// Gemini's 30 prebuilt voices: name, style and pitch, as Google lists them for Gemini 3.8
 /// (ai.google.dev/gemini-api/docs/speech-generation#voices, and AI Studio for the pitch,
@@ -95,12 +136,14 @@ pub(crate) struct CallSettings {
     pub(crate) voice: String,
     /// Empty when the user hasn't given one.
     pub(crate) user_name: String,
+    pub(crate) tone: Tone,
 }
 
 pub(crate) fn for_call(conn: &Connection) -> Result<CallSettings> {
     Ok(CallSettings {
         voice: voice(conn)?,
         user_name: read_user_name(conn)?,
+        tone: read_tone(conn)?,
     })
 }
 
@@ -159,6 +202,46 @@ pub fn set_user_name(db: State<'_, Db>, name: String) -> Result<String> {
     save_user_name(&db.conn(), &name)
 }
 
+/// Until chosen: theirs if their keys are saved, so existing installs stay on them. Saved
+/// on first read, so removing the keys later doesn't switch calls to this Mac.
+pub(crate) fn livekit_server(conn: &Connection, has_their_keys: bool) -> Result<LiveKitServer> {
+    match get(conn, LIVEKIT_SERVER_KEY)?.as_deref() {
+        Some("this_mac") => Ok(LiveKitServer::ThisMac),
+        Some("theirs") => Ok(LiveKitServer::Theirs),
+        _ => {
+            let server = if has_their_keys {
+                LiveKitServer::Theirs
+            } else {
+                LiveKitServer::ThisMac
+            };
+            save_livekit_server(conn, server)?;
+            Ok(server)
+        }
+    }
+}
+
+pub(crate) fn save_livekit_server(conn: &Connection, server: LiveKitServer) -> Result<()> {
+    put(conn, LIVEKIT_SERVER_KEY, server.as_str())
+}
+
+fn read_tone(conn: &Connection) -> Result<Tone> {
+    Ok(match get(conn, TONE_KEY)?.as_deref() {
+        Some("chatty") => Tone::Chatty,
+        Some("playful") => Tone::Playful,
+        _ => Tone::Sharp,
+    })
+}
+
+#[tauri::command(async)]
+pub fn tone(db: State<'_, Db>) -> Result<Tone> {
+    read_tone(&db.conn())
+}
+
+#[tauri::command(async)]
+pub fn set_tone(db: State<'_, Db>, tone: Tone) -> Result<()> {
+    put(&db.conn(), TONE_KEY, tone.as_str())
+}
+
 /// Whether this is the first run: the splash shows until it has set up an agent.
 #[tauri::command(async)]
 pub fn first_run(db: State<'_, Db>) -> Result<bool> {
@@ -175,7 +258,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn defaults_to_charon_and_keeps_a_chosen_voice() {
+    fn defaults_to_leda_and_keeps_a_chosen_voice() {
         let db = Db::in_memory().unwrap();
         let conn = db.conn();
         assert_eq!(voice(&conn).unwrap(), DEFAULT_VOICE);
@@ -208,6 +291,35 @@ mod tests {
 
         assert_eq!(save_user_name(&conn, "   ").unwrap(), "");
         assert_eq!(read_user_name(&conn).unwrap(), "");
+    }
+
+    #[test]
+    fn keeps_their_livekit_until_the_user_chooses() {
+        let db = Db::in_memory().unwrap();
+        let conn = db.conn();
+        assert_eq!(livekit_server(&conn, true).unwrap(), LiveKitServer::Theirs);
+        // Saved once worked out: removing the keys later keeps it.
+        assert_eq!(livekit_server(&conn, false).unwrap(), LiveKitServer::Theirs);
+
+        let fresh = Db::in_memory().unwrap();
+        assert_eq!(
+            livekit_server(&fresh.conn(), false).unwrap(),
+            LiveKitServer::ThisMac
+        );
+
+        save_livekit_server(&conn, LiveKitServer::ThisMac).unwrap();
+        assert_eq!(livekit_server(&conn, true).unwrap(), LiveKitServer::ThisMac);
+        save_livekit_server(&conn, LiveKitServer::Theirs).unwrap();
+        assert_eq!(livekit_server(&conn, false).unwrap(), LiveKitServer::Theirs);
+    }
+
+    #[test]
+    fn the_tone_is_sharp_until_one_is_chosen() {
+        let db = Db::in_memory().unwrap();
+        let conn = db.conn();
+        assert_eq!(for_call(&conn).unwrap().tone, Tone::Sharp);
+        put(&conn, TONE_KEY, Tone::Playful.as_str()).unwrap();
+        assert_eq!(for_call(&conn).unwrap().tone, Tone::Playful);
     }
 
     #[test]

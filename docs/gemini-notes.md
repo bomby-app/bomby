@@ -40,18 +40,20 @@ Sources:
 
 ## Voices
 
-- Live accepts TTS voice names through `RealtimeModel(voice=...)`. The app offers the 30 prebuilt voices in `app/src-tauri/src/settings.rs`; Charon is default.
+- Live accepts TTS voice names through `RealtimeModel(voice=...)`. The app offers the 30 prebuilt voices in `app/src-tauri/src/settings.rs`; Leda is default (owner, 2026-11-06).
 - `GET /v1beta/voices` also lists custom and catalog voices with pagination. Whether Live accepts those ids is untested; Bomby deliberately uses the 30 defaults.
 
 ## Language
 
-- Native-audio Live selects spoken language automatically; system instructions can restrict it. `prompts/voice.md` keeps English unless the user switches.
+- Native-audio Live selects spoken language automatically; system instructions can restrict it. The tone prompts (`prompts/<tone>.md`) keep English unless the user switches.
 - `agent.py` passes input transcription hint `AudioTranscriptionConfig(language_codes=["en-US"])` after noisy audio produced incorrect transcripts.
 - Gemini sends user transcription around the start of its answer, so the user's line appears with the agent's turn. LiveKit realtime models provide no interim user transcript; a separate STT would be needed to avoid the delay, and the owner chose not to add one.
 
 ## Prompting
 
-- `prompts/voice.md` has the owner's sections: Role, Tone, How you work, Non-negotiable rules. Plain sentences that describe behaviour, positive phrasing, negative rules only for what models do by default, sentence case (owner, 2026-11-04: no shouting at a modern model).
+- The tone prompts (`prompts/sharp.md`, `chatty.md`, `playful.md`) have the owner's sections: Role, Tone, How you work, Non-negotiable rules. Plain sentences that describe behaviour, positive phrasing, negative rules only for what models do by default, sentence case (owner, 2026-11-04: no shouting at a modern model).
+- **The prompt's writing style sets the voice.** A tone described in one section of a plainly written prompt barely changes how Live talks; written in that tone throughout, it does (owner's test, 2026-11-05). So each tone prompt is written in its tone, and the guardrails stay plain and identical.
+- **Never give lines to say.** A quoted joke or catchphrase in the prompt gets parroted as is; describe the behaviour and ask for it in the model's own words, fresh each time (owner, 2026-11-05). Quoted examples of what to refer to ("the login page") are fine.
 - Google's best practices: persona first (name, role, character, language), then conversational rules in the order to follow them, tool calls each in their own sentence inside that flow, then guardrails with "if X happens, do Y" examples. Use "unmistakably" where the model must be precise. One prompt per persona, no multi-page prompts.
 - Tool docstrings say when to invoke the tool, not only what it does. The Live API waits for the user before speaking, so `on_enter` prompts the greeting.
 

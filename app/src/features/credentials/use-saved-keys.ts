@@ -1,6 +1,13 @@
 import { createStore, useStore } from "@/lib/store"
 
-import { credentialsInfo, hasGeminiKey, onKeysChanged } from "./api"
+import {
+  credentialsInfo,
+  hasGeminiKey,
+  type LiveKitServer,
+  livekitServer,
+  onKeysChanged,
+  setLivekitServer,
+} from "./api"
 
 /**
  * Which keys are saved, for this page: only whether each exists, never a key itself (the
@@ -8,9 +15,17 @@ import { credentialsInfo, hasGeminiKey, onKeysChanged } from "./api"
  * whenever any window saves or removes one (keys-changed) and on Check again. Every
  * component shares it, so a section that opens again shows it at once.
  */
+export type Keys = {
+  server: LiveKitServer
+  /** Ready for a call: this Mac's, or their keys saved. */
+  livekit: boolean
+  theirLiveKit: boolean
+  gemini: boolean
+}
+
 type SavedKeys = {
   /** null until the core first answers. */
-  keys: { livekit: boolean; gemini: boolean } | null
+  keys: Keys | null
   error: string | null
 }
 
@@ -19,7 +34,7 @@ const store = createStore<SavedKeys>({ keys: null, error: null }, () => {
   void checkKeysAgain()
 })
 
-/** Whether the LiveKit keys (with their secret) and the Gemini key are saved. */
+/** The LiveKit server calls use, and which keys are saved. */
 export function useSavedKeys(): SavedKeys {
   return useStore(store)
 }
@@ -30,12 +45,35 @@ export function useSavedKeys(): SavedKeys {
  */
 export async function checkKeysAgain(): Promise<void> {
   try {
-    const [livekit, gemini] = await Promise.all([
+    const [server, theirs, gemini] = await Promise.all([
+      livekitServer(),
       credentialsInfo(),
       hasGeminiKey(),
     ])
-    store.set({ keys: { livekit: !!livekit?.hasSecret, gemini }, error: null })
+    const theirLiveKit = !!theirs?.hasSecret
+    store.set({
+      keys: {
+        server,
+        livekit: server === "thisMac" || theirLiveKit,
+        theirLiveKit,
+        gemini,
+      },
+      error: null,
+    })
   } catch (e) {
     store.set({ ...store.get(), error: String(e) })
   }
+}
+
+/** Never rejects, like `checkKeysAgain`. */
+export async function chooseLiveKitServer(
+  server: LiveKitServer
+): Promise<void> {
+  try {
+    await setLivekitServer(server)
+  } catch (e) {
+    store.set({ ...store.get(), error: String(e) })
+    return
+  }
+  await checkKeysAgain()
 }

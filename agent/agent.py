@@ -62,9 +62,10 @@ class Assistant(Agent):
     @override
     async def on_enter(self) -> None:
         greeting = (
-            "Welcome the user back in a few words and pick up where you left off."
+            # Neutral, so the tone prompt decides how.
+            "Welcome the user back and pick up where you left off."
             if self._resumed
-            else "Greet the user briefly."
+            else "Greet the user."
         )
         _ = self.session.generate_reply(instructions=greeting)  # pyright: ignore[reportUnknownMemberType]
 
@@ -93,11 +94,12 @@ async def entrypoint(ctx: JobContext) -> None:
     # The voice and, on a resumed call, the conversation so far.
     options = CallOptions.from_job(job, os.environ)
     logger.info(
-        "project %s in %s, agents %s, voice %s, %d earlier lines",
+        "project %s in %s, agents %s, voice %s, tone %s, %d earlier lines",
         runners.project.name,
         ", ".join(str(f) for f in runners.project.folders),
         ", ".join(h.id for h in runners.available) or "none",
         options.voice,
+        options.tone,
         len(options.history),
     )
 

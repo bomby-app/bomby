@@ -5,7 +5,9 @@ from harnesses import HARNESSES
 from job import Line
 from project import Project
 from tools import agents_note
-from voice_prompt import VOICE, voice_instructions
+from voice_prompt import PROMPTS, voice_instructions
+
+VOICE = PROMPTS["sharp"]
 
 AGENTS = [HARNESSES["claude"]]
 
@@ -52,3 +54,24 @@ def test_a_resumed_call_ends_with_the_previous_conversation() -> None:
 
     assert text.index("## Project context") < text.index("## Previous conversation")
     assert text.endswith("User: fix the login\nYou: Done.")
+
+
+def test_each_tone_gets_its_own_prompt() -> None:
+    for tone in ("sharp", "chatty", "playful"):
+        text = voice_instructions(
+            project(), CallOptions(voice="Kore", tone=tone), AGENTS
+        )
+        assert text.startswith(PROMPTS[tone])
+    assert len(set(PROMPTS.values())) == 3
+
+
+def test_every_tone_keeps_the_same_rules_and_sections() -> None:
+    def rules(prompt: str) -> str:
+        return prompt[prompt.index("## Non-negotiable rules") :]
+
+    def headings(prompt: str) -> list[str]:
+        return [line for line in prompt.splitlines() if line.startswith("## ")]
+
+    for tone in ("chatty", "playful"):
+        assert rules(PROMPTS[tone]) == rules(PROMPTS["sharp"])
+        assert headings(PROMPTS[tone]) == headings(PROMPTS["sharp"])

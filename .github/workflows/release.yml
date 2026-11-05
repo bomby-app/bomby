@@ -46,7 +46,7 @@ jobs:
       # files another workflow could have left (zizmor's cache-poisoning audit).
       - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
         with:
-          install_args: rust bun uv just
+          install_args: rust go bun uv just
           cache: false
 
       - name: Install the frontend's dependencies
@@ -130,6 +130,11 @@ jobs:
 
       - name: Check the signed agent runs
         run: just agent check-frozen "$PWD/$APP/Contents/Resources/agent/bomby-agent"
+
+      - name: Check the signed LiveKit server runs
+        run: |
+          codesign --verify --strict --verbose=2 "$APP/Contents/MacOS/livekit-server"
+          "$APP/Contents/MacOS/livekit-server" --version
 
       # What installed copies read to find this version once the release is published
       # (plugins.updater.endpoints in tauri.conf.json).

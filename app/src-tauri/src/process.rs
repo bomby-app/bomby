@@ -22,6 +22,20 @@ pub fn wait_timeout(child: &mut Child, timeout: Duration) -> io::Result<Option<E
     }
 }
 
+/// For a child started with `process_group(0)`: SIGTERM to its group, SIGKILL after `grace`.
+pub fn stop_group(mut child: Child, grace: Duration) {
+    #[cfg(unix)]
+    if let Ok(pid) = i32::try_from(child.id()) {
+        // SAFETY: killpg only sends a signal; the group is the one the child leads.
+        unsafe { libc::killpg(pid, libc::SIGTERM) };
+        if let Ok(Some(_)) = wait_timeout(&mut child, grace) {
+            return;
+        }
+        unsafe { libc::killpg(pid, libc::SIGKILL) };
+    }
+    kill(&mut child);
+}
+
 /// Kills `child` and reaps it, so it leaves no zombie.
 pub fn kill(child: &mut Child) {
     let _ = child.kill();

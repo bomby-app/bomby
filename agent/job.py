@@ -61,6 +61,7 @@ class JobMetadata(BaseModel):
         Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)] | None
     ) = None
     user_name: Text = ""
+    tone: Text = ""
     history: tuple[Line, ...] = ()
 
     @model_validator(mode="before")
