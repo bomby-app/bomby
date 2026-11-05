@@ -14,6 +14,7 @@ import {
   agentSettings,
   type Listed,
   pickAgentSettings,
+  sentence,
   type Skipped,
 } from "./api"
 import { SettingField } from "./setting-field"
@@ -129,7 +130,7 @@ function Settings({
       <p className="text-sm text-muted-foreground">
         {/* Nothing listed because something's wrong: say what, not "nothing to pick". */}
         {listed.step !== "ready" && listed.problem
-          ? `${listed.problem}.`
+          ? sentence(listed.problem)
           : `${name} has nothing to pick: it runs on its own setup.`}
       </p>
     )

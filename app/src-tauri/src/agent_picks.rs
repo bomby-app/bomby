@@ -146,10 +146,13 @@ pub async fn pick_agent_settings<R: Runtime>(
         if let Some(why) = not_taken(&listed, &pick, &agent) {
             return Err(Error::Invalid(why));
         }
-        save(&mut db.conn(), &agent, &held(picks, &listed))?;
-        // Those were picks that fell away with this one (a model gone with its provider):
-        // no longer saved, so nothing of the user's is skipped.
-        listed.setup.skipped.clear();
+        let saved = to_save(picks, &listed, &pick);
+        save(&mut db.conn(), &agent, &saved)?;
+        // A pick that fell away with this one isn't the user's any more: no note for it.
+        listed
+            .setup
+            .skipped
+            .retain(|s| saved.iter().any(|p| p.setting == s.setting));
         show(&app, app.state::<Agents>().picked(&agent, &listed.setup));
         Ok(listed)
     })
@@ -175,18 +178,27 @@ fn not_taken(listed: &Listed, pick: &Pick, agent: &str) -> Option<String> {
     })
 }
 
-/// The `picks` that held in `listed`, in the agent's own order: one that fell away with the
-/// new pick (a model gone with its provider) leaves its default rather than being saved.
-fn held(mut picks: Vec<Pick>, listed: &Listed) -> Vec<Pick> {
-    picks.retain(|p| !listed.setup.skipped.iter().any(|s| s.setting == p.setting));
-    let order = |p: &Pick| {
+/// What to save once `new` held, in the agent's own order: all of `picks` but those that
+/// fell away with it, a value no longer offered for a setting the agent applies after it (a
+/// model gone with its provider), which leave their default. Any other the agent couldn't
+/// apply now (a provider refused for a missing key today) stays saved, with its note.
+fn to_save(mut picks: Vec<Pick>, listed: &Listed, new: &Pick) -> Vec<Pick> {
+    let order = |setting: &str| {
         listed
             .settings
             .iter()
-            .position(|s| s.id == p.setting)
+            .position(|s| s.id == setting)
             .unwrap_or(usize::MAX)
     };
-    picks.sort_by_key(order);
+    let after_new = |setting: &str| order(setting) > order(&new.setting);
+    picks.retain(|p| {
+        !listed
+            .setup
+            .skipped
+            .iter()
+            .any(|s| s.setting == p.setting && s.why == Why::Gone && after_new(&p.setting))
+    });
+    picks.sort_by_key(|p| order(&p.setting));
     picks
 }
 
@@ -256,7 +268,7 @@ mod tests {
     }
 
     #[test]
-    fn keeps_only_the_picks_that_held_in_the_agents_order() {
+    fn keeps_every_pick_but_those_that_fell_away_with_the_new_one() {
         let setting = |id: &str| setup::Setting {
             id: id.into(),
             name: id.into(),
@@ -264,27 +276,49 @@ mod tests {
             current: String::new(),
             options: Vec::new(),
         };
-        let listed = Listed {
+        let skipped = |setting: &str, why| setup::Skipped {
+            setting: setting.into(),
+            name: setting.into(),
+            value: String::new(),
+            why,
+        };
+        let listed = |skipped| Listed {
             setup: setup::Setup {
-                skipped: vec![setup::Skipped {
-                    setting: "effort".into(),
-                    name: "Effort".into(),
-                    value: "max".into(),
-                    why: setup::Why::Refused,
-                }],
+                skipped,
                 ..setup::Setup::default()
             },
             settings: vec![setting("provider"), setting("model"), setting("effort")],
         };
         let picks = vec![
-            pick("model", "kimi"),
             pick("effort", "max"),
+            pick("model", "kimi"),
             pick("provider", "p"),
         ];
 
+        // A new provider: the model it no longer offers falls away with it.
         assert_eq!(
-            held(picks, &listed),
-            [pick("provider", "p"), pick("model", "kimi")]
+            to_save(
+                picks.clone(),
+                &listed(vec![skipped("model", Why::Gone)]),
+                &pick("provider", "p")
+            ),
+            [pick("provider", "p"), pick("effort", "max")]
+        );
+        // A new effort: a provider refused today and its model stay saved.
+        assert_eq!(
+            to_save(
+                picks,
+                &listed(vec![
+                    skipped("provider", Why::Refused),
+                    skipped("model", Why::Gone)
+                ]),
+                &pick("effort", "max")
+            ),
+            [
+                pick("provider", "p"),
+                pick("model", "kimi"),
+                pick("effort", "max")
+            ]
         );
     }
 }

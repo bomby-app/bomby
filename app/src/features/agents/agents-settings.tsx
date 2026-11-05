@@ -6,7 +6,7 @@ import { ErrorCard } from "@/components/error-card"
 import { StatusMark, StatusRow } from "@/components/status-row"
 
 import { AgentLogo } from "./agent-logos"
-import { type AgentStatus, versionNumber } from "./api"
+import { type AgentStatus, sentence, versionNumber } from "./api"
 import { CopyButton } from "./copy-button"
 import { InstallFirstAgent } from "./install-first-agent"
 import { ModelPicker, skippedNote } from "./model-picker"
@@ -100,7 +100,7 @@ function detail(agent: AgentStatus): ReactNode {
       return `Found on this Mac. Set it up to use it in calls.`
     case "sign_in": {
       const problem = setup?.problem && (
-        <span className="select-text">{setup.problem}. </span>
+        <span className="select-text">{sentence(setup.problem)} </span>
       )
       return setup?.fix ? (
         <>
@@ -115,7 +115,7 @@ function detail(agent: AgentStatus): ReactNode {
       )
     }
     case "unreachable":
-      return `${setup?.problem ?? "It didn't answer"}. Check again in a moment.`
+      return `${sentence(setup?.problem ?? "It didn't answer")} Check again in a moment.`
     case "pick":
       return setup?.skipped.length
         ? `${skippedNote(setup.skipped[0], name)} Calls use it once its model is picked.`

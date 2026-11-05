@@ -130,7 +130,15 @@ export function FirstAgent({
         )}
         {(phase === "sign_in" ||
           phase === "unreachable" ||
-          phase === "missing") && <CheckAgain />}
+          phase === "missing") && (
+          <CheckAgain
+            // Something to run first: an install, or the agent's own fix.
+            afterCommand={
+              phase === "missing" ||
+              (phase === "sign_in" && !!agent?.setup?.fix)
+            }
+          />
+        )}
         {/* Another agent can always be picked, also while this one needs fixing. */}
         {others.some((other) => other.path !== null) && (
           <OtherAgents agents={others} onChoose={onChoose} />
@@ -250,16 +258,18 @@ function Action({ agent, phase }: { agent: AgentStatus | null; phase: Phase }) {
 }
 
 /** After running a command in Terminal: look again. */
-function CheckAgain() {
+/** "Run it in Terminal, then check again", or just "Check again" with nothing to run. */
+function CheckAgain({ afterCommand }: { afterCommand: boolean }) {
   const [checking, startChecking] = useTransition()
+  const label = checking ? "checking..." : "check again"
   return (
     <span className="flex items-center gap-1.5 text-[13px] leading-[18px] text-foreground/55">
-      Run it in Terminal, then
+      {afterCommand && "Run it in Terminal, then"}
       <InlineLink
         disabled={checking}
         onClick={() => startChecking(checkAgentsAgain)}
       >
-        {checking ? "checking..." : "check again"}
+        {afterCommand ? label : label[0].toUpperCase() + label.slice(1)}
       </InlineLink>
     </span>
   )

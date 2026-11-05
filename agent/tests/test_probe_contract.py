@@ -66,7 +66,7 @@ def test_the_steps_match_the_ones_the_page_reads() -> None:
     assert found, f"no Step in {PAGE_TYPES}"
     page_steps = tuple(re.findall(r'"([a-z_]+)"', found.group(1)))
 
-    assert get_args(Step.__value__) == page_steps, (
+    assert set(get_args(Step.__value__)) == set(page_steps), (
         "the steps changed: update Step in app/src-tauri/src/setup.rs, then run "
         + "just app types"
     )

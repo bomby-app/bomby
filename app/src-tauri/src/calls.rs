@@ -148,8 +148,9 @@ struct HistoryLine {
 /// The job metadata the agent reads: the project with what the user wrote about it
 /// (`Project.from_job` in `agent/project.py`), the agents found on this computer by id with
 /// their programs and the picks each session gets (`JobMetadata.picks` in `agent/job.py`,
-/// applied by `apply` in `agent/acp_client/settings.py`), the voice, what the user likes to be called and, on a
-/// resumed call, the conversation so far (`CallOptions.from_job` in `agent/call_options.py`).
+/// applied by `apply` in `agent/acp_client/settings.py`), the voice, what the user likes to
+/// be called and, on a resumed call, the conversation so far (`CallOptions.from_job` in
+/// `agent/call_options.py`).
 fn dispatch_metadata(
     project: &projects::CallProject,
     agents: &[(String, PathBuf)],
@@ -282,6 +283,8 @@ pub fn open_call<R: Runtime>(
     )?;
 
     let conn = db.conn();
+    // Read before the call is recorded, so a failed read leaves no call without its agents.
+    let picks = agent_picks::saved(&conn)?;
     let call_id = match resume_call_id {
         Some(call_id) => {
             reopen(&conn, project_id, call_id)?;
@@ -295,7 +298,6 @@ pub fn open_call<R: Runtime>(
             conn.last_insert_rowid()
         }
     };
-    let picks = agent_picks::saved(&conn)?;
     call_agents.set(
         call_id,
         OpenedWith {
@@ -321,7 +323,7 @@ pub fn call_token<R: Runtime>(
     call_id: i64,
 ) -> Result<CallToken> {
     let keys = livekit_keys(&app, &vault)?;
-    let (project, history, settings, saved) = {
+    let (project, history, settings) = {
         let conn = db.conn();
         let project_id: i64 = conn
             .query_row(
@@ -335,15 +337,17 @@ pub fn call_token<R: Runtime>(
             projects::for_call(&conn, project_id)?,
             recent_lines(&conn, call_id)?,
             settings::for_call(&conn)?,
-            agent_picks::saved(&conn)?,
         )
     };
     let room = room_name(call_id);
     // A call opened in this run has its own list; any other gets the last one found.
-    let OpenedWith { agents, picks } = call_agents.get(call_id).unwrap_or_else(|| OpenedWith {
-        agents: agents::usable(&found.cached().unwrap_or_default()),
-        picks: saved,
-    });
+    let OpenedWith { agents, picks } = match call_agents.get(call_id) {
+        Some(opened) => opened,
+        None => OpenedWith {
+            agents: agents::usable(&found.cached().unwrap_or_default()),
+            picks: agent_picks::saved(&db.conn())?,
+        },
+    };
     let metadata = dispatch_metadata(&project, &agents, &picks, &settings, &history);
     Ok(CallToken {
         participant_token: token(&keys, &room, metadata)?,

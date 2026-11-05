@@ -307,10 +307,16 @@ class AcpRunner:
     async def _open(self, s: _Session) -> tuple[ClientSideConnection, str]:
         try:
             return await self._open_session(s)
-        except (OSError, RequestError, ConnectionError) as e:
+        except ToolError:
+            raise
+        except Exception as e:
             if self._closed:
                 raise ToolError(self._ending()) from e
-            logger.warning("%s could not start: %r", self._harness.id, e)
+            if isinstance(e, OSError | RequestError | ConnectionError):
+                logger.warning("%s could not start: %r", self._harness.id, e)
+            else:
+                # An answer the SDK can't read, say: the voice still hears one short line.
+                logger.exception("%s could not start", self._harness.id)
             raise ToolError(not_ready(self._harness)) from e
 
     async def _open_session(self, s: _Session) -> tuple[ClientSideConnection, str]:

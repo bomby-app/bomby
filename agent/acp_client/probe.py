@@ -11,6 +11,7 @@ closed afterwards: an agent like omp offers no models without a session.
 
 import asyncio
 import contextlib
+import logging
 import re
 import tempfile
 from collections.abc import Collection, Mapping, Sequence
@@ -35,6 +36,8 @@ from .client import HarnessClient, connect
 from .runner import launch
 from .sessions import can_delete, discard_session
 from .settings import Setting, Skipped, apply, model_name, needs_pick
+
+logger = logging.getLogger("bomby.acp_client.probe")
 
 TIMEOUT_S = 30
 # claude-agent-acp gives its own `claude auth status` run 5 s (`dist/auth-status.d.ts`).
@@ -114,6 +117,12 @@ async def probe(
         return Setup("unreachable", problem=f"It quit while starting: {detail(e)}")
     except OSError as e:
         return Setup("unreachable", problem=f"It couldn't be started: {detail(e)}")
+    # Anything else (an answer the SDK can't read) costs only this agent, not the probe.
+    except Exception as e:
+        logger.exception("probing %s failed", harness.id)
+        return Setup(
+            "unreachable", problem=f"It answered in a way Bomby can't read: {detail(e)}"
+        )
 
 
 async def probe_all(
@@ -167,8 +176,10 @@ async def _check(
         setup = _setup(
             client.auth_status,
             fix,
-            # An agent that lists config options but no model has none set up yet.
-            lacks_model=bool(session.config_options) and model is None,
+            # An agent that lists config options but no model has none set up yet; nor
+            # has one that must have its model picked but lists none to pick.
+            lacks_model=model is None
+            and (bool(session.config_options) or harness.model_selection_required),
             lacks_pick=needs_pick(harness, applied, picks),
         )
         return replace(

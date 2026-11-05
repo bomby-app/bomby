@@ -21,7 +21,7 @@ use std::process::{Command, Output, Stdio};
 use std::sync::mpsc;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
@@ -38,6 +38,9 @@ pub const CHANGED: &str = "agents-changed";
 
 /// Long enough for a login shell with a heavy rc file, short enough not to hang Settings.
 const TIMEOUT: Duration = Duration::from_secs(8);
+
+/// How long [`run`] waits for the last of a program's output once it has exited.
+const AFTER_EXIT: Duration = Duration::from_millis(200);
 
 /// One agent Bomby knows how to find.
 struct Known {
@@ -130,7 +133,6 @@ pub fn run(mut command: Command, timeout: Duration) -> Option<Output> {
         .ok()?;
     // Read while it runs: a program that writes more than a pipe holds (64 KiB on macOS)
     // waits for a reader, so waiting for it to exit first would wait out the timeout.
-    let deadline = Instant::now() + timeout;
     let mut stdout = child.stdout.take()?;
     let read = Arc::new(Mutex::new(Vec::new()));
     let (ended, end) = mpsc::channel();
@@ -153,11 +155,10 @@ pub fn run(mut command: Command, timeout: Duration) -> Option<Output> {
         process::kill(&mut child);
         return None;
     };
-    // The timeout covers the output too. A program it started (a daemon from the shell's rc
-    // files) can hold the pipe open after it exits; what it wrote is all there by then. A
-    // second at least, for the last of it.
-    let left = deadline.saturating_duration_since(Instant::now());
-    let _ = end.recv_timeout(left.max(Duration::from_secs(1)));
+    // A program it started (a daemon from the shell's rc files) can hold the pipe open after
+    // it exits, and the reader with it, until that program ends. What this one wrote is in the
+    // pipe by now, so the reader gets a moment for the last of it, not the whole timeout.
+    let _ = end.recv_timeout(AFTER_EXIT);
     let stdout = std::mem::take(&mut *sync::lock(&read));
     Some(Output {
         status,
@@ -587,6 +588,8 @@ pub async fn refresh_agents<R: Runtime>(app: AppHandle<R>) -> Result<Vec<AgentSt
 
 #[cfg(test)]
 mod tests {
+    use std::time::Instant;
+
     use super::*;
 
     #[test]

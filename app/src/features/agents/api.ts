@@ -62,6 +62,11 @@ export function onAgentsChanged(
   )
 }
 
+/** `text` as a sentence: with a full stop, unless it already ends in one (or ? or !). */
+export function sentence(text: string): string {
+  return /[.!?]$/.test(text) ? text : `${text}.`
+}
+
 /** The bare version number from whatever `--version` printed ("omp/18.16.0" -> "18.16.0"). */
 export function versionNumber(version: string): string {
   return version.match(/\d+(\.\d+)+/)?.[0] ?? version

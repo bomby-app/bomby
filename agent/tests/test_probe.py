@@ -217,6 +217,31 @@ def test_an_agent_without_a_model_needs_setup(tmp_path: Path) -> None:
     )
 
 
+def test_an_agent_that_requires_a_pick_but_lists_no_model_needs_setup(
+    tmp_path: Path,
+) -> None:
+    # Nothing to pick, so it isn't asked for one: the agent itself has no model.
+    setup, _ = run_probe(tmp_path, CAN_DELETE, PICK_REQUIRED)
+
+    assert setup.step == "sign_in"
+    assert setup.problem == "No model is set"
+
+
+def test_an_answer_the_probe_cant_read_costs_only_that_agent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def unreadable(*_: object) -> Setup:
+        raise ValueError("bad config option")
+
+    monkeypatch.setattr("acp_client.probe._check", unreadable)
+    setup, _ = run_probe(tmp_path, CAN_DELETE)
+
+    assert setup == Setup(
+        "unreachable",
+        problem="It answered in a way Bomby can't read: bad config option",
+    )
+
+
 def test_a_refused_session_gives_the_agents_reason_and_fix(tmp_path: Path) -> None:
     setup, _ = run_probe(
         tmp_path,
