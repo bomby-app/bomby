@@ -1,7 +1,11 @@
 """Whether a harness is set up, checked the same way for every agent: start it, open a
 session in an empty folder and look at what comes back, without sending a prompt
-(docs/decisions/check-agent-setup-with-an-acp-probe.md). A session lands in the agent's
-history, so it's only opened when the agent can delete it again.
+(docs/decisions/check-agent-setup-with-an-acp-probe.md). It also reads the settings the
+setup flow offers (`settings.py`) and checks the user's saved choices still hold.
+
+A session lands in the agent's history, so the background check opens one only when the
+agent can delete it again. The setup flow, which the user starts, opens one either way and
+closes it, since it can't offer a model without one.
 """
 
 import asyncio
@@ -9,7 +13,7 @@ import contextlib
 import logging
 import re
 import tempfile
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,9 +24,6 @@ from acp.schema import (
     AuthMethodAgent,
     EnvVarAuthMethod,
     InitializeResponse,
-    NewSessionResponse,
-    SessionConfigOptionSelect,
-    SessionConfigSelectGroup,
     TerminalAuthMethod,
 )
 
@@ -30,6 +31,7 @@ from harnesses.harness import Harness
 
 from .client import HarnessClient, connect
 from .runner import launch
+from .settings import Choice, ChoiceGone, Setting, apply, model_name
 
 logger = logging.getLogger("bomby.acp_client.probe")
 
@@ -56,10 +58,20 @@ class Setup:
     """The model a new session uses, by its display name."""
     adapter: str | None = None
     """The ACP adapter it needs and doesn't have yet, which the app installs: "codex-acp"."""
+    settings: tuple[Setting, ...] = ()
+    """What the setup flow offers, with the choices applied; empty without a session."""
 
 
-async def probe(harness: Harness, program: Path, environ: Mapping[str, str]) -> Setup:
-    """Checks `harness`, started from `program` the way a call would start it."""
+async def probe(
+    harness: Harness,
+    program: Path,
+    environ: Mapping[str, str],
+    choices: Sequence[Choice] = (),
+    setting_up: bool = False,
+) -> Setup:
+    """Checks `harness`, started from `program` the way a call would start it, with
+    `choices` applied in order. `setting_up` opens a session even in an agent that can't
+    delete it, for the setup flow."""
     adapter = harness.adapter_path(environ)
     if adapter is not None and not Path(adapter).is_file():
         return Setup(
@@ -75,7 +87,7 @@ async def probe(harness: Harness, program: Path, environ: Mapping[str, str]) -> 
                 _,
                 init,
             ):
-                return await _check(harness, conn, client, init)
+                return await _check(harness, conn, client, init, choices, setting_up)
     except TimeoutError:
         return Setup(ready=False, problem="It didn't answer in time")
     # Before OSError, which ConnectionError is a kind of.
@@ -86,12 +98,24 @@ async def probe(harness: Harness, program: Path, environ: Mapping[str, str]) -> 
 
 
 async def probe_all(
-    agents: Mapping[str, tuple[Harness, Path]], environ: Mapping[str, str]
+    agents: Mapping[str, tuple[Harness, Path]],
+    environ: Mapping[str, str],
+    choices: Mapping[str, Sequence[Choice]] | None = None,
+    setting_up: Collection[str] = (),
 ) -> dict[str, Setup]:
-    """Checks every agent at once."""
+    """Checks every agent at once, each with its own saved `choices`."""
     ids = list(agents)
     setups = await asyncio.gather(
-        *(probe(harness, program, environ) for harness, program in agents.values())
+        *(
+            probe(
+                harness,
+                program,
+                environ,
+                (choices or {}).get(id, ()),
+                id in setting_up,
+            )
+            for id, (harness, program) in agents.items()
+        )
     )
     return dict(zip(ids, setups, strict=True))
 
@@ -101,61 +125,64 @@ async def _check(
     conn: ClientSideConnection,
     client: HarnessClient,
     init: InitializeResponse,
+    choices: Sequence[Choice],
+    setting_up: bool,
 ) -> Setup:
     fix = setup_command(harness, init.auth_methods or [])
-    session = None
-    if _can_delete(init.agent_capabilities):
+    deletable = _can_delete(init.agent_capabilities)
+    if not deletable and not setting_up:
+        return await _judge_sign_in(client, init, fix, None)
+    try:
+        session = await conn.new_session(cwd=str(FOLDER), mcp_servers=[])
+    except RequestError as e:
+        return Setup(ready=False, problem=detail(e), fix=fix)
+    try:
         try:
-            session = await conn.new_session(cwd=str(FOLDER), mcp_servers=[])
+            settings = await apply(
+                conn, session.session_id, harness, session.config_options, choices
+            )
+        except ChoiceGone as e:
+            return Setup(ready=False, problem=str(e), settings=e.settings)
         except RequestError as e:
             return Setup(ready=False, problem=detail(e), fix=fix)
-    try:
-        if _reports_auth(init.agent_capabilities):
-            with contextlib.suppress(TimeoutError):
-                _ = await asyncio.wait_for(client.auth_reported.wait(), AUTH_WAIT_S)
-        return _judge(session, client.auth_status, fix)
+        listed = bool(session.config_options)
+        return await _judge_sign_in(client, init, fix, (listed, settings))
     finally:
-        if session is not None:
+        if deletable:
             await _delete(conn, session.session_id)
+        else:
+            await _close(conn, session.session_id, init.agent_capabilities)
 
 
-def _judge(
-    session: NewSessionResponse | None,
-    auth: Mapping[str, object] | None,
+async def _judge_sign_in(
+    client: HarnessClient,
+    init: InitializeResponse,
     fix: str | None,
+    session: tuple[bool, list[Setting]] | None,
 ) -> Setup:
+    """Judges the setup by the sign-in the agent reports and, with a session (whether it
+    listed any config options, and its settings), by its model."""
+    if _reports_auth(init.agent_capabilities):
+        with contextlib.suppress(TimeoutError):
+            _ = await asyncio.wait_for(client.auth_reported.wait(), AUTH_WAIT_S)
+    auth = client.auth_status
     account = auth.get("label") if auth else None
     account = account if isinstance(account, str) else None
     if auth and auth.get("kind") == "none":
         return Setup(ready=False, problem="Not signed in", fix=fix)
-    options = session.config_options if session else None
-    model = next(
-        (
-            o
-            for o in options or []
-            if isinstance(o, SessionConfigOptionSelect) and o.category == "model"
-        ),
-        None,
-    )
-    if options and model is None:
-        return Setup(ready=False, problem="No model is set", fix=fix, account=account)
-    return Setup(
-        ready=True, account=account, model=_display_name(model) if model else None
-    )
-
-
-def _display_name(option: SessionConfigOptionSelect) -> str:
-    choices = [
-        choice
-        for entry in option.options
-        for choice in (
-            entry.options if isinstance(entry, SessionConfigSelectGroup) else [entry]
+    if session is None:
+        return Setup(ready=True, account=account)
+    listed, settings = session
+    model = model_name(settings)
+    if listed and model is None:
+        return Setup(
+            ready=False,
+            problem="No model is set",
+            fix=fix,
+            account=account,
+            settings=tuple(settings),
         )
-    ]
-    return next(
-        (c.name for c in choices if c.value == option.current_value),
-        option.current_value,
-    )
+    return Setup(ready=True, account=account, model=model, settings=tuple(settings))
 
 
 def _reports_auth(capabilities: AgentCapabilities | None) -> bool:
@@ -166,6 +193,19 @@ def _reports_auth(capabilities: AgentCapabilities | None) -> bool:
 def _can_delete(capabilities: AgentCapabilities | None) -> bool:
     sessions = capabilities.session_capabilities if capabilities else None
     return sessions is not None and sessions.delete is not None
+
+
+async def _close(
+    conn: ClientSideConnection, session_id: str, capabilities: AgentCapabilities | None
+) -> None:
+    """Closes a session the agent can't delete; it stays in the agent's history."""
+    sessions = capabilities.session_capabilities if capabilities else None
+    if sessions is None or sessions.close is None:
+        return
+    try:
+        _ = await conn.close_session(session_id=session_id)
+    except (RequestError, ConnectionError) as e:
+        logger.warning("closing probe session %s failed: %s", session_id, e)
 
 
 async def _delete(conn: ClientSideConnection, session_id: str) -> None:

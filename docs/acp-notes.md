@@ -76,3 +76,19 @@ Probed 2026-11-04: `initialize` then `session/new` in an empty folder, no prompt
 - A configured session has a config option with `category: "model"`; its `currentValue` is the model in use.
 - `_auth/status_update` is the adapter's interim `authStatus` extension (`dist/auth-status.d.ts`): advertised by an empty `agentCapabilities._meta.authStatus`, pushed after `initialize` (never before its response) and on each `session/new`. `kind` is `account`, `api_key`, `gateway`, `external` or `none`; `label` is a display string such as "Claude Max". Silence means unknown.
 - `session/new` saves a session in the agent's history even without a prompt (Codex, OpenCode, omp, goose; Claude saves only once prompted). Claude, Codex, OpenCode and goose advertise `sessionCapabilities.delete`; omp only `close`. Codex's delete archives the thread (`threadArchive`: it moves to `~/.codex/archived_sessions`, out of the resume list, still on disk). `omp acp --no-session` still saves the session (omp 18.16.0). SDK 0.12.1 has `DeleteSessionRequest` in `acp/schema.py` and `session/delete` in `acp/meta.py`, but no `delete_session` method on `ClientSideConnection`.
+
+## Session settings
+
+ACP's way to pick a model, effort or mode (SDK 0.12.1, `acp/schema.py`): `session/new` answers with `configOptions`, each with an `id`, a `name`, a `category` (`mode`, `model`, `model_config`, `thought_level`, or a custom object), a `currentValue` and its options, flat or in named groups. `session/set_config_option` (`ClientSideConnection.set_config_option`) changes one and answers with the whole list again, so a setting that depends on another comes back up to date: OpenCode lists an effort only once a model with variants is picked, and goose's models follow its provider.
+
+Checked on 2026-11-05 against each agent's source at the installed version, and live through the probe:
+
+| Agent | Model | Effort | Other | A change lasts |
+| --- | --- | --- | --- | --- |
+| Claude (adapter 0.100.0, `dist/acp-agent.js` `selectSessionConfigOption`) | `model` | `effort` | `mode`, `fast`, `ultracode` (`model_config`), `agent` (no category) | the session (`query.setModel`); no settings written |
+| Codex (adapter 2.2.2, `dist/index.js` `applySessionConfigOption`) | `model` | `reasoning_effort` | `mode`, `collaboration_mode` (no category), `fast-mode` | the session's state |
+| OpenCode 2.2.5 (`packages/cli/src/acp/config-option.ts`, `service.ts`) | `model` | `effort`, for models with variants | `mode` | the session's selection |
+| goose 1.57.0 (`crates/goose/src/acp/server/dispatch.rs`, `server.rs` `on_set_model`) | `model` | `thinking_effort` | `provider` (no category), `mode` | the session (`switch_provider`) |
+| omp 18.16.0 (`packages/coding-agent/src/modes/acp/acp-agent.ts`) | `model`, once a provider is signed in | `thinking` | `mode` | the session: `setModel` saves a default only with `persist`, which ACP doesn't pass |
+
+Bomby's setup flow offers the `model` and `thought_level` settings and any a harness names in `setup_settings` (goose's `provider`), in the agent's order, and leaves `mode` to the runner (`agent/acp_client/settings.py`). An unknown value fails with `invalidParams` everywhere.

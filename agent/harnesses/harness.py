@@ -53,6 +53,9 @@ class Harness:
     steer_method: str | None = None
     """The extension method that adds a message to a running turn, if the adapter has one.
     Used only when `initialize` advertises it in `_meta.steering.supported`."""
+    setup_settings: frozenset[str] = frozenset()
+    """Session settings the setup flow offers beyond the model and effort categories, by
+    config option id, for one the agent lists without a category (goose's "provider")."""
 
     def adapter_path(self, settings: Mapping[str, str]) -> str | None:
         """The adapter to start, if this agent needs one: an override like
