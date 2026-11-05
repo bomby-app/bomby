@@ -7,19 +7,17 @@ const count = new Intl.NumberFormat()
 
 /**
  * What the user writes about a project. Bomby and every coding agent are told it once, when
- * a call starts. The new project and project settings dialogs share it; each decides when
- * to save.
+ * a call starts. The new project and project settings dialogs share it; each saves it its
+ * own way.
  */
 export function InstructionsField({
   id,
   value,
   onChange,
-  onBlur,
 }: {
   id: string
   value: string
   onChange: (value: string) => void
-  onBlur?: () => void
 }) {
   return (
     <Field>
@@ -40,7 +38,6 @@ export function InstructionsField({
         placeholder="What the project is, and anything your agents should know about it."
         className="max-h-64 resize-none"
         onChange={(e) => onChange(e.target.value)}
-        onBlur={onBlur}
       />
       <FieldDescription>
         Optional. Bomby and your agents read it when a call starts.

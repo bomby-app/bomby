@@ -1,5 +1,5 @@
 import { Trash2 } from "lucide-react"
-import { useEffect, useEffectEvent, useRef, useState } from "react"
+import { useRef, useState } from "react"
 
 import { InlineEditInput } from "@/components/inline-edit-input"
 import {
@@ -94,7 +94,7 @@ export function ProjectSettingsDialog({
         <DialogHeader>
           <DialogTitle>Project settings</DialogTitle>
           <DialogDescription>
-            Changes are saved as you make them.
+            The name and folders are saved as you change them.
           </DialogDescription>
         </DialogHeader>
 
@@ -161,9 +161,8 @@ function NameField({
 }
 
 /**
- * The project's instructions; saved when the field loses focus. Esc or a click outside
- * closes the dialog without the field losing focus, so what's typed is also saved when the
- * field goes away.
+ * The project's instructions, saved with their own button: they're long enough to edit for
+ * a while, and the dialog can close (Esc, a click outside) at any moment.
  */
 function InstructionsSetting({
   instructions,
@@ -173,31 +172,32 @@ function InstructionsSetting({
   onSave: (changes: { instructions: string }) => Promise<boolean>
 }) {
   const [draft, setDraft] = useState(instructions)
-  // What's typed and not saved yet, so leaving after a blur doesn't save it twice.
-  const unsaved = useRef<string | null>(null)
+  const [saving, setSaving] = useState(false)
 
-  function commit() {
-    const value = unsaved.current
-    unsaved.current = null
-    if (value === null || value.trim() === instructions) return
-    void onSave({ instructions: value }).then((saved) => {
-      if (!saved) setDraft(instructions)
-    })
+  async function save() {
+    setSaving(true)
+    // Saved, it remounts with the new instructions; failed, the draft stays to try again.
+    await onSave({ instructions: draft })
+    setSaving(false)
   }
 
-  const commitOnLeave = useEffectEvent(commit)
-  useEffect(() => () => commitOnLeave(), [])
-
   return (
-    <InstructionsField
-      id="project-instructions"
-      value={draft}
-      onChange={(value) => {
-        setDraft(value)
-        unsaved.current = value
-      }}
-      onBlur={commit}
-    />
+    <div className="flex flex-col gap-3">
+      <InstructionsField
+        id="project-instructions"
+        value={draft}
+        onChange={setDraft}
+      />
+      <Button
+        variant="secondary"
+        size="sm"
+        className="self-start"
+        disabled={saving || draft.trim() === instructions}
+        onClick={() => void save()}
+      >
+        {saving ? "Saving..." : "Save instructions"}
+      </Button>
+    </div>
   )
 }
 
