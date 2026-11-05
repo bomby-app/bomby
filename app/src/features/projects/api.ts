@@ -13,14 +13,19 @@ export type CallSummary = {
 export type Project = {
   id: number
   name: string
-  /** In order; the first is Claude's working folder. */
+  /** In order; the first is the agents' working folder. */
   folders: string[]
+  /** What the user wrote about the project; empty if nothing. */
+  instructions: string
   createdAt: number
   /** Newest first. */
   calls: CallSummary[]
 }
 
-export type ProjectInput = { name: string; folders: string[] }
+export type ProjectInput = Pick<Project, "name" | "folders" | "instructions">
+
+/** The longest instructions the core keeps (`MAX_INSTRUCTIONS_LEN` in projects.rs). */
+export const MAX_INSTRUCTIONS_LENGTH = 5000
 
 export function listProjects(): Promise<Project[]> {
   return invoke("list_projects")

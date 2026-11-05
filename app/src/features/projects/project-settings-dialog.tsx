@@ -1,5 +1,11 @@
 import { Trash2 } from "lucide-react"
-import { type KeyboardEvent, useRef, useState } from "react"
+import {
+  type KeyboardEvent,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+} from "react"
 
 import {
   AlertDialog,
@@ -32,13 +38,14 @@ import {
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 
-import type { Project } from "./api"
+import type { Project, ProjectInput } from "./api"
 import { FolderList } from "./folder-list"
+import { InstructionsField } from "./instructions-field"
 import { useProjects } from "./projects-provider"
 
 /**
- * A project's settings, opened from the header: its name, its folders, and delete. Each
- * change is saved as it is made.
+ * A project's settings, opened from the header: its name, its folders, its instructions,
+ * and delete. Each change is saved as it is made.
  */
 export function ProjectSettingsDialog({
   project,
@@ -62,16 +69,16 @@ export function ProjectSettingsDialog({
   const stored = useRef(project)
   const saving = useRef<Promise<unknown>>(Promise.resolve())
 
-  function save(changes: Partial<Pick<Project, "name" | "folders">>) {
+  function save(changes: Partial<ProjectInput>) {
     setError(null)
     if (draft.current.id !== project.id) {
       draft.current = project
       stored.current = project
     }
     draft.current = { ...draft.current, ...changes }
-    const { name, folders } = draft.current
+    const { name, folders, instructions } = draft.current
     const done = saving.current.then(() =>
-      update(project.id, { name, folders }).then(
+      update(project.id, { name, folders, instructions }).then(
         (confirmed) => {
           stored.current = confirmed
           return true
@@ -111,6 +118,13 @@ export function ProjectSettingsDialog({
               onChange={(folders) => void save({ folders })}
             />
           </FieldSet>
+
+          {/* Remounted the same way, for the saved instructions. */}
+          <InstructionsSetting
+            key={`${project.id}:${project.instructions}`}
+            instructions={project.instructions}
+            onSave={save}
+          />
 
           {error && <FieldError>{error}</FieldError>}
         </FieldGroup>
@@ -168,6 +182,47 @@ function NameField({
         onKeyDown={onKeyDown}
       />
     </Field>
+  )
+}
+
+/**
+ * The project's instructions; saved when the field loses focus. Esc or a click outside
+ * closes the dialog without the field losing focus, so what's typed is also saved when the
+ * field goes away.
+ */
+function InstructionsSetting({
+  instructions,
+  onSave,
+}: {
+  instructions: string
+  onSave: (changes: { instructions: string }) => Promise<boolean>
+}) {
+  const [draft, setDraft] = useState(instructions)
+  // What's typed and not saved yet, so leaving after a blur doesn't save it twice.
+  const unsaved = useRef<string | null>(null)
+
+  function commit() {
+    const value = unsaved.current
+    unsaved.current = null
+    if (value === null || value.trim() === instructions) return
+    void onSave({ instructions: value }).then((saved) => {
+      if (!saved) setDraft(instructions)
+    })
+  }
+
+  const commitOnLeave = useEffectEvent(commit)
+  useEffect(() => () => commitOnLeave(), [])
+
+  return (
+    <InstructionsField
+      id="project-instructions"
+      value={draft}
+      onChange={(value) => {
+        setDraft(value)
+        unsaved.current = value
+      }}
+      onBlur={commit}
+    />
   )
 }
 

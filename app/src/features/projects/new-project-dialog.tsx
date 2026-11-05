@@ -21,10 +21,11 @@ import { Input } from "@/components/ui/input"
 
 import type { Project } from "./api"
 import { FolderList } from "./folder-list"
+import { InstructionsField } from "./instructions-field"
 import { folderName, uniqueName } from "./names"
 import { useProjects } from "./projects-provider"
 
-/** New project: a name and the folders the agents can work in. */
+/** New project: a name, the folders the agents can work in, and optional instructions. */
 export function NewProjectDialog({
   open,
   onOpenChange,
@@ -59,6 +60,7 @@ function NewProjectForm({
   const { projects, create } = useProjects()
   const [name, setName] = useState("")
   const [folders, setFolders] = useState<string[]>([])
+  const [instructions, setInstructions] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
 
@@ -81,7 +83,7 @@ function NewProjectForm({
     setCreating(true)
     setError(null)
     try {
-      onCreated(await create({ name, folders }))
+      onCreated(await create({ name, folders, instructions }))
     } catch (e) {
       setError(String(e))
       setCreating(false)
@@ -115,6 +117,14 @@ function NewProjectForm({
           <FieldLegend variant="label">Folders</FieldLegend>
           <FolderList folders={folders} onChange={changeFolders} minimum={0} />
         </FieldSet>
+        <InstructionsField
+          id="new-project-instructions"
+          value={instructions}
+          onChange={(value) => {
+            setInstructions(value)
+            setError(null)
+          }}
+        />
         {error && <FieldError>{error}</FieldError>}
       </FieldGroup>
 
