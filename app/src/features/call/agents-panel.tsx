@@ -93,17 +93,28 @@ function TaskRow({ task }: { task: Task }) {
   )
 }
 
+const HIGHLIGHTER = "bg-highlighter text-highlighter-foreground"
+
 /**
- * Each status is one icon, its label a tooltip and what screen readers hear. Good news (done,
- * added to a running task) is an ink mark on a highlighter disc (docs/brand.md).
+ * Each status is one ink icon on a disc, its label a tooltip and what screen readers hear:
+ * bubblegum while a task waits or joins another (queued, added), highlighter otherwise
+ * (owner, 2026-11-05; docs/brand.md).
  */
 const STATUS = {
-  queued: { label: "Queued", Icon: ListEnd, disc: false },
-  working: { label: "Working", Icon: LoaderCircle, disc: false },
-  added: { label: "Added to the running task", Icon: Plus, disc: true },
-  done: { label: "Done", Icon: Check, disc: true },
-  failed: { label: "Failed", Icon: X, disc: false },
-  stopped: { label: "Stopped", Icon: CircleSlash, disc: false },
+  queued: {
+    label: "Queued",
+    Icon: ListEnd,
+    disc: "bg-claude text-claude-foreground",
+  },
+  working: { label: "Working", Icon: LoaderCircle, disc: HIGHLIGHTER },
+  added: {
+    label: "Added to the running task",
+    Icon: Plus,
+    disc: "bg-claude text-claude-foreground",
+  },
+  done: { label: "Done", Icon: Check, disc: HIGHLIGHTER },
+  failed: { label: "Failed", Icon: X, disc: HIGHLIGHTER },
+  stopped: { label: "Stopped", Icon: CircleSlash, disc: HIGHLIGHTER },
 } as const
 
 function TaskStatus({ status }: { status: Task["status"] }) {
@@ -113,18 +124,13 @@ function TaskStatus({ status }: { status: Task["status"] }) {
       <TooltipTrigger asChild>
         <span
           className={cn(
-            "ml-auto flex size-4 shrink-0 items-center justify-center text-muted-foreground",
-            disc && "rounded-full bg-highlighter text-highlighter-foreground",
-            status === "failed" && "text-destructive"
+            "ml-auto flex size-4 shrink-0 items-center justify-center rounded-full",
+            disc
           )}
         >
           <Icon
-            className={cn(
-              disc ? "size-2.5" : "size-3.5",
-              // Highlighter in dark mode, ink in light (never highlighter on white).
-              status === "working" && "animate-spin text-primary"
-            )}
-            strokeWidth={disc ? 3 : 2}
+            className={cn("size-2.5", status === "working" && "animate-spin")}
+            strokeWidth={3}
           />
           <span className="sr-only">{label}</span>
         </span>
