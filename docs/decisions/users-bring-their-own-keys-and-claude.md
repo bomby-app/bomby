@@ -1,6 +1,6 @@
 # Users bring their own keys and their own Claude Code
 
-Status: accepted, 2026-11-03
+Status: accepted, 2026-11-03. The LiveKit part is superseded by [livekit-on-this-mac-or-cloud.md](livekit-on-this-mac-or-cloud.md): LiveKit runs on the Mac unless the user brings their own.
 
 ## Context
 

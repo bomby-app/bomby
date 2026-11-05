@@ -43,6 +43,19 @@ Also checked against `livekit-api` 0.10.0, `livekit-token` 0.4.0, `livekit-proto
 - **Bluetooth echo.** macOS made the Bluetooth headset its default input mid-call and LiveKit follows the default (`deviceId: { ideal: "default" }`); a headset whose mic is in use drops into headset mode, and that mic hears its own playback. On macOS, WebKit voice processing with Bluetooth output caused the agent to hear itself; Chrome worked, Safari/WebKit and Firefox did not. Wired input/output removed the echo, isolating the issue from React, LiveKit and agent code (owner tests, 2026-11-04).
 - **Mitigation.** Keep LiveKit's stock capture settings (turning echo cancellation and the rest off did not help) and pin the published mic to its actual opened device with `room.switchActiveDevice("audioinput", deviceId, true)`, preventing system-default changes from switching to a headset mic. Device selection still works. Use wired output for now; native LiveKit Rust audio in the Tauri core is the fallback.
 
+## The bundled server
+
+Checked 2026-11-05 against `livekit/livekit` v1.13.10 and v1.13.11 (source and release assets), `livekit/mediatransportutil` `pkg/rtcconfig/`, and Homebrew's `Formula/l/livekit.rb`. Why Bomby ships it: [decision](decisions/livekit-on-this-mac-or-cloud.md).
+
+- **Apache-2.0.** The app ships its LICENSE as `Resources/licenses/livekit-server.txt`.
+- **No macOS release binaries**: `.goreleaser.yaml` builds `goos: linux, windows`. Homebrew builds from the tag's tarball with `go build ./cmd/server`. `go.mod` needs Go 1.26.0 and has `replace` lines (LiveKit's pion forks), so `go install ...@version` refuses it.
+- **cgo on.** With `CGO_ENABLED=0`, darwin fails in `protocol/utils/hwstats` (`undefined: cpu.Get`). With cgo the binary links only libSystem, libresolv, CoreFoundation and Security. v1.13.10 on arm64, `-trimpath -ldflags "-s -w"`: 54 MB, 17.6 MB gzipped; builds in about 10 s warm (`just app livekit-server`).
+- **Single node without Redis.** No `redis:` block runs everything in one process.
+- **Config through the environment.** `LIVEKIT_CONFIG` is the YAML (`--config-body`), `LIVEKIT_KEYS` the `key: secret` lines (`--keys`) (`cmd/server/main.go`). Outside `--dev` a secret under 32 characters fails `ValidateKeys`. `--dev` falls back to `devkey`/`secret`, debug logs and `/debug/pprof`.
+- **Ports.** Signal and API on `port` (7880), bound to `bind_addresses`. ICE over TCP on `rtc.tcp_port` (7881). ICE over UDP on a range (50000-60000), or one `rtc.udp_port` mux. `GET /` answers `OK` once it's serving.
+- **Which address it advertises.** Without `rtc.node_ip`, IP discovery picks the first non-loopback address and uses loopback only when there is no other (`determineIP`, `GetLocalIPAddresses` in `ip.go`). `node_ip` becomes the NAT 1:1 address of every host candidate, and `enable_loopback_candidate` and `ips.includes` decide what's gathered (`webrtc_config.go`).
+- **Token dispatch works** on the open-source server: `RoomConfiguration.agents` from the token is handled in `pkg/service/roomallocator.go`, tested in `test/agent_test.go`.
+
 ## Data to the frontend
 
 - Participant attributes carry current state. `bomby.tasks` is set with `local_participant.set_attributes` and read through `useAgent().attributes`, which re-renders on changes. Total attribute limit: 64 KiB ([docs](https://docs.livekit.io/transport/data/state/participant-attributes)).

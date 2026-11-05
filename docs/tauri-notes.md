@@ -82,6 +82,8 @@ Checked 2026-11-05 in the bundler of `@tauri-apps/cli` 2.12.4 (`crates/tauri-bun
 - `bundle.resources` copies each file with `fs::copy`, so a symlink becomes a second copy of its target. PyInstaller's folder has 17 symlinked libraries (PyAV's), so the agent goes in through `bundle.macOS.files` instead (`"Resources/agent": "../../agent/dist/bomby-agent"`), whose `copy_dir` recreates symlinks.
 - Signing (when an identity is set) covers `bundle.macOS.frameworks`, `externalBin` sidecars and the main binary, then the `.app`. It doesn't sign files from `resources` or `macOS.files`, so the agent folder's libraries need their own signature before `tauri build`.
 - `just app build` runs `just agent freeze` first. The folder is 190 MB.
+- **The LiveKit server is a sidecar** (`bundle.externalBin: ["binaries/livekit-server"]`), so Tauri signs it with hardened runtime and the app's entitlements, before the app (`app.rs`, `sign.rs`). The file in the tree is named for the target (`binaries/livekit-server-aarch64-apple-darwin`) and lands as `Contents/MacOS/livekit-server`.
+- **An `externalBin` must exist to compile at all**: tauri-build 2.7.4 copies each one next to the built program, also in dev (`target/debug/livekit-server`), and fails when one is missing (`copy_binaries` in `tauri-build/src/lib.rs`). So `just app lint`, `test`, `dev` and `build` run `just app livekit-server` first, and both dev and release builds find the server beside `current_exe()`.
 
 ## Signing and notarizing
 

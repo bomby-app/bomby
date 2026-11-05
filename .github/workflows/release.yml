@@ -41,12 +41,13 @@ jobs:
             exit 1
           fi
 
-      # The tools pinned in mise.toml, except the LiveKit CLI, which builds don't use. No
+      # The tools pinned in mise.toml, except the LiveKit CLI, which builds don't use (Go builds
+      # the bundled LiveKit server, in `just app install`). No
       # caches anywhere in this workflow: what gets signed is built from scratch, never from
       # files another workflow could have left (zizmor's cache-poisoning audit).
       - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
         with:
-          install_args: rust bun uv just
+          install_args: rust go bun uv just
           cache: false
 
       - name: Install the frontend's dependencies
@@ -130,6 +131,11 @@ jobs:
 
       - name: Check the signed agent runs
         run: just agent check-frozen "$PWD/$APP/Contents/Resources/agent/bomby-agent"
+
+      - name: Check the signed LiveKit server runs
+        run: |
+          codesign --verify --strict --verbose=2 "$APP/Contents/MacOS/livekit-server"
+          "$APP/Contents/MacOS/livekit-server" --version
 
       # What installed copies read to find this version once the release is published
       # (plugins.updater.endpoints in tauri.conf.json).

@@ -43,6 +43,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "externalBin": ["binaries/livekit-server"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -54,7 +55,8 @@
       "entitlements": "./Entitlements.plist",
       "files": {
         "Resources/Assets.car": "icons/Assets.car",
-        "Resources/agent": "../../agent/dist/bomby-agent"
+        "Resources/agent": "../../agent/dist/bomby-agent",
+        "Resources/licenses/livekit-server.txt": "binaries/livekit-server-LICENSE.txt"
       },
       "dmg": {
         "background": "icons/dmg-background.tiff",
