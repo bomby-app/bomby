@@ -1,6 +1,6 @@
 # Plan: LiveKit on this Mac, next to LiveKit Cloud
 
-Status: draft, 2026-11-05. Not started; waiting on open PRs. One PR when it starts. This file is a working plan: when the PR lands, its lasting parts become the decision record and notes listed under [Docs](#docs-in-the-same-pr), and this file is deleted.
+Status: built on `feat/local-livekit`, 2026-11-05; the owner's test in the app is next (WebKit on loopback, first-call delay, the default for new users). One PR. This file is a working plan: when the PR lands, its lasting parts become the decision record and notes listed under [Docs](#docs-in-the-same-pr), and this file is deleted.
 
 ## Goal
 
