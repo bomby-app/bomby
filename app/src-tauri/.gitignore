@@ -12,5 +12,5 @@
 # ts-rs output of a plain `cargo test` (the recipes set TS_RS_EXPORT_DIR)
 /bindings/
 
-# The LiveKit server, built by `just app livekit-server`
+# The LiveKit server, built by `just livekit build`
 /binaries/

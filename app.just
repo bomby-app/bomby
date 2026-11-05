@@ -11,47 +11,16 @@
 default:
     @just --unsorted --list app
 
-# Install the frontend dependencies and build the bundled LiveKit server (the Rust ones are fetched by cargo on build)
+# Install the frontend dependencies (the Rust ones are fetched by cargo on build)
 [working-directory: 'app']
-install: livekit-server
+install:
     bun install
 
-# The LiveKit server Bomby runs on this Mac (docs/decisions/livekit-on-this-mac-or-cloud.md).
-# No macOS build is published (its .goreleaser.yaml builds Linux and Windows only), so it's
-# built from the release's source, checked against its pinned hash, as Homebrew does. Its
-# go.mod has `replace` lines, so `go install ...@version` can't build it.
-livekit_version := "1.13.10"
-livekit_sha256 := "d1b93ced314b14654faceeb99627a79114b8ebe002bb5d620be4a185db83a4b2"
-
-# Build the LiveKit server into src-tauri/binaries, where tauri.conf.json bundles it (skipped when that version is there)
-[group('build')]
-[working-directory: 'app/src-tauri']
+# The LiveKit server the app bundles, built by its own module (livekit.just) when it isn't
+# there yet. tauri-build won't compile the core without it (docs/tauri-notes.md#bundling-the-agent).
+[private]
 livekit-server:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    # Tauri names a sidecar by the target it's built for (bundle.externalBin).
-    triple=$(rustc --print host-tuple)
-    case $triple in
-      aarch64-*) arch=arm64 ;;
-      x86_64-*) arch=amd64 ;;
-      *) echo "No LiveKit server build for $triple"; exit 1 ;;
-    esac
-    out="$PWD/binaries/livekit-server-$triple"
-    if [[ -x $out ]] && "$out" --version | grep -qx "livekit-server version {{ livekit_version }}"; then
-      exit 0
-    fi
-    # Everything Go fetches and builds stays in target/, never in the home folder.
-    work="$PWD/target/livekit-server"
-    rm -rf "$work/src" && mkdir -p "$work/src" binaries
-    curl -fsSL "https://github.com/livekit/livekit/archive/refs/tags/v{{ livekit_version }}.tar.gz" -o "$work/src.tar.gz"
-    echo "{{ livekit_sha256 }}  $work/src.tar.gz" | shasum -a 256 -c --quiet
-    tar -xzf "$work/src.tar.gz" -C "$work/src" --strip-components 1
-    # Stripped, with no local paths in it. cgo stays on, as in Homebrew's build: on macOS the
-    # CPU stats LiveKit reads (protocol/utils/hwstats) come through cgo. It links only system libraries.
-    (cd "$work/src" && GOPATH="$work/go" GOFLAGS=-modcacherw CGO_ENABLED=1 GOOS=darwin GOARCH=$arch \
-      go build -trimpath -ldflags "-s -w" -o "$out" ./cmd/server)
-    cp "$work/src/LICENSE" binaries/livekit-server-LICENSE.txt
-    "$out" --version
+    {{ just_executable() }} --justfile {{ justfile_directory() }}/justfile livekit build
 
 # Run the app with hot reload: Vite serves the frontend, cargo builds and opens the window
 [group('run')]

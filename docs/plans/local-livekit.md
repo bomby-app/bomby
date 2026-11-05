@@ -127,7 +127,7 @@ Built like `agent.rs`'s `AgentWorker`, sharing its process code.
 ### Build and release
 
 - `mise.toml`: pin `go` (1.26.x, the version `go.mod` needs, chosen at implementation time).
-- New recipe `just app livekit-server`: download the tagged source tarball, check its pinned sha256, `CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o src-tauri/binaries/livekit-server-aarch64-apple-darwin ./cmd/server`. It skips the build if that version is already there. Pin the version and hash in the recipe, like the adapters in `agent/adapters/package.json`. The candidate today is v1.13.11; take the latest release at implementation time that is at least two weeks old.
+- New recipe `just livekit build`: download the tagged source tarball, check its pinned sha256, `CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o src-tauri/binaries/livekit-server-aarch64-apple-darwin ./cmd/server`. It skips the build if that version is already there. Pin the version and hash in the recipe, like the adapters in `agent/adapters/package.json`. The candidate today is v1.13.11; take the latest release at implementation time that is at least two weeks old.
 - `just install` and `just app build` run it. Add `app/src-tauri/binaries/` to `.gitignore`.
 - `tauri.conf.json`: `bundle.externalBin: ["binaries/livekit-server"]`. Ship its LICENSE under `Resources/licenses/livekit-server.txt` via `bundle.macOS.files`.
 - Release workflow: add `go` to mise-action's `install_args`. After the Gatekeeper check, run the signed `Contents/MacOS/livekit-server --version` (beside `just agent check-frozen`). Building adds about 1-2 runner minutes; the workflow keeps building from scratch with no caches.

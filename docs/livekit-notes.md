@@ -49,7 +49,7 @@ Checked 2026-11-05 against `livekit/livekit` v1.13.10 and v1.13.11 (source and r
 
 - **Apache-2.0.** The app ships its LICENSE as `Resources/licenses/livekit-server.txt`.
 - **No macOS release binaries**: `.goreleaser.yaml` builds `goos: linux, windows`. Homebrew builds from the tag's tarball with `go build ./cmd/server`. `go.mod` needs Go 1.26.0 and has `replace` lines (LiveKit's pion forks), so `go install ...@version` refuses it.
-- **cgo on.** With `CGO_ENABLED=0`, darwin fails in `protocol/utils/hwstats` (`undefined: cpu.Get`). With cgo the binary links only libSystem, libresolv, CoreFoundation and Security. v1.13.10 on arm64, `-trimpath -ldflags "-s -w"`: 54 MB, 17.6 MB gzipped; builds in about 10 s warm (`just app livekit-server`).
+- **cgo on.** With `CGO_ENABLED=0`, darwin fails in `protocol/utils/hwstats` (`undefined: cpu.Get`). With cgo the binary links only libSystem, libresolv, CoreFoundation and Security. v1.13.10 on arm64, `-trimpath -ldflags "-s -w"`: 54 MB, 17.6 MB gzipped; builds in about 10 s warm (`just livekit build`).
 - **Single node without Redis.** No `redis:` block runs everything in one process.
 - **Config through the environment.** `LIVEKIT_CONFIG` is the YAML (`--config-body`), `LIVEKIT_KEYS` the `key: secret` lines (`--keys`) (`cmd/server/main.go`). Outside `--dev` a secret under 32 characters fails `ValidateKeys`. `--dev` falls back to `devkey`/`secret`, debug logs and `/debug/pprof`.
 - **Ports.** Signal and API on `port` (7880), bound to `bind_addresses`. ICE over TCP on `rtc.tcp_port` (7881). ICE over UDP on a range (50000-60000), or one `rtc.udp_port` mux. `GET /` answers `OK` once it's serving.
