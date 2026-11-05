@@ -11,6 +11,7 @@ import { parseLiveKitEnv } from "@/features/credentials/livekit-env"
 import {
   checkKeysAgain,
   chooseLiveKitServer,
+  useSavedKeys,
   type Keys,
 } from "@/features/credentials/use-saved-keys"
 import { GeminiLogo, LiveKitLogo } from "@/features/setup/provider-logos"
@@ -76,7 +77,9 @@ export function KeysStep({ keys, allSet }: { keys: Keys; allSet: boolean }) {
     null
   )
   const [typing, setTyping] = useState(false)
-  const error = livekitError ?? geminiError
+  // A failed Local or Cloud switch lands in the store, not in this step's state.
+  const { error: keysError } = useSavedKeys()
+  const error = livekitError ?? geminiError ?? keysError
   const cloud = keys.server === "theirs"
 
   return (
