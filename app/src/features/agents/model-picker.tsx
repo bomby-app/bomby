@@ -33,8 +33,7 @@ export function ModelPicker({
   onOpenChange?: (open: boolean) => void
 } & Omit<ComponentProps<typeof Button>, "onClick">) {
   const settings = useAgentSettings(agent.id)
-  // An agent that must have its model picked asks for it, in bubblegum like everything a
-  // call still needs (docs/brand.md).
+  // Bubblegum, like everything a call still needs (docs/brand.md).
   const required = setupStep(agent) === "pick"
   return (
     <Popover

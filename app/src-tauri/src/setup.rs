@@ -249,8 +249,7 @@ mod tests {
         assert!(goose.setup.session);
         assert_eq!(goose.settings[0].options[0].group.as_deref(), Some("Kimi"));
 
-        // Every field the probe sends, at every level, is read, and nothing the page gets
-        // is missing.
+        // Every key the probe sends, at every level, reaches the page.
         let sent: Value = serde_json::from_str(ANSWER).unwrap();
         let read = serde_json::to_value(&listed).unwrap();
         assert_eq!(paths(&sent, camel), paths(&read, str::to_owned));

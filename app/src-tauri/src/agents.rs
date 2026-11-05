@@ -271,8 +271,7 @@ fn detect_all(
 ) -> Vec<AgentStatus> {
     let found = find_all(previous);
     let installed = programs(found.clone());
-    // A session in each agent not yet checked with one this launch, even one that can't
-    // delete it (omp): its setup and model are then known, not assumed.
+    // Once per launch, a session even in one that can't delete it (omp): checked, not assumed.
     let sessions: Vec<String> = installed
         .iter()
         .map(|(id, _)| id.clone())
@@ -497,8 +496,7 @@ fn keep_what_the_look_missed(
         else {
             continue;
         };
-        // A problem the look found with the agent itself (signed out, not answering) still
-        // shows, as it is: no pick changes that.
+        // A problem with the agent itself (signed out, not answering) shows: no pick changes it.
         if agent
             .setup
             .as_ref()
@@ -610,8 +608,7 @@ pub async fn agents_status<R: Runtime>(app: AppHandle<R>) -> Result<Vec<AgentSta
 /// Looks for the agents again (Check again) and returns what it found.
 #[tauri::command]
 pub async fn refresh_agents<R: Runtime>(app: AppHandle<R>) -> Result<Vec<AgentStatus>> {
-    // A full check: every agent is checked with a session again, and its models are asked
-    // again when its picker next opens.
+    // A full check: a session in every agent again, and its models asked again on next open.
     app.state::<Agents>().forget_checks();
     app.state::<agent_picks::Listings>().forget();
     refresh_in_background(app).await

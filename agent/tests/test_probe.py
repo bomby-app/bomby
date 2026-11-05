@@ -207,7 +207,7 @@ def test_listing_opens_and_closes_a_session_the_agent_cant_delete(
 def test_a_session_asked_for_is_opened_and_closed_without_the_option_lists(
     tmp_path: Path,
 ) -> None:
-    # Once per launch the app asks for one in an agent that can't delete it, to check it.
+    # The app asks once per launch, so omp's setup is checked, not assumed.
     setup, events = run_probe(tmp_path, {"FAKE_ACP_MODEL": "m1"}, open_session=True)
 
     assert (setup.step, setup.model, setup.session) == ("ready", "Fake m1", True)

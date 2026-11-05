@@ -28,7 +28,6 @@ export function AgentsSettings() {
   const { agents, error } = useAgents()
   const install = useAdapterInstall()
   const [checking, startChecking] = useTransition()
-  // The one agent whose model and effort are open, if any.
   const [openId, setOpenId] = useState<string | null>(null)
 
   return (
@@ -67,7 +66,6 @@ export function AgentsSettings() {
           checking={checking}
           onClick={() =>
             startChecking(() => {
-              // Each agent's models are asked again when its row next opens.
               forgetListedSettings()
               return checkAgentsAgain()
             })

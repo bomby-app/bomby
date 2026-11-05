@@ -279,12 +279,8 @@
   border-color: var(--border);
 }
 
-/* A model name too long for its box (`SlidingName`, features/agents/sliding-name.tsx): cut
-   at faded edges, it slides to its end and back after, while its list item is highlighted
-   (Base UI's `data-highlighted`, by mouse or keyboard), or its `data-sliding-names` box
-   (the model picker's button) is hovered. `100cqw - 100%` is the
-   overflow: negative when the name is wider than the row, zero when it fits, so a name that
-   fits never moves. `--slide-ms`, measured there, keeps the speed constant. */
+/* `SlidingName`: a long name slides between faded edges while highlighted or hovered.
+   `100cqw - 100%` is its overflow, zero when it fits; `--slide-ms` keeps the speed even. */
 [data-slot="sliding-name"] {
   container-type: inline-size;
   position: relative;
@@ -304,8 +300,7 @@
 }
 [data-slot="sliding-name-text"] {
   display: inline-block;
-  /* As wide as the fades, so the name's ends clear them: its last characters show once it
-     has slid to its end. */
+  /* As wide as the fades, so the name's ends show clear of them. */
   padding-inline: calc(var(--spacing) * 2);
   white-space: nowrap;
   transition: transform 300ms ease-out;

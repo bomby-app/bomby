@@ -79,9 +79,8 @@ export function Splash({ onDone }: { onDone: () => void }) {
   const agentReady = agent !== null && isReady(agent)
   const keysReady = keys !== null && keys.livekit && keys.gemini
   const ready = agentReady && keysReady
-  // The agent whose model picker is open: the agent step waits for it to close, so a pick
-  // that makes the agent ready doesn't take the picker away mid-pick. Worked out on each
-  // render, so a picker that goes away open (another agent, a sign-out) holds nothing up.
+  // The agent step waits for this agent's open picker to close. Worked out on each render,
+  // so a picker that goes away open (another agent, a sign-out) holds nothing up.
   const [pickingFor, setPickingFor] = useState<string | null>(null)
   const picking =
     agent !== null &&

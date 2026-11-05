@@ -122,7 +122,7 @@ async def probe(
         return Setup("unreachable", problem=f"It quit while starting: {detail(e)}")
     except OSError as e:
         return Setup("unreachable", problem=f"It couldn't be started: {detail(e)}")
-    # Anything else (an answer the SDK can't read) costs only this agent, not the probe.
+    # Anything else (an answer the SDK can't read) fails only this agent.
     except Exception as e:
         logger.exception("probing %s failed", harness.id)
         return Setup(
@@ -174,8 +174,7 @@ async def _check(
             client.auth_status,
             fix,
             lacks_model=False,
-            # Without a session there's no telling which setting is the model: any pick
-            # counts.
+            # Without a session the model setting is unknown: any pick counts.
             lacks_pick=harness.model_selection_required and not picks,
         )
     try:
@@ -191,8 +190,7 @@ async def _check(
         setup = _setup(
             client.auth_status,
             fix,
-            # An agent that lists config options but no model has none set up yet; nor
-            # has one that must have its model picked but lists none to pick.
+            # No model among its options, or none at all where its harness needs a pick.
             lacks_model=model is None
             and (bool(session.config_options) or harness.model_selection_required),
             lacks_pick=needs_pick(harness, applied, picks),

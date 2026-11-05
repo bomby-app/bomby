@@ -30,8 +30,7 @@ logger = logging.getLogger("bomby.acp_client.settings")
 
 type ConfigOptions = Sequence[SessionConfigOptionSelect | SessionConfigOptionBoolean]
 
-# What every agent offers to pick, by ACP's own categories. `mode` stays out: Bomby sets the
-# mode itself, for permissions.
+# The ACP categories the user picks. `mode` stays out: Bomby sets it, for permissions.
 CATEGORIES = frozenset({"model", "thought_level"})
 
 

@@ -73,9 +73,8 @@ test: (cargo-test "src-tauri/target/ts-rs")
 [group('check')]
 types: (cargo-test "src/generated" "export_bindings")
 
-# The core's tests, matching `filter`, with ts-rs writing the types into `types`, an app
-# folder (docs/tauri-notes.md#generated-types): 64-bit integers as numbers, which the page
-# never gets past 2^53 of
+# The core's tests matching `filter`, ts-rs writing the page's types into `types`
+# (docs/tauri-notes.md#generated-types); 64-bit integers as numbers, never past 2^53
 [private]
 [working-directory: 'app']
 cargo-test types filter="":

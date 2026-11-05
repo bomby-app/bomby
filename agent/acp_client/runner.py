@@ -315,7 +315,7 @@ class AcpRunner:
             if isinstance(e, OSError | RequestError | ConnectionError):
                 logger.warning("%s could not start: %r", self._harness.id, e)
             else:
-                # An answer the SDK can't read, say: the voice still hears one short line.
+                # Unexpected (an answer the SDK can't read): logged whole.
                 logger.exception("%s could not start", self._harness.id)
             raise ToolError(not_ready(self._harness)) from e
 

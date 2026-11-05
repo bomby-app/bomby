@@ -20,7 +20,6 @@ from pydantic.dataclasses import dataclass
 
 Speaker = Literal["user", "agent"]
 
-# Text the user typed, without the spaces around it.
 Text = Annotated[str, StringConstraints(strip_whitespace=True)]
 
 
@@ -58,7 +57,6 @@ class JobMetadata(BaseModel):
     listing: frozenset[str] = frozenset()
     # The agents the probe opens a session in even if they can't delete it (once per launch).
     sessions: frozenset[str] = frozenset()
-    # None when the app sends no voice; never blank.
     voice: (
         Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)] | None
     ) = None
