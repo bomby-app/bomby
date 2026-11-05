@@ -145,12 +145,15 @@ def test_each_session_gets_the_model_and_effort_the_agent_was_set_up_with(
     assert names(events).index("set_config_option") < names(events).index("prompt")
 
 
-def test_a_pick_the_agent_dropped_leaves_its_default(tmp_path: Path) -> None:
+@pytest.mark.parametrize("dropped", [Choice("model", "retired"), Choice("mode", "x")])
+def test_a_pick_the_agent_dropped_leaves_its_default(
+    tmp_path: Path, dropped: Choice
+) -> None:
     result, events = run_with_fake(
         tmp_path,
         lambda r: text(r.run("reply ok")),
         env={"FAKE_ACP_MODEL": "m1"},
-        choices=(Choice("model", "retired"), Choice("effort", "high")),
+        choices=(dropped, Choice("effort", "high")),
     )
 
     assert result == "Done: ok"
@@ -160,6 +163,23 @@ def test_a_pick_the_agent_dropped_leaves_its_default(tmp_path: Path) -> None:
         if e["event"] == "set_config_option"
     ]
     assert set_ == [("effort", "high")]
+
+
+def test_a_pick_the_agent_refuses_never_fails_the_task(tmp_path: Path) -> None:
+    goose_like = dataclasses.replace(
+        CLAUDE_CODE, setup_settings=frozenset({"provider"})
+    )
+
+    result, events = run_with_fake(
+        tmp_path,
+        lambda r: text(r.run("reply ok")),
+        env={"FAKE_ACP_MODEL": "m1"},
+        harness=goose_like,
+        choices=(Choice("provider", "p3"),),
+    )
+
+    assert result == "Done: ok"
+    assert names(events).count("new_session") == 1, "no session left behind to retry"
 
 
 def test_project_folders_become_cwd_and_extra_directories(tmp_path: Path) -> None:

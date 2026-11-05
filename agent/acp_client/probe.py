@@ -15,7 +15,7 @@ import logging
 import re
 import tempfile
 from collections.abc import Collection, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from acp import RequestError
@@ -32,7 +32,15 @@ from harnesses.harness import Harness
 
 from .client import HarnessClient, connect
 from .runner import launch
-from .settings import Applied, Choice, Setting, apply, model_name
+from .settings import (
+    Applied,
+    Choice,
+    Setting,
+    Skipped,
+    apply,
+    model_name,
+    model_setting,
+)
 
 logger = logging.getLogger("bomby.acp_client.probe")
 
@@ -59,10 +67,13 @@ class Setup:
     """The model a new session uses, picks applied, by its display name."""
     adapter: str | None = None
     """The ACP adapter it needs and doesn't have yet, which the app installs: "codex-acp"."""
-    gone: tuple[Choice, ...] = ()
-    """Picks the agent no longer offers; sessions keep its default for them."""
+    skipped: tuple[Skipped, ...] = ()
+    """Picks that didn't apply (gone or refused); sessions keep its default for them."""
     needs_pick: bool = False
     """Its harness requires a model pick (`model_selection_required`) and none holds."""
+    session: bool = False
+    """Whether a session was opened, so `model` and `skipped` are known. The background
+    check opens none in an agent that can't delete it (omp)."""
     settings: tuple[Setting, ...] = ()
     """What the user can pick, with the picks applied; only when listing."""
 
@@ -184,45 +195,27 @@ def _judge(
     account = label if isinstance(label, str) else None
     if auth and auth.get("kind") == "none":
         return Setup(ready=False, problem="Not signed in", fix=fix)
-    if applied is None:
-        if needs_pick:
-            return Setup(
-                ready=False, problem="Pick its model", account=account, needs_pick=True
-            )
-        return Setup(ready=True, account=account)
-    settings = applied.settings if listing else ()
-    if lacks_model:
-        return Setup(
-            ready=False,
-            problem="No model is set",
-            fix=fix,
-            account=account,
-            settings=settings,
-        )
-    if needs_pick:
-        return Setup(
-            ready=False,
-            problem="Pick its model",
-            account=account,
+    setup = Setup(ready=True, account=account)
+    if applied is not None:
+        setup = replace(
+            setup,
+            session=True,
             model=model_name(applied.settings),
-            gone=applied.gone,
-            needs_pick=True,
-            settings=settings,
+            skipped=applied.skipped,
+            settings=applied.settings if listing else (),
         )
-    return Setup(
-        ready=True,
-        account=account,
-        model=model_name(applied.settings),
-        gone=applied.gone,
-        settings=settings,
-    )
+    if lacks_model:
+        return replace(setup, ready=False, problem="No model is set", fix=fix)
+    if needs_pick:
+        return replace(setup, ready=False, problem="Pick its model", needs_pick=True)
+    return setup
 
 
 def _model_picked(applied: Applied, choices: Sequence[Choice]) -> bool:
     """Whether one of `choices` set the session's model and still holds."""
-    model = next((s for s in applied.settings if s.category == "model"), None)
+    model = model_setting(applied.settings)
     return model is not None and any(
-        c.setting == model.id and c not in applied.gone for c in choices
+        c.setting == model.id and applied.holds(c) for c in choices
     )
 
 

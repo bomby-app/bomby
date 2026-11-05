@@ -5,15 +5,17 @@ which answers with the whole list again, so a setting that depends on another (g
 models on its provider) comes back up to date (docs/acp-notes.md#session-settings).
 
 Picking is optional: an agent runs on its own defaults until the user picks something, and
-a pick it no longer offers is skipped, leaving that default
+a pick it no longer offers, or refuses, is skipped, leaving that default
 (docs/decisions/pick-agent-settings-like-buzz-and-zed.md). The runner applies the picks to
 every session it opens; the probe applies them too, to show what a session runs on.
 """
 
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import cast
+from typing import Literal, cast
 
+from acp import RequestError
 from acp.client.connection import ClientSideConnection
 from acp.schema import (
     SessionConfigOptionBoolean,
@@ -23,6 +25,8 @@ from acp.schema import (
 
 from harnesses.harness import Harness
 from job import JobFields
+
+logger = logging.getLogger("bomby.acp_client.settings")
 
 type ConfigOptions = Sequence[SessionConfigOptionSelect | SessionConfigOptionBoolean]
 
@@ -64,13 +68,31 @@ class Choice:
 
 
 @dataclass(frozen=True)
+class Skipped:
+    """A pick that didn't apply, so the session keeps the agent's default for it."""
+
+    setting: str
+    name: str
+    """The setting's name, as the agent gives it ("Model"), or its id if it's gone."""
+    value: str
+    why: Literal["gone", "refused"]
+    """`gone`: the agent no longer offers it (a model removed or renamed). `refused`: it
+    offers it but wouldn't take it (a provider with no key, say)."""
+
+
+@dataclass(frozen=True)
 class Applied:
     """A session's settings once the picks are applied."""
 
     settings: tuple[Setting, ...]
-    gone: tuple[Choice, ...]
-    """Picks the agent no longer offers (a model removed or renamed): skipped, so the
-    session keeps the agent's default for them."""
+    skipped: tuple[Skipped, ...]
+
+    def holds(self, choice: Choice) -> bool:
+        """Whether `choice` was applied, or already current."""
+        return not any(
+            s.setting == choice.setting and s.value == choice.value
+            for s in self.skipped
+        )
 
 
 def saved_choices(fields: JobFields) -> dict[str, list[Choice]]:
@@ -107,27 +129,43 @@ async def apply(
     options: ConfigOptions | None,
     choices: Sequence[Choice],
 ) -> Applied:
-    """Sets each pick on the session, in order, skipping one the agent no longer offers and
-    one that's already current."""
+    """Sets each pick on the session, in order, skipping one the agent no longer offers or
+    refuses, and one that's already current. A refused pick never fails the session: the
+    user can always change it."""
     settings = pickable(harness, options)
-    gone: list[Choice] = []
+    skipped: list[Skipped] = []
     for choice in choices:
         setting = next((s for s in settings if s.id == choice.setting), None)
         if setting is None or setting.option(choice.value) is None:
-            gone.append(choice)
+            name = setting.name if setting else choice.setting
+            skipped.append(Skipped(choice.setting, name, choice.value, "gone"))
             continue
         if setting.current == choice.value:
             continue
-        response = await conn.set_config_option(
-            config_id=choice.setting, session_id=session_id, value=choice.value
-        )
+        try:
+            response = await conn.set_config_option(
+                config_id=choice.setting, session_id=session_id, value=choice.value
+            )
+        except RequestError as e:
+            logger.warning(
+                "%s refused %s %s: %s", harness.id, choice.setting, choice.value, e
+            )
+            skipped.append(
+                Skipped(choice.setting, setting.name, choice.value, "refused")
+            )
+            continue
         settings = pickable(harness, response.config_options)
-    return Applied(settings, tuple(gone))
+    return Applied(settings, tuple(skipped))
+
+
+def model_setting(settings: Sequence[Setting]) -> Setting | None:
+    """The setting that picks the session's model, if the agent lists one."""
+    return next((s for s in settings if s.category == "model"), None)
 
 
 def model_name(settings: Sequence[Setting]) -> str | None:
     """The model a session runs, by the name the agent gives it."""
-    model = next((s for s in settings if s.category == "model"), None)
+    model = model_setting(settings)
     if model is None:
         return None
     chosen = model.option(model.current)

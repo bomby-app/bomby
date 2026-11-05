@@ -10,7 +10,7 @@ import pytest
 
 import probe as probe_cli
 from acp_client.probe import Setup, probe
-from acp_client.settings import Choice, saved_choices
+from acp_client.settings import Choice, Skipped, saved_choices
 from harnesses import Harness
 
 FAKE_AGENT = Path(__file__).resolve().parent / "fake_claude_acp.py"
@@ -95,15 +95,34 @@ def test_saved_choices_are_applied_in_order_and_the_settings_follow(
 
 
 def test_a_pick_the_agent_no_longer_offers_leaves_its_default(tmp_path: Path) -> None:
-    gone = Choice("model", "retired")
-
     setup, _ = run_probe(
-        tmp_path, {**CAN_DELETE, "FAKE_ACP_MODEL": "m1"}, choices=(gone,)
+        tmp_path,
+        {**CAN_DELETE, "FAKE_ACP_MODEL": "m1"},
+        choices=(Choice("model", "retired"),),
     )
 
     assert setup.ready
     assert setup.model == "Fake m1"
-    assert setup.gone == (gone,)
+    assert setup.skipped == (Skipped("model", "Model", "retired", "gone"),)
+
+
+def test_a_pick_the_agent_refuses_leaves_its_default_and_the_rest_apply(
+    tmp_path: Path,
+) -> None:
+    harness = dataclasses.replace(FAKE, setup_settings=frozenset({"provider"}))
+    choices = (Choice("provider", "p3"), Choice("effort", "high"))
+
+    setup, _ = run_probe(
+        tmp_path, {**CAN_DELETE, "FAKE_ACP_MODEL": "m1"}, harness, choices, listing=True
+    )
+
+    assert setup.ready, "a refused pick isn't a sign-in problem"
+    assert setup.skipped == (Skipped("provider", "Provider", "p3", "refused"),)
+    assert {s.id: s.current for s in setup.settings} == {
+        "provider": "p1",
+        "model": "m1",
+        "effort": "high",
+    }
 
 
 PICK_REQUIRED = dataclasses.replace(FAKE, model_selection_required=True)
@@ -164,7 +183,9 @@ def test_an_agent_without_a_model_needs_setup(tmp_path: Path) -> None:
         },
     )
 
-    assert setup == Setup(ready=False, problem="No model is set", fix="fake login")
+    assert setup == Setup(
+        ready=False, problem="No model is set", fix="fake login", session=True
+    )
 
 
 def test_a_refused_session_gives_the_agents_reason_and_fix(tmp_path: Path) -> None:
@@ -231,8 +252,9 @@ def test_the_command_line_answers_by_agent_id(
             "account": None,
             "model": "/bin/goose",
             "adapter": None,
-            "gone": [],
+            "skipped": [],
             "needs_pick": False,
+            "session": False,
             "settings": [],
         }
     }

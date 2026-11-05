@@ -17,6 +17,7 @@ import { useAdapterInstall } from "@/features/agents/use-adapter-install"
 import {
   checkAgentsAgain,
   isReady,
+  type SetupStep,
   setupStep,
 } from "@/features/agents/use-agents"
 import { cn } from "@/lib/utils"
@@ -52,23 +53,15 @@ export function firstAgent(
   )
 }
 
-/** Where the agent is: its setup step (`setupStep`), or still looking for one. */
-type Phase = "looking" | "none" | "adapter" | "fix" | "pick" | "ready"
-
-const PHASE = {
-  missing: "none",
-  connect: "adapter",
-  "sign-in": "fix",
-  pick: "pick",
-  ready: "ready",
-} as const
+/** Where the agent is: its setup step, or still looking for one. */
+type Phase = SetupStep | "looking"
 
 function phaseOf(
   agents: AgentStatus[] | null,
   agent: AgentStatus | null
 ): Phase {
   if (agents === null) return "looking"
-  return agent === null ? "none" : PHASE[setupStep(agent)]
+  return agent === null ? "missing" : setupStep(agent)
 }
 
 const COPY: Record<Phase, (name: string) => [string, string]> = {
@@ -76,15 +69,15 @@ const COPY: Record<Phase, (name: string) => [string, string]> = {
     "Set up your first agent",
     "I pass what you say to a coding agent already on your Mac. Let me look for one.",
   ],
-  none: () => [
+  missing: () => [
     "Let's get you an agent",
     "I pass what you say to a coding agent on your Mac. Claude Code is a good first one.",
   ],
-  adapter: () => [
+  connect: () => [
     "Set up your first agent",
     "I pass what you say to a coding agent already on your Mac. I found one for us.",
   ],
-  fix: (name) => [
+  "sign-in": (name) => [
     "Almost there",
     `${name} is on your Mac, but it needs one thing first.`,
   ],
@@ -131,7 +124,7 @@ export function FirstAgent({
             {install.error}
           </p>
         )}
-        {(phase === "fix" || phase === "none") && <CheckAgain />}
+        {(phase === "sign-in" || phase === "missing") && <CheckAgain />}
         {/* Another agent can always be picked, also while this one needs fixing. */}
         {others.some((other) => other.path !== null) && (
           <OtherAgents agents={others} onChoose={onChoose} />
@@ -185,11 +178,11 @@ function statusOf(agent: AgentStatus | null, phase: Phase): string {
   switch (phase) {
     case "looking":
       return "Looking on this Mac"
-    case "none":
+    case "missing":
       return "Not on this Mac yet"
     case "ready":
       return ["Ready", setup?.account].filter(Boolean).join(" · ")
-    case "fix":
+    case "sign-in":
       return setup?.problem ?? "Needs setting up"
     case "pick":
       return "Pick its model"
@@ -201,11 +194,11 @@ function statusOf(agent: AgentStatus | null, phase: Phase): string {
 /** The same, in the list of other agents, where there's room for less. */
 function shortStatusOf(agent: AgentStatus, phase: Phase): string {
   switch (phase) {
-    case "none":
+    case "missing":
       return "Not on this Mac"
     case "ready":
       return "Ready"
-    case "fix":
+    case "sign-in":
       return agent.setup?.problem ?? "Needs setting up"
     default:
       return "Needs setting up"
@@ -218,22 +211,22 @@ function Action({ agent, phase }: { agent: AgentStatus | null; phase: Phase }) {
     CARD_BUTTON,
     "bg-primary text-primary-foreground hover:bg-primary/90"
   )
-  if (phase === "adapter")
+  if (phase === "connect")
     return (
       <SetUpButton size="default" className={primary}>
         Set up now
       </SetUpButton>
     )
   if ((phase === "pick" || phase === "ready") && agent)
-    return <ModelPicker agent={agent} />
-  if (phase === "none")
+    return <ModelPicker agent={agent} size="default" className={CARD_BUTTON} />
+  if (phase === "missing")
     return (
       <CopyButton text={CLAUDE_INSTALL} className={CARD_BUTTON}>
         Copy install
       </CopyButton>
     )
   const fix = agent?.setup?.fix
-  if (phase === "fix" && fix)
+  if (phase === "sign-in" && fix)
     return (
       <CopyButton text={fix} className={CARD_BUTTON}>
         Copy {fix}

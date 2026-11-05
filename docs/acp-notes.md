@@ -64,7 +64,7 @@ Probed 2026-11-04: `initialize` then `session/new` in an empty folder, no prompt
 | Agent | Unconfigured | `authMethods` |
 | --- | --- | --- |
 | Claude (adapter 0.100.0) | Session opens; `_auth/status_update` pushes `{"kind": "none", "label": "Not logged in"}` | None unless the client offers terminal auth, and those run the adapter itself (`--cli auth login`) |
-| OpenCode 2.1.4 | Session opens on its free models (`model` = `opencode/big-pickle`): ready | `opencode-login`: "Run `opencode auth login` in the terminal" |
+| OpenCode 2.1.4 | Session opens on its free models (`model` = `opencode/big-pickle`): signed in, but Bomby asks to pick its model first (`model_selection_required`) | `opencode-login`: "Run `opencode auth login` in the terminal" |
 | omp 18.16.0 | Session opens without a `model` config option | `agent`: "Use existing local credentials" |
 | Codex (adapter 2.2.2) | `session/new` fails with `auth_required` (`-32000`, "Authentication required") | `api-key` and `chat-gpt`, no command |
 | goose 1.57.0 | `session/new` fails: `-32603` "Internal error", `data`: "Failed to resolve provider and model: Configuration value not found: GOOSE_PROVIDER" | `goose-provider`: "Run `goose configure` to set up your AI provider and API key" |

@@ -485,12 +485,13 @@ class AcpRunner:
             session.config_options,
             self._choices,
         )
-        for choice in applied.gone:
+        for skipped in applied.skipped:
             logger.warning(
-                "%s no longer offers %s %s; the session keeps its default",
+                "%s skipped %s %s (%s); the session keeps its default",
                 self._harness.id,
-                choice.setting,
-                choice.value,
+                skipped.setting,
+                skipped.value,
+                skipped.why,
             )
 
     async def _bypass_permissions(

@@ -13,7 +13,7 @@ use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use crate::agents::{self, Agents, CHANGED};
 use crate::db::Db;
 use crate::error::{Error, Result};
-use crate::setup::{self, Choice, Setup};
+use crate::setup::{self, Choice, Listed};
 
 /// Every agent's picks, in the order they're applied. An agent on its defaults has none.
 pub fn saved(conn: &Connection) -> Result<HashMap<String, Vec<Choice>>> {
@@ -62,12 +62,12 @@ fn program<R: Runtime>(app: &AppHandle<R>, agent: &str) -> Result<PathBuf> {
 
 /// What `agent` lets the user pick, with `choices` applied, asked of the agent itself (one
 /// short-lived probe, a few seconds).
-fn list<R: Runtime>(app: &AppHandle<R>, agent: &str, choices: Vec<Choice>) -> Result<Setup> {
+fn list<R: Runtime>(app: &AppHandle<R>, agent: &str, choices: &[Choice]) -> Result<Listed> {
     let path = program(app, agent)?;
-    let choices = HashMap::from([(agent.to_owned(), choices)]);
+    let choices = HashMap::from([(agent.to_owned(), choices.to_vec())]);
     setup::probe(&[(agent.to_owned(), path)], &choices, Some(agent))
-        .and_then(|mut setups| setups.remove(agent))
-        .ok_or_else(|| Error::Invalid("Bomby couldn't reach the agent. Try again?".into()))
+        .and_then(|mut listed| listed.remove(agent))
+        .ok_or_else(|| Error::Unreachable("Bomby couldn't reach the agent. Try again?".into()))
 }
 
 /// What the model picker shows for `agent` when it opens: its settings, its picks applied.
@@ -76,28 +76,30 @@ pub fn agent_settings<R: Runtime>(
     app: AppHandle<R>,
     db: State<'_, Db>,
     agent: String,
-) -> Result<Setup> {
+) -> Result<Listed> {
     let choices = saved(&db.conn())?.remove(&agent).unwrap_or_default();
-    list(&app, &agent, choices)
+    list(&app, &agent, &choices)
 }
 
-/// Saves `agent`'s picks and returns its settings with them applied. A pick can change what
-/// the next one offers (goose's models follow its provider), so the picker shows this
-/// answer. Only this agent's row changes: the windows get the list with its new setup.
+/// Applies `agent`'s picks, saves them once the agent has answered, and returns its settings
+/// with them applied. A pick can change what the next one offers (goose's models follow its
+/// provider), so the picker shows this answer. Only this agent's row changes: the windows get
+/// the list with its new setup.
 #[tauri::command(async)]
 pub fn pick_agent_settings<R: Runtime>(
     app: AppHandle<R>,
     db: State<'_, Db>,
     agent: String,
     choices: Vec<Choice>,
-) -> Result<Setup> {
+) -> Result<Listed> {
+    // Asked first, so a pick is saved only with a setup to show for it.
+    let listed = list(&app, &agent, &choices)?;
     save(&mut db.conn(), &agent, &choices)?;
-    let setup = list(&app, &agent, choices)?;
-    if let Some(found) = app.state::<Agents>().replace_setup(&agent, &setup) {
+    if let Some(found) = app.state::<Agents>().replace_setup(&agent, &listed.setup) {
         // Only fails for an invalid event name or payload.
         let _ = app.emit(CHANGED, &found);
     }
-    Ok(setup)
+    Ok(listed)
 }
 
 #[cfg(test)]

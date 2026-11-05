@@ -18,9 +18,10 @@ use crate::agents::run;
 /// the packaged agent's first start after an install takes about 30 s.
 const TIMEOUT: Duration = Duration::from_secs(60);
 
-/// What the probe found for one agent (`Setup` in `agent/acp_client/probe.py`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+/// What the probe found for one agent (`Setup` in `agent/acp_client/probe.py`). The probe
+/// writes snake_case, the page reads camelCase.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all(serialize = "camelCase", deserialize = "snake_case"))]
 pub struct Setup {
     pub ready: bool,
     /// What's wrong, in the agent's words where it gave any.
@@ -32,13 +33,34 @@ pub struct Setup {
     pub model: Option<String>,
     /// The ACP adapter it needs and doesn't have yet (`adapters.rs` installs it).
     pub adapter: Option<String>,
-    /// Picks the agent no longer offers; sessions keep its default for them.
+    /// Picks that didn't apply (gone or refused); sessions keep its default for them.
     #[serde(default)]
-    pub gone: Vec<Choice>,
+    pub skipped: Vec<Skipped>,
     /// Its harness requires a model pick (`model_selection_required`) and none holds.
-    #[serde(default, alias = "needs_pick")]
+    #[serde(default)]
     pub needs_pick: bool,
-    /// What the user can pick, picks applied; only when the model picker asks.
+    /// Whether the probe opened a session, so `model` and `skipped` are known.
+    #[serde(default)]
+    pub session: bool,
+}
+
+/// A pick that didn't apply, so the session keeps the agent's default for it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Skipped {
+    pub setting: String,
+    /// The setting's name, as the agent gives it: "Model".
+    pub name: String,
+    pub value: String,
+    /// `gone` (no longer offered) or `refused` (offered, but the agent wouldn't take it).
+    pub why: String,
+}
+
+/// What the model picker shows: an agent's setup, and the settings it lets the user pick
+/// with the picks applied.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Listed {
+    #[serde(flatten)]
+    pub setup: Setup,
     #[serde(default)]
     pub settings: Vec<Setting>,
 }
@@ -72,13 +94,13 @@ pub struct Choice {
 }
 
 /// Probes `agents` (id and program), all at once, each with its `choices` applied.
-/// `listing` is the agent whose settings the model picker lists. `None` when the probe
-/// couldn't run.
+/// `listing` is the agent whose settings the model picker lists; the others come back with
+/// none. `None` when the probe couldn't run.
 pub fn probe(
     agents: &[(String, PathBuf)],
     choices: &HashMap<String, Vec<Choice>>,
     listing: Option<&str>,
-) -> Option<HashMap<String, Setup>> {
+) -> Option<HashMap<String, Listed>> {
     if agents.is_empty() {
         return Some(HashMap::new());
     }
@@ -103,31 +125,30 @@ mod tests {
 
     #[test]
     fn reads_the_probes_answer() {
-        let out = r#"{"goose": {"ready": false, "problem": "No provider", "fix": "goose configure", "account": null, "model": null, "adapter": null, "gone": [], "needs_pick": false, "settings": [{"id": "provider", "name": "Provider", "category": null, "current": "openrouter", "options": [{"value": "openrouter", "name": "OpenRouter", "group": null}]}]}}"#;
-        let setups: HashMap<String, Setup> = serde_json::from_str(out).unwrap();
+        let out = r#"{"goose": {"ready": false, "problem": "No provider", "fix": "goose configure", "account": null, "model": null, "adapter": null, "skipped": [{"setting": "model", "name": "Model", "value": "x", "why": "gone"}], "needs_pick": true, "session": true, "settings": [{"id": "provider", "name": "Provider", "category": null, "current": "openrouter", "options": [{"value": "openrouter", "name": "OpenRouter", "group": null}]}]}}"#;
+        let listed: HashMap<String, Listed> = serde_json::from_str(out).unwrap();
+        let goose = &listed["goose"];
         assert_eq!(
-            setups["goose"],
+            goose.setup,
             Setup {
                 ready: false,
                 problem: Some("No provider".into()),
                 fix: Some("goose configure".into()),
-                account: None,
-                model: None,
-                adapter: None,
-                gone: Vec::new(),
-                needs_pick: false,
-                settings: vec![Setting {
-                    id: "provider".into(),
-                    name: "Provider".into(),
-                    category: None,
-                    current: "openrouter".into(),
-                    options: vec![SettingOption {
-                        value: "openrouter".into(),
-                        name: "OpenRouter".into(),
-                        group: None,
-                    }],
+                skipped: vec![Skipped {
+                    setting: "model".into(),
+                    name: "Model".into(),
+                    value: "x".into(),
+                    why: "gone".into(),
                 }],
+                needs_pick: true,
+                session: true,
+                ..Setup::default()
             }
         );
+        assert_eq!(goose.settings[0].options[0].name, "OpenRouter");
+        // The page gets camelCase.
+        let sent = serde_json::to_value(goose).unwrap();
+        assert_eq!(sent["needsPick"], true);
+        assert_eq!(sent["settings"][0]["id"], "provider");
     }
 }

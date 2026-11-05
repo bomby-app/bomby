@@ -261,7 +261,7 @@ fn detect_all(
             .collect();
         let setups = probe.join().unwrap_or_default();
         for agent in &mut agents {
-            agent.setup = setups.get(agent.id).cloned();
+            agent.setup = setups.get(agent.id).map(|listed| listed.setup.clone());
         }
         agents
     })
@@ -296,6 +296,9 @@ struct Detection {
     /// Programs a call found that the next look starts from, so a login shell that fails
     /// then doesn't lose them.
     seen: HashMap<String, PathBuf>,
+    /// How often each agent's picks changed, so a look that started before a pick doesn't
+    /// put back what that agent ran on before it.
+    picks: HashMap<String, u64>,
 }
 
 impl Agents {
@@ -308,16 +311,14 @@ impl Agents {
         self.lock().found.clone()
     }
 
-    /// Puts `setup` in place of agent `id`'s, without its option lists, which only the model
-    /// picker uses, and returns the new list; `None` when no look has found that agent.
+    /// Puts `setup`, found right after the user picked agent `id`'s settings, in place of
+    /// its setup, and returns the new list; `None` when no look has found that agent.
     pub fn replace_setup(&self, id: &str, setup: &Setup) -> Option<Vec<AgentStatus>> {
         let mut state = self.lock();
+        *state.picks.entry(id.to_owned()).or_default() += 1;
         let found = state.found.as_mut()?;
         let agent = found.iter_mut().find(|a| a.id == id)?;
-        agent.setup = Some(Setup {
-            settings: Vec::new(),
-            ..setup.clone()
-        });
+        agent.setup = Some(setup.clone());
         Some(found.clone())
     }
 
@@ -367,6 +368,7 @@ impl Agents {
             .collect();
         let seen = std::mem::take(&mut state.seen);
         previous.extend(seen.clone());
+        let picks = state.picks.clone();
         drop(state);
 
         // A look that panics keeps what was found before, and never leaves waiters waiting.
@@ -375,6 +377,8 @@ impl Agents {
         let mut state = self.lock();
         let changed = match found {
             Ok(found) => {
+                let picked_since = |id: &str| state.picks.get(id) != picks.get(id);
+                let found = keep_what_the_look_missed(found, state.found.as_deref(), picked_since);
                 let changed = state.found.as_ref() != Some(&found);
                 state.found = Some(found);
                 changed
@@ -392,6 +396,34 @@ impl Agents {
         self.finished.notify_all();
         (state.found.clone().unwrap_or_default(), changed)
     }
+}
+
+/// `found`, a look's answer, with what it couldn't know taken from `before`, the list it
+/// replaces: the setup of an agent whose settings were picked while it ran, and, for an
+/// agent it opened no session in (omp can't delete one), the model and skipped picks the
+/// last listing found.
+fn keep_what_the_look_missed(
+    mut found: Vec<AgentStatus>,
+    before: Option<&[AgentStatus]>,
+    picked_since: impl Fn(&str) -> bool,
+) -> Vec<AgentStatus> {
+    for agent in &mut found {
+        let Some(old) = before
+            .unwrap_or_default()
+            .iter()
+            .find(|a| a.id == agent.id)
+            .and_then(|a| a.setup.as_ref())
+        else {
+            continue;
+        };
+        if picked_since(agent.id) {
+            agent.setup = Some(old.clone());
+        } else if let Some(new) = agent.setup.as_mut().filter(|s| !s.session) {
+            new.model.clone_from(&old.model);
+            new.skipped.clone_from(&old.skipped);
+        }
+    }
+    found
 }
 
 /// The installed ones among `agents` a call can use: all but those the probe found not set
@@ -759,33 +791,22 @@ mod tests {
     fn ready(model: &str) -> Setup {
         Setup {
             ready: true,
-            problem: None,
-            fix: None,
-            account: None,
             model: Some(model.into()),
-            adapter: None,
-            gone: Vec::new(),
-            needs_pick: false,
-            settings: Vec::new(),
+            session: true,
+            ..Setup::default()
         }
     }
 
     fn needs_setup() -> Setup {
         Setup {
-            ready: false,
             problem: Some("No model is set".into()),
-            fix: None,
-            account: None,
-            model: None,
-            adapter: None,
-            gone: Vec::new(),
-            needs_pick: false,
-            settings: Vec::new(),
+            session: true,
+            ..Setup::default()
         }
     }
 
     #[test]
-    fn a_pick_replaces_only_that_agents_setup_without_its_option_lists() {
+    fn a_pick_replaces_only_that_agents_setup() {
         let agents = Agents::default();
         assert_eq!(
             agents.replace_setup("goose", &ready("x")),
@@ -798,25 +819,61 @@ mod tests {
             status("omp", Some("/b/omp")),
         ];
         agents.detect_with(None, |_| shown.clone());
-        let picked = Setup {
-            settings: vec![setup::Setting {
-                id: "model".into(),
-                name: "Model".into(),
-                category: Some("model".into()),
-                current: "kimi".into(),
-                options: Vec::new(),
-            }],
-            ..ready("Kimi")
-        };
-        let found = agents.replace_setup("goose", &picked).unwrap();
+        let found = agents.replace_setup("goose", &ready("Kimi")).unwrap();
 
-        assert_eq!(
-            found[0].setup,
-            Some(ready("Kimi")),
-            "kept without the lists"
-        );
+        assert_eq!(found[0].setup, Some(ready("Kimi")));
         assert_eq!(found[1], shown[1], "the others stay as they were");
         assert_eq!(agents.cached(), Some(found));
+    }
+
+    #[test]
+    fn a_look_that_started_before_a_pick_keeps_the_pick() {
+        let agents = Agents::default();
+        let goose = |setup| AgentStatus {
+            setup: Some(setup),
+            ..status("goose", Some("/b/goose"))
+        };
+        agents.detect_with(None, |_| vec![goose(ready("old"))]);
+
+        let (found, _) = agents.detect_with(None, |_| {
+            // The user picks while the look runs; the look saw the picks from before.
+            agents.replace_setup("goose", &ready("picked"));
+            vec![goose(ready("old"))]
+        });
+        assert_eq!(found, vec![goose(ready("picked"))]);
+
+        let (found, _) = agents.detect_with(None, |_| vec![goose(ready("next"))]);
+        assert_eq!(
+            found,
+            vec![goose(ready("next"))],
+            "a later look decides again"
+        );
+    }
+
+    #[test]
+    fn a_look_without_a_session_keeps_the_model_the_last_listing_found() {
+        let agents = Agents::default();
+        let omp = |setup| AgentStatus {
+            setup: Some(setup),
+            ..status("omp", Some("/b/omp"))
+        };
+        agents.detect_with(None, |_| {
+            vec![omp(Setup {
+                ready: true,
+                ..Setup::default()
+            })]
+        });
+        agents.replace_setup("omp", &ready("Kimi"));
+
+        let (found, _) = agents.detect_with(None, |_| {
+            vec![omp(Setup {
+                ready: true,
+                ..Setup::default()
+            })]
+        });
+        let setup = found[0].setup.as_ref().unwrap();
+        assert_eq!(setup.model.as_deref(), Some("Kimi"));
+        assert!(!setup.session, "the rest is the look's");
     }
 
     #[test]

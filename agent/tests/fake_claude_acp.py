@@ -9,7 +9,8 @@ initialize, like an adapter without it. Setup scenarios, by environment variable
 - FAKE_ACP_AUTH_METHODS=<description>: initialize offers one auth method with it
 - FAKE_ACP_MODEL=<model>: sessions offer a model option set to it, beside "m2", an effort
   option (low, high) and an uncategorized provider (p1, p2; on p2 the only model is
-  "p2-model"), all settable; `none` leaves all of them out
+  "p2-model"), all settable, but the provider "p3", listed, is refused; `none` leaves all
+  of them out
 - FAKE_ACP_AUTH_STATUS=<kind>: advertise `authStatus` and push that kind after initialize
 - FAKE_ACP_CAN_DELETE=1: advertise `session/delete` (the SDK routes no such method, so it
   fails; only the advertisement matters)
@@ -109,7 +110,7 @@ def config_options(
     models = ["p2-model"] if values["provider"] == "p2" else [model, "m2"]
     return [
         mode,
-        _select("provider", None, values["provider"], ["p1", "p2"]),
+        _select("provider", None, values["provider"], ["p1", "p2", "p3"]),
         _select("model", "model", values["model"], models),
         _select("effort", "thought_level", values["effort"], ["low", "high"]),
     ]
@@ -215,6 +216,8 @@ class FakeClaude:
         log(
             "set_config_option", session_id=session_id, config_id=config_id, value=value
         )
+        if value == "p3":
+            raise RequestError(-32603, "Internal error", {"details": "no key for p3"})
         values = self._sessions[session_id].values
         values[config_id] = str(value)
         if config_id == "provider":

@@ -9,7 +9,7 @@ import { AgentLogo } from "./agent-logos"
 import { type AgentStatus, versionNumber } from "./api"
 import { CopyButton } from "./copy-button"
 import { InstallFirstAgent } from "./install-first-agent"
-import { ModelPicker } from "./model-picker"
+import { ModelPicker, skippedNote } from "./model-picker"
 import { SetUpButton } from "./set-up-button"
 import { useAdapterInstall } from "./use-adapter-install"
 import { checkAgentsAgain, isReady, setupStep, useAgents } from "./use-agents"
@@ -113,12 +113,11 @@ function detail(agent: AgentStatus): ReactNode {
       )
     }
     case "pick":
-      return setup?.gone.length
-        ? `The model you picked isn't offered any more. Pick another to use it in calls.`
+      return setup?.skipped.length
+        ? `${skippedNote(setup.skipped[0], name)} Calls use it once its model is picked.`
         : `Found on this Mac. Pick its model to use it in calls.`
     case "ready": {
-      if (setup?.gone.length)
-        return `The model you picked isn't offered any more, so it runs on its default. Pick another.`
+      if (setup?.skipped.length) return skippedNote(setup.skipped[0], name)
       const state = [setup?.account, version && versionNumber(version)]
         .filter(Boolean)
         .join(" · ")

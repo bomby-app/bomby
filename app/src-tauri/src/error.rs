@@ -7,6 +7,9 @@ pub enum Error {
     /// Input the user can fix; the message is shown as is.
     #[error("{0}")]
     Invalid(String),
+    /// An agent that didn't answer; the message is shown as is.
+    #[error("{0}")]
+    Unreachable(String),
     /// The thing the page asked for is gone (deleted in another window, say).
     #[error("{0} not found")]
     NotFound(&'static str),

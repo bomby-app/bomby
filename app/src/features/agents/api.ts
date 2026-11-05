@@ -26,13 +26,25 @@ export type Setup = {
   model: string | null
   /** The ACP adapter it still needs ("codex-acp"); Set up installs it. */
   adapter: string | null
-  /** Picks the agent no longer offers; sessions keep its default for them. */
-  gone: Choice[]
+  /** Picks that didn't apply; sessions keep its default for them. */
+  skipped: Skipped[]
   /** Its harness requires a model pick, and none holds: calls wait for one. */
   needsPick: boolean
-  /** What the user can pick, picks applied; only from `agentSettings`. */
-  settings: Setting[]
+  /** Whether a session was opened, so `model` and `skipped` are known. */
+  session: boolean
 }
+
+/** A pick that didn't apply: no longer offered (`gone`), or `refused` by the agent. */
+export type Skipped = {
+  setting: string
+  /** The setting's name, as the agent gives it: "Model". */
+  name: string
+  value: string
+  why: "gone" | "refused"
+}
+
+/** What the model picker shows: the setup, and what the user can pick, picks applied. */
+export type Listed = Setup & { settings: Setting[] }
 
 /** A session setting the user can pick: a model, an effort, goose's provider. */
 export type Setting = {
@@ -65,7 +77,7 @@ export function refreshAgents(): Promise<AgentStatus[]> {
 }
 
 /** What `agent` lets the user pick, its picks applied, asked of the agent (a few seconds). */
-export function agentSettings(agent: string): Promise<Setup> {
+export function agentSettings(agent: string): Promise<Listed> {
   return invoke("agent_settings", { agent })
 }
 
@@ -77,7 +89,7 @@ export function agentSettings(agent: string): Promise<Setup> {
 export function pickAgentSettings(
   agent: string,
   choices: Choice[]
-): Promise<Setup> {
+): Promise<Listed> {
   return invoke("pick_agent_settings", { agent, choices })
 }
 
