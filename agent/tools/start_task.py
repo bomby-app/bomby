@@ -51,11 +51,16 @@ async def start_task(
         await context.update(f"Sent to {who} mid-task, in session {name}: {task}")
     else:
         await context.update(f"{who} has started on this, in session {name}: {task}")
-    # Recorded before anything can be cancelled, so the cleanup below always finds it.
-    id = board.add(harness, name, task)
+    # Recorded before anything can be cancelled, so the cleanup below always finds it. A
+    # busy session takes it once its running task ends (or at once, when it's steered in).
+    id = board.add(harness, name, task, "queued" if runner.is_busy(name) else "working")
+
+    async def started() -> None:
+        await board.start(id)
+
     try:
         await board.publish()
-        turn = await runner.run(task, name)
+        turn = await runner.run(task, name, on_start=started)
     except asyncio.CancelledError:
         await board.finish(id, "stopped")
         raise

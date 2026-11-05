@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import json
+from collections.abc import Awaitable, Callable
 from types import SimpleNamespace
 from typing import cast, final, get_args
 
@@ -35,16 +36,28 @@ def test_with_no_agents_the_note_says_work_cant_start() -> None:
 
 @final
 class FakeRunner:
-    """Stands in for an `AcpRunner`: `run` waits on `release`, then returns `turn`."""
+    """Stands in for an `AcpRunner`: `run` takes the task, waits on `release`, then
+    returns `turn`. A `busy` one waits on `release` before taking the task too, like a
+    session whose running task has to end first."""
 
-    def __init__(self, turn: Turn) -> None:
+    def __init__(self, turn: Turn, busy: bool = False) -> None:
         self.turn = turn
+        self.busy = busy
         self.release = asyncio.Event()
 
     def is_busy(self, _name: str) -> bool:
-        return False
+        return self.busy
 
-    async def run(self, _task: str, _session: str) -> Turn:
+    async def run(
+        self,
+        _task: str,
+        _session: str,
+        on_start: Callable[[], Awaitable[None]] | None = None,
+    ) -> Turn:
+        if self.busy:
+            _ = await self.release.wait()
+        if on_start is not None:
+            await on_start()
         _ = await self.release.wait()
         return self.turn
 
@@ -95,6 +108,19 @@ def test_a_finished_task_is_done_and_a_steered_one_added() -> None:
     assert asyncio.run(scenario(Turn("Fixed."))) == ("Fixed.", ["working", "done"])
     steered = Turn("Folded in.", steered=True)
     assert asyncio.run(scenario(steered)) == ("Folded in.", ["working", "added"])
+
+
+def test_a_task_for_a_busy_session_is_queued_until_the_agent_takes_it() -> None:
+    async def scenario() -> list[str]:
+        runner = FakeRunner(Turn("Fixed."), busy=True)
+        b, sent = board()
+        task = asyncio.create_task(call_start_task(runner, b))
+        await asyncio.sleep(0)
+        runner.release.set()
+        _ = await task
+        return sent
+
+    assert asyncio.run(scenario()) == ["queued", "working", "done"]
 
 
 def test_a_cancelled_task_ends_stopped() -> None:

@@ -12,7 +12,7 @@ import asyncio
 import contextlib
 import logging
 import os
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from pathlib import Path
@@ -219,12 +219,19 @@ class AcpRunner:
         session = self._sessions.get(session_name(name))
         return session is not None and session.running is not None
 
-    async def run(self, task: str, session: str = DEFAULT_SESSION) -> Turn:
+    async def run(
+        self,
+        task: str,
+        session: str = DEFAULT_SESSION,
+        on_start: Callable[[], Awaitable[None]] | None = None,
+    ) -> Turn:
         """Send `task` to the session called `session`; return the agent's final message.
 
         A new name opens a new session. Mid-turn, the task is steered into the running
         turn, and this returns a steered `Turn` when that turn ends: its result answers
-        both. Cancelling a steered request stops only the waiting, not the turn.
+        both. Cancelling a steered request stops only the waiting, not the turn. Without
+        steering, it waits for the running turn and then takes its own. `on_start` runs once
+        the agent takes the task: steered in, or its own turn starting.
         """
         if self._closed:
             raise ToolError(self._ending())
@@ -235,12 +242,16 @@ class AcpRunner:
         if running is not None and self._can_steer:
             conn, session_id = await self._open(s)
             if await self._steer(conn, s, session_id, task):
+                if on_start is not None:
+                    await on_start()
                 await running.wait()
                 return Turn(steered_note(self._harness), steered=True)
         async with s.turn_lock:
             # Set before anything awaits, so a request steered in now waits on this turn.
             running = s.running = _RunningTurn()
             try:
+                if on_start is not None:
+                    await on_start()
                 conn, session_id = await self._open(s)
                 text = await self._prompt(conn, s, session_id, task)
             except ToolError as e:

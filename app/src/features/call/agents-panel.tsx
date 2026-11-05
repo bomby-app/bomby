@@ -1,4 +1,12 @@
-import { Check, CircleSlash, Inbox, LoaderCircle, Plus, X } from "lucide-react"
+import {
+  Check,
+  CircleSlash,
+  Clock,
+  Inbox,
+  LoaderCircle,
+  Plus,
+  X,
+} from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -81,6 +89,7 @@ function TaskRow({ task }: { task: Task }) {
 }
 
 const STATUS = {
+  queued: { label: "Queued", Icon: Clock },
   working: { label: "Working", Icon: LoaderCircle },
   added: { label: "Added", Icon: Plus },
   done: { label: "Done", Icon: Check },

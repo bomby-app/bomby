@@ -8,7 +8,7 @@ export type Task = {
   agentName: string
   session: string
   task: string
-  status: "working" | "added" | "done" | "failed" | "stopped"
+  status: "queued" | "working" | "added" | "done" | "failed" | "stopped"
   startedAt: number
   endedAt: number | null
 }

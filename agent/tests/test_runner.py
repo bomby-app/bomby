@@ -266,13 +266,21 @@ def test_without_steering_a_request_waits_for_the_running_turn(
 ) -> None:
     async def scenario(runner: AcpRunner) -> list[str]:
         first = await until_prompted(runner, "hang")
-        second = asyncio.create_task(text(runner.run("turns")))
+        taken = asyncio.Event()
+
+        async def on_start() -> None:
+            taken.set()
+
+        second = asyncio.create_task(text(runner.run("turns", on_start=on_start)))
         await asyncio.sleep(0.5)
         assert not second.done()  # queued behind the running turn
+        assert not taken.is_set()  # and not taken yet
         _ = first.cancel()
         with pytest.raises(asyncio.CancelledError):
             await first
-        return [await second]
+        result = await second
+        assert taken.is_set()
+        return [result]
 
     result, events = run_with_fake(tmp_path, scenario, env=env, harness=harness)
 
