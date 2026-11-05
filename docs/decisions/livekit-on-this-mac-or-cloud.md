@@ -29,4 +29,5 @@ A call needs a LiveKit server between the page and the voice agent. Until now th
 - The app grows by 54 MB (17.6 MB in the DMG and the update) and the build needs Go (`mise.toml`).
 - A local server and the worker are two processes to supervise. The core stops the server with the app, and stops one a killed Bomby left behind the next time it starts (`local_server.rs`).
 - Local calls get WebRTC's own noise suppression in the webview, not Krisp.
+- Krisp comes as LiveKit's proprietary plugin (LiveKit's terms of service, not open source), shipped in the frozen agent: 72 MB more, 57 MB of it models NC never loads ([notes](../livekit-notes.md#worker-echo-and-noise)). Its license for redistribution in Bomby's DMG is for the owner to confirm before a release.
 - The default for new users is this Mac for now; the owner settles it after trying both (2026-11-05).
