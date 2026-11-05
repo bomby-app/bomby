@@ -20,8 +20,7 @@ const CHOICES: { value: LiveKitServer; title: string; description: string }[] =
     {
       value: "theirs",
       title: "LiveKit Cloud or your own server",
-      description:
-        "Your own keys. LiveKit Cloud adds Krisp noise cancellation.",
+      description: "Your own LiveKit project or server, with its keys.",
     },
   ]
 

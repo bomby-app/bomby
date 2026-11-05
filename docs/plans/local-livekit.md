@@ -185,7 +185,7 @@ If step 2 fails on loopback, use the LAN-IP fallback in [Core: `local_server.rs`
 ## Owner decisions
 
 1. **Default for new users:** open. The owner decides after trying local mode in the spike (2026-11-05).
-2. **Noise cancellation model on Cloud:** open; NC recommended. Both run in the agent and both work on the free Build plan:
+2. **Noise cancellation on Cloud:** dropped (owner, 2026-11-05): Krisp runs in the agent, not on Cloud, so it would mean shipping LiveKit's proprietary binary. The research, for later: Both run in the agent and both work on the free Build plan:
    - **Krisp NC** (background noise suppression) removes non-speech noise (fans, traffic, music) and keeps every voice. Included on every plan, Build too, with no minute cap. `livekit-plugins-noise-cancellation`, `noise_cancellation.NC()`.
    - **Krisp VIVA** (voice isolation) also removes other people's voices, keeping the main speaker. Paid per minute: Build includes 100 minutes a month, Ship 1,000, then $0.0012/min. What Build does past 100 minutes isn't stated in the pricing data; check before choosing it. `livekit-plugins-krisp`, `krisp.voice_isolation()`.
    - Either one goes in `room_io.AudioInputOptions(noise_cancellation=...)` and works only through LiveKit Cloud.

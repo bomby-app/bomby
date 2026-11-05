@@ -15,19 +15,18 @@ A call needs a LiveKit server between the page and the voice agent. Until now th
 - **It runs only on this machine.** The signal port is on `127.0.0.1` and the media ports advertise only loopback. Its keys are made fresh by the core each time it starts and live in memory only, so nothing goes in the keychain or on disk. Ports are picked free each time.
 - **It starts with the first call**, like the agent worker, and runs until Bomby quits or the user switches to Cloud (owner, 2026-11-05: on the call unless that makes a call noticeably slower to start).
 - **A call keeps its server.** The server, URL and keys a call opened with stay its own for every token it gets, like its agents and picks, so switching mid-call applies from the next call.
-- **Cloud-only features follow the server, not the setting.** The agent turns on Krisp background noise suppression when its `LIVEKIT_URL` is LiveKit Cloud (LiveKit's own `is_cloud`), so a self-hosted server under "your own server" gets none either.
+- **No Krisp noise cancellation on either.** LiveKit's Krisp plugin runs in the agent, not on Cloud's servers: it would mean shipping or downloading LiveKit's proprietary binary into the agent for Cloud calls only. Calls on both servers use WebRTC's own noise suppression in the webview (owner, 2026-11-05; [notes](../livekit-notes.md#worker-echo-and-noise)).
 - **Existing installs keep Cloud.** Until the user chooses, an install with LiveKit keys saved stays on them; one without uses this Mac.
 
 ## Why
 
 - One account fewer to set up: a call needs only a Gemini key and an agent.
 - Call audio stays on the Mac except what goes to Gemini, and the hop to a Cloud edge and back is gone.
-- Cloud stays for its extras: Krisp noise cancellation, its dashboard and observability, and calls from other devices later.
+- Cloud stays for those who already have a LiveKit project, its dashboard and observability, and calls from other devices later.
 
 ## Consequences
 
 - The app grows by 54 MB (17.6 MB in the DMG and the update) and the build needs Go (`mise.toml`).
 - A local server and the worker are two processes to supervise. The core stops the server with the app, and stops one a killed Bomby left behind the next time it starts (`local_server.rs`).
-- Local calls get WebRTC's own noise suppression in the webview, not Krisp.
-- Krisp comes as LiveKit's proprietary plugin (LiveKit's terms of service, not open source), shipped in the frozen agent: 72 MB more, 57 MB of it models NC never loads ([notes](../livekit-notes.md#worker-echo-and-noise)). Its license for redistribution in Bomby's DMG is for the owner to confirm before a release.
+- If noise turns out to be a problem, Krisp can come later, installed on demand like the ACP adapters, at the cost of `disable-library-validation` on the agent.
 - The default for new users is this Mac for now; the owner settles it after trying both (2026-11-05).

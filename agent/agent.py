@@ -4,15 +4,7 @@ from typing import override
 
 from google.genai import types
 from livekit import rtc
-from livekit.agents import (
-    NOT_GIVEN,
-    Agent,
-    AgentServer,
-    AgentSession,
-    JobContext,
-    cli,
-    room_io,
-)
+from livekit.agents import NOT_GIVEN, Agent, AgentServer, AgentSession, JobContext, cli
 from livekit.plugins import google
 
 import dev_env
@@ -21,7 +13,6 @@ from acp_client import CallRunners
 from call import Call
 from call_options import CallOptions
 from job import read_metadata
-from livekit_cloud import noise_cancellation_for
 from task_board import TaskBoard
 from tools import ALL_TOOLS
 from voice_prompt import voice_instructions
@@ -149,16 +140,7 @@ async def entrypoint(ctx: JobContext) -> None:
         ),
     )
 
-    # Krisp noise cancellation on the user's audio, on LiveKit Cloud only (livekit_cloud.py).
-    # LIVEKIT_URL is the server this worker registered with, so the one the call is on.
-    room_options = room_io.RoomOptions(
-        audio_input=room_io.AudioInputOptions(
-            noise_cancellation=noise_cancellation_for(os.environ.get("LIVEKIT_URL", ""))
-        )
-    )
-    await session.start(  # pyright: ignore[reportUnknownMemberType]
-        agent=Assistant(options, runners), room=ctx.room, room_options=room_options
-    )
+    await session.start(agent=Assistant(options, runners), room=ctx.room)  # pyright: ignore[reportUnknownMemberType]
 
 
 def main() -> None:
