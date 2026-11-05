@@ -111,6 +111,8 @@ pub fn run() {
             settings::set_voice,
             settings::user_name,
             settings::set_user_name,
+            settings::tone,
+            settings::set_tone,
             settings::first_run,
             settings::finish_first_run,
             projects::list_projects,

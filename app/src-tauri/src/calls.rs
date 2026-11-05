@@ -178,6 +178,7 @@ fn dispatch_metadata(
         "picks": picks,
         "voice": settings.voice,
         "user_name": settings.user_name,
+        "tone": settings.tone,
         "history": history,
     })
     .to_string()
@@ -589,6 +590,7 @@ mod tests {
         let settings = settings::CallSettings {
             voice: "Kore".into(),
             user_name: "Sam".into(),
+            tone: settings::Tone::Chatty,
         };
         let picks = HashMap::from([
             (
@@ -615,6 +617,7 @@ mod tests {
                 "picks": { "claude": [{ "setting": "model", "value": "opus" }] },
                 "voice": "Kore",
                 "user_name": "Sam",
+                "tone": "chatty",
                 "history": [{ "role": "agent", "text": "Hi." }],
             })
         );

@@ -14,7 +14,7 @@ Bomby greeted everyone the same way. Some users like to be called by name; other
 
 ## Why
 
-- One plain, human line keeps `prompts/voice.md`'s behaviour as it is (owner's wording, 2026-11-05).
+- One plain, human line keeps the voice prompt's behaviour as it is (owner's wording, 2026-11-05).
 - The line says "their": a name doesn't tell anyone how the user wants to be referred to.
 
 ## Consequences

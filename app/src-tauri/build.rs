@@ -32,6 +32,8 @@ const COMMANDS: &[&str] = &[
     "set_voice",
     "user_name",
     "set_user_name",
+    "tone",
+    "set_tone",
     "first_run",
     "finish_first_run",
     "list_projects",

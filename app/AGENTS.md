@@ -12,7 +12,7 @@ src/
   windows/                  one folder per window; mount.tsx wraps every window in the shared providers
     main/                   the main window: sidebar, header, main panel
     settings/               the settings window; sections.ts lists its sections
-  features/<feature>/       one folder per feature: theme, credentials, projects, call, agents, setup, intro (what Bomby calls the user), voice, onboarding (the first-run splash), tray (the menu bar icon's bridge to the call), notifications (finished tasks), about (the version and updates)
+  features/<feature>/       one folder per feature: theme, credentials, projects, call, agents, setup, intro (Settings, Bomby: what Bomby calls the user, and its tone), voice, onboarding (the first-run splash), tray (the menu bar icon's bridge to the call), notifications (finished tasks), about (the version and updates)
   components/               shared components of our own (app-logo, wordmark, mascot, mascot-card, titlebar-spacer, inline-link, inline-edit-input, error-card, status-row and check-again-button for settings checklists, day-glow and film-grain for the splash and projects backdrop)
   components/ui/            shadcn components, from shadcn's registry
   components/agents-ui/     LiveKit Agents UI components, from LiveKit's registry

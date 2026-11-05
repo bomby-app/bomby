@@ -1,3 +1,5 @@
+import type { SVGProps } from "react"
+
 import { cn } from "@/lib/utils"
 
 /**
@@ -22,6 +24,23 @@ export function AppLogo({ className }: { className?: string }) {
         <circle cx="45" cy="58" r="8.5" fill="var(--sidebar-primary)" />
         <circle cx="75" cy="58" r="8.5" fill="var(--sidebar-primary)" />
       </g>
+    </svg>
+  )
+}
+
+/** Dot Dot as a line icon in `currentColor`, beside lucide's in lists like Settings. */
+export function MascotIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 120 120" aria-hidden {...props}>
+      <path
+        d="M60 18 A42 42 0 0 1 102 60 A42 42 0 0 1 60 102 H18 V60 A42 42 0 0 1 60 18 Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="10"
+        strokeLinejoin="round"
+      />
+      <circle cx="45" cy="58" r="8.5" fill="currentColor" />
+      <circle cx="75" cy="58" r="8.5" fill="currentColor" />
     </svg>
   )
 }

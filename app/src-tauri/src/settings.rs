@@ -1,5 +1,5 @@
 //! App settings that aren't secrets, kept in the database's `settings` table: the agent's
-//! voice and what the user likes to be called, both sent with every call
+//! voice, what the user likes to be called and the tone they prefer, all sent with every call
 //! (`calls::call_token`), and whether the first run is done.
 
 use rusqlite::{Connection, OptionalExtension, params};
@@ -13,6 +13,28 @@ const VOICE_KEY: &str = "voice";
 /// What the user likes to be called; empty or missing when they'd rather not say.
 const USER_NAME_KEY: &str = "user_name";
 const MAX_USER_NAME_LEN: usize = 50;
+const TONE_KEY: &str = "tone";
+
+/// How Bomby talks: each picks its own voice prompt (`agent/prompts/<tone>.md`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "voice.ts"))]
+pub enum Tone {
+    #[default]
+    Sharp,
+    Chatty,
+    Playful,
+}
+
+impl Tone {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Sharp => "sharp",
+            Self::Chatty => "chatty",
+            Self::Playful => "playful",
+        }
+    }
+}
 /// Set once the first-run splash has set up an agent.
 const FIRST_RUN_KEY: &str = "first_run_done";
 const LIVEKIT_SERVER_KEY: &str = "livekit_server";
@@ -114,12 +136,14 @@ pub(crate) struct CallSettings {
     pub(crate) voice: String,
     /// Empty when the user hasn't given one.
     pub(crate) user_name: String,
+    pub(crate) tone: Tone,
 }
 
 pub(crate) fn for_call(conn: &Connection) -> Result<CallSettings> {
     Ok(CallSettings {
         voice: voice(conn)?,
         user_name: read_user_name(conn)?,
+        tone: read_tone(conn)?,
     })
 }
 
@@ -192,6 +216,24 @@ pub(crate) fn save_livekit_server(conn: &Connection, server: LiveKitServer) -> R
     put(conn, LIVEKIT_SERVER_KEY, server.as_str())
 }
 
+fn read_tone(conn: &Connection) -> Result<Tone> {
+    Ok(match get(conn, TONE_KEY)?.as_deref() {
+        Some("chatty") => Tone::Chatty,
+        Some("playful") => Tone::Playful,
+        _ => Tone::Sharp,
+    })
+}
+
+#[tauri::command(async)]
+pub fn tone(db: State<'_, Db>) -> Result<Tone> {
+    read_tone(&db.conn())
+}
+
+#[tauri::command(async)]
+pub fn set_tone(db: State<'_, Db>, tone: Tone) -> Result<()> {
+    put(&db.conn(), TONE_KEY, tone.as_str())
+}
+
 /// Whether this is the first run: the splash shows until it has set up an agent.
 #[tauri::command(async)]
 pub fn first_run(db: State<'_, Db>) -> Result<bool> {
@@ -257,6 +299,15 @@ mod tests {
         assert_eq!(livekit_server(&conn, true).unwrap(), LiveKitServer::ThisMac);
         save_livekit_server(&conn, LiveKitServer::Theirs).unwrap();
         assert_eq!(livekit_server(&conn, false).unwrap(), LiveKitServer::Theirs);
+    }
+
+    #[test]
+    fn the_tone_is_sharp_until_one_is_chosen() {
+        let db = Db::in_memory().unwrap();
+        let conn = db.conn();
+        assert_eq!(for_call(&conn).unwrap().tone, Tone::Sharp);
+        put(&conn, TONE_KEY, Tone::Playful.as_str()).unwrap();
+        assert_eq!(for_call(&conn).unwrap().tone, Tone::Playful);
     }
 
     #[test]

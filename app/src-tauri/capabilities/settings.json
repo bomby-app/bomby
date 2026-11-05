@@ -34,6 +34,8 @@
     "allow-set-voice",
     "allow-user-name",
     "allow-set-user-name",
+    "allow-tone",
+    "allow-set-tone",
     "allow-about",
     "allow-check-for-updates",
     "allow-install-update"

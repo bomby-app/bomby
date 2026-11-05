@@ -6,10 +6,10 @@ import {
   ListChecks,
   type LucideIcon,
   Palette,
-  Smile,
 } from "lucide-react"
 import type { ComponentType } from "react"
 
+import { MascotIcon } from "@/components/app-logo"
 import { AboutBadge, AboutSettings } from "@/features/about/about-settings"
 import { AgentsSettings } from "@/features/agents/agents-settings"
 import { CredentialsSettings } from "@/features/credentials/credentials-settings"
@@ -32,8 +32,8 @@ export const SECTIONS = [
   },
   {
     id: "intro",
-    label: "Intro",
-    icon: Smile,
+    label: "Bomby",
+    icon: MascotIcon,
     component: IntroSettings,
   },
   {
@@ -72,7 +72,7 @@ export const SECTIONS = [
 type Section = {
   id: string
   label: string
-  icon: LucideIcon
+  icon: LucideIcon | typeof MascotIcon
   component: ComponentType
   badge?: ComponentType
 }
