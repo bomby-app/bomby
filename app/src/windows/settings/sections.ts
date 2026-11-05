@@ -6,12 +6,14 @@ import {
   ListChecks,
   type LucideIcon,
   Palette,
+  Smile,
 } from "lucide-react"
 import type { ComponentType } from "react"
 
 import { AboutBadge, AboutSettings } from "@/features/about/about-settings"
 import { AgentsSettings } from "@/features/agents/agents-settings"
 import { CredentialsSettings } from "@/features/credentials/credentials-settings"
+import { IntroSettings } from "@/features/intro/intro-settings"
 import { SetupSettings } from "@/features/setup/setup-settings"
 import { AppearanceSettings } from "@/features/theme/appearance-settings"
 import { VoiceSettings } from "@/features/voice/voice-settings"
@@ -27,6 +29,12 @@ export const SECTIONS = [
     label: "Setup",
     icon: ListChecks,
     component: SetupSettings,
+  },
+  {
+    id: "intro",
+    label: "Intro",
+    icon: Smile,
+    component: IntroSettings,
   },
   {
     id: "agents",

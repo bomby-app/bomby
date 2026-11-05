@@ -25,9 +25,20 @@ def voice_instructions(
 ) -> str:
     return join(
         VOICE,
+        the_user(options.user_name),
         agents_note(agents),
         project_context(project),
         previous_conversation(options.history),
+    )
+
+
+def the_user(name: str) -> str:
+    """Who the user is, if they said what to call them."""
+    if not name:
+        return ""
+    return section(
+        "The user",
+        f"You're talking to {name}. Use their name now and then, not in every reply.",
     )
 
 

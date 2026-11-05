@@ -1,5 +1,6 @@
 //! App settings that aren't secrets, kept in the database's `settings` table: the agent's
-//! voice, sent with every call (`calls::call_token`), and whether the first run is done.
+//! voice and what the user likes to be called, both sent with every call
+//! (`calls::call_token`), and whether the first run is done.
 
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
@@ -9,6 +10,9 @@ use crate::db::Db;
 use crate::error::{Error, Result};
 
 const VOICE_KEY: &str = "voice";
+/// What the user likes to be called; empty or missing when they'd rather not say.
+const USER_NAME_KEY: &str = "user_name";
+const MAX_USER_NAME_LEN: usize = 50;
 /// Set once the first-run splash has set up an agent.
 const FIRST_RUN_KEY: &str = "first_run_done";
 
@@ -84,12 +88,26 @@ fn put(conn: &Connection, key: &str, value: &str) -> Result<()> {
     Ok(())
 }
 
+/// The settings a call takes along (`calls::dispatch_metadata`).
+pub(crate) struct CallSettings {
+    pub(crate) voice: String,
+    /// Empty when the user hasn't given one.
+    pub(crate) user_name: String,
+}
+
+pub(crate) fn for_call(conn: &Connection) -> Result<CallSettings> {
+    Ok(CallSettings {
+        voice: voice(conn)?,
+        user_name: read_user_name(conn)?,
+    })
+}
+
 /// The chosen voice, or the default.
-pub fn voice(conn: &Connection) -> Result<String> {
+fn voice(conn: &Connection) -> Result<String> {
     Ok(get(conn, VOICE_KEY)?.unwrap_or_else(|| DEFAULT_VOICE.to_owned()))
 }
 
-fn set(conn: &Connection, name: &str) -> Result<()> {
+fn save_voice(conn: &Connection, name: &str) -> Result<()> {
     if !VOICES.iter().any(|(voice, _, _)| *voice == name) {
         return Err(Error::Invalid(format!("{name} isn't a Gemini voice.")));
     }
@@ -109,7 +127,34 @@ pub fn voice_settings(db: State<'_, Db>) -> Result<VoiceSettings> {
 
 #[tauri::command(async)]
 pub fn set_voice(db: State<'_, Db>, name: String) -> Result<()> {
-    set(&db.conn(), &name)
+    save_voice(&db.conn(), &name)
+}
+
+/// What the user likes to be called, or empty.
+fn read_user_name(conn: &Connection) -> Result<String> {
+    Ok(get(conn, USER_NAME_KEY)?.unwrap_or_default())
+}
+
+/// Saves the name trimmed, and returns it as saved; an empty one clears it.
+fn save_user_name(conn: &Connection, name: &str) -> Result<String> {
+    let name = name.trim();
+    if name.chars().count() > MAX_USER_NAME_LEN {
+        return Err(Error::Invalid(format!(
+            "Keep your name under {MAX_USER_NAME_LEN} characters."
+        )));
+    }
+    put(conn, USER_NAME_KEY, name)?;
+    Ok(name.to_owned())
+}
+
+#[tauri::command(async)]
+pub fn user_name(db: State<'_, Db>) -> Result<String> {
+    read_user_name(&db.conn())
+}
+
+#[tauri::command(async)]
+pub fn set_user_name(db: State<'_, Db>, name: String) -> Result<String> {
+    save_user_name(&db.conn(), &name)
 }
 
 /// Whether this is the first run: the splash shows until it has set up an agent.
@@ -132,14 +177,44 @@ mod tests {
         let db = Db::in_memory().unwrap();
         let conn = db.conn();
         assert_eq!(voice(&conn).unwrap(), DEFAULT_VOICE);
-        set(&conn, "Kore").unwrap();
-        set(&conn, "Sulafat").unwrap();
+        save_voice(&conn, "Kore").unwrap();
+        save_voice(&conn, "Sulafat").unwrap();
         assert_eq!(voice(&conn).unwrap(), "Sulafat");
     }
 
     #[test]
     fn rejects_a_voice_gemini_doesnt_have() {
         let db = Db::in_memory().unwrap();
-        assert!(matches!(set(&db.conn(), "Hal"), Err(Error::Invalid(_))));
+        assert!(matches!(
+            save_voice(&db.conn(), "Hal"),
+            Err(Error::Invalid(_))
+        ));
+    }
+
+    #[test]
+    fn keeps_the_users_name_trimmed_and_lets_it_be_cleared() {
+        let db = Db::in_memory().unwrap();
+        let conn = db.conn();
+        assert_eq!(
+            read_user_name(&conn).unwrap(),
+            "",
+            "no name until one is given"
+        );
+
+        assert_eq!(save_user_name(&conn, "  Sam ").unwrap(), "Sam");
+        assert_eq!(for_call(&conn).unwrap().user_name, "Sam");
+
+        assert_eq!(save_user_name(&conn, "   ").unwrap(), "");
+        assert_eq!(read_user_name(&conn).unwrap(), "");
+    }
+
+    #[test]
+    fn rejects_a_name_too_long_to_say() {
+        let db = Db::in_memory().unwrap();
+        let long = "x".repeat(MAX_USER_NAME_LEN + 1);
+        assert!(matches!(
+            save_user_name(&db.conn(), &long),
+            Err(Error::Invalid(_))
+        ));
     }
 }

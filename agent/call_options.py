@@ -1,10 +1,10 @@
 """What the app sends with a call besides the project (`project.py`, `Project`): the
-voice to speak in and, when the user resumes an earlier call, its last lines. How they
-reach the voice model's instructions is `voice_prompt.py`.
+voice to speak in, what the user likes to be called and, when the user resumes an earlier
+call, its last lines. How they reach the voice model's instructions is `voice_prompt.py`.
 
-The job's metadata (`job.py`) has `{"voice": "Kore", "history": [{"role": "user", "text": "..."}]}`.
-Console runs have none: `GEMINI_VOICE`
-stands in for the voice, and there is no history.
+The job's metadata (`job.py`) has `{"voice": "Kore", "user_name": "Sam",
+"history": [{"role": "user", "text": "..."}]}`. Console runs have none: `GEMINI_VOICE`
+and `BOMBY_USER_NAME` stand in, and there is no history.
 """
 
 from collections.abc import Mapping
@@ -29,17 +29,25 @@ class Line:
 @dataclass(frozen=True)
 class CallOptions:
     voice: str
+    # Empty when the user hasn't said what to call them.
+    user_name: str = ""
     history: tuple[Line, ...] = ()
 
     @classmethod
     def from_job(cls, fields: JobFields, environ: Mapping[str, str]) -> "CallOptions":
         fallback = environ.get("GEMINI_VOICE") or DEFAULT_VOICE
         if fields is None:
-            return cls(voice=fallback)
+            return cls(
+                voice=fallback, user_name=environ.get("BOMBY_USER_NAME", "").strip()
+            )
 
         voice = fields.get("voice")
         if voice is not None and (not isinstance(voice, str) or not voice.strip()):
             raise ValueError("the voice must be a voice name")
+
+        user_name = fields.get("user_name")
+        if user_name is not None and not isinstance(user_name, str):
+            raise ValueError("the user's name must be text")
 
         raw: object = fields.get("history") or []
         items = cast(list[object], raw) if isinstance(raw, list) else None
@@ -54,7 +62,11 @@ class CallOptions:
             if text.strip():
                 history.append(Line(role, text.strip()))
 
-        return cls(voice=voice.strip() if voice else fallback, history=tuple(history))
+        return cls(
+            voice=voice.strip() if voice else fallback,
+            user_name=user_name.strip() if user_name else "",
+            history=tuple(history),
+        )
 
     @property
     def resumed(self) -> bool:

@@ -19,6 +19,17 @@ def test_a_plain_call_gets_the_prompt_and_its_agents() -> None:
     assert text == f"{VOICE}\n\n{agents_note(AGENTS)}"
 
 
+def test_a_named_user_comes_before_the_agents() -> None:
+    text = voice_instructions(
+        project(), CallOptions(voice="Kore", user_name="Sam"), AGENTS
+    )
+
+    assert text == (
+        f"{VOICE}\n\n## The user\n\nYou're talking to Sam. Use their name now and then, "
+        f"not in every reply.\n\n{agents_note(AGENTS)}"
+    )
+
+
 def test_the_project_context_follows_the_agents() -> None:
     text = voice_instructions(
         project("A music app."), CallOptions(voice="Kore"), AGENTS
