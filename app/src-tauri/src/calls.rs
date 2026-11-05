@@ -1,6 +1,5 @@
-//! Calls: opening one on a project (its LiveKit server, the agent worker and a call row), the
-//! LiveKit token that joins it and dispatches the agent with the project, ending it, and
-//! keeping its transcript.
+//! Calls: opening one on a project (the agent worker and a call row), the LiveKit token that
+//! joins it and dispatches the agent with the project, ending it, and keeping its transcript.
 //! LiveKit keeps no transcripts, so the page sends each line here as it arrives
 //! (docs/decisions/app-data-in-one-sqlite-db.md).
 
@@ -74,20 +73,19 @@ fn report_crashes<R: Runtime>(app: &AppHandle<R>) -> OnCrash {
     })
 }
 
-/// The LiveKit server, agents and picks the current call opened with. Every token for that
-/// call carries the same ones, so a reconnect mid-call never lands on another server or
-/// hands the voice agent a different list or model, whatever the user switches, looking for
-/// agents or picking finds meanwhile (`call_server`, `agents::Agents`, `agent_picks`); a
-/// change made during a call applies from the next one.
+/// The agents the current call opened with, and their picks. Every token for that call
+/// carries the same ones, so a reconnect mid-call never hands the voice agent a different
+/// list or model, whatever looking for agents or picking finds meanwhile
+/// (`agents::Agents`, `agent_picks`); a pick made during a call applies from the next one.
 /// The app runs one call at a time (one LiveKit session), so opening the next one replaces
 /// it.
 #[derive(Default)]
 pub struct CallAgents(Mutex<Option<CurrentCall>>);
 
-/// What a call opened with: its LiveKit server, its agents by id with their programs, and
-/// their picks.
+/// What a call opened with: its agents by id with their programs, and their picks.
 #[derive(Debug, Clone, PartialEq)]
 struct OpenedWith {
+    /// Kept too, so a reconnect never lands on another server.
     server: LiveKitKeys,
     agents: Vec<(String, PathBuf)>,
     picks: HashMap<String, Vec<Pick>>,
@@ -242,10 +240,10 @@ fn token(keys: &LiveKitKeys, room: &str, metadata: String) -> Result<String> {
 }
 
 /// Opens a call on a project, or reopens one of its earlier calls (`resume_call_id`), after
-/// making sure its LiveKit server and the agent worker run (the worker can take a few seconds
-/// the first time). Joining is `call_token`'s job.
+/// making sure the agent worker runs (it can take a few seconds the first time). Joining is
+/// `call_token`'s job.
 #[tauri::command(async)]
-#[allow(clippy::too_many_arguments)] // Tauri hands each piece of state in as an argument.
+#[allow(clippy::too_many_arguments)] // Tauri passes each state as an argument.
 pub fn open_call<R: Runtime>(
     app: AppHandle<R>,
     db: State<'_, Db>,
@@ -270,8 +268,7 @@ pub fn open_call<R: Runtime>(
             "Bomby can't find an agent that's ready to work. See Settings, Agents.".into(),
         ));
     }
-    // Last of the checks: this Mac's server starts here (about 0.15 s), only for a call that
-    // has everything else.
+    // Last, so this Mac's server starts only for a call that can open.
     let server = call_server::for_new_call(&app, &db, &vault, &local)?;
     let log_dir = app.path().app_log_dir()?;
     worker.ensure(
@@ -342,7 +339,7 @@ pub fn call_token<R: Runtime>(
         )
     };
     let room = room_name(call_id);
-    // A call opened in this run has its own; any other gets what's there now.
+    // A call opened in this run has its own list; any other gets the last one found.
     let OpenedWith {
         server,
         agents,

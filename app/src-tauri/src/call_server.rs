@@ -1,11 +1,4 @@
-//! Which LiveKit server calls use, this Mac's or the user's own
-//! (docs/decisions/livekit-on-this-mac-or-cloud.md), and how a call reaches it: its URL and
-//! keys. The choice is a setting (`settings::livekit_server`); the page reads and changes it
-//! here.
-//!
-//! A change applies from the next call: each call keeps the server it opened with
-//! (`calls::CallAgents`). Moving to the user's own stops this Mac's server once no call can
-//! still be on it, when the next call opens.
+//! Which LiveKit server calls use: this Mac's or the user's own.
 
 use tauri::{AppHandle, Emitter, Runtime, State};
 
@@ -15,20 +8,17 @@ use crate::error::{Error, Result};
 use crate::local_server::LocalServer;
 use crate::settings::{self, LiveKitServer};
 
-/// The server the setting names, with whether the user's own keys are saved for the default.
 fn chosen<R: Runtime>(app: &AppHandle<R>, db: &Db, vault: &Vault) -> Result<LiveKitServer> {
     let theirs = vault.livekit(app)?.is_some();
     settings::livekit_server(&db.conn(), theirs)
 }
 
-/// The user's own keys, or what to do without them.
 fn their_keys<R: Runtime>(app: &AppHandle<R>, vault: &Vault) -> Result<LiveKitKeys> {
     vault
         .livekit(app)?
         .ok_or_else(|| Error::Invalid("Add your LiveKit keys in Settings first.".into()))
 }
 
-/// The server a new call opens on, started if it's this Mac's.
 pub fn for_new_call<R: Runtime>(
     app: &AppHandle<R>,
     db: &Db,
@@ -38,15 +28,14 @@ pub fn for_new_call<R: Runtime>(
     match chosen(app, db, vault)? {
         LiveKitServer::ThisMac => local.ensure(),
         LiveKitServer::Theirs => {
-            // The last call has ended (one call at a time), so nothing is on this Mac's.
+            // One call at a time, so nothing is on this Mac's any more.
             local.stop();
             their_keys(app, vault)
         }
     }
 }
 
-/// The server a call that isn't this run's own would join (`calls::call_token`), without
-/// starting anything: a token only reads.
+/// Never starts this Mac's: fetching a token must only read.
 pub fn current<R: Runtime>(
     app: &AppHandle<R>,
     db: &Db,
@@ -61,7 +50,6 @@ pub fn current<R: Runtime>(
     }
 }
 
-/// The LiveKit server calls use.
 #[tauri::command(async)]
 pub fn livekit_server<R: Runtime>(
     app: AppHandle<R>,
@@ -71,8 +59,7 @@ pub fn livekit_server<R: Runtime>(
     chosen(&app, &db, &vault)
 }
 
-/// Chooses the LiveKit server calls use, from the next call on. Every window re-reads what a
-/// call needs (`keys-changed`): this Mac's needs no keys.
+/// Applies from the next call: each call keeps the server it opened with.
 #[tauri::command(async)]
 pub fn set_livekit_server<R: Runtime>(
     app: AppHandle<R>,

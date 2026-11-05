@@ -1,16 +1,4 @@
-//! The LiveKit server Bomby runs on this Mac, when calls use it instead of the user's own
-//! (docs/decisions/livekit-on-this-mac-or-cloud.md): LiveKit's open-source `livekit-server`,
-//! built by `just livekit build` and bundled as a sidecar next to this program.
-//!
-//! The core starts it with the first call that needs it and keeps it for the app's lifetime,
-//! like the agent worker. It's on this machine only: the signal port is on 127.0.0.1, and the
-//! media port advertises only loopback. Each start gets new free ports and new keys, made
-//! here and kept in memory: its config and keys reach it through its environment, never
-//! disk. Its output goes to `livekit.log` in the app's log folder.
-//!
-//! Unlike the agent, it can't watch the app's pipe, so a killed app would leave it running.
-//! Its pid goes in `livekit-server.pid` in the app data folder, and the next launch stops
-//! that process if it is still this server.
+//! The LiveKit server on this Mac (docs/decisions/livekit-on-this-mac-or-cloud.md).
 
 use std::fs::{self, File};
 use std::io::{Read, Write};
@@ -25,22 +13,15 @@ use crate::credentials::LiveKitKeys;
 use crate::error::{Error, Result};
 use crate::{process, sync};
 
-/// The sidecar's name next to this program (`bundle.externalBin` in tauri.conf.json; also in
-/// dev, where tauri-build copies it into target/).
 const PROGRAM: &str = "livekit-server";
-/// The API key; the secret is what's random.
 const API_KEY: &str = "bomby";
-/// Random bytes in the secret, written as hex: 64 characters, over the server's minimum of 32.
+/// Hex-encoded, so 64 characters: the server rejects secrets under 32.
 const SECRET_BYTES: usize = 32;
-/// How long a fresh server gets to answer. It takes about 0.15 s.
 const READY_TIMEOUT: Duration = Duration::from_secs(10);
 const READY_POLL: Duration = Duration::from_millis(50);
-/// How long the server gets to exit after SIGTERM before SIGKILL. It exits in about 40 ms,
-/// but not at all when the signal lands within milliseconds of its start (1.13.10;
-/// docs/livekit-notes.md#the-bundled-server). It keeps nothing on disk, so killing it loses
-/// nothing.
+/// Short: a SIGTERM just after start never exits (1.13.10), and SIGKILL loses nothing.
 const STOP_TIMEOUT: Duration = Duration::from_secs(1);
-/// Starts tried, each with new ports, in case another program takes a port first.
+/// A free port can be taken before the server binds it.
 const ATTEMPTS: usize = 2;
 const LOG_FILE: &str = "livekit.log";
 const PID_FILE: &str = "livekit-server.pid";
@@ -50,23 +31,20 @@ struct Running {
     keys: LiveKitKeys,
 }
 
-/// The server, shared through Tauri state.
 pub struct LocalServer {
     running: Mutex<Option<Running>>,
-    /// The `livekit-server` program (`bundled`).
     program: PathBuf,
-    /// Where its pid file goes: the app data folder.
     data_dir: PathBuf,
     log_dir: PathBuf,
 }
 
-/// The bundled server, next to this program.
+/// tauri-build puts the sidecar next to the app's program, in dev too.
 pub fn bundled() -> Result<PathBuf> {
     Ok(std::env::current_exe()?.with_file_name(PROGRAM))
 }
 
 impl LocalServer {
-    /// Stops a server an earlier, killed run left behind, if there is one.
+    /// Also stops a server a killed run left behind.
     pub fn new(program: PathBuf, data_dir: PathBuf, log_dir: PathBuf) -> Self {
         stop_left_behind(&data_dir.join(PID_FILE), &program);
         Self {
@@ -77,8 +55,6 @@ impl LocalServer {
         }
     }
 
-    /// Makes sure the server runs, starting it if it isn't or it died, and says how to reach
-    /// it: its URL and this start's keys.
     pub fn ensure(&self) -> Result<LiveKitKeys> {
         let mut slot = sync::lock(&self.running);
         if let Some(running) = slot.as_mut()
@@ -95,15 +71,12 @@ impl LocalServer {
         Ok(keys)
     }
 
-    /// How to reach the server if it runs, without starting it.
     pub fn current(&self) -> Option<LiveKitKeys> {
         sync::lock(&self.running)
             .as_ref()
             .map(|running| running.keys.clone())
     }
 
-    /// Stops the server, if one runs: when the app exits, and when calls move to the user's
-    /// own LiveKit.
     pub fn stop(&self) {
         if let Some(running) = sync::lock(&self.running).take() {
             process::stop_group(running.child, STOP_TIMEOUT);
@@ -147,7 +120,6 @@ impl LocalServer {
             .stdin(Stdio::null())
             .stdout(log.try_clone()?)
             .stderr(log);
-        // Its own process group, so stopping it stops anything it starts too.
         #[cfg(unix)]
         std::os::unix::process::CommandExt::process_group(&mut command, 0);
 
@@ -156,7 +128,6 @@ impl LocalServer {
         if let Err(why) = wait_until_ready(&mut child, signal) {
             process::stop_group(child, STOP_TIMEOUT);
             let _ = fs::remove_file(self.data_dir.join(PID_FILE));
-            // What the server said, if anything, says more than how it failed.
             let reason = fs::read_to_string(log_path)
                 .ok()
                 .and_then(|log| last_error(&log))
@@ -170,16 +141,12 @@ impl LocalServer {
     }
 }
 
-/// A free TCP port for signalling and a free UDP port for media, on loopback. They're free
-/// when asked for; another program could take one before the server binds it, which a new
-/// attempt covers.
 fn free_ports() -> Result<(u16, u16)> {
     let signal = TcpListener::bind("127.0.0.1:0")?.local_addr()?.port();
     let media = UdpSocket::bind("127.0.0.1:0")?.local_addr()?.port();
     Ok((signal, media))
 }
 
-/// 32 random bytes from the OS, as hex.
 fn new_secret() -> Result<String> {
     let mut bytes = [0u8; SECRET_BYTES];
     getrandom::fill(&mut bytes)
@@ -187,10 +154,7 @@ fn new_secret() -> Result<String> {
     Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
 }
 
-/// The server's config (livekit-server 1.13.10, `pkg/config/config.go` and
-/// mediatransportutil's `rtcconfig`; docs/livekit-notes.md#the-bundled-server). Everything on
-/// loopback: signalling bound to 127.0.0.1, media muxed on one UDP port that advertises only
-/// 127.0.0.1, and no ICE over TCP (port 0 turns it off). JSON logs, for `last_error`.
+/// `node_ip` keeps media on loopback; `tcp_port: 0` turns ICE over TCP off.
 fn config(signal: u16, media: u16) -> String {
     format!(
         "\
@@ -211,8 +175,6 @@ logging:
     )
 }
 
-/// Waits for `GET /` on the signal port to answer `OK`. A server that exits first or never
-/// answers fails, saying which.
 fn wait_until_ready(child: &mut Child, port: u16) -> std::result::Result<(), String> {
     let started = Instant::now();
     while started.elapsed() < READY_TIMEOUT {
@@ -241,9 +203,7 @@ fn answers_ok(port: u16) -> bool {
         && answer.trim_end().ends_with("OK")
 }
 
-/// The last error in the server's log, in one line: a JSON line at level `error` or `fatal`
-/// (its `msg`, and its `error` when it has one), or the CLI's own last line, which isn't JSON
-/// (a config it couldn't read, say).
+/// Falls back to the last line: the CLI's own startup errors aren't JSON.
 fn last_error(log: &str) -> Option<String> {
     let mut lines = log.lines().rev().filter(|line| !line.trim().is_empty());
     let last = lines.clone().next()?;
@@ -266,8 +226,7 @@ fn last_error(log: &str) -> Option<String> {
     })
 }
 
-/// Stops the server whose pid `pid_file` holds, if it's still running and still `program`
-/// (a pid can be reused), then forgets the file.
+/// Checks the pid still runs `program`: pids get reused.
 fn stop_left_behind(pid_file: &Path, program: &Path) {
     let Some(pid) = fs::read_to_string(pid_file)
         .ok()
@@ -276,8 +235,7 @@ fn stop_left_behind(pid_file: &Path, program: &Path) {
         return;
     };
     if is_program(pid, program) {
-        // SAFETY: only sends a signal, to a process checked to be our server. It led its own
-        // group, so the group goes too.
+        // SAFETY: only sends a signal.
         #[cfg(unix)]
         unsafe {
             libc::killpg(pid, libc::SIGTERM)
@@ -286,11 +244,10 @@ fn stop_left_behind(pid_file: &Path, program: &Path) {
     let _ = fs::remove_file(pid_file);
 }
 
-/// Whether process `pid` runs `program`.
 #[cfg(target_os = "macos")]
 fn is_program(pid: i32, program: &Path) -> bool {
     let mut buffer = vec![0u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
-    // SAFETY: proc_pidpath writes at most `buffer.len()` bytes into the buffer.
+    // SAFETY: writes at most `buffer.len()` bytes.
     let len = unsafe { libc::proc_pidpath(pid, buffer.as_mut_ptr().cast(), buffer.len() as u32) };
     let Ok(len @ 1..) = usize::try_from(len) else {
         return false;
@@ -303,7 +260,6 @@ fn is_program(pid: i32, program: &Path) -> bool {
     }
 }
 
-/// Elsewhere there's no cheap check, so nothing left behind is stopped.
 #[cfg(not(target_os = "macos"))]
 fn is_program(_pid: i32, _program: &Path) -> bool {
     false
@@ -313,7 +269,6 @@ fn is_program(_pid: i32, _program: &Path) -> bool {
 mod tests {
     use super::*;
 
-    /// The server `just livekit build` built for this machine, which the app bundles.
     fn built() -> PathBuf {
         let triple = if cfg!(target_arch = "aarch64") {
             "aarch64-apple-darwin"
@@ -340,7 +295,6 @@ mod tests {
         let port: u16 = keys.url.rsplit(':').next().unwrap().parse().unwrap();
         assert!(answers_ok(port));
 
-        // Running already: the same server and keys.
         assert_eq!(server.ensure().unwrap(), keys);
         assert_eq!(server.current(), Some(keys));
 

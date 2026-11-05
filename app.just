@@ -16,8 +16,7 @@ default:
 install:
     bun install
 
-# The LiveKit server the app bundles, built by its own module (livekit.just) when it isn't
-# there yet. tauri-build won't compile the core without it (docs/tauri-notes.md#bundling-the-agent).
+# tauri-build won't compile the core without the bundled LiveKit server.
 [private]
 livekit-server:
     {{ just_executable() }} --justfile {{ justfile_directory() }}/justfile livekit build

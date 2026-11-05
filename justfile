@@ -1,4 +1,4 @@
-# Bomby: the voice agent (agent/), the desktop app (app/) and the LiveKit server it bundles.
+# Bomby: the voice agent (agent/) and the desktop app (app/).
 # Each part has its own module: `just agent`, `just app` and `just livekit` list their recipes.
 # See docs/AGENTS.md.
 

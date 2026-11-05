@@ -32,7 +32,6 @@ livekit-protocol = "0.8.2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-notification = "2.8"
 tauri-plugin-updater = "2.14"
-# The LiveKit server's secret, from the OS (local_server.rs)
 getrandom = "0.3"
 
 

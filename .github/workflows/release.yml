@@ -41,8 +41,7 @@ jobs:
             exit 1
           fi
 
-      # The tools pinned in mise.toml, except the LiveKit CLI, which builds don't use (Go builds
-      # the bundled LiveKit server, in `just app build`). No
+      # The tools pinned in mise.toml, except the LiveKit CLI, which builds don't use. No
       # caches anywhere in this workflow: what gets signed is built from scratch, never from
       # files another workflow could have left (zizmor's cache-poisoning audit).
       - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1

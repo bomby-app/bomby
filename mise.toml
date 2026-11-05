@@ -1,7 +1,7 @@
 [tools]
 # LiveKit CLI (`lk`), 2.18.8+ for `lk agent console` / `lk agent debugger`
 "github:livekit/livekit-cli" = "2.18.8"
-# Go builds the LiveKit server Bomby bundles (`just livekit build`); its go.mod needs 1.26+
+# Go builds the bundled LiveKit server (`just livekit build`)
 go = "1.27.3"
 # Rust toolchain for the Tauri app (app/src-tauri), installed through rustup by mise
 rust = "1.99.1"

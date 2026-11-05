@@ -52,7 +52,6 @@ pub fn run() {
             adapters::init(&dir);
             app.manage(db::Db::open(&dir.join(db::FILE_NAME))?);
             app.manage(agent::AgentWorker::default());
-            // Also stops a LiveKit server a killed run left behind.
             app.manage(local_server::LocalServer::new(
                 local_server::bundled()?,
                 dir.clone(),
@@ -122,8 +121,7 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building the app")
         .run(|app, event| match event {
-            // The agent worker and the LiveKit server are ours to stop: they would outlive the
-            // app otherwise.
+            // The agent worker and the LiveKit server would outlive the app otherwise.
             tauri::RunEvent::Exit => {
                 app.state::<agent::AgentWorker>().shutdown();
                 app.state::<local_server::LocalServer>().stop();

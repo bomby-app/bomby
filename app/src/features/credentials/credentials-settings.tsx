@@ -9,9 +9,8 @@ import { LiveKitServerChoice } from "./livekit-server-choice"
 import { useSavedKeys } from "./use-saved-keys"
 
 /**
- * The Credentials section of the settings window: where calls' LiveKit runs, and the keys
- * the user brings, which live in the system keychain, held by the core. Their LiveKit keys
- * show only when calls use their own server. Sent here for one ("livekit" or "gemini", from
+ * The Credentials section of the settings window: the keys the user brings. Both live in
+ * the system keychain, held by the core. Sent here for one ("livekit" or "gemini", from
  * Setup), it brings that one into view and focuses its first empty field.
  */
 export function CredentialsSettings() {

@@ -26,8 +26,7 @@ pub const KEYS_CHANGED: &str = "keys-changed";
 /// The entry's account; the service is the app identifier (tauri.conf.json).
 const ACCOUNT: &str = "credentials";
 
-/// The LiveKit keys. The core uses them for tokens and the agent's environment. The user's
-/// own are kept here; the ones for the server on this Mac are made by `local_server`.
+/// The LiveKit keys. The core uses them for tokens and the agent's environment.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LiveKitKeys {
     pub url: String,

@@ -100,7 +100,6 @@ function GoButton({
   )
 }
 
-/** Where calls' LiveKit runs, or what it still needs. */
 function livekitDetail(keys: Keys): string {
   if (keys.server === "thisMac") return "Runs on this Mac."
   return keys.theirLiveKit

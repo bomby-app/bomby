@@ -28,15 +28,11 @@ export function clearCredentials(): Promise<void> {
   return invoke("clear_credentials")
 }
 
-/**
- * Which LiveKit server calls use: Bomby's own on this Mac, or the user's (src-tauri/src/
- * call_server.rs). Until they choose, theirs when their keys are saved.
- */
 export function livekitServer(): Promise<LiveKitServer> {
   return invoke("livekit_server")
 }
 
-/** Calls use `server` from the next call on; every window hears keys-changed. */
+/** Applies from the next call; every window hears keys-changed. */
 export function setLivekitServer(server: LiveKitServer): Promise<void> {
   return invoke("set_livekit_server", { server })
 }
@@ -54,10 +50,7 @@ export function clearGeminiKey(): Promise<void> {
   return invoke("clear_gemini_key")
 }
 
-/**
- * Calls `handler` whenever a key is saved or removed, or the LiveKit server changes, in any
- * window.
- */
+/** Calls `handler` when a key or the LiveKit server changes, in any window. */
 export function onKeysChanged(handler: () => void): Promise<UnlistenFn> {
   return listen("keys-changed", () => handler())
 }
