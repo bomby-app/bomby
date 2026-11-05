@@ -1,6 +1,6 @@
 # Architecture
 
-Bomby is a desktop app for talking to coding agents. A call connects Gemini's voice model to an agent installed on the user's machine. The user brings their LiveKit and Gemini keys and their own agent ([decision](decisions/users-bring-their-own-keys-and-claude.md)).
+Bomby is a desktop app for talking to coding agents. A call connects Gemini's voice model to an agent installed on the user's machine. The user brings their Gemini key and their own agent ([decision](decisions/users-bring-their-own-keys-and-claude.md)); calls run through LiveKit on their Mac, or their own LiveKit Cloud project ([decision](decisions/livekit-on-this-mac-or-cloud.md)).
 
 ## The pieces
 
@@ -11,13 +11,13 @@ Bomby is a desktop app for talking to coding agents. A call connects Gemini's vo
 | Desktop app | `app/`: Tauri v2, React, LiveKit Agents UI; settings, projects, calls and saved transcripts | In progress; runs the agent from source in dev, the packaged agent in release builds |
 | App data | One core-owned SQLite database for projects, calls and messages | Built ([decision](decisions/app-data-in-one-sqlite-db.md)) |
 | Packaging | The agent frozen with PyInstaller into the app's resources; adapters installed on Set up | Bundled in release builds; signed and notarized by the Release workflow ([releasing.md](releasing.md), [decision](decisions/ship-the-agent-and-adapter-as-sidecars.md)) |
-| LiveKit server | LiveKit Cloud or self-hosted; not needed for `just agent console` | External |
+| LiveKit server | Bundled `livekit-server` run by the core on this Mac (`livekit.just`, `src-tauri/src/local_server.rs`), or the user's LiveKit Cloud or own server; not needed for `just agent console` | Built |
 
 ```mermaid
 flowchart LR
   subgraph App["Desktop app"]
     UI["React UI: projects, calls, agents panel"]
-    Core["Tauri core: keychain, SQLite, tokens, agent worker"]
+    Core["Tauri core: keychain, SQLite, tokens, agent worker, LiveKit server"]
   end
   subgraph Agent["Voice agent (agent/)"]
     Gemini["Gemini 3.8 Live session"]
@@ -39,7 +39,7 @@ flowchart LR
 
 ## A call, start to end
 
-1. **Start.** The core starts or restarts the agent worker, looks for the installed agents (leaving out any the setup probe found not set up) and records the call with `open_call`, then mints a read-only token with `call_token`. The token's room configuration dispatches `bomby` with the project, its folders and instructions, and the agents found when the call opened as job metadata; every token for the call carries the same agents and picks. The entrypoint reads `ctx.job.metadata`.
+1. **Start.** The core makes sure the call's LiveKit server runs (this Mac's, started on the first call, or the user's own), starts or restarts the agent worker on it, looks for the installed agents (leaving out any the setup probe found not set up) and records the call with `open_call`, then mints a read-only token with `call_token`. The token's room configuration dispatches `bomby` with the project, its folders and instructions, and the agents found when the call opened as job metadata; every token for the call carries the same server, agents and picks. The entrypoint reads `ctx.job.metadata`.
 2. **Talk.** Gemini 3.8 Live handles speech both ways. Its instructions are `agent/prompts/voice.md` plus what the call adds, each part left out when it has nothing to say: what to call the user (`## The user`), the agents it can use, the project's instructions (`## Project context`) and, on a resumed call, the earlier conversation (`agent/voice_prompt.py`).
 3. **Work.** Gemini calls `start_task(task, session, agent)`. Its first `ctx.update()` makes the tool non-blocking, so the conversation continues.
 4. **Agent sessions.** Each selected harness gets one `AcpRunner` and one ACP process per call, started on its first task. A new session name opens a session; a known name continues it. Sessions run in parallel, and supported harnesses accept steering mid-turn.
@@ -87,6 +87,8 @@ The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS)
 **Agent errors.** A harness that fails fails the task with one short line for the voice model, "<agent> isn't ready right now" or "<agent> stopped before finishing", plus an instruction to say sorry and offer another agent (`not_ready` and `stopped` in `agent/acp_client/runner.py`, owner's choice, 2026-11-04). A turn that ends without a final message fails the same way ("<agent> ended without reporting back", `no_report`), so it never reads as done. The details go to `agent.log`; Settings shows what to fix, from the setup probe ([decision](decisions/check-agent-setup-with-an-acp-probe.md)).
 
 **A crashed job.** When a call's job raises, livekit-agents logs `unhandled exception while running the job task` with the job's `room` (`bomby-<call id>-<ms>`). The core reads it from the worker's output (`job_crash` in `src-tauri/src/agent.rs`) and sends `call-agent-crashed` (`{ room, reason }`) to the main window, which fails the call at once if it's in that room (a resumed call joins a new room, so a late crash from an earlier one is ignored) instead of waiting out the 30 s join timeout (`call-provider.tsx`): the page says "Bomby couldn't start the call. Try again?" and the reason goes to `app.log`. A folder that's gone is caught before the call starts (`open_call`), so it never gets that far.
+
+**The LiveKit server.** Settings, Credentials and the splash choose it with `livekit_server()` and `set_livekit_server(server)` (`thisMac` or `theirs`; until chosen, `theirs` when the user's keys are saved), which also sends `keys-changed` (`src-tauri/src/call_server.rs`). This Mac's runs from the bundled sidecar on 127.0.0.1 with free ports and keys made at each start, given through `LIVEKIT_CONFIG` and `LIVEKIT_KEYS`; it logs to `livekit.log`, stops with the app or when calls move to the user's own, and its pid in `livekit-server.pid` lets the next launch stop one a killed run left (`src-tauri/src/local_server.rs`).
 
 **Menu bar.** The main window's page reports `set_tray_status({ state, call, starting, recent, blocked })` whenever the call changes; End call is offered only once the call has started (`features/tray/tray-bridge.tsx`); the core draws the icon and menu from it (`src-tauri/src/tray.rs`) and sends `tray-start-call` (a project id) and `tray-end-call` back to the main window. Closing the main window hides it, so a call keeps running.
 

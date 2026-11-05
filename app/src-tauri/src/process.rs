@@ -1,5 +1,6 @@
-//! Waiting on the programs the core runs (agents' `--version`, adapter installs, the voice
-//! agent). std has no `Child::wait_timeout` as of Rust 1.99, so this polls `try_wait`.
+//! Waiting on and stopping the programs the core runs (agents' `--version`, adapter
+//! installs, the voice agent, the LiveKit server). std has no `Child::wait_timeout` as of
+//! Rust 1.99, so this polls `try_wait`.
 
 use std::io;
 use std::process::{Child, ExitStatus};
@@ -20,6 +21,21 @@ pub fn wait_timeout(child: &mut Child, timeout: Duration) -> io::Result<Option<E
         }
         thread::sleep(TICK);
     }
+}
+
+/// Stops `child` and the process group it leads (started with `process_group(0)`): SIGTERM,
+/// then SIGKILL after `grace`. Elsewhere than Unix, kills the child alone.
+pub fn stop_group(mut child: Child, grace: Duration) {
+    #[cfg(unix)]
+    if let Ok(pid) = i32::try_from(child.id()) {
+        // SAFETY: killpg only sends a signal; the group is the one the child leads.
+        unsafe { libc::killpg(pid, libc::SIGTERM) };
+        if let Ok(Some(_)) = wait_timeout(&mut child, grace) {
+            return;
+        }
+        unsafe { libc::killpg(pid, libc::SIGKILL) };
+    }
+    kill(&mut child);
 }
 
 /// Kills `child` and reaps it, so it leaves no zombie.

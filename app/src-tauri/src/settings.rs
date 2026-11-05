@@ -1,9 +1,10 @@
 //! App settings that aren't secrets, kept in the database's `settings` table: the agent's
 //! voice and what the user likes to be called, both sent with every call
-//! (`calls::call_token`), and whether the first run is done.
+//! (`calls::call_token`), which LiveKit server calls use (`call_server`), and whether the
+//! first run is done.
 
 use rusqlite::{Connection, OptionalExtension, params};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::db::Db;
@@ -15,6 +16,28 @@ const USER_NAME_KEY: &str = "user_name";
 const MAX_USER_NAME_LEN: usize = 50;
 /// Set once the first-run splash has set up an agent.
 const FIRST_RUN_KEY: &str = "first_run_done";
+/// Which LiveKit server calls use; missing until the user chooses.
+const LIVEKIT_SERVER_KEY: &str = "livekit_server";
+
+/// Where a call's LiveKit server runs (docs/decisions/livekit-on-this-mac-or-cloud.md).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "credentials.ts"))]
+pub enum LiveKitServer {
+    /// The server bundled with Bomby, on this Mac (`local_server`).
+    ThisMac,
+    /// The user's own: LiveKit Cloud or a server they run, with their keys (`credentials`).
+    Theirs,
+}
+
+impl LiveKitServer {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::ThisMac => "this_mac",
+            Self::Theirs => "theirs",
+        }
+    }
+}
 
 /// Used when none is chosen: the voice the agent has always had (`agent/call_options.py`).
 pub const DEFAULT_VOICE: &str = "Charon";
@@ -159,6 +182,21 @@ pub fn set_user_name(db: State<'_, Db>, name: String) -> Result<String> {
     save_user_name(&db.conn(), &name)
 }
 
+/// The LiveKit server calls use. Until the user chooses, an install with their own LiveKit
+/// keys saved stays on them, and one without uses this Mac's.
+pub(crate) fn livekit_server(conn: &Connection, has_their_keys: bool) -> Result<LiveKitServer> {
+    Ok(match get(conn, LIVEKIT_SERVER_KEY)?.as_deref() {
+        Some("this_mac") => LiveKitServer::ThisMac,
+        Some("theirs") => LiveKitServer::Theirs,
+        _ if has_their_keys => LiveKitServer::Theirs,
+        _ => LiveKitServer::ThisMac,
+    })
+}
+
+pub(crate) fn save_livekit_server(conn: &Connection, server: LiveKitServer) -> Result<()> {
+    put(conn, LIVEKIT_SERVER_KEY, server.as_str())
+}
+
 /// Whether this is the first run: the splash shows until it has set up an agent.
 #[tauri::command(async)]
 pub fn first_run(db: State<'_, Db>) -> Result<bool> {
@@ -208,6 +246,22 @@ mod tests {
 
         assert_eq!(save_user_name(&conn, "   ").unwrap(), "");
         assert_eq!(read_user_name(&conn).unwrap(), "");
+    }
+
+    #[test]
+    fn keeps_their_livekit_until_the_user_chooses() {
+        let db = Db::in_memory().unwrap();
+        let conn = db.conn();
+        assert_eq!(livekit_server(&conn, true).unwrap(), LiveKitServer::Theirs);
+        assert_eq!(
+            livekit_server(&conn, false).unwrap(),
+            LiveKitServer::ThisMac
+        );
+
+        save_livekit_server(&conn, LiveKitServer::ThisMac).unwrap();
+        assert_eq!(livekit_server(&conn, true).unwrap(), LiveKitServer::ThisMac);
+        save_livekit_server(&conn, LiveKitServer::Theirs).unwrap();
+        assert_eq!(livekit_server(&conn, false).unwrap(), LiveKitServer::Theirs);
     }
 
     #[test]

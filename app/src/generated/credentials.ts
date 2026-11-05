@@ -13,3 +13,8 @@ export type CredentialsInput = { url: string, apiKey: string,
  * Left out to keep the saved secret.
  */
 apiSecret?: string, };
+
+/**
+ * Where a call's LiveKit server runs (docs/decisions/livekit-on-this-mac-or-cloud.md).
+ */
+export type LiveKitServer = "thisMac" | "theirs";

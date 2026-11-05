@@ -23,6 +23,8 @@
     "allow-has-gemini-key",
     "allow-save-gemini-key",
     "allow-clear-gemini-key",
+    "allow-livekit-server",
+    "allow-set-livekit-server",
     "allow-agents-status",
     "allow-refresh-agents",
     "allow-agent-settings",

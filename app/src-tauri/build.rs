@@ -15,6 +15,8 @@ const COMMANDS: &[&str] = &[
     "has_gemini_key",
     "save_gemini_key",
     "clear_gemini_key",
+    "livekit_server",
+    "set_livekit_server",
     "agents_status",
     "refresh_agents",
     "agent_settings",

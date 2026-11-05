@@ -1,5 +1,6 @@
-//! Calls: opening one on a project (the agent worker and a call row), the LiveKit token that
-//! joins it and dispatches the agent with the project, ending it, and keeping its transcript.
+//! Calls: opening one on a project (its LiveKit server, the agent worker and a call row), the
+//! LiveKit token that joins it and dispatches the agent with the project, ending it, and
+//! keeping its transcript.
 //! LiveKit keeps no transcripts, so the page sends each line here as it arrives
 //! (docs/decisions/app-data-in-one-sqlite-db.md).
 
@@ -15,11 +16,13 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
 use crate::agent::{AgentWorker, JobCrash, OnCrash, WorkerConfig};
+use crate::credentials::LiveKitKeys;
 use crate::db::{Db, now_ms};
 use crate::error::{Error, Result};
+use crate::local_server::LocalServer;
 use crate::setup::Pick;
 use crate::sync;
-use crate::{agent_picks, agents, credentials, projects, settings, updates, windows};
+use crate::{agent_picks, agents, call_server, credentials, projects, settings, updates, windows};
 
 /// The agent's name in `agent/agent.py` (`AGENT_NAME`), which the token dispatches.
 const AGENT_NAME: &str = "bomby";
@@ -71,18 +74,21 @@ fn report_crashes<R: Runtime>(app: &AppHandle<R>) -> OnCrash {
     })
 }
 
-/// The agents the current call opened with, and their picks. Every token for that call
-/// carries the same ones, so a reconnect mid-call never hands the voice agent a different
-/// list or model, whatever looking for agents or picking finds meanwhile
-/// (`agents::Agents`, `agent_picks`); a pick made during a call applies from the next one.
+/// The LiveKit server, agents and picks the current call opened with. Every token for that
+/// call carries the same ones, so a reconnect mid-call never lands on another server or
+/// hands the voice agent a different list or model, whatever the user switches, looking for
+/// agents or picking finds meanwhile (`call_server`, `agents::Agents`, `agent_picks`); a
+/// change made during a call applies from the next one.
 /// The app runs one call at a time (one LiveKit session), so opening the next one replaces
 /// it.
 #[derive(Default)]
 pub struct CallAgents(Mutex<Option<CurrentCall>>);
 
-/// What a call opened with: its agents by id with their programs, and their picks.
+/// What a call opened with: its LiveKit server, its agents by id with their programs, and
+/// their picks.
 #[derive(Debug, Clone, PartialEq)]
 struct OpenedWith {
+    server: LiveKitKeys,
     agents: Vec<(String, PathBuf)>,
     picks: HashMap<String, Vec<Pick>>,
 }
@@ -209,16 +215,7 @@ fn reopen(conn: &Connection, project_id: i64, call_id: i64) -> Result<()> {
     Ok(())
 }
 
-fn livekit_keys<R: Runtime>(
-    app: &AppHandle<R>,
-    vault: &credentials::Vault,
-) -> Result<credentials::LiveKitKeys> {
-    vault
-        .livekit(app)?
-        .ok_or_else(|| Error::Invalid("Add your LiveKit keys in Settings first.".into()))
-}
-
-fn token(keys: &credentials::LiveKitKeys, room: &str, metadata: String) -> Result<String> {
+fn token(keys: &LiveKitKeys, room: &str, metadata: String) -> Result<String> {
     AccessToken::with_api_key(&keys.api_key, &keys.api_secret)
         .with_identity("user")
         .with_name("You")
@@ -245,14 +242,16 @@ fn token(keys: &credentials::LiveKitKeys, room: &str, metadata: String) -> Resul
 }
 
 /// Opens a call on a project, or reopens one of its earlier calls (`resume_call_id`), after
-/// making sure the agent worker runs (it can take a few seconds the first time). Joining is
-/// `call_token`'s job.
+/// making sure its LiveKit server and the agent worker run (the worker can take a few seconds
+/// the first time). Joining is `call_token`'s job.
 #[tauri::command(async)]
+#[allow(clippy::too_many_arguments)] // Tauri hands each piece of state in as an argument.
 pub fn open_call<R: Runtime>(
     app: AppHandle<R>,
     db: State<'_, Db>,
     worker: State<'_, AgentWorker>,
     vault: State<'_, credentials::Vault>,
+    local: State<'_, LocalServer>,
     call_agents: State<'_, CallAgents>,
     project_id: i64,
     resume_call_id: Option<i64>,
@@ -260,7 +259,6 @@ pub fn open_call<R: Runtime>(
     // Holds off an update's restart while the call opens; refused if one is under way.
     let opening = updates::CallOpening::begin(&app)?;
     folders_are_there(&projects::for_call(&db.conn(), project_id)?)?;
-    let keys = livekit_keys(&app, &vault)?;
     let gemini = vault
         .gemini_key(&app)?
         .ok_or_else(|| Error::Invalid("Add your Gemini API key in Settings first.".into()))?;
@@ -272,10 +270,13 @@ pub fn open_call<R: Runtime>(
             "Bomby can't find an agent that's ready to work. See Settings, Agents.".into(),
         ));
     }
+    // Last of the checks: this Mac's server starts here (about 0.15 s), only for a call that
+    // has everything else.
+    let server = call_server::for_new_call(&app, &db, &vault, &local)?;
     let log_dir = app.path().app_log_dir()?;
     worker.ensure(
         WorkerConfig {
-            livekit: keys,
+            livekit: server.clone(),
             gemini_key: gemini,
         },
         &log_dir,
@@ -301,6 +302,7 @@ pub fn open_call<R: Runtime>(
     call_agents.set(
         call_id,
         OpenedWith {
+            server,
             agents: found,
             picks,
         },
@@ -318,11 +320,11 @@ pub fn call_token<R: Runtime>(
     app: AppHandle<R>,
     db: State<'_, Db>,
     vault: State<'_, credentials::Vault>,
+    local: State<'_, LocalServer>,
     found: State<'_, agents::Agents>,
     call_agents: State<'_, CallAgents>,
     call_id: i64,
 ) -> Result<CallToken> {
-    let keys = livekit_keys(&app, &vault)?;
     let (project, history, settings) = {
         let conn = db.conn();
         let project_id: i64 = conn
@@ -340,18 +342,23 @@ pub fn call_token<R: Runtime>(
         )
     };
     let room = room_name(call_id);
-    // A call opened in this run has its own list; any other gets the last one found.
-    let OpenedWith { agents, picks } = match call_agents.get(call_id) {
+    // A call opened in this run has its own; any other gets what's there now.
+    let OpenedWith {
+        server,
+        agents,
+        picks,
+    } = match call_agents.get(call_id) {
         Some(opened) => opened,
         None => OpenedWith {
+            server: call_server::current(&app, &db, &vault, &local)?,
             agents: agents::usable(&found.cached().unwrap_or_default()),
             picks: agent_picks::saved(&db.conn())?,
         },
     };
     let metadata = dispatch_metadata(&project, &agents, &picks, &settings, &history);
     Ok(CallToken {
-        participant_token: token(&keys, &room, metadata)?,
-        server_url: keys.url,
+        participant_token: token(&server, &room, metadata)?,
+        server_url: server.url,
     })
 }
 
@@ -423,9 +430,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_current_call_keeps_its_agents_until_the_next_one_opens() {
+    fn the_current_call_keeps_its_server_and_agents_until_the_next_one_opens() {
         let agents = CallAgents::default();
+        let server = LiveKitKeys {
+            url: "ws://127.0.0.1:41000".into(),
+            api_key: "bomby".into(),
+            api_secret: "secret".into(),
+        };
         let claude = OpenedWith {
+            server: server.clone(),
             agents: vec![(
                 "claude".to_owned(),
                 PathBuf::from("/Users/me/.local/bin/claude"),
@@ -443,6 +456,7 @@ mod tests {
         assert_eq!(agents.get(2), None);
 
         let none = OpenedWith {
+            server,
             agents: vec![],
             picks: HashMap::new(),
         };
@@ -611,7 +625,7 @@ mod tests {
 
     #[test]
     fn the_token_joins_the_room_and_dispatches_the_agent_with_the_project() {
-        let keys = credentials::LiveKitKeys {
+        let keys = LiveKitKeys {
             url: "wss://x.livekit.cloud".into(),
             api_key: "key".into(),
             api_secret: "a-secret-long-enough-for-hs256-signing".into(),

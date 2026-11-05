@@ -54,6 +54,7 @@ Checked 2026-11-05 against `livekit/livekit` v1.13.10 and v1.13.11 (source and r
 - **Config through the environment.** `LIVEKIT_CONFIG` is the YAML (`--config-body`), `LIVEKIT_KEYS` the `key: secret` lines (`--keys`) (`cmd/server/main.go`). Outside `--dev` a secret under 32 characters fails `ValidateKeys`. `--dev` falls back to `devkey`/`secret`, debug logs and `/debug/pprof`.
 - **Ports.** Signal and API on `port` (7880), bound to `bind_addresses`. ICE over TCP on `rtc.tcp_port` (7881). ICE over UDP on a range (50000-60000), or one `rtc.udp_port` mux. `GET /` answers `OK` once it's serving.
 - **Which address it advertises.** Without `rtc.node_ip`, IP discovery picks the first non-loopback address and uses loopback only when there is no other (`determineIP`, `GetLocalIPAddresses` in `ip.go`). `node_ip` becomes the NAT 1:1 address of every host candidate, and `enable_loopback_candidate` and `ips.includes` decide what's gathered (`webrtc_config.go`).
+- **Stopping.** SIGTERM logs `exit requested, shutting down` and exits in about 40 ms, also after a request. Sent within about 10 ms of `starting LiveKit server`, it never exits (waited 15 s; 1.13.10). The core sends SIGKILL after 1 s; the server keeps nothing on disk.
 - **Token dispatch works** on the open-source server: `RoomConfiguration.agents` from the token is handled in `pkg/service/roomallocator.go`, tested in `test/agent_test.go`.
 
 ## Data to the frontend

@@ -279,17 +279,8 @@ fn error_text(entry: &serde_json::Value) -> Option<String> {
 }
 
 /// Asks the worker's process group to stop, then makes sure it has.
-fn stop(mut child: Child) {
-    #[cfg(unix)]
-    if let Ok(pid) = i32::try_from(child.id()) {
-        // SAFETY: killpg only sends a signal; the group is the one the child leads.
-        unsafe { libc::killpg(pid, libc::SIGTERM) };
-        if let Ok(Some(_)) = process::wait_timeout(&mut child, STOP_TIMEOUT) {
-            return;
-        }
-        unsafe { libc::killpg(pid, libc::SIGKILL) };
-    }
-    process::kill(&mut child);
+fn stop(child: Child) {
+    process::stop_group(child, STOP_TIMEOUT);
 }
 
 #[cfg(test)]

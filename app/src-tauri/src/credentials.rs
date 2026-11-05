@@ -26,12 +26,23 @@ pub const KEYS_CHANGED: &str = "keys-changed";
 /// The entry's account; the service is the app identifier (tauri.conf.json).
 const ACCOUNT: &str = "credentials";
 
-/// The LiveKit keys. The core uses them for tokens and the agent's environment.
+/// The LiveKit keys. The core uses them for tokens and the agent's environment. The user's
+/// own are kept here; the ones for the server on this Mac are made by `local_server`.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LiveKitKeys {
     pub url: String,
     pub api_key: String,
     pub api_secret: String,
+}
+
+/// Never prints the secret.
+impl std::fmt::Debug for LiveKitKeys {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LiveKitKeys")
+            .field("url", &self.url)
+            .field("api_key", &self.api_key)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Everything in the keychain entry.
