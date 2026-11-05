@@ -101,12 +101,15 @@ export function FirstAgent({
   agent,
   allSet,
   onChoose,
+  onPicking,
 }: {
   agents: AgentStatus[] | null
   agent: AgentStatus | null
   /** The agent and the keys are ready: the splash is done. */
   allSet: boolean
   onChoose: (id: string) => void
+  /** Whether the agent's model picker is open. */
+  onPicking: (open: boolean) => void
 }) {
   const phase = phaseOf(agents, agent)
   const [title, body] =
@@ -120,7 +123,7 @@ export function FirstAgent({
     <div className="flex flex-col items-center">
       <StepHeading title={title} body={body} />
 
-      <AgentCard agent={agent} phase={phase} />
+      <AgentCard agent={agent} phase={phase} onPicking={onPicking} />
 
       <div className="mt-7 flex min-h-[18px] flex-col items-center gap-3">
         {install.error && (
@@ -151,9 +154,11 @@ export function FirstAgent({
 function AgentCard({
   agent,
   phase,
+  onPicking,
 }: {
   agent: AgentStatus | null
   phase: Phase
+  onPicking: (open: boolean) => void
 }) {
   return (
     <SetupCard
@@ -161,7 +166,7 @@ function AgentCard({
       tile={<AgentTile id={agent?.id ?? "claude"} />}
       name={agent?.name ?? "Claude Code"}
       status={<StatusLine tone={toneOf(phase)} text={statusOf(agent, phase)} />}
-      action={<Action agent={agent} phase={phase} />}
+      action={<Action agent={agent} phase={phase} onPicking={onPicking} />}
     />
   )
 }
@@ -228,7 +233,15 @@ function shortStatusOf(agent: AgentStatus, phase: Phase): string {
 }
 
 /** The card's next step, in place; a ready agent shows its model, to change if wanted. */
-function Action({ agent, phase }: { agent: AgentStatus | null; phase: Phase }) {
+function Action({
+  agent,
+  phase,
+  onPicking,
+}: {
+  agent: AgentStatus | null
+  phase: Phase
+  onPicking: (open: boolean) => void
+}) {
   const primary = cn(
     CARD_BUTTON,
     "bg-primary text-primary-foreground hover:bg-primary/90"
@@ -240,7 +253,17 @@ function Action({ agent, phase }: { agent: AgentStatus | null; phase: Phase }) {
       </SetUpButton>
     )
   if ((phase === "pick" || phase === "ready") && agent)
-    return <ModelPicker agent={agent} size="default" className={CARD_BUTTON} />
+    return (
+      <ModelPicker
+        // Each agent's own settings, not the last one's (`useAgentSettings`).
+        key={agent.id}
+        agent={agent}
+        size="default"
+        // A width of its own, for the model's name to fit or slide in.
+        className={cn(CARD_BUTTON, "w-48")}
+        onOpenChange={onPicking}
+      />
+    )
   if (phase === "missing")
     return (
       <CopyButton text={CLAUDE_INSTALL} className={CARD_BUTTON}>

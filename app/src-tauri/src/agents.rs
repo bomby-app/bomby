@@ -13,12 +13,13 @@
 //! kept and looks again on Check again; each call looks up the programs again before it
 //! opens.
 
-use std::collections::HashMap;
-use std::io::{ErrorKind, Read};
+use std::collections::{HashMap, HashSet};
+use std::fs::{self, File};
+use std::io::{Read, Seek, SeekFrom};
 use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
-use std::sync::mpsc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread;
 use std::time::Duration;
@@ -38,9 +39,6 @@ pub const CHANGED: &str = "agents-changed";
 
 /// Long enough for a login shell with a heavy rc file, short enough not to hang Settings.
 const TIMEOUT: Duration = Duration::from_secs(8);
-
-/// How long [`run`] waits for the last of a program's output once it has exited.
-const AFTER_EXIT: Duration = Duration::from_millis(200);
 
 /// One agent Bomby knows how to find.
 struct Known {
@@ -124,47 +122,50 @@ pub struct AgentStatus {
 
 /// Runs `command` and returns its output if it finishes within `timeout`; kills it
 /// otherwise.
+///
+/// Its output goes to a file, not a pipe: a pipe holds only 64 KiB, so a program writing more
+/// waits for a reader, and a program it starts (a daemon from the shell's rc files) can hold
+/// a pipe open after it exits, keeping any reader waiting. A file has neither problem, and
+/// it's unlinked at once, so nothing is left behind.
 pub fn run(mut command: Command, timeout: Duration) -> Option<Output> {
+    let mut out = unlinked_file().ok()?;
     let mut child = command
         .stdin(Stdio::null())
-        .stdout(Stdio::piped())
+        .stdout(out.try_clone().ok()?)
         .stderr(Stdio::null())
         .spawn()
         .ok()?;
-    // Read while it runs: a program that writes more than a pipe holds (64 KiB on macOS)
-    // waits for a reader, so waiting for it to exit first would wait out the timeout.
-    let mut stdout = child.stdout.take()?;
-    let read = Arc::new(Mutex::new(Vec::new()));
-    let (ended, end) = mpsc::channel();
-    let reading = Arc::clone(&read);
-    // Ends once the pipe closes: when the program exits, or the last program holding it.
-    thread::spawn(move || {
-        let mut chunk = [0; 16 * 1024];
-        loop {
-            match stdout.read(&mut chunk) {
-                Ok(0) => break,
-                Ok(n) => sync::lock(&reading).extend_from_slice(&chunk[..n]),
-                Err(e) if e.kind() == ErrorKind::Interrupted => {}
-                Err(_) => break,
-            }
-        }
-        // Only fails once `run` has stopped waiting.
-        let _ = ended.send(());
-    });
     let Ok(Some(status)) = process::wait_timeout(&mut child, timeout) else {
         process::kill(&mut child);
         return None;
     };
-    // A program it started (a daemon from the shell's rc files) can hold the pipe open after
-    // it exits, and the reader with it, until that program ends. What this one wrote is in the
-    // pipe by now, so the reader gets a moment for the last of it, not the whole timeout.
-    let _ = end.recv_timeout(AFTER_EXIT);
-    let stdout = std::mem::take(&mut *sync::lock(&read));
+    let mut stdout = Vec::new();
+    out.seek(SeekFrom::Start(0)).ok()?;
+    out.read_to_end(&mut stdout).ok()?;
     Some(Output {
         status,
         stdout,
         stderr: Vec::new(),
     })
+}
+
+/// A new file in the temp folder, removed from it at once: it lives as long as an open
+/// handle to it (macOS and Linux).
+fn unlinked_file() -> std::io::Result<File> {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let name = format!(
+        "bomby-run-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    );
+    let path = std::env::temp_dir().join(name);
+    let file = File::options()
+        .read(true)
+        .write(true)
+        .create_new(true)
+        .open(&path)?;
+    fs::remove_file(&path)?;
+    Ok(file)
 }
 
 fn stdout(output: &Output) -> Option<String> {
@@ -266,11 +267,20 @@ fn version_of(program: &Path) -> Option<String> {
 fn detect_all(
     previous: &HashMap<String, PathBuf>,
     saved: &HashMap<String, Vec<Pick>>,
+    checked: &HashSet<String>,
 ) -> Vec<AgentStatus> {
     let found = find_all(previous);
     let installed = programs(found.clone());
+    // A session in each agent not yet checked with one this launch, even one that can't
+    // delete it (omp): its setup and model are then known, not assumed.
+    let sessions: Vec<String> = installed
+        .iter()
+        .map(|(id, _)| id.clone())
+        .filter(|id| !checked.contains(id))
+        .collect();
     thread::scope(|scope| {
-        let probe = scope.spawn(|| setup::probe(&installed, saved, None).unwrap_or_default());
+        let probe =
+            scope.spawn(|| setup::probe(&installed, saved, None, &sessions).unwrap_or_default());
         let checks: Vec<_> = found
             .into_iter()
             .map(|(known, path)| (known, scope.spawn(move || status_of(known, path))))
@@ -326,10 +336,16 @@ struct Detection {
     /// How often each agent's picks changed, so a look that started before a pick doesn't
     /// put back what that agent ran on before it.
     picks: HashMap<String, u64>,
+    /// The agents a session has checked this launch (a look, the model picker or a pick):
+    /// later looks open none in one that can't delete it, and keep what it found.
+    checked: HashSet<String>,
 }
 
 impl Detection {
     fn replace_setup(&mut self, id: &str, setup: &Setup) -> Option<Vec<AgentStatus>> {
+        if setup.session {
+            self.checked.insert(id.to_owned());
+        }
         let found = self.found.as_mut()?;
         let agent = found.iter_mut().find(|a| a.id == id)?;
         if agent.setup.as_ref() == Some(setup) {
@@ -350,6 +366,11 @@ impl Agents {
     /// don't wait on it.
     pub fn one_at_a_time(&self, id: &str) -> Arc<Mutex<()>> {
         Arc::clone(sync::lock(&self.picking).entry(id.to_owned()).or_default())
+    }
+
+    /// Has the next look check every agent with a session again, omp too (a full check).
+    pub fn forget_checks(&self) {
+        self.lock().checked.clear();
     }
 
     /// What the last look found, if one has finished.
@@ -386,7 +407,8 @@ impl Agents {
         seen: Option<Vec<(String, PathBuf)>>,
         saved: impl FnOnce() -> HashMap<String, Vec<Pick>>,
     ) -> (Vec<AgentStatus>, bool) {
-        self.detect_with(seen, |previous| detect_all(previous, &saved()))
+        let checked = self.lock().checked.clone();
+        self.detect_with(seen, |previous| detect_all(previous, &saved(), &checked))
     }
 
     fn detect_with(
@@ -432,6 +454,11 @@ impl Agents {
             Ok(found) => {
                 let picked_since = |id: &str| state.picks.get(id) != picks.get(id);
                 let found = keep_what_the_look_missed(found, state.found.as_deref(), picked_since);
+                for agent in &found {
+                    if agent.setup.as_ref().is_some_and(|s| s.session) {
+                        state.checked.insert(agent.id.to_owned());
+                    }
+                }
                 let changed = state.found.as_ref() != Some(&found);
                 state.found = Some(found);
                 changed
@@ -583,11 +610,16 @@ pub async fn agents_status<R: Runtime>(app: AppHandle<R>) -> Result<Vec<AgentSta
 /// Looks for the agents again (Check again) and returns what it found.
 #[tauri::command]
 pub async fn refresh_agents<R: Runtime>(app: AppHandle<R>) -> Result<Vec<AgentStatus>> {
+    // A full check: every agent is checked with a session again, and its models are asked
+    // again when its picker next opens.
+    app.state::<Agents>().forget_checks();
+    app.state::<agent_picks::Listings>().forget();
     refresh_in_background(app).await
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::mpsc;
     use std::time::Instant;
 
     use super::*;
@@ -602,8 +634,8 @@ mod tests {
     }
 
     #[test]
-    fn reads_what_a_program_wrote_while_one_it_started_holds_the_pipe() {
-        // The shell exits at once; the sleep it left behind keeps the pipe open.
+    fn reads_what_a_program_wrote_while_one_it_started_still_holds_its_output() {
+        // The shell exits at once; the sleep it left behind still holds its output.
         let mut command = Command::new("sh");
         command.args(["-c", "sleep 5 & echo started"]);
         let started = Instant::now();
@@ -717,7 +749,6 @@ mod tests {
     #[test]
     fn asking_while_a_look_runs_waits_for_it_instead_of_starting_another() {
         use std::sync::atomic::{AtomicUsize, Ordering};
-        use std::sync::mpsc;
 
         let (agents, looks) = (&Agents::default(), &AtomicUsize::new(0));
         let found = &vec![status("omp", Some("/Users/me/.local/bin/omp"))];
@@ -777,7 +808,6 @@ mod tests {
     #[test]
     fn news_from_a_call_waits_for_the_running_look_then_looks_again() {
         use std::sync::atomic::{AtomicUsize, Ordering};
-        use std::sync::mpsc;
 
         let (agents, looks) = (&Agents::default(), &AtomicUsize::new(0));
         let goose = &PathBuf::from("/Users/me/.local/bin/goose");
@@ -821,7 +851,6 @@ mod tests {
     #[test]
     fn a_change_on_disk_waits_for_the_running_look_then_looks_again() {
         use std::sync::atomic::{AtomicUsize, Ordering};
-        use std::sync::mpsc;
 
         let (agents, looks) = (&Agents::default(), &AtomicUsize::new(0));
         let (started, wait_for_start) = mpsc::channel();
@@ -976,6 +1005,20 @@ mod tests {
             vec![goose(ready("looked"))]
         });
         assert_eq!(found, vec![goose(ready("looked"))]);
+    }
+
+    #[test]
+    fn an_agent_is_checked_with_a_session_once_per_launch() {
+        let agents = Agents::default();
+        let omp = |setup| AgentStatus {
+            setup: Some(setup),
+            ..status("omp", Some("/b/omp"))
+        };
+        agents.detect_with(None, |_| vec![omp(Setup::default())]);
+        assert!(agents.lock().checked.is_empty(), "no session yet");
+
+        agents.detect_with(None, |_| vec![omp(ready("Kimi"))]);
+        assert!(agents.lock().checked.contains("omp"));
     }
 
     #[test]

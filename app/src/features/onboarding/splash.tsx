@@ -19,7 +19,7 @@ import {
 } from "@/components/day-glow"
 import { FilmGrain } from "@/components/film-grain"
 import { Mascot, type MascotState } from "@/components/mascot"
-import { isReady, useAgents } from "@/features/agents/use-agents"
+import { isReady, setupStep, useAgents } from "@/features/agents/use-agents"
 import { useSavedKeys } from "@/features/credentials/use-saved-keys"
 
 import { finishFirstRun } from "./api"
@@ -79,8 +79,17 @@ export function Splash({ onDone }: { onDone: () => void }) {
   const agentReady = agent !== null && isReady(agent)
   const keysReady = keys !== null && keys.livekit && keys.gemini
   const ready = agentReady && keysReady
+  // The agent whose model picker is open: the agent step waits for it to close, so a pick
+  // that makes the agent ready doesn't take the picker away mid-pick. Worked out on each
+  // render, so a picker that goes away open (another agent, a sign-out) holds nothing up.
+  const [pickingFor, setPickingFor] = useState<string | null>(null)
+  const picking =
+    agent !== null &&
+    pickingFor === agent.id &&
+    ["pick", "ready"].includes(setupStep(agent))
   // The keys come once the agent is ready; with both, the agent's card says all is set.
-  const step = agentReady && keys !== null && !keysReady ? "keys" : "agent"
+  const step =
+    agentReady && !picking && keys !== null && !keysReady ? "keys" : "agent"
   // The step on screen: it follows `step`, fading out, then in.
   const [shown, setShown] = useState(step)
   const latestStep = useRef(step)
@@ -270,6 +279,9 @@ export function Splash({ onDone }: { onDone: () => void }) {
             agent={agent}
             allSet={ready}
             onChoose={setChosen}
+            onPicking={(open) =>
+              setPickingFor(open ? (agent?.id ?? null) : null)
+            }
           />
         )}
       </div>

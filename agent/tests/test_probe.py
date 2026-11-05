@@ -30,10 +30,13 @@ def run_probe(
     harness: Harness = FAKE,
     picks: tuple[Pick, ...] = (),
     listing: bool = False,
+    open_session: bool = False,
 ) -> tuple[Setup, list[str]]:
     log = tmp_path / "acp.jsonl"
     environ = {**os.environ, **env, "FAKE_ACP_LOG": str(log)}
-    setup = asyncio.run(probe(harness, Path(sys.executable), environ, picks, listing))
+    setup = asyncio.run(
+        probe(harness, Path(sys.executable), environ, picks, listing, open_session)
+    )
     lines = log.read_text().splitlines() if log.exists() else []
     events: list[dict[str, Any]] = [json.loads(line) for line in lines]
     return setup, [e["event"] for e in events]
@@ -157,10 +160,16 @@ def test_an_agent_that_requires_a_pick_waits_for_one(tmp_path: Path) -> None:
     ("picks", "step"),
     [
         ((Pick("model", "m2"),), "ready"),
+        ((Pick("model", "m1"),), "ready"),
         ((Pick("model", "retired"),), "pick"),
         ((Pick("effort", "high"),), "pick"),
     ],
-    ids=["model picked", "pick gone", "only effort picked"],
+    ids=[
+        "model picked",
+        "the model it runs on picked",
+        "pick gone",
+        "only effort picked",
+    ],
 )
 def test_an_agent_that_requires_a_pick_is_ready_once_its_model_is_picked(
     tmp_path: Path, picks: tuple[Pick, ...], step: str
@@ -192,6 +201,17 @@ def test_listing_opens_and_closes_a_session_the_agent_cant_delete(
     setup, events = run_probe(tmp_path, {"FAKE_ACP_MODEL": "m1"}, listing=True)
 
     assert setup.model == "Fake m1"
+    assert events == ["initialize", "new_session", "close_session"]
+
+
+def test_a_session_asked_for_is_opened_and_closed_without_the_option_lists(
+    tmp_path: Path,
+) -> None:
+    # Once per launch the app asks for one in an agent that can't delete it, to check it.
+    setup, events = run_probe(tmp_path, {"FAKE_ACP_MODEL": "m1"}, open_session=True)
+
+    assert (setup.step, setup.model, setup.session) == ("ready", "Fake m1", True)
+    assert setup.settings == ()
     assert events == ["initialize", "new_session", "close_session"]
 
 
@@ -315,38 +335,44 @@ def test_the_command_line_answers_by_agent_id(
 
 
 @pytest.mark.parametrize(
-    ("metadata", "picks", "listing"),
+    ("metadata", "picks", "listing", "sessions"),
     [
         (
             '{"picks": {"goose": [{"setting": "provider", "value": "p2"}]},'
-            + ' "listing": ["omp"]}',
+            + ' "listing": ["omp"], "sessions": ["omp"]}',
             {"goose": (Pick("provider", "p2"),)},
             {"omp"},
+            {"omp"},
         ),
-        ('{"agents": {}}', {}, set[str]()),
-        ("", {}, set[str]()),
+        ('{"agents": {}}', {}, set[str](), set[str]()),
+        ("", {}, set[str](), set[str]()),
     ],
-    ids=["picks and listing", "neither", "no metadata"],
+    ids=["picks, listing and sessions", "none", "no metadata"],
 )
 def test_the_command_line_passes_on_the_picks_and_who_to_list(
     monkeypatch: pytest.MonkeyPatch,
     metadata: str,
     picks: dict[str, tuple[Pick, ...]],
     listing: set[str],
+    sessions: set[str],
 ) -> None:
-    passed: list[tuple[object, set[str]]] = []
+    passed: list[tuple[object, set[str], set[str]]] = []
 
     async def fake_probe_all(
-        _agents: object, _environ: object, picks: object, listing: Collection[str]
+        _agents: object,
+        _environ: object,
+        picks: object,
+        listing: Collection[str],
+        sessions: Collection[str],
     ) -> dict[str, Setup]:
-        passed.append((picks, set(listing)))
+        passed.append((picks, set(listing), set(sessions)))
         return {}
 
     monkeypatch.setattr(probe_cli, "probe_all", fake_probe_all)
 
     _ = probe_cli.main(metadata)
 
-    assert passed == [(picks, listing)]
+    assert passed == [(picks, listing, sessions)]
 
 
 @pytest.mark.parametrize(

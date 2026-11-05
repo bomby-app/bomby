@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 use rusqlite::{Connection, params};
 use tauri::{AppHandle, Emitter, Manager, Runtime};
@@ -81,9 +82,30 @@ const UNREACHABLE: &str = "Bomby couldn't reach the agent. Try again?";
 fn list<R: Runtime>(app: &AppHandle<R>, agent: &str, picks: &[Pick]) -> Result<Listed> {
     let path = program(app, agent)?;
     let picks = HashMap::from([(agent.to_owned(), picks.to_vec())]);
-    setup::probe(&[(agent.to_owned(), path)], &picks, Some(agent))
+    setup::probe(&[(agent.to_owned(), path)], &picks, Some(agent), &[])
         .and_then(|mut listed| listed.remove(agent))
         .ok_or_else(|| Error::Invalid(UNREACHABLE.into()))
+}
+
+/// What each agent let the user pick, as it last answered, for the whole launch: asking
+/// starts the agent, seconds each time, so the model picker asks each agent once, and every
+/// pick keeps the answer current. Forgotten only on a full check (`refresh_agents`).
+#[derive(Default)]
+pub struct Listings(Mutex<HashMap<String, Listed>>);
+
+impl Listings {
+    fn get(&self, agent: &str) -> Option<Listed> {
+        sync::lock(&self.0).get(agent).cloned()
+    }
+
+    fn keep(&self, agent: &str, listed: &Listed) {
+        sync::lock(&self.0).insert(agent.to_owned(), listed.clone());
+    }
+
+    /// Every agent is asked again when its picker next opens.
+    pub fn forget(&self) {
+        sync::lock(&self.0).clear();
+    }
 }
 
 /// Tells every window about `found`, the list after a row changed, if one did.
@@ -94,18 +116,23 @@ fn show<R: Runtime>(app: &AppHandle<R>, found: Option<Vec<agents::AgentStatus>>)
     }
 }
 
-/// What the model picker shows for `agent` when it opens: its settings, its picks applied.
-/// Its row follows, so it shows a pick found gone, and the model of an agent the looks open
-/// no session in (omp).
+/// What the model picker shows for `agent` when it opens: its settings, its picks applied,
+/// asked of the agent once per launch ([`Listings`]). Its row follows, so it shows a pick
+/// found gone.
 #[tauri::command]
 pub async fn agent_settings<R: Runtime>(app: AppHandle<R>, agent: String) -> Result<Listed> {
     // A probe of seconds: off the async runtime, like every look (docs/tauri-notes.md).
     tauri::async_runtime::spawn_blocking(move || {
         let lock = app.state::<Agents>().one_at_a_time(&agent);
         let _one = sync::lock(&lock);
+        // Inside the lock, so a second window asking meanwhile gets this answer.
+        if let Some(listed) = app.state::<Listings>().get(&agent) {
+            return Ok(listed);
+        }
         let picks = saved_for(&app.state::<Db>().conn(), &agent)?;
         let listed = list(&app, &agent, &picks)?;
         if listed.setup.session {
+            app.state::<Listings>().keep(&agent, &listed);
             show(
                 &app,
                 app.state::<Agents>().replace_setup(&agent, &listed.setup),
@@ -153,6 +180,7 @@ pub async fn pick_agent_settings<R: Runtime>(
             .setup
             .skipped
             .retain(|s| saved.iter().any(|p| p.setting == s.setting));
+        app.state::<Listings>().keep(&agent, &listed);
         show(&app, app.state::<Agents>().picked(&agent, &listed.setup));
         Ok(listed)
     })

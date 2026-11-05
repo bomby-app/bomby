@@ -1,5 +1,5 @@
 import { SquareTerminal } from "lucide-react"
-import { type ReactNode, useTransition } from "react"
+import { type ReactNode, useState, useTransition } from "react"
 
 import { CheckAgainButton } from "@/components/check-again-button"
 import { ErrorCard } from "@/components/error-card"
@@ -9,9 +9,11 @@ import { AgentLogo } from "./agent-logos"
 import { type AgentStatus, sentence, versionNumber } from "./api"
 import { CopyButton } from "./copy-button"
 import { InstallFirstAgent } from "./install-first-agent"
-import { ModelPicker, skippedNote } from "./model-picker"
+import { modelName } from "./model-picker"
+import { ModelSettings, skippedNote } from "./model-settings"
 import { SetUpButton } from "./set-up-button"
 import { useAdapterInstall } from "./use-adapter-install"
+import { forgetListedSettings, useAgentSettings } from "./use-agent-settings"
 import { checkAgentsAgain, isReady, setupStep, useAgents } from "./use-agents"
 
 /**
@@ -19,13 +21,15 @@ import { checkAgentsAgain, isReady, setupStep, useAgents } from "./use-agents"
  * core last found them on this computer (docs/decisions/detect-acp-native-agents.md), with
  * what their setup probe found (docs/decisions/check-agent-setup-with-an-acp-probe.md). The
  * core looks at launch, so the list shows at once, and again on Check again. Each row shows
- * what the agent needs (`setupStep`), or, once it's ready, the model it runs on, to change
- * if wanted. Whatever the core reports is listed; a new agent needs no change here.
+ * what the agent needs (`setupStep`), or, once it's ready, the model it runs on, which opens
+ * the row to change it. Whatever the core reports is listed; a new agent needs no change here.
  */
 export function AgentsSettings() {
   const { agents, error } = useAgents()
   const install = useAdapterInstall()
   const [checking, startChecking] = useTransition()
+  // The one agent whose model and effort are open, if any.
+  const [openId, setOpenId] = useState<string | null>(null)
 
   return (
     <div className="flex flex-col gap-6">
@@ -38,7 +42,7 @@ export function AgentsSettings() {
       {agents?.every((agent) => agent.path === null) ? (
         <InstallFirstAgent />
       ) : (
-        <ul className="flex flex-col divide-y rounded-lg border">
+        <ul className="flex flex-col divide-y overflow-hidden rounded-lg border">
           {agents === null ? (
             <StatusRow
               logo={<SquareTerminal />}
@@ -48,13 +52,11 @@ export function AgentsSettings() {
             />
           ) : (
             agents.map((agent) => (
-              <StatusRow
+              <AgentRow
                 key={agent.id}
-                logo={<AgentLogo id={agent.id} />}
-                name={agent.name}
-                ready={isReady(agent)}
-                detail={detail(agent)}
-                action={action(agent)}
+                agent={agent}
+                open={openId === agent.id}
+                onOpenChange={(open) => setOpenId(open ? agent.id : null)}
               />
             ))
           )}
@@ -63,14 +65,22 @@ export function AgentsSettings() {
       <div>
         <CheckAgainButton
           checking={checking}
-          onClick={() => startChecking(checkAgentsAgain)}
+          onClick={() =>
+            startChecking(() => {
+              // Each agent's models are asked again when its row next opens.
+              forgetListedSettings()
+              return checkAgentsAgain()
+            })
+          }
+          label="Refresh models"
+          checkingLabel="Refreshing..."
         />
       </div>
     </div>
   )
 }
 
-/** The agent's next step, in place; a ready one shows its model, to change if wanted. */
+/** What the agent needs next, in its mark's place until it's ready. */
 function action(agent: AgentStatus): ReactNode {
   switch (setupStep(agent)) {
     case "missing":
@@ -84,11 +94,50 @@ function action(agent: AgentStatus): ReactNode {
         </CopyButton>
       ) : undefined
     case "unreachable":
-      return undefined
     case "pick":
     case "ready":
-      return <ModelPicker agent={agent} />
+      return undefined
   }
+}
+
+/**
+ * One agent: what it needs, or once it's set up (or waiting for its model), a row that opens
+ * on its model and effort, to change at any time. The same row through a pick, so it stays
+ * open for the effort.
+ */
+function AgentRow({
+  agent,
+  open,
+  onOpenChange,
+}: {
+  agent: AgentStatus
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const settings = useAgentSettings(agent.id)
+  const step = setupStep(agent)
+  const pickable = step === "pick" || step === "ready"
+  return (
+    <StatusRow
+      logo={<AgentLogo id={agent.id} />}
+      name={agent.name}
+      ready={isReady(agent)}
+      detail={detail(agent)}
+      action={action(agent)}
+      expand={
+        pickable
+          ? {
+              open,
+              onOpenChange: (next) => {
+                if (next) settings.load()
+                onOpenChange(next)
+              },
+              content: <ModelSettings name={agent.name} settings={settings} />,
+            }
+          : undefined
+      }
+    />
+  )
 }
 
 function detail(agent: AgentStatus): ReactNode {
@@ -122,10 +171,13 @@ function detail(agent: AgentStatus): ReactNode {
         : `Found on this Mac. Pick its model to use it in calls.`
     case "ready": {
       if (setup?.skipped.length) return skippedNote(setup.skipped[0], name)
-      const state = [setup?.account, version && versionNumber(version)]
+      return [
+        modelName(agent),
+        setup?.account,
+        version && versionNumber(version),
+      ]
         .filter(Boolean)
         .join(" · ")
-      return state || "Ready"
     }
   }
 }

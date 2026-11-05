@@ -5,8 +5,9 @@ are applied first, so it shows the model a call's session would run on, and whic
 agent no longer offers. For the model picker it also lists what can be picked.
 
 A session lands in the agent's history, so the background check opens one only when the
-agent can delete it again. The model picker, which the user opens, gets one either way,
-closed afterwards: an agent like omp offers no models without a session.
+agent can delete it again, or when the app asks for one (`open_session`): it does once per launch
+for an agent that can't (omp), so even that one's setup and model are checked, not assumed.
+The model picker, which the user opens, gets one either way. Either is closed afterwards.
 """
 
 import asyncio
@@ -90,10 +91,12 @@ async def probe(
     environ: Mapping[str, str],
     picks: Sequence[Pick] = (),
     listing: bool = False,
+    open_session: bool = False,
 ) -> Setup:
     """Checks `harness`, started from `program` the way a call would start it, with the
     user's `picks` applied in order. `listing` is for the model picker: it returns the
-    settings that can be picked, opening a session even in an agent that can't delete it."""
+    settings that can be picked, opening a session even in an agent that can't delete it.
+    `open_session` opens one there too, without the settings."""
     adapter = harness.adapter_path(environ)
     if adapter is not None and not Path(adapter).is_file():
         return Setup(
@@ -109,7 +112,9 @@ async def probe(
                 _,
                 init,
             ):
-                return await _check(harness, conn, client, init, picks, listing)
+                return await _check(
+                    harness, conn, client, init, picks, listing, open_session
+                )
     except TimeoutError:
         return Setup("unreachable", problem="It didn't answer in time")
     # Before OSError, which ConnectionError is a kind of.
@@ -130,13 +135,22 @@ async def probe_all(
     environ: Mapping[str, str],
     picks: Mapping[str, Sequence[Pick]] | None = None,
     listing: Collection[str] = (),
+    sessions: Collection[str] = (),
 ) -> dict[str, Setup]:
     """Checks every agent at once, each with its own `picks`, listing the settings of
-    those in `listing`."""
+    those in `listing`, and opening a session in those in `sessions` even if they can't
+    delete it."""
     ids = list(agents)
     setups = await asyncio.gather(
         *(
-            probe(harness, program, environ, (picks or {}).get(id, ()), id in listing)
+            probe(
+                harness,
+                program,
+                environ,
+                (picks or {}).get(id, ()),
+                id in listing,
+                id in sessions,
+            )
             for id, (harness, program) in agents.items()
         )
     )
@@ -150,10 +164,11 @@ async def _check(
     init: InitializeResponse,
     picks: Sequence[Pick],
     listing: bool,
+    open_session: bool,
 ) -> Setup:
     fix = setup_command(harness, init.auth_methods or [])
     deletable = can_delete(init.agent_capabilities)
-    if not deletable and not listing:
+    if not deletable and not listing and not open_session:
         await _wait_for_auth(client, init)
         return _setup(
             client.auth_status,

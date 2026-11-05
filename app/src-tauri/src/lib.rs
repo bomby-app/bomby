@@ -52,6 +52,7 @@ pub fn run() {
             app.manage(agent::AgentWorker::default());
             app.manage(credentials::Vault::default());
             app.manage(agents::Agents::default());
+            app.manage(agent_picks::Listings::default());
             app.manage(calls::CallAgents::default());
             app.manage(updates::Updates::default());
             tray::init(app.handle())?;

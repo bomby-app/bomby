@@ -12,6 +12,7 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@base-ui/react": "^1.9.0",
     "@fontsource/bricolage-grotesque": "^5.3.0",
     "@gsap/react": "2.1.2",
     "@livekit/components-react": "^2.0.0",
@@ -21,7 +22,6 @@
     "@tauri-apps/plugin-dialog": "~2",
     "@tauri-apps/plugin-opener": "^2",
     "class-variance-authority": "^0.7.1",
-    "cmdk": "^1.1.1",
     "cn": "0.5.2",
     "gsap": "3.15.0",
     "livekit-client": "^2.0.0",

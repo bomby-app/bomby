@@ -1,21 +1,17 @@
-import { Check, ChevronsUpDown } from "lucide-react"
-import { useState } from "react"
-
 import { Button } from "@/components/ui/button"
 import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command"
+  Combobox,
+  ComboboxCollection,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxGroup,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxLabel,
+  ComboboxList,
+  ComboboxTrigger,
+} from "@/components/ui/combobox"
 import { Field, FieldLabel } from "@/components/ui/field"
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover"
 import {
   Select,
   SelectContent,
@@ -25,9 +21,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { cn } from "@/lib/utils"
 
 import type { Setting, SettingOption } from "./api"
+import { SlidingName } from "./sliding-name"
 
 /** Past this many options a plain list is too long to scan, so it gets a search box. */
 const SEARCH_FROM = 12
@@ -38,10 +34,13 @@ const SEARCH_FROM = 12
  */
 export function SettingField({
   setting,
+  placeholder,
   disabled,
   onChange,
 }: {
+  /** With `current` empty, nothing is chosen yet and `placeholder` shows instead. */
   setting: Setting
+  placeholder?: string
   disabled: boolean
   onChange: (value: string) => void
 }) {
@@ -58,6 +57,7 @@ export function SettingField({
       <Picker
         id={id}
         setting={setting}
+        placeholder={placeholder}
         disabled={disabled}
         onChange={onChange}
       />
@@ -68,11 +68,18 @@ export function SettingField({
 type PickerProps = {
   id: string
   setting: Setting
+  placeholder?: string
   disabled: boolean
   onChange: (value: string) => void
 }
 
-function ListPicker({ id, setting, disabled, onChange }: PickerProps) {
+function ListPicker({
+  id,
+  setting,
+  placeholder,
+  disabled,
+  onChange,
+}: PickerProps) {
   return (
     <Select
       value={setting.current}
@@ -83,9 +90,11 @@ function ListPicker({ id, setting, disabled, onChange }: PickerProps) {
     >
       <SelectTrigger id={id} className="w-full">
         {/* The agent's current value, even one it doesn't list as an option. */}
-        <SelectValue>{currentName(setting)}</SelectValue>
+        <SelectValue placeholder={placeholder}>
+          {setting.current ? currentName(setting) : undefined}
+        </SelectValue>
       </SelectTrigger>
-      <SelectContent position="popper" className="max-h-80">
+      <SelectContent position="popper">
         {grouped(setting.options).map(([group, options], index) => (
           // By place: a group named "" may sit next to the ungrouped options.
           <SelectGroup key={index}>
@@ -102,58 +111,91 @@ function ListPicker({ id, setting, disabled, onChange }: PickerProps) {
   )
 }
 
-function SearchPicker({ id, setting, disabled, onChange }: PickerProps) {
-  const [open, setOpen] = useState(false)
+/**
+ * The setting as a searchable select: shadcn's Combobox with its input inside the popup
+ * (ui.shadcn.com/docs/components/radix/combobox#popup, on Base UI's Combobox). Searched by
+ * name and value: names repeat across providers, values don't.
+ */
+function SearchPicker({
+  id,
+  setting,
+  placeholder,
+  disabled,
+  onChange,
+}: PickerProps) {
+  const groups = grouped(setting.options)
+  const hasGroups = groups.some(([group]) => group !== null)
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          id={id}
-          variant="outline"
-          disabled={disabled}
-          className="w-full justify-between font-normal"
-        >
-          <span className="truncate">{currentName(setting)}</span>
-          <ChevronsUpDown className="opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent
-        className="w-(--radix-popover-trigger-width) p-0"
-        align="start"
+    <Combobox
+      items={
+        hasGroups
+          ? groups.map(([group, items]) => ({ value: group ?? "", items }))
+          : setting.options
+      }
+      // Null when the agent's current value isn't among its options.
+      value={setting.options.find((o) => o.value === setting.current) ?? null}
+      onValueChange={(option: SettingOption | null) => {
+        if (option && option.value !== setting.current) onChange(option.value)
+      }}
+      itemToStringLabel={(option: SettingOption) => option.name}
+      isItemEqualToValue={(a: SettingOption, b: SettingOption) =>
+        a.value === b.value
+      }
+      filter={(option: SettingOption, query) =>
+        `${option.name} ${option.value}`
+          .toLowerCase()
+          .includes(query.toLowerCase())
+      }
+      disabled={disabled}
+    >
+      <ComboboxTrigger
+        id={id}
+        render={
+          <Button
+            variant="outline"
+            className="w-full justify-between font-normal"
+          />
+        }
       >
-        <Command>
-          <CommandInput placeholder={`Search ${setting.name.toLowerCase()}`} />
-          <CommandList className="max-h-72">
-            <CommandEmpty>Nothing matches.</CommandEmpty>
-            {grouped(setting.options).map(([group, options], index) => (
-              <CommandGroup key={index} heading={group ?? undefined}>
-                {options.map((option) => (
-                  <CommandItem
-                    key={option.value}
-                    // Searched by both: names repeat across providers, values don't.
-                    value={`${option.name} ${option.value}`}
-                    onSelect={() => {
-                      setOpen(false)
-                      if (option.value !== setting.current)
-                        onChange(option.value)
-                    }}
-                  >
-                    <Check
-                      className={cn(
-                        option.value === setting.current
-                          ? "opacity-100"
-                          : "opacity-0"
-                      )}
-                    />
-                    <span className="truncate">{option.name}</span>
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            ))}
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+        {setting.current ? (
+          <span className="truncate">{currentName(setting)}</span>
+        ) : (
+          <span className="truncate text-muted-foreground">{placeholder}</span>
+        )}
+      </ComboboxTrigger>
+      <ComboboxContent>
+        <ComboboxInput
+          showTrigger={false}
+          placeholder={`Search ${setting.name.toLowerCase()}`}
+        />
+        <ComboboxEmpty>Nothing matches.</ComboboxEmpty>
+        <ComboboxList>
+          {hasGroups
+            ? (group: { value: string; items: SettingOption[] }) => (
+                <ComboboxGroup key={group.value} items={group.items}>
+                  {group.value && <ComboboxLabel>{group.value}</ComboboxLabel>}
+                  <ComboboxCollection>
+                    {(option: SettingOption) => (
+                      <OptionItem key={option.value} option={option} />
+                    )}
+                  </ComboboxCollection>
+                </ComboboxGroup>
+              )
+            : (option: SettingOption) => (
+                <OptionItem key={option.value} option={option} />
+              )}
+        </ComboboxList>
+      </ComboboxContent>
+    </Combobox>
+  )
+}
+
+/** One option, its whole name shown by sliding while it's highlighted (`SlidingName`). */
+function OptionItem({ option }: { option: SettingOption }) {
+  return (
+    <ComboboxItem value={option}>
+      <SlidingName name={option.name} />
+    </ComboboxItem>
   )
 }
 

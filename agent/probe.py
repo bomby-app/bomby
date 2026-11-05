@@ -6,7 +6,8 @@ the same metadata it gives a call, and reads one JSON object back, by agent id:
 
 The metadata may also hold each agent's picks, applied before judging (`"picks":
 {"goose": [{"setting": "provider", "value": "openrouter"}]}`), and the agents whose
-settings the model picker lists (`"listing": ["omp"]`).
+settings the model picker lists (`"listing": ["omp"]`), and those to open a session in even
+though they can't delete it (`"sessions": ["omp"]`).
 """
 
 import asyncio
@@ -30,7 +31,8 @@ def main(metadata: str) -> str:
     }
     picks = fields.picks if fields else {}
     listing = fields.listing if fields else ()
-    setups = asyncio.run(probe_all(agents, os.environ, picks, listing))
+    sessions = fields.sessions if fields else ()
+    setups = asyncio.run(probe_all(agents, os.environ, picks, listing, sessions))
     return json.dumps({id: dataclasses.asdict(s) for id, s in setups.items()})
 
 

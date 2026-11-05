@@ -56,6 +56,8 @@ class JobMetadata(BaseModel):
     picks: dict[str, tuple[Pick, ...]] = {}
     # The agents whose settings the probe lists for the model picker.
     listing: frozenset[str] = frozenset()
+    # The agents the probe opens a session in even if they can't delete it (once per launch).
+    sessions: frozenset[str] = frozenset()
     # None when the app sends no voice; never blank.
     voice: (
         Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)] | None

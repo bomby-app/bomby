@@ -141,11 +141,14 @@ pub struct Pick {
 
 /// Probes `agents` (id and program), all at once, each with its `picks` applied.
 /// `listing` is the agent whose settings the model picker lists; the others come back with
-/// none. `None` when the probe couldn't run.
+/// none. `sessions` are those it opens a session in even if they can't delete it, so their
+/// setup and model are checked, not assumed (once per launch, `agents.rs`). `None` when the
+/// probe couldn't run.
 pub fn probe(
     agents: &[(String, PathBuf)],
     picks: &HashMap<String, Vec<Pick>>,
     listing: Option<&str>,
+    sessions: &[String],
 ) -> Option<HashMap<String, Listed>> {
     if agents.is_empty() {
         return Some(HashMap::new());
@@ -155,6 +158,7 @@ pub fn probe(
         "agents": programs,
         "picks": picks,
         "listing": listing.into_iter().collect::<Vec<_>>(),
+        "sessions": sessions,
     })
     .to_string();
     let command = agent::command(&["probe", &metadata]).ok()?;
