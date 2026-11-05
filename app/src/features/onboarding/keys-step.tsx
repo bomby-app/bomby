@@ -116,8 +116,7 @@ export function KeysStep({ keys }: { keys: Keys }) {
           />
         }
         action={
-          theirs &&
-          !keys.theirLiveKit && (
+          theirs && !keys.theirLiveKit ? (
             <form action={pasteLiveKitNow}>
               <Button
                 type="submit"
@@ -128,6 +127,17 @@ export function KeysStep({ keys }: { keys: Keys }) {
                 Paste all
               </Button>
             </form>
+          ) : (
+            // The other way to run it, quietly: the card's loud button is for what's missing.
+            <Button
+              variant="outline"
+              className={CARD_BUTTON}
+              onClick={() =>
+                void chooseLiveKitServer(theirs ? "thisMac" : "theirs")
+              }
+            >
+              {theirs ? "Use this Mac" : "Use Cloud"}
+            </Button>
           )
         }
       />
@@ -191,11 +201,6 @@ export function KeysStep({ keys }: { keys: Keys }) {
           <>
             Copy it from <Link href={GEMINI_KEYS}>Google AI Studio</Link>, or{" "}
             <InlineLink onClick={() => setTyping(true)}>type it in</InlineLink>.
-            Have LiveKit Cloud?{" "}
-            <InlineLink onClick={() => void chooseLiveKitServer("theirs")}>
-              Use it instead
-            </InlineLink>
-            .
           </>
         )}
       </p>
