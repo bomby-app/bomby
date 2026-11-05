@@ -63,6 +63,21 @@ const MIGRATIONS: &[&str] = &[
     "
     ALTER TABLE projects ADD COLUMN instructions TEXT NOT NULL DEFAULT '';
     ",
+    // 5: the agents the user set up, and the session settings they picked for each (its
+    // model, effort, goose's provider), in the order they're applied.
+    "
+    CREATE TABLE agent_setups (
+        agent     TEXT    PRIMARY KEY,
+        set_up_at INTEGER NOT NULL
+    );
+    CREATE TABLE agent_choices (
+        agent    TEXT    NOT NULL REFERENCES agent_setups(agent) ON DELETE CASCADE,
+        position INTEGER NOT NULL,
+        setting  TEXT    NOT NULL,
+        value    TEXT    NOT NULL,
+        PRIMARY KEY (agent, position)
+    );
+    ",
 ];
 
 /// The open database, shared by every command through Tauri state.

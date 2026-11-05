@@ -17,6 +17,8 @@ const COMMANDS: &[&str] = &[
     "clear_gemini_key",
     "agents_status",
     "refresh_agents",
+    "agent_setup_options",
+    "save_agent_setup",
     "install_adapters",
     "open_call",
     "call_token",

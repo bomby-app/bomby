@@ -4,6 +4,7 @@
 
 mod adapters;
 mod agent;
+mod agent_setups;
 mod agents;
 mod app_log;
 mod calls;
@@ -87,6 +88,8 @@ pub fn run() {
             credentials::clear_gemini_key,
             agents::agents_status,
             agents::refresh_agents,
+            agent_setups::agent_setup_options,
+            agent_setups::save_agent_setup,
             adapters::install_adapters,
             calls::open_call,
             calls::call_token,
