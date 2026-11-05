@@ -3,10 +3,8 @@ import { createStore, useStore } from "@/lib/store"
 import {
   type AgentStatus,
   agentsStatus,
-  type Choice,
   onAgentsChanged,
   refreshAgents,
-  saveAgentSetup,
 } from "./api"
 
 /**
@@ -48,35 +46,22 @@ export async function checkAgentsAgain(): Promise<void> {
   }
 }
 
-/** Saves an agent's setup and takes the core's new list. Rejects when the save fails. */
-export async function saveSetup(
-  agent: string,
-  choices: Choice[]
-): Promise<void> {
-  store.set({ agents: await saveAgentSetup(agent, choices), error: null })
-}
-
-/**
- * Installed, set up, and not found to need anything since. One the core couldn't probe
- * counts as ready.
- */
+/** Installed and not found to need setup. One the core couldn't probe counts as ready. */
 export function isReady(agent: AgentStatus): boolean {
   return setupStep(agent) === "ready"
 }
 
 /**
- * What an agent needs next, the same for every agent
- * (docs/decisions/set-up-every-agent-the-same-way.md): its ACP adapter (`connect`), what
- * its own setup lacks (`sign-in`: the agent's fix, in Terminal), then its model and
- * effort (`pick`, in `AgentSetupDialog`). Connect and sign-in happen in place; only
- * picking opens the dialog.
+ * What an agent needs before a call can use it, the same for every agent: installing (none
+ * on this Mac), its ACP adapter (`connect`, which Set up installs), or what its own setup
+ * lacks (`sign-in`: the agent's fix, in Terminal). A ready agent's model can be changed
+ * with `ModelPicker`, but never has to be.
  */
-export type SetupStep = "missing" | "connect" | "sign-in" | "pick" | "ready"
+export type SetupStep = "missing" | "connect" | "sign-in" | "ready"
 
-export function setupStep({ path, setUp, setup }: AgentStatus): SetupStep {
+export function setupStep({ path, setup }: AgentStatus): SetupStep {
   if (path === null) return "missing"
   if (setup?.adapter) return "connect"
-  if (setup && !setup.ready && !setup.choiceGone) return "sign-in"
-  if (!setUp || setup?.choiceGone) return "pick"
+  if (setup && !setup.ready) return "sign-in"
   return "ready"
 }

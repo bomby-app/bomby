@@ -2,17 +2,16 @@ import { ChevronDown } from "lucide-react"
 import { useState, useTransition } from "react"
 
 import { InlineLink } from "@/components/inline-link"
-import { Button } from "@/components/ui/button"
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { AgentLogo } from "@/features/agents/agent-logos"
-import { AgentSetupDialog } from "@/features/agents/agent-setup-dialog"
 import type { AgentStatus } from "@/features/agents/api"
 import { CopyButton } from "@/features/agents/copy-button"
 import { CLAUDE_INSTALL } from "@/features/agents/install-first-agent"
+import { ModelPicker } from "@/features/agents/model-picker"
 import { SetUpButton } from "@/features/agents/set-up-button"
 import { useAdapterInstall } from "@/features/agents/use-adapter-install"
 import {
@@ -54,13 +53,12 @@ export function firstAgent(
 }
 
 /** Where the agent is: its setup step (`setupStep`), or still looking for one. */
-type Phase = "looking" | "none" | "adapter" | "fix" | "pick" | "ready"
+type Phase = "looking" | "none" | "adapter" | "fix" | "ready"
 
 const PHASE = {
   missing: "none",
   connect: "adapter",
   "sign-in": "fix",
-  pick: "pick",
   ready: "ready",
 } as const
 
@@ -89,10 +87,6 @@ const COPY: Record<Phase, (name: string) => [string, string]> = {
     "Almost there",
     `${name} is on your Mac, but it needs one thing first.`,
   ],
-  pick: (name) => [
-    "One last pick",
-    `${name} is on your Mac. Pick what it runs on, and we're set.`,
-  ],
   ready: (name) => [
     "You're all set",
     `I pass what you say to ${name}, already on your Mac. Let's talk.`,
@@ -119,18 +113,12 @@ export function FirstAgent({
       : COPY[phase](agent?.name ?? "")
   const install = useAdapterInstall()
   const others = agents?.filter((other) => other.id !== agent?.id) ?? []
-  const [picking, setPicking] = useState(false)
 
   return (
     <div className="flex flex-col items-center">
       <StepHeading title={title} body={body} />
 
-      <AgentCard agent={agent} phase={phase} onPick={() => setPicking(true)} />
-      <AgentSetupDialog
-        agent={agent}
-        open={picking}
-        onOpenChange={setPicking}
-      />
+      <AgentCard agent={agent} phase={phase} />
 
       <div className="mt-7 flex min-h-[18px] flex-col items-center gap-3">
         {install.error && (
@@ -151,11 +139,9 @@ export function FirstAgent({
 function AgentCard({
   agent,
   phase,
-  onPick,
 }: {
   agent: AgentStatus | null
   phase: Phase
-  onPick: () => void
 }) {
   return (
     <SetupCard
@@ -163,7 +149,7 @@ function AgentCard({
       tile={<AgentTile id={agent?.id ?? "claude"} />}
       name={agent?.name ?? "Claude Code"}
       status={<StatusLine tone={toneOf(phase)} text={statusOf(agent, phase)} />}
-      action={<Action agent={agent} phase={phase} onPick={onPick} />}
+      action={<Action agent={agent} phase={phase} />}
     />
   )
 }
@@ -197,15 +183,9 @@ function statusOf(agent: AgentStatus | null, phase: Phase): string {
     case "none":
       return "Not on this Mac yet"
     case "ready":
-      return ["Ready", setup?.account ?? setup?.model]
-        .filter(Boolean)
-        .join(" · ")
+      return ["Ready", setup?.account].filter(Boolean).join(" · ")
     case "fix":
       return setup?.problem ?? "Needs setting up"
-    case "pick":
-      return setup?.choiceGone
-        ? (setup.problem ?? "Pick again")
-        : "Pick its model"
     default:
       return "Found on this Mac"
   }
@@ -225,16 +205,8 @@ function shortStatusOf(agent: AgentStatus, phase: Phase): string {
   }
 }
 
-/** The card's next step, in place; only picking the model opens a dialog. */
-function Action({
-  agent,
-  phase,
-  onPick,
-}: {
-  agent: AgentStatus | null
-  phase: Phase
-  onPick: () => void
-}) {
+/** The card's next step, in place; a ready agent shows its model, to change if wanted. */
+function Action({ agent, phase }: { agent: AgentStatus | null; phase: Phase }) {
   const primary = cn(
     CARD_BUTTON,
     "bg-primary text-primary-foreground hover:bg-primary/90"
@@ -245,12 +217,7 @@ function Action({
         Set up now
       </SetUpButton>
     )
-  if (phase === "pick")
-    return (
-      <Button className={primary} onClick={onPick}>
-        Pick model
-      </Button>
-    )
+  if (phase === "ready" && agent) return <ModelPicker agent={agent} />
   if (phase === "none")
     return (
       <CopyButton text={CLAUDE_INSTALL} className={CARD_BUTTON}>

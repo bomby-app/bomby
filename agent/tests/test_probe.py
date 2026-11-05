@@ -27,13 +27,11 @@ def run_probe(
     env: dict[str, str],
     harness: Harness = FAKE,
     choices: tuple[Choice, ...] = (),
-    setting_up: bool = False,
+    listing: bool = False,
 ) -> tuple[Setup, list[str]]:
     log = tmp_path / "acp.jsonl"
     environ = {**os.environ, **env, "FAKE_ACP_LOG": str(log)}
-    setup = asyncio.run(
-        probe(harness, Path(sys.executable), environ, choices, setting_up)
-    )
+    setup = asyncio.run(probe(harness, Path(sys.executable), environ, choices, listing))
     lines = log.read_text().splitlines() if log.exists() else []
     events: list[dict[str, Any]] = [json.loads(line) for line in lines]
     return setup, [e["event"] for e in events]
@@ -54,10 +52,8 @@ def test_an_agent_with_a_model_is_ready(tmp_path: Path) -> None:
     assert events == ["initialize", "new_session"]
 
 
-def test_the_setup_flow_is_offered_the_model_and_effort_not_the_mode(
-    tmp_path: Path,
-) -> None:
-    setup, _ = run_probe(tmp_path, {**CAN_DELETE, "FAKE_ACP_MODEL": "m1"})
+def test_listing_offers_the_model_and_effort_not_the_mode(tmp_path: Path) -> None:
+    setup, _ = run_probe(tmp_path, {**CAN_DELETE, "FAKE_ACP_MODEL": "m1"}, listing=True)
 
     assert ids(setup) == ["model", "effort"]
     model = setup.settings[0]
@@ -69,9 +65,17 @@ def test_a_harness_can_add_a_setting_the_agent_lists_without_a_category(
 ) -> None:
     harness = dataclasses.replace(FAKE, setup_settings=frozenset({"provider"}))
 
-    setup, _ = run_probe(tmp_path, {**CAN_DELETE, "FAKE_ACP_MODEL": "m1"}, harness)
+    setup, _ = run_probe(
+        tmp_path, {**CAN_DELETE, "FAKE_ACP_MODEL": "m1"}, harness, listing=True
+    )
 
     assert ids(setup) == ["provider", "model", "effort"]
+
+
+def test_the_background_check_leaves_the_option_lists_out(tmp_path: Path) -> None:
+    setup, _ = run_probe(tmp_path, {**CAN_DELETE, "FAKE_ACP_MODEL": "m1"})
+
+    assert setup.settings == ()
 
 
 def test_saved_choices_are_applied_in_order_and_the_settings_follow(
@@ -90,23 +94,22 @@ def test_saved_choices_are_applied_in_order_and_the_settings_follow(
     assert events.count("set_config_option") == 1
 
 
-def test_a_saved_choice_the_agent_no_longer_offers_needs_setup(tmp_path: Path) -> None:
+def test_a_pick_the_agent_no_longer_offers_leaves_its_default(tmp_path: Path) -> None:
+    gone = Choice("model", "retired")
+
     setup, _ = run_probe(
-        tmp_path,
-        {**CAN_DELETE, "FAKE_ACP_MODEL": "m1"},
-        choices=(Choice("model", "retired"),),
+        tmp_path, {**CAN_DELETE, "FAKE_ACP_MODEL": "m1"}, choices=(gone,)
     )
 
-    assert not setup.ready
-    assert setup.choice_gone
-    assert setup.problem == "It no longer offers the model retired"
-    assert ids(setup) == ["model", "effort"]
+    assert setup.ready
+    assert setup.model == "Fake m1"
+    assert setup.gone == (gone,)
 
 
-def test_setting_up_opens_and_closes_a_session_the_agent_cant_delete(
+def test_listing_opens_and_closes_a_session_the_agent_cant_delete(
     tmp_path: Path,
 ) -> None:
-    setup, events = run_probe(tmp_path, {"FAKE_ACP_MODEL": "m1"}, setting_up=True)
+    setup, events = run_probe(tmp_path, {"FAKE_ACP_MODEL": "m1"}, listing=True)
 
     assert setup.model == "Fake m1"
     assert events == ["initialize", "new_session", "close_session"]
@@ -196,20 +199,20 @@ def test_the_command_line_answers_by_agent_id(
             "account": None,
             "model": "/bin/goose",
             "adapter": None,
+            "gone": [],
             "settings": [],
-            "choice_gone": False,
         }
     }
 
 
-def test_the_command_line_reads_saved_choices_and_who_is_being_set_up() -> None:
+def test_the_command_line_reads_the_picks_and_who_to_list() -> None:
     fields = json.loads(
         '{"choices": {"goose": [{"setting": "provider", "value": "p2"}]},'
-        + ' "setting_up": ["omp"]}'
+        + ' "listing": ["omp"]}'
     )
 
     assert saved_choices(fields) == {"goose": [Choice("provider", "p2")]}
-    assert probe_cli.setting_up(fields) == {"omp"}
+    assert probe_cli.listing(fields) == {"omp"}
 
 
 @pytest.mark.parametrize(
@@ -217,13 +220,13 @@ def test_the_command_line_reads_saved_choices_and_who_is_being_set_up() -> None:
     [
         '{"choices": []}',
         '{"choices": {"goose": [{"setting": 1}]}}',
-        '{"setting_up": "omp"}',
+        '{"listing": "omp"}',
     ],
 )
 def test_the_command_line_rejects_bad_choices(metadata: str) -> None:
     fields = json.loads(metadata)
     with pytest.raises(ValueError):
-        _ = saved_choices(fields), probe_cli.setting_up(fields)
+        _ = saved_choices(fields), probe_cli.listing(fields)
 
 
 def test_an_agent_without_its_adapter_asks_for_it(tmp_path: Path) -> None:

@@ -3,9 +3,9 @@
 //! it finds the user's own install and tells the voice agent where it is.
 //!
 //! Adding one is a row in `KNOWN` here and a harness definition in `agent/harnesses/`,
-//! under the same id. Whether it is set up takes two things: the user went through its
-//! setup flow ([`agent_setups`](crate::agent_setups)), and the probe finds it signed in
-//! with those choices still offered ([`setup`](crate::setup)).
+//! under the same id. Whether it is set up comes from the harness, through the probe
+//! ([`setup`](crate::setup)), which applies the model and effort the user picked, if any
+//! ([`agent_choices`](crate::agent_choices)).
 //!
 //! Finding them runs the user's login shell and each agent's own program, which takes
 //! seconds, so the core does it once at launch, in the background, and keeps the result in
@@ -25,7 +25,7 @@ use std::time::Duration;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
-use crate::agent_setups;
+use crate::agent_choices;
 use crate::db::Db;
 use crate::error::Result;
 use crate::process;
@@ -115,8 +115,6 @@ pub struct AgentStatus {
     version: Option<String>,
     /// `None` when the probe couldn't run.
     setup: Option<Setup>,
-    /// Whether the user went through its setup flow.
-    set_up: bool,
 }
 
 /// Runs `command` and returns its output if it finishes within `timeout`; kills it
@@ -232,7 +230,6 @@ fn status_of(known: &'static Known, path: Option<PathBuf>) -> AgentStatus {
         version: path.as_deref().and_then(version_of),
         path: path.map(|p| p.display().to_string()),
         setup: None,
-        set_up: false,
     }
 }
 
@@ -244,7 +241,7 @@ fn version_of(program: &Path) -> Option<String> {
 }
 
 /// Every known agent with its status and setup, the probe applying each one's `saved`
-/// choices. The probe and each agent's own checks run side by side, so a look takes about
+/// picks. The probe and each agent's own checks run side by side, so a look takes about
 /// as long as the shell and the slowest of them.
 fn detect_all(
     previous: &HashMap<String, PathBuf>,
@@ -265,7 +262,6 @@ fn detect_all(
         let setups = probe.join().unwrap_or_default();
         for agent in &mut agents {
             agent.setup = setups.get(agent.id).cloned();
-            agent.set_up = saved.contains_key(agent.id);
         }
         agents
     })
@@ -310,6 +306,19 @@ impl Agents {
     /// What the last look found, if one has finished.
     pub fn cached(&self) -> Option<Vec<AgentStatus>> {
         self.lock().found.clone()
+    }
+
+    /// Puts `setup` in place of agent `id`'s, without its option lists, which only the model
+    /// picker uses, and returns the new list; `None` when no look has found that agent.
+    pub fn replace_setup(&self, id: &str, setup: &Setup) -> Option<Vec<AgentStatus>> {
+        let mut state = self.lock();
+        let found = state.found.as_mut()?;
+        let agent = found.iter_mut().find(|a| a.id == id)?;
+        agent.setup = Some(Setup {
+            settings: Vec::new(),
+            ..setup.clone()
+        });
+        Some(found.clone())
     }
 
     /// Looks again, or waits for the look already running, and returns what it found and
@@ -385,13 +394,12 @@ impl Agents {
     }
 }
 
-/// The installed ones among `agents` a call can use: those the user set up, but for any the
-/// probe found not ready. One not probed yet stays, so a probe that can't run never hides an
-/// agent.
+/// The installed ones among `agents` a call can use: all but those the probe found not set
+/// up. One not probed yet stays, so a probe that can't run never hides an agent.
 pub fn usable(agents: &[AgentStatus]) -> Vec<(String, PathBuf)> {
     let ready: Vec<_> = agents
         .iter()
-        .filter(|a| a.set_up && a.setup.as_ref().is_none_or(|s| s.ready))
+        .filter(|a| a.setup.as_ref().is_none_or(|s| s.ready))
         .cloned()
         .collect();
     installed(&ready)
@@ -414,17 +422,15 @@ pub fn usable_now<R: Runtime>(app: &AppHandle<R>) -> Vec<(String, PathBuf)> {
     without_unready(found, &shown)
 }
 
-/// `found` minus the agents `shown` has as never set up, and the programs it has as not
-/// ready. A set-up agent found at a new program stays: it hasn't been probed there yet.
+/// `found` minus the programs `shown` has as not set up.
 fn without_unready(found: Vec<(String, PathBuf)>, shown: &[AgentStatus]) -> Vec<(String, PathBuf)> {
-    let ready = usable(shown);
+    let set_up = usable(shown);
     let unready: Vec<_> = installed(shown)
         .into_iter()
-        .filter(|program| !ready.contains(program))
+        .filter(|program| !set_up.contains(program))
         .collect();
     found
         .into_iter()
-        .filter(|(id, _)| shown.iter().any(|a| a.id == id && a.set_up))
         .filter(|program| !unready.contains(program))
         .collect()
 }
@@ -444,8 +450,8 @@ fn refresh<R: Runtime>(
     app: &AppHandle<R>,
     seen: Option<Vec<(String, PathBuf)>>,
 ) -> Vec<AgentStatus> {
-    // Without the database (only if it can't be read), nothing counts as set up.
-    let saved = agent_setups::saved(&app.state::<Db>().conn()).unwrap_or_default();
+    // Without the database (only if it can't be read), every agent shows its defaults.
+    let saved = agent_choices::saved(&app.state::<Db>().conn()).unwrap_or_default();
     let (found, changed) = app.state::<Agents>().detect(seen, &saved);
     if changed {
         // Only fails for an invalid event name or payload; a window that misses it still
@@ -455,12 +461,12 @@ fn refresh<R: Runtime>(
     found
 }
 
-/// [`refresh`] after something changed (adapters installed, an agent set up), for callers
-/// already on a blocking thread. The answer comes from a look that starts now: one already
+/// [`refresh`] after something on disk changed (adapters installed), for callers already
+/// on a blocking thread. The answer comes from a look that starts now: one already
 /// running began before the change, so it may miss it (an empty `seen` asks for that, as a
 /// call's news does).
-pub fn refresh_after_change<R: Runtime>(app: &AppHandle<R>) -> Vec<AgentStatus> {
-    refresh(app, Some(Vec::new()))
+pub fn refresh_after_change<R: Runtime>(app: &AppHandle<R>) {
+    refresh(app, Some(Vec::new()));
 }
 
 /// [`refresh`] on a blocking thread, for async callers.
@@ -558,7 +564,6 @@ mod tests {
             path: path.map(str::to_owned),
             version: None,
             setup: None,
-            set_up: true,
         }
     }
 
@@ -759,8 +764,8 @@ mod tests {
             account: None,
             model: Some(model.into()),
             adapter: None,
+            gone: Vec::new(),
             settings: Vec::new(),
-            choice_gone: false,
         }
     }
 
@@ -772,23 +777,44 @@ mod tests {
             account: None,
             model: None,
             adapter: None,
+            gone: Vec::new(),
             settings: Vec::new(),
-            choice_gone: false,
         }
     }
 
     #[test]
-    fn calls_leave_out_agents_never_set_up_even_at_a_new_program() {
-        let claude = AgentStatus {
-            set_up: false,
-            ..status("claude", Some("/Users/me/.local/bin/claude"))
+    fn a_pick_replaces_only_that_agents_setup_without_its_option_lists() {
+        let agents = Agents::default();
+        assert_eq!(
+            agents.replace_setup("goose", &ready("x")),
+            None,
+            "nothing found yet"
+        );
+
+        let shown = vec![
+            status("goose", Some("/b/goose")),
+            status("omp", Some("/b/omp")),
+        ];
+        agents.detect_with(None, |_| shown.clone());
+        let picked = Setup {
+            settings: vec![setup::Setting {
+                id: "model".into(),
+                name: "Model".into(),
+                category: Some("model".into()),
+                current: "kimi".into(),
+                options: Vec::new(),
+            }],
+            ..ready("Kimi")
         };
-        assert!(usable(std::slice::from_ref(&claude)).is_empty());
-        let moved = vec![(
-            "claude".to_owned(),
-            PathBuf::from("/opt/homebrew/bin/claude"),
-        )];
-        assert!(without_unready(moved, &[claude]).is_empty());
+        let found = agents.replace_setup("goose", &picked).unwrap();
+
+        assert_eq!(
+            found[0].setup,
+            Some(ready("Kimi")),
+            "kept without the lists"
+        );
+        assert_eq!(found[1], shown[1], "the others stay as they were");
+        assert_eq!(agents.cached(), Some(found));
     }
 
     #[test]
@@ -815,10 +841,9 @@ mod tests {
         // A goose moved or reinstalled elsewhere hasn't been probed there yet.
         let moved = vec![("goose".to_owned(), PathBuf::from("/opt/homebrew/bin/goose"))];
         assert_eq!(without_unready(moved.clone(), &shown), moved);
-        // An agent Settings doesn't show at all was never set up.
         assert_eq!(
             without_unready(found.clone(), &[goose(Some(ready("x")))]),
-            found[..1]
+            found
         );
     }
 

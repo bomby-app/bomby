@@ -31,7 +31,7 @@ from project import Project
 from sections import join, section
 
 from .client import HarnessClient, Reply, connect
-from .settings import Choice, ChoiceGone, apply, saved_choices
+from .settings import Choice, apply, saved_choices
 
 logger = logging.getLogger("bomby.acp_client.runner")
 
@@ -201,7 +201,7 @@ class AcpRunner:
         choices: Sequence[Choice] = (),
     ) -> None:
         self._harness = harness
-        self._choices = tuple(choices)  # what the user picked when setting it up
+        self._choices = tuple(choices)  # the model and effort the user picked, if any
         self._command = command
         self._args = tuple(args)
         self._project = project
@@ -476,19 +476,22 @@ class AcpRunner:
     async def _apply_choices(
         self, conn: ClientSideConnection, session: NewSessionResponse
     ) -> None:
-        """Gives the session the model and effort the user set the agent up with."""
-        try:
-            _ = await apply(
-                conn,
-                session.session_id,
-                self._harness,
-                session.config_options,
-                self._choices,
+        """Gives the session the model and effort the user picked. One the agent no longer
+        offers leaves its default; Settings shows it too (the probe finds the same)."""
+        applied = await apply(
+            conn,
+            session.session_id,
+            self._harness,
+            session.config_options,
+            self._choices,
+        )
+        for choice in applied.gone:
+            logger.warning(
+                "%s no longer offers %s %s; the session keeps its default",
+                self._harness.id,
+                choice.setting,
+                choice.value,
             )
-        except ChoiceGone as e:
-            # Settings shows it too: the probe finds the same, and asks to set it up again.
-            logger.warning("%s: %s", self._harness.id, e)
-            raise ToolError(not_ready(self._harness)) from e
 
     async def _bypass_permissions(
         self, conn: ClientSideConnection, session: NewSessionResponse

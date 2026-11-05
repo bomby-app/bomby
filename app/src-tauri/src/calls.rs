@@ -19,7 +19,7 @@ use crate::db::{Db, now_ms};
 use crate::error::{Error, Result};
 use crate::setup::Choice;
 use crate::sync;
-use crate::{agent_setups, agents, credentials, projects, settings, updates, windows};
+use crate::{agent_choices, agents, credentials, projects, settings, updates, windows};
 
 /// The agent's name in `agent/agent.py` (`AGENT_NAME`), which the token dispatches.
 const AGENT_NAME: &str = "bomby";
@@ -315,7 +315,7 @@ pub fn call_token<R: Runtime>(
             projects::for_call(&conn, project_id)?,
             recent_lines(&conn, call_id)?,
             settings::for_call(&conn)?,
-            agent_setups::saved(&conn)?,
+            agent_choices::saved(&conn)?,
         )
     };
     let room = room_name(call_id);

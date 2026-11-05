@@ -12,8 +12,6 @@ export type AgentStatus = {
   version: string | null
   /** Null when the core couldn't probe it. */
   setup: Setup | null
-  /** Whether the user went through its setup flow; only then do calls use it. */
-  setUp: boolean
 }
 
 /** Whether an installed agent is set up, from its own answers over ACP. */
@@ -28,13 +26,13 @@ export type Setup = {
   model: string | null
   /** The ACP adapter it still needs ("codex-acp"); Set up installs it. */
   adapter: string | null
-  /** What the setup flow offers, saved choices applied; empty without a session. */
+  /** Picks the agent no longer offers; sessions keep its default for them. */
+  gone: Choice[]
+  /** What the user can pick, picks applied; only from `agentSettings`. */
   settings: Setting[]
-  /** A saved choice isn't offered any more, so the user picks again. */
-  choiceGone: boolean
 }
 
-/** A session setting the setup flow offers: a model, an effort, goose's provider. */
+/** A session setting the user can pick: a model, an effort, goose's provider. */
 export type Setting = {
   id: string
   name: string
@@ -64,24 +62,21 @@ export function refreshAgents(): Promise<AgentStatus[]> {
   return invoke("refresh_agents")
 }
 
+/** What `agent` lets the user pick, its picks applied, asked of the agent (a few seconds). */
+export function agentSettings(agent: string): Promise<Setup> {
+  return invoke("agent_settings", { agent })
+}
+
 /**
- * What setting `agent` up offers with `choices` picked so far, asked of the agent itself:
- * its sign-in, and its settings once those are applied. A choice can change what the next
- * one offers (goose's models follow its provider), so the flow asks again after each.
+ * Saves `agent`'s picks and resolves with its settings once they're applied: a pick can
+ * change what the next one offers (goose's models follow its provider). The agents list
+ * follows through `agents-changed`.
  */
-export function agentSetupOptions(
+export function pickAgentSettings(
   agent: string,
   choices: Choice[]
 ): Promise<Setup> {
-  return invoke("agent_setup_options", { agent, choices })
-}
-
-/** Saves `agent`'s setup; resolves with the agents as the core finds them after. */
-export function saveAgentSetup(
-  agent: string,
-  choices: Choice[]
-): Promise<AgentStatus[]> {
-  return invoke("save_agent_setup", { agent, choices })
+  return invoke("pick_agent_settings", { agent, choices })
 }
 
 /** Installs every ACP adapter into the app's folder; resolves once the agents are rechecked. */

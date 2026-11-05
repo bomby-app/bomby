@@ -1,0 +1,20 @@
+# Pick an agent's settings like Buzz and Zed
+
+Status: accepted, 2026-11-05. Builds on [check-agent-setup-with-an-acp-probe.md](check-agent-setup-with-an-acp-probe.md).
+
+## Context
+
+An agent runs on whatever model it opens sessions on, and that isn't always the user's: `opencode acp` ignores the model its window last used and picks the newest it can, which once was a preview model that answered every turn with nothing ([acp-notes.md](../acp-notes.md#session-settings)). A first attempt made picking a model a required setup step, in a dialog that started the agent again on every change and re-checked every agent on Save; it was slow and in the way. Clients that solve this already, Block's Buzz (a Tauri desktop app over ACP, `block/buzz`) and Zed, keep it optional (owner, 2026-11-05).
+
+## Decision
+
+- **Optional, as in Buzz and Zed.** An agent is ready once it's signed in; its own defaults apply until the user picks something. Buzz keeps `model` and `effort_level` as optional fields applied after every `session/new` (`crates/buzz-acp/src/config.rs`, `pool.rs`); Zed keeps a per-agent `default_config_options` map, by option id.
+- **A model picker on the agent's row** (`ModelPicker` in `app/src/features/agents/`), on Settings, Agents and the first-run splash, like Buzz's on its agent card (`desktop/src/features/agents/ui/ModelPicker.tsx`): the button names the model; opening it asks the agent what it offers (one short-lived probe, as Buzz's `buzz-acp models` is), and each pick is saved at once. It offers the `model` and `thought_level` settings plus any a harness names in `setup_settings` (goose's `provider`), in the agent's order. A pick asks the agent again with the picks so far, since one can change what the next offers.
+- **Bomby keeps the picks, not the agent.** The core stores them by agent, in order (`agent_choices`, `app/src-tauri/src/agent_choices.rs`); a pick updates only that agent's row, with no re-check of the others. Calls carry them in the job metadata, and the runner applies them to every session with `session/set_config_option`, which every agent keeps to the session.
+- **A pick that's gone isn't fatal,** as in Buzz: the session keeps the agent's default, and the row says so.
+
+## Consequences
+
+- Opening the picker takes as long as starting the agent, a few seconds; picking is the same again.
+- Opening it on omp leaves one session in omp's history, which can't delete sessions; the background check never opens one there.
+- The agent run by hand keeps its own model.

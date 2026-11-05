@@ -18,7 +18,6 @@ from acp_client.runner import (
     briefing,
     child_environment,
     no_report,
-    not_ready,
     steered_note,
     stopped,
 )
@@ -146,21 +145,21 @@ def test_each_session_gets_the_model_and_effort_the_agent_was_set_up_with(
     assert names(events).index("set_config_option") < names(events).index("prompt")
 
 
-def test_a_saved_choice_the_agent_dropped_makes_it_not_ready(tmp_path: Path) -> None:
-    async def scenario(runner: AcpRunner) -> str:
-        with pytest.raises(ToolError) as error:
-            _ = await runner.run("reply ok")
-        return str(error.value)
-
-    message, events = run_with_fake(
+def test_a_pick_the_agent_dropped_leaves_its_default(tmp_path: Path) -> None:
+    result, events = run_with_fake(
         tmp_path,
-        scenario,
+        lambda r: text(r.run("reply ok")),
         env={"FAKE_ACP_MODEL": "m1"},
-        choices=(Choice("model", "retired"),),
+        choices=(Choice("model", "retired"), Choice("effort", "high")),
     )
 
-    assert message == not_ready(CLAUDE_CODE)
-    assert "prompt" not in names(events)
+    assert result == "Done: ok"
+    set_ = [
+        (e["config_id"], e["value"])
+        for e in events
+        if e["event"] == "set_config_option"
+    ]
+    assert set_ == [("effort", "high")]
 
 
 def test_project_folders_become_cwd_and_extra_directories(tmp_path: Path) -> None:

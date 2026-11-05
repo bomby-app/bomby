@@ -1,11 +1,12 @@
 """Whether a harness is set up, checked the same way for every agent: start it, open a
 session in an empty folder and look at what comes back, without sending a prompt
-(docs/decisions/check-agent-setup-with-an-acp-probe.md). It also reads the settings the
-setup flow offers (`settings.py`) and checks the user's saved choices still hold.
+(docs/decisions/check-agent-setup-with-an-acp-probe.md). The user's picks (`settings.py`)
+are applied first, so it shows the model a call's session would run on, and which picks the
+agent no longer offers. For the model picker it also lists what can be picked.
 
 A session lands in the agent's history, so the background check opens one only when the
-agent can delete it again. The setup flow, which the user starts, opens one either way and
-closes it, since it can't offer a model without one.
+agent can delete it again. The model picker, which the user opens, gets one either way,
+closed afterwards: an agent like omp offers no models without a session.
 """
 
 import asyncio
@@ -31,7 +32,7 @@ from harnesses.harness import Harness
 
 from .client import HarnessClient, connect
 from .runner import launch
-from .settings import Choice, ChoiceGone, Setting, apply, model_name
+from .settings import Applied, Choice, Setting, apply, model_name
 
 logger = logging.getLogger("bomby.acp_client.probe")
 
@@ -55,13 +56,13 @@ class Setup:
     account: str | None = None
     """Who it runs as, as the agent labels it: "Claude Max"."""
     model: str | None = None
-    """The model a new session uses, by its display name."""
+    """The model a new session uses, picks applied, by its display name."""
     adapter: str | None = None
     """The ACP adapter it needs and doesn't have yet, which the app installs: "codex-acp"."""
+    gone: tuple[Choice, ...] = ()
+    """Picks the agent no longer offers; sessions keep its default for them."""
     settings: tuple[Setting, ...] = ()
-    """What the setup flow offers, with the choices applied; empty without a session."""
-    choice_gone: bool = False
-    """A saved choice isn't offered any more, so the user picks again."""
+    """What the user can pick, with the picks applied; only when listing."""
 
 
 async def probe(
@@ -69,11 +70,11 @@ async def probe(
     program: Path,
     environ: Mapping[str, str],
     choices: Sequence[Choice] = (),
-    setting_up: bool = False,
+    listing: bool = False,
 ) -> Setup:
-    """Checks `harness`, started from `program` the way a call would start it, with
-    `choices` applied in order. `setting_up` opens a session even in an agent that can't
-    delete it, for the setup flow."""
+    """Checks `harness`, started from `program` the way a call would start it, with the
+    user's `choices` applied in order. `listing` is for the model picker: it returns the
+    settings that can be picked, opening a session even in an agent that can't delete it."""
     adapter = harness.adapter_path(environ)
     if adapter is not None and not Path(adapter).is_file():
         return Setup(
@@ -89,7 +90,7 @@ async def probe(
                 _,
                 init,
             ):
-                return await _check(harness, conn, client, init, choices, setting_up)
+                return await _check(harness, conn, client, init, choices, listing)
     except TimeoutError:
         return Setup(ready=False, problem="It didn't answer in time")
     # Before OSError, which ConnectionError is a kind of.
@@ -103,19 +104,14 @@ async def probe_all(
     agents: Mapping[str, tuple[Harness, Path]],
     environ: Mapping[str, str],
     choices: Mapping[str, Sequence[Choice]] | None = None,
-    setting_up: Collection[str] = (),
+    listing: Collection[str] = (),
 ) -> dict[str, Setup]:
-    """Checks every agent at once, each with its own saved `choices`."""
+    """Checks every agent at once, each with its own `choices`, listing the settings of
+    those in `listing`."""
     ids = list(agents)
     setups = await asyncio.gather(
         *(
-            probe(
-                harness,
-                program,
-                environ,
-                (choices or {}).get(id, ()),
-                id in setting_up,
-            )
+            probe(harness, program, environ, (choices or {}).get(id, ()), id in listing)
             for id, (harness, program) in agents.items()
         )
     )
@@ -128,29 +124,29 @@ async def _check(
     client: HarnessClient,
     init: InitializeResponse,
     choices: Sequence[Choice],
-    setting_up: bool,
+    listing: bool,
 ) -> Setup:
     fix = setup_command(harness, init.auth_methods or [])
     deletable = _can_delete(init.agent_capabilities)
-    if not deletable and not setting_up:
-        return await _judge_sign_in(client, init, fix, None)
+    if not deletable and not listing:
+        await _wait_for_auth(client, init)
+        return _judge(client.auth_status, fix)
     try:
         session = await conn.new_session(cwd=str(FOLDER), mcp_servers=[])
     except RequestError as e:
         return Setup(ready=False, problem=detail(e), fix=fix)
     try:
-        try:
-            settings = await apply(
-                conn, session.session_id, harness, session.config_options, choices
-            )
-        except ChoiceGone as e:
-            return Setup(
-                ready=False, problem=str(e), settings=e.settings, choice_gone=True
-            )
-        except RequestError as e:
-            return Setup(ready=False, problem=detail(e), fix=fix)
-        listed = bool(session.config_options)
-        return await _judge_sign_in(client, init, fix, (listed, settings))
+        applied = await apply(
+            conn, session.session_id, harness, session.config_options, choices
+        )
+        await _wait_for_auth(client, init)
+        # An agent that lists config options but no model has none set up yet.
+        lacks_model = (
+            bool(session.config_options) and model_name(applied.settings) is None
+        )
+        return _judge(client.auth_status, fix, applied, lacks_model, listing)
+    except RequestError as e:
+        return Setup(ready=False, problem=detail(e), fix=fix)
     finally:
         if deletable:
             await _delete(conn, session.session_id)
@@ -158,35 +154,44 @@ async def _check(
             await _close(conn, session.session_id, init.agent_capabilities)
 
 
-async def _judge_sign_in(
-    client: HarnessClient,
-    init: InitializeResponse,
-    fix: str | None,
-    session: tuple[bool, list[Setting]] | None,
-) -> Setup:
-    """Judges the setup by the sign-in the agent reports and, with a session (whether it
-    listed any config options, and its settings), by its model."""
+async def _wait_for_auth(client: HarnessClient, init: InitializeResponse) -> None:
+    """Gives an agent that reports its sign-in time to report it."""
     if _reports_auth(init.agent_capabilities):
         with contextlib.suppress(TimeoutError):
             _ = await asyncio.wait_for(client.auth_reported.wait(), AUTH_WAIT_S)
-    auth = client.auth_status
-    account = auth.get("label") if auth else None
-    account = account if isinstance(account, str) else None
+
+
+def _judge(
+    auth: Mapping[str, object] | None,
+    fix: str | None,
+    applied: Applied | None = None,
+    lacks_model: bool = False,
+    listing: bool = False,
+) -> Setup:
+    """The setup, from the sign-in the agent reported and, with a session (`applied`), the
+    settings it runs on."""
+    label = auth.get("label") if auth else None
+    account = label if isinstance(label, str) else None
     if auth and auth.get("kind") == "none":
         return Setup(ready=False, problem="Not signed in", fix=fix)
-    if session is None:
+    if applied is None:
         return Setup(ready=True, account=account)
-    listed, settings = session
-    model = model_name(settings)
-    if listed and model is None:
+    settings = applied.settings if listing else ()
+    if lacks_model:
         return Setup(
             ready=False,
             problem="No model is set",
             fix=fix,
             account=account,
-            settings=tuple(settings),
+            settings=settings,
         )
-    return Setup(ready=True, account=account, model=model, settings=tuple(settings))
+    return Setup(
+        ready=True,
+        account=account,
+        model=model_name(applied.settings),
+        gone=applied.gone,
+        settings=settings,
+    )
 
 
 def _reports_auth(capabilities: AgentCapabilities | None) -> bool:

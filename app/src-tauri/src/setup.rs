@@ -1,8 +1,9 @@
 //! Whether each installed agent is set up: its provider, model and sign-in, as the voice
 //! agent's probe finds them over ACP (`agent/probe.py`,
-//! docs/decisions/check-agent-setup-with-an-acp-probe.md), and the session settings the
-//! setup flow offers (`agent/acp_client/settings.py`). Harnesses are defined there, so
-//! nothing here knows any agent.
+//! docs/decisions/check-agent-setup-with-an-acp-probe.md), with the user's picks applied
+//! (`agent_choices.rs`), and, for the model picker, what can be picked
+//! (`agent/acp_client/settings.py`). Harnesses are defined there, so nothing here knows any
+//! agent.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -31,15 +32,15 @@ pub struct Setup {
     pub model: Option<String>,
     /// The ACP adapter it needs and doesn't have yet (`adapters.rs` installs it).
     pub adapter: Option<String>,
-    /// What the setup flow offers, with the saved choices applied; empty without a session.
+    /// Picks the agent no longer offers; sessions keep its default for them.
+    #[serde(default)]
+    pub gone: Vec<Choice>,
+    /// What the user can pick, picks applied; only when the model picker asks.
     #[serde(default)]
     pub settings: Vec<Setting>,
-    /// A saved choice isn't offered any more, so the user picks again.
-    #[serde(default, alias = "choice_gone")]
-    pub choice_gone: bool,
 }
 
-/// A session setting the setup flow offers: a model, an effort, goose's provider.
+/// A session setting the user can pick: a model, an effort, goose's provider.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Setting {
@@ -67,13 +68,13 @@ pub struct Choice {
     pub value: String,
 }
 
-/// Probes `agents` (id and program), all at once, each with its saved `choices` applied.
-/// `setting_up` is the agent the user is setting up, which gets a session even when it
-/// can't delete it. `None` when the probe couldn't run.
+/// Probes `agents` (id and program), all at once, each with its `choices` applied.
+/// `listing` is the agent whose settings the model picker lists. `None` when the probe
+/// couldn't run.
 pub fn probe(
     agents: &[(String, PathBuf)],
     choices: &HashMap<String, Vec<Choice>>,
-    setting_up: Option<&str>,
+    listing: Option<&str>,
 ) -> Option<HashMap<String, Setup>> {
     if agents.is_empty() {
         return Some(HashMap::new());
@@ -82,7 +83,7 @@ pub fn probe(
     let metadata = serde_json::json!({
         "agents": programs,
         "choices": choices,
-        "setting_up": setting_up.into_iter().collect::<Vec<_>>(),
+        "listing": listing.into_iter().collect::<Vec<_>>(),
     })
     .to_string();
     let command = agent::command(&["probe", &metadata]).ok()?;
@@ -99,7 +100,7 @@ mod tests {
 
     #[test]
     fn reads_the_probes_answer() {
-        let out = r#"{"goose": {"ready": false, "problem": "No provider", "fix": "goose configure", "account": null, "model": null, "adapter": null, "settings": [{"id": "provider", "name": "Provider", "category": null, "current": "openrouter", "options": [{"value": "openrouter", "name": "OpenRouter", "group": null}]}]}}"#;
+        let out = r#"{"goose": {"ready": false, "problem": "No provider", "fix": "goose configure", "account": null, "model": null, "adapter": null, "gone": [], "settings": [{"id": "provider", "name": "Provider", "category": null, "current": "openrouter", "options": [{"value": "openrouter", "name": "OpenRouter", "group": null}]}]}}"#;
         let setups: HashMap<String, Setup> = serde_json::from_str(out).unwrap();
         assert_eq!(
             setups["goose"],
@@ -110,6 +111,7 @@ mod tests {
                 account: None,
                 model: None,
                 adapter: None,
+                gone: Vec::new(),
                 settings: vec![Setting {
                     id: "provider".into(),
                     name: "Provider".into(),
@@ -121,7 +123,6 @@ mod tests {
                         group: None,
                     }],
                 }],
-                choice_gone: false,
             }
         );
     }

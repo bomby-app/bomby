@@ -33,7 +33,7 @@ import type { Setting, SettingOption } from "./api"
 const SEARCH_FROM = 12
 
 /**
- * One setting an agent offers in its setup flow, as the agent lists it: a select, or a
+ * One setting the user can pick for an agent, as the agent lists it: a select, or a
  * searchable list when there are many options (OpenCode lists hundreds of models).
  */
 export function SettingField({
