@@ -14,6 +14,7 @@
 //! opens.
 
 use std::collections::HashMap;
+use std::io::Read;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
@@ -127,11 +128,25 @@ pub fn run(mut command: Command, timeout: Duration) -> Option<Output> {
         .stderr(Stdio::null())
         .spawn()
         .ok()?;
-    if let Ok(Some(_)) = process::wait_timeout(&mut child, timeout) {
-        return child.wait_with_output().ok();
+    // Read while it runs: a program that writes more than a pipe holds (64 KiB on macOS)
+    // waits for a reader, so waiting for it to exit first would wait out the timeout.
+    let mut stdout = child.stdout.take()?;
+    let reader = thread::spawn(move || {
+        let mut out = Vec::new();
+        stdout.read_to_end(&mut out).map(|_| out)
+    });
+    match process::wait_timeout(&mut child, timeout) {
+        Ok(Some(status)) => Some(Output {
+            status,
+            stdout: reader.join().ok()?.ok()?,
+            stderr: Vec::new(),
+        }),
+        _ => {
+            // The reader ends once the pipe closes.
+            process::kill(&mut child);
+            None
+        }
     }
-    process::kill(&mut child);
-    None
 }
 
 fn stdout(output: &Output) -> Option<String> {
@@ -473,6 +488,15 @@ pub async fn refresh_agents<R: Runtime>(app: AppHandle<R>) -> Result<Vec<AgentSt
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_output_longer_than_a_pipe_holds() {
+        // The setup probe's answer lists every model an agent offers: hundreds of KiB.
+        let mut command = Command::new("sh");
+        command.args(["-c", "head -c 300000 /dev/zero"]);
+        let output = run(command, Duration::from_secs(5)).expect("finished in time");
+        assert_eq!(output.stdout.len(), 300_000);
+    }
 
     #[test]
     fn reads_known_programs_from_the_shell_and_skips_noise() {
