@@ -1,5 +1,5 @@
 import { Trash2 } from "lucide-react"
-import { useRef, useState } from "react"
+import { useActionState, useRef, useState } from "react"
 
 import { InlineEditInput } from "@/components/inline-edit-input"
 import {
@@ -34,12 +34,12 @@ import {
 
 import type { Project, ProjectInput } from "./api"
 import { FolderList } from "./folder-list"
-import { InstructionsField } from "./instructions-field"
+import { InstructionsField, submittedInstructions } from "./instructions-field"
 import { useProjects } from "./projects-provider"
 
 /**
  * A project's settings, opened from the header: its name, its folders, its instructions,
- * and delete. Each change is saved as it is made.
+ * and delete. The name and folders are saved as they change; the instructions with Save.
  */
 export function ProjectSettingsDialog({
   project,
@@ -50,6 +50,37 @@ export function ProjectSettingsDialog({
   project: Project
   open: boolean
   onOpenChange: (open: boolean) => void
+  onDeleted: () => void
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        {/* Its content mounts with each opening, so it starts from what's saved. */}
+        <ProjectSettings
+          project={project}
+          onClose={() => onOpenChange(false)}
+          onDeleted={onDeleted}
+        />
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+const INSTRUCTIONS_FORM = "project-instructions-form"
+
+/** The last save, and how many there were: the field remounts after each one. */
+type InstructionsResult =
+  | { status: "idle" | "saved"; attempts: number }
+  /** What was typed, kept in the field to try again. */
+  | { status: "failed"; attempts: number; text: string }
+
+function ProjectSettings({
+  project,
+  onClose,
+  onDeleted,
+}: {
+  project: Project
+  onClose: () => void
   onDeleted: () => void
 }) {
   const { update, remove } = useProjects()
@@ -88,73 +119,89 @@ export function ProjectSettingsDialog({
     return done
   }
 
-  const instructions = useInstructionsDraft(project, save)
+  // The instructions field is uncontrolled: the form's action reads it, and the field
+  // remounts after each save with what was saved, or what was typed if it failed. Only
+  // whether it changed is state.
+  const [edited, setEdited] = useState(false)
+  const [result, saveInstructions, savingInstructions] = useActionState(
+    async (
+      previous: InstructionsResult,
+      formData: FormData
+    ): Promise<InstructionsResult> => {
+      const text = submittedInstructions(formData)
+      const attempts = previous.attempts + 1
+      if (!(await save({ instructions: text })))
+        return { status: "failed", attempts, text }
+      setEdited(false)
+      return { status: "saved", attempts }
+    },
+    { status: "idle", attempts: 0 }
+  )
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        // Closing drops what wasn't saved.
-        if (!next) instructions.reset()
-        onOpenChange(next)
-      }}
-    >
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Project settings</DialogTitle>
-          <DialogDescription>
-            The name and folders are saved as you change them; the instructions
-            when you save.
-          </DialogDescription>
-        </DialogHeader>
+    <>
+      <DialogHeader>
+        <DialogTitle>Project settings</DialogTitle>
+        <DialogDescription>
+          The name and folders are saved as you change them; the instructions
+          when you save.
+        </DialogDescription>
+      </DialogHeader>
 
-        <FieldGroup>
-          {/* Remount on outside changes so the field shows the saved name. */}
-          <NameField key={project.name} name={project.name} onSave={save} />
+      <FieldGroup>
+        {/* Remount on outside changes so the field shows the saved name. */}
+        <NameField key={project.name} name={project.name} onSave={save} />
 
-          <FieldSet>
-            <FieldLegend variant="label">Folders</FieldLegend>
-            <FieldDescription>
-              Agents work in the first one and can reach the rest.
-            </FieldDescription>
-            <FolderList
-              folders={project.folders}
-              onChange={(folders) => void save({ folders })}
-            />
-          </FieldSet>
+        <FieldSet>
+          <FieldLegend variant="label">Folders</FieldLegend>
+          <FieldDescription>
+            Agents work in the first one and can reach the rest.
+          </FieldDescription>
+          <FolderList
+            folders={project.folders}
+            onChange={(folders) => void save({ folders })}
+          />
+        </FieldSet>
 
+        <form id={INSTRUCTIONS_FORM} action={saveInstructions}>
           <InstructionsField
+            key={`${project.instructions}:${result.attempts}`}
             id="project-instructions"
-            value={instructions.value}
-            onChange={instructions.change}
+            defaultValue={
+              result.status === "failed" ? result.text : project.instructions
+            }
+            // Nothing typed while saving can be lost when the saved text comes back.
+            disabled={savingInstructions}
+            onInput={() => setEdited(true)}
           />
+        </form>
 
-          {error && <FieldError>{error}</FieldError>}
-        </FieldGroup>
+        {error && <FieldError>{error}</FieldError>}
+      </FieldGroup>
 
-        <DialogFooter className="sm:justify-between">
-          <DeleteProject
-            name={project.name}
-            onConfirm={async () => {
-              await remove(project.id)
-              onOpenChange(false)
-              onDeleted()
-            }}
-          />
-          <Button
-            variant="highlighter"
-            disabled={!instructions.changed || instructions.saving}
-            onClick={() => void instructions.save()}
-          >
-            {instructions.saving
-              ? "Saving..."
-              : instructions.saved
-                ? "Saved"
-                : "Save"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      <DialogFooter className="sm:justify-between">
+        <DeleteProject
+          name={project.name}
+          onConfirm={async () => {
+            await remove(project.id)
+            onClose()
+            onDeleted()
+          }}
+        />
+        <Button
+          type="submit"
+          form={INSTRUCTIONS_FORM}
+          variant="highlighter"
+          disabled={savingInstructions || !edited}
+        >
+          {savingInstructions
+            ? "Saving..."
+            : result.status === "saved" && !edited
+              ? "Saved"
+              : "Save"}
+        </Button>
+      </DialogFooter>
+    </>
   )
 }
 
@@ -178,48 +225,6 @@ function NameField({
       />
     </Field>
   )
-}
-
-/**
- * The instructions as they're being edited, saved with the dialog's Save button: they're
- * long enough to edit for a while, and the dialog can close at any moment. The draft starts
- * over when another project is shown or the saved instructions change.
- */
-function useInstructionsDraft(
-  project: Project,
-  save: (changes: { instructions: string }) => Promise<boolean>
-) {
-  const [value, setValue] = useState(project.instructions)
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
-  const [shown, setShown] = useState(`${project.id}:${project.instructions}`)
-
-  const current = `${project.id}:${project.instructions}`
-  if (current !== shown) {
-    setShown(current)
-    setValue(project.instructions)
-  }
-
-  return {
-    value,
-    saving,
-    saved,
-    changed: value.trim() !== project.instructions,
-    change: (next: string) => {
-      setValue(next)
-      setSaved(false)
-    },
-    reset: () => {
-      setValue(project.instructions)
-      setSaved(false)
-    },
-    save: async () => {
-      setSaving(true)
-      // A failed save keeps the draft to try again; the dialog shows the error.
-      setSaved(await save({ instructions: value }))
-      setSaving(false)
-    },
-  }
 }
 
 function DeleteProject({

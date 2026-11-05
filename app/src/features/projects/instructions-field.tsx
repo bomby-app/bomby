@@ -1,3 +1,5 @@
+import { useState } from "react"
+
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
 import { Textarea } from "@/components/ui/textarea"
 
@@ -7,18 +9,25 @@ const count = new Intl.NumberFormat()
 
 /**
  * What the user writes about a project. Bomby and every coding agent are told it once, when
- * a call starts. The new project and project settings dialogs share it; each saves it its
- * own way.
+ * a call starts. The new project and project settings dialogs share it.
+ *
+ * The field is uncontrolled, named `instructions`, so its form's action reads it from
+ * `FormData` and React resets it after a successful save. Only its length is kept in state,
+ * for the count. `onInput` tells the form the text changed.
  */
 export function InstructionsField({
   id,
-  value,
-  onChange,
+  defaultValue = "",
+  disabled,
+  onInput,
 }: {
   id: string
-  value: string
-  onChange: (value: string) => void
+  defaultValue?: string
+  disabled?: boolean
+  onInput?: () => void
 }) {
+  const [length, setLength] = useState(defaultValue.length)
+
   return (
     <Field>
       <div className="flex items-baseline justify-between gap-2">
@@ -27,21 +36,32 @@ export function InstructionsField({
           className="text-xs text-muted-foreground tabular-nums"
           aria-hidden
         >
-          {count.format(value.length)} / {count.format(MAX_INSTRUCTIONS_LENGTH)}
+          {count.format(length)} / {count.format(MAX_INSTRUCTIONS_LENGTH)}
         </span>
       </div>
       <Textarea
         id={id}
-        value={value}
+        name="instructions"
+        defaultValue={defaultValue}
+        disabled={disabled}
         rows={4}
         maxLength={MAX_INSTRUCTIONS_LENGTH}
         placeholder="What the project is, and anything your agents should know about it."
         className="max-h-64 resize-none"
-        onChange={(e) => onChange(e.target.value)}
+        onInput={(e) => {
+          setLength(e.currentTarget.value.length)
+          onInput?.()
+        }}
       />
       <FieldDescription>
         Optional. Bomby and your agents read it when a call starts.
       </FieldDescription>
     </Field>
   )
+}
+
+/** The instructions a form submitted, as the core takes them. */
+export function submittedInstructions(formData: FormData): string {
+  const value = formData.get("instructions")
+  return typeof value === "string" ? value : ""
 }

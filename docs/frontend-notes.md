@@ -57,6 +57,8 @@ Checked 2026-11-04 against [react.dev](https://react.dev/reference/react) for Re
 ## Actions
 
 - A one-off async action with its own error, like the splash's Paste all, is a React 19 `useActionState(action, null)`: the action returns the error message or null, a `<form action={...}>` runs it, and its pending flag disables the button. Longer flows (Check again, leaving the splash) use `useTransition` with an async function.
+- Form fields are uncontrolled, not drafts in state: `name` plus `defaultValue`, read from `FormData` in the action (Project settings' and New project's instructions) or from the field itself (`components/inline-edit-input.tsx`). A copy of the text in state lags a render behind the field, so a save in the same event reads the old text (Esc saved the name it cancelled), and syncing it from props can overwrite typing.
+- After an action succeeds, React resets the form's uncontrolled fields to their `defaultValue` (react.dev `<form>`, React 19.3.1, read 2026-11-05). An action that returns an error instead of throwing has succeeded, so it clears what was typed: return the typed text in the action's state and remount the field with a `key` per attempt, with that text as its `defaultValue`. A button outside the form joins it with `form="<id>"`; disable the field while the action is pending so nothing typed then is lost.
 
 ## GSAP
 
