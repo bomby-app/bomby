@@ -2,17 +2,17 @@ import { ChevronDown } from "lucide-react"
 import { useState, useTransition } from "react"
 
 import { InlineLink } from "@/components/inline-link"
+import { Button } from "@/components/ui/button"
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { AgentLogo } from "@/features/agents/agent-logos"
+import { AgentSetupDialog } from "@/features/agents/agent-setup-dialog"
 import type { AgentStatus } from "@/features/agents/api"
 import { CopyButton } from "@/features/agents/copy-button"
 import { CLAUDE_INSTALL } from "@/features/agents/install-first-agent"
-import { SetUpButton } from "@/features/agents/set-up-button"
-import { useAdapterInstall } from "@/features/agents/use-adapter-install"
 import { checkAgentsAgain, isReady } from "@/features/agents/use-agents"
 import { cn } from "@/lib/utils"
 
@@ -47,7 +47,8 @@ export function firstAgent(
   )
 }
 
-type Phase = "looking" | "none" | "adapter" | "fix" | "ready"
+/** Where the agent is: `adapter`, `fix` and `pick` all go through its setup flow. */
+type Phase = "looking" | "none" | "adapter" | "fix" | "pick" | "ready"
 
 function phaseOf(
   agents: AgentStatus[] | null,
@@ -56,7 +57,8 @@ function phaseOf(
   if (agents === null) return "looking"
   if (agent === null || agent.path === null) return "none"
   if (agent.setup?.adapter) return "adapter"
-  return isReady(agent) ? "ready" : "fix"
+  if (isReady(agent)) return "ready"
+  return agent.setup?.ready === false ? "fix" : "pick"
 }
 
 const COPY: Record<Phase, (name: string) => [string, string]> = {
@@ -75,6 +77,10 @@ const COPY: Record<Phase, (name: string) => [string, string]> = {
   fix: (name) => [
     "Almost there",
     `${name} is on your Mac, but it needs one thing first.`,
+  ],
+  pick: (name) => [
+    "One last pick",
+    `${name} is on your Mac. Pick what it runs on, and we're set.`,
   ],
   ready: (name) => [
     "You're all set",
@@ -100,22 +106,26 @@ export function FirstAgent({
     phase === "ready" && !allSet
       ? ["Your agent's ready", "Now your keys, and we're ready to talk."]
       : COPY[phase](agent?.name ?? "")
-  const install = useAdapterInstall()
   const others = agents?.filter((other) => other.id !== agent?.id) ?? []
+  const [settingUp, setSettingUp] = useState(false)
 
   return (
     <div className="flex flex-col items-center">
       <StepHeading title={title} body={body} />
 
-      <AgentCard agent={agent} phase={phase} />
+      <AgentCard
+        agent={agent}
+        phase={phase}
+        onSetUp={() => setSettingUp(true)}
+      />
+      <AgentSetupDialog
+        agent={agent}
+        open={settingUp}
+        onOpenChange={setSettingUp}
+      />
 
       <div className="mt-7 flex min-h-[18px] flex-col items-center gap-3">
-        {install.error && (
-          <p className="text-[13px] leading-[18px] text-destructive">
-            {install.error}
-          </p>
-        )}
-        {(phase === "fix" || phase === "none") && <CheckAgain />}
+        {phase === "none" && <CheckAgain />}
         {/* Another agent can always be picked, also while this one needs fixing. */}
         {others.some((other) => other.path !== null) && (
           <OtherAgents agents={others} onChoose={onChoose} />
@@ -128,9 +138,11 @@ export function FirstAgent({
 function AgentCard({
   agent,
   phase,
+  onSetUp,
 }: {
   agent: AgentStatus | null
   phase: Phase
+  onSetUp: () => void
 }) {
   return (
     <SetupCard
@@ -138,7 +150,7 @@ function AgentCard({
       tile={<AgentTile id={agent?.id ?? "claude"} />}
       name={agent?.name ?? "Claude Code"}
       status={<StatusLine tone={toneOf(phase)} text={statusOf(agent, phase)} />}
-      action={<Action agent={agent} phase={phase} />}
+      action={<Action phase={phase} onSetUp={onSetUp} />}
     />
   )
 }
@@ -161,7 +173,7 @@ function AgentTile({ id, small = false }: { id: string; small?: boolean }) {
 
 function toneOf(phase: Phase): Tone {
   if (phase === "looking") return "looking"
-  return phase === "fix" || phase === "none" ? "todo" : "done"
+  return phase === "ready" ? "done" : "todo"
 }
 
 function statusOf(agent: AgentStatus | null, phase: Phase): string {
@@ -177,6 +189,10 @@ function statusOf(agent: AgentStatus | null, phase: Phase): string {
         .join(" · ")
     case "fix":
       return setup?.problem ?? "Needs setting up"
+    case "pick":
+      return setup?.choiceGone
+        ? (setup.problem ?? "Pick again")
+        : "Pick its model"
     default:
       return "Found on this Mac"
   }
@@ -196,30 +212,23 @@ function shortStatusOf(agent: AgentStatus, phase: Phase): string {
   }
 }
 
-function Action({ agent, phase }: { agent: AgentStatus | null; phase: Phase }) {
-  if (phase === "adapter")
+function Action({ phase, onSetUp }: { phase: Phase; onSetUp: () => void }) {
+  if (phase === "adapter" || phase === "fix" || phase === "pick")
     return (
-      <SetUpButton
-        size="default"
+      <Button
         className={cn(
           CARD_BUTTON,
           "bg-primary text-primary-foreground hover:bg-primary/90"
         )}
+        onClick={onSetUp}
       >
         Set up now
-      </SetUpButton>
+      </Button>
     )
   if (phase === "none")
     return (
       <CopyButton text={CLAUDE_INSTALL} className={CARD_BUTTON}>
         Copy install
-      </CopyButton>
-    )
-  const fix = agent?.setup?.fix
-  if (phase === "fix" && fix)
-    return (
-      <CopyButton text={fix} className={CARD_BUTTON}>
-        Copy {fix}
       </CopyButton>
     )
   return null

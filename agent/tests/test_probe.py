@@ -98,6 +98,7 @@ def test_a_saved_choice_the_agent_no_longer_offers_needs_setup(tmp_path: Path) -
     )
 
     assert not setup.ready
+    assert setup.choice_gone
     assert setup.problem == "It no longer offers the model retired"
     assert ids(setup) == ["model", "effort"]
 
@@ -196,6 +197,7 @@ def test_the_command_line_answers_by_agent_id(
             "model": "/bin/goose",
             "adapter": None,
             "settings": [],
+            "choice_gone": False,
         }
     }
 

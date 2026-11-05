@@ -3,8 +3,10 @@ import { createStore, useStore } from "@/lib/store"
 import {
   type AgentStatus,
   agentsStatus,
+  type Choice,
   onAgentsChanged,
   refreshAgents,
+  saveAgentSetup,
 } from "./api"
 
 /**
@@ -46,7 +48,18 @@ export async function checkAgentsAgain(): Promise<void> {
   }
 }
 
-/** Installed, and not found to need setup. One the core couldn't probe counts as ready. */
-export function isReady({ path, setup }: AgentStatus): boolean {
-  return path !== null && setup?.ready !== false
+/** Saves an agent's setup and takes the core's new list. Rejects when the save fails. */
+export async function saveSetup(
+  agent: string,
+  choices: Choice[]
+): Promise<void> {
+  store.set({ agents: await saveAgentSetup(agent, choices), error: null })
+}
+
+/**
+ * Installed, set up, and not found to need anything since. One the core couldn't probe
+ * counts as ready.
+ */
+export function isReady({ path, setUp, setup }: AgentStatus): boolean {
+  return path !== null && setUp && setup?.ready !== false
 }

@@ -736,6 +736,7 @@ mod tests {
             model: Some(model.into()),
             adapter: None,
             settings: Vec::new(),
+            choice_gone: false,
         }
     }
 
@@ -748,6 +749,7 @@ mod tests {
             model: None,
             adapter: None,
             settings: Vec::new(),
+            choice_gone: false,
         }
     }
 

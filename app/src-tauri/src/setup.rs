@@ -34,6 +34,9 @@ pub struct Setup {
     /// What the setup flow offers, with the saved choices applied; empty without a session.
     #[serde(default)]
     pub settings: Vec<Setting>,
+    /// A saved choice isn't offered any more, so the user picks again.
+    #[serde(default, alias = "choice_gone")]
+    pub choice_gone: bool,
 }
 
 /// A session setting the setup flow offers: a model, an effort, goose's provider.
@@ -118,6 +121,7 @@ mod tests {
                         group: None,
                     }],
                 }],
+                choice_gone: false,
             }
         );
     }

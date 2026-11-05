@@ -60,6 +60,8 @@ class Setup:
     """The ACP adapter it needs and doesn't have yet, which the app installs: "codex-acp"."""
     settings: tuple[Setting, ...] = ()
     """What the setup flow offers, with the choices applied; empty without a session."""
+    choice_gone: bool = False
+    """A saved choice isn't offered any more, so the user picks again."""
 
 
 async def probe(
@@ -142,7 +144,9 @@ async def _check(
                 conn, session.session_id, harness, session.config_options, choices
             )
         except ChoiceGone as e:
-            return Setup(ready=False, problem=str(e), settings=e.settings)
+            return Setup(
+                ready=False, problem=str(e), settings=e.settings, choice_gone=True
+            )
         except RequestError as e:
             return Setup(ready=False, problem=detail(e), fix=fix)
         listed = bool(session.config_options)
