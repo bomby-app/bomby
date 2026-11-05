@@ -16,6 +16,7 @@ import {
   type Setup,
 } from "./api"
 import { SettingField } from "./setting-field"
+import { setupStep } from "./use-agents"
 
 /**
  * The model an agent runs on in calls, and a way to change it, like Buzz's model picker
@@ -63,12 +64,17 @@ export function ModelPicker({
     pickAgentSettings(agent.id, choices).then(shown, failed)
   }
 
-  const model = agent.setup?.model ?? "Its default model"
+  // An agent that must have its model picked asks for it, in bubblegum like everything a
+  // call still needs (docs/brand.md).
+  const required = setupStep(agent) === "pick"
+  const label = required
+    ? "Pick its model"
+    : (agent.setup?.model ?? "Its default model")
   return (
     <Popover onOpenChange={(next) => next && open()}>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" {...props}>
-          <span className="max-w-40 truncate">{model}</span>
+        <Button variant={required ? "claude" : "outline"} size="sm" {...props}>
+          <span className="max-w-40 truncate">{label}</span>
           <ChevronDown className="opacity-50" />
         </Button>
       </PopoverTrigger>

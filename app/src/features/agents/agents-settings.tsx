@@ -83,6 +83,7 @@ function action(agent: AgentStatus): ReactNode {
           Copy command
         </CopyButton>
       ) : undefined
+    case "pick":
     case "ready":
       return <ModelPicker agent={agent} />
   }
@@ -111,6 +112,10 @@ function detail(agent: AgentStatus): ReactNode {
         </>
       )
     }
+    case "pick":
+      return setup?.gone.length
+        ? `The model you picked isn't offered any more. Pick another to use it in calls.`
+        : `Found on this Mac. Pick its model to use it in calls.`
     case "ready": {
       if (setup?.gone.length)
         return `The model you picked isn't offered any more, so it runs on its default. Pick another.`

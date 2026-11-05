@@ -35,6 +35,9 @@ pub struct Setup {
     /// Picks the agent no longer offers; sessions keep its default for them.
     #[serde(default)]
     pub gone: Vec<Choice>,
+    /// Its harness requires a model pick (`model_selection_required`) and none holds.
+    #[serde(default, alias = "needs_pick")]
+    pub needs_pick: bool,
     /// What the user can pick, picks applied; only when the model picker asks.
     #[serde(default)]
     pub settings: Vec<Setting>,
@@ -100,7 +103,7 @@ mod tests {
 
     #[test]
     fn reads_the_probes_answer() {
-        let out = r#"{"goose": {"ready": false, "problem": "No provider", "fix": "goose configure", "account": null, "model": null, "adapter": null, "gone": [], "settings": [{"id": "provider", "name": "Provider", "category": null, "current": "openrouter", "options": [{"value": "openrouter", "name": "OpenRouter", "group": null}]}]}}"#;
+        let out = r#"{"goose": {"ready": false, "problem": "No provider", "fix": "goose configure", "account": null, "model": null, "adapter": null, "gone": [], "needs_pick": false, "settings": [{"id": "provider", "name": "Provider", "category": null, "current": "openrouter", "options": [{"value": "openrouter", "name": "OpenRouter", "group": null}]}]}}"#;
         let setups: HashMap<String, Setup> = serde_json::from_str(out).unwrap();
         assert_eq!(
             setups["goose"],
@@ -112,6 +115,7 @@ mod tests {
                 model: None,
                 adapter: None,
                 gone: Vec::new(),
+                needs_pick: false,
                 settings: vec![Setting {
                     id: "provider".into(),
                     name: "Provider".into(),

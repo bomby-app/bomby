@@ -53,12 +53,13 @@ export function firstAgent(
 }
 
 /** Where the agent is: its setup step (`setupStep`), or still looking for one. */
-type Phase = "looking" | "none" | "adapter" | "fix" | "ready"
+type Phase = "looking" | "none" | "adapter" | "fix" | "pick" | "ready"
 
 const PHASE = {
   missing: "none",
   connect: "adapter",
   "sign-in": "fix",
+  pick: "pick",
   ready: "ready",
 } as const
 
@@ -86,6 +87,10 @@ const COPY: Record<Phase, (name: string) => [string, string]> = {
   fix: (name) => [
     "Almost there",
     `${name} is on your Mac, but it needs one thing first.`,
+  ],
+  pick: (name) => [
+    "One last pick",
+    `${name} is on your Mac. Pick the model it runs on, and we're set.`,
   ],
   ready: (name) => [
     "You're all set",
@@ -186,6 +191,8 @@ function statusOf(agent: AgentStatus | null, phase: Phase): string {
       return ["Ready", setup?.account].filter(Boolean).join(" · ")
     case "fix":
       return setup?.problem ?? "Needs setting up"
+    case "pick":
+      return "Pick its model"
     default:
       return "Found on this Mac"
   }
@@ -217,7 +224,8 @@ function Action({ agent, phase }: { agent: AgentStatus | null; phase: Phase }) {
         Set up now
       </SetUpButton>
     )
-  if (phase === "ready" && agent) return <ModelPicker agent={agent} />
+  if ((phase === "pick" || phase === "ready") && agent)
+    return <ModelPicker agent={agent} />
   if (phase === "none")
     return (
       <CopyButton text={CLAUDE_INSTALL} className={CARD_BUTTON}>

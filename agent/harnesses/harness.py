@@ -53,6 +53,10 @@ class Harness:
     steer_method: str | None = None
     """The extension method that adds a message to a running turn, if the adapter has one.
     Used only when `initialize` advertises it in `_meta.steering.supported`."""
+    model_selection_required: bool = False
+    """Whether the user must pick its model before a call uses it: for an agent whose ACP
+    default isn't the user's own choice (OpenCode's). Others run on their defaults until
+    the user picks one."""
     setup_settings: frozenset[str] = frozenset()
     """Session settings the user can pick beyond the model and effort categories, by config
     option id, for one the agent lists without a category (goose's "provider")."""

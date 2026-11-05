@@ -106,6 +106,38 @@ def test_a_pick_the_agent_no_longer_offers_leaves_its_default(tmp_path: Path) ->
     assert setup.gone == (gone,)
 
 
+PICK_REQUIRED = dataclasses.replace(FAKE, model_selection_required=True)
+
+
+def test_an_agent_that_requires_a_pick_waits_for_one(tmp_path: Path) -> None:
+    setup, _ = run_probe(
+        tmp_path, {**CAN_DELETE, "FAKE_ACP_MODEL": "m1"}, PICK_REQUIRED
+    )
+
+    assert not setup.ready
+    assert setup.needs_pick
+    assert setup.model == "Fake m1", "it still says what it would run on"
+
+
+@pytest.mark.parametrize(
+    ("choices", "ready"),
+    [
+        ((Choice("model", "m2"),), True),
+        ((Choice("model", "retired"),), False),
+        ((Choice("effort", "high"),), False),
+    ],
+    ids=["model picked", "pick gone", "only effort picked"],
+)
+def test_an_agent_that_requires_a_pick_is_ready_once_its_model_is_picked(
+    tmp_path: Path, choices: tuple[Choice, ...], ready: bool
+) -> None:
+    setup, _ = run_probe(
+        tmp_path, {**CAN_DELETE, "FAKE_ACP_MODEL": "m1"}, PICK_REQUIRED, choices
+    )
+
+    assert (setup.ready, setup.needs_pick) == (ready, not ready)
+
+
 def test_listing_opens_and_closes_a_session_the_agent_cant_delete(
     tmp_path: Path,
 ) -> None:
@@ -200,6 +232,7 @@ def test_the_command_line_answers_by_agent_id(
             "model": "/bin/goose",
             "adapter": None,
             "gone": [],
+            "needs_pick": False,
             "settings": [],
         }
     }

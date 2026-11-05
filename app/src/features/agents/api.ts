@@ -28,6 +28,8 @@ export type Setup = {
   adapter: string | null
   /** Picks the agent no longer offers; sessions keep its default for them. */
   gone: Choice[]
+  /** Its harness requires a model pick, and none holds: calls wait for one. */
+  needsPick: boolean
   /** What the user can pick, picks applied; only from `agentSettings`. */
   settings: Setting[]
 }

@@ -61,6 +61,8 @@ class Setup:
     """The ACP adapter it needs and doesn't have yet, which the app installs: "codex-acp"."""
     gone: tuple[Choice, ...] = ()
     """Picks the agent no longer offers; sessions keep its default for them."""
+    needs_pick: bool = False
+    """Its harness requires a model pick (`model_selection_required`) and none holds."""
     settings: tuple[Setting, ...] = ()
     """What the user can pick, with the picks applied; only when listing."""
 
@@ -130,7 +132,9 @@ async def _check(
     deletable = _can_delete(init.agent_capabilities)
     if not deletable and not listing:
         await _wait_for_auth(client, init)
-        return _judge(client.auth_status, fix)
+        # Without a session there's no telling which setting is the model: any pick counts.
+        needs_pick = harness.model_selection_required and not choices
+        return _judge(client.auth_status, fix, needs_pick=needs_pick)
     try:
         session = await conn.new_session(cwd=str(FOLDER), mcp_servers=[])
     except RequestError as e:
@@ -144,7 +148,12 @@ async def _check(
         lacks_model = (
             bool(session.config_options) and model_name(applied.settings) is None
         )
-        return _judge(client.auth_status, fix, applied, lacks_model, listing)
+        needs_pick = harness.model_selection_required and not _model_picked(
+            applied, choices
+        )
+        return _judge(
+            client.auth_status, fix, applied, lacks_model, needs_pick, listing
+        )
     except RequestError as e:
         return Setup(ready=False, problem=detail(e), fix=fix)
     finally:
@@ -166,6 +175,7 @@ def _judge(
     fix: str | None,
     applied: Applied | None = None,
     lacks_model: bool = False,
+    needs_pick: bool = False,
     listing: bool = False,
 ) -> Setup:
     """The setup, from the sign-in the agent reported and, with a session (`applied`), the
@@ -175,6 +185,10 @@ def _judge(
     if auth and auth.get("kind") == "none":
         return Setup(ready=False, problem="Not signed in", fix=fix)
     if applied is None:
+        if needs_pick:
+            return Setup(
+                ready=False, problem="Pick its model", account=account, needs_pick=True
+            )
         return Setup(ready=True, account=account)
     settings = applied.settings if listing else ()
     if lacks_model:
@@ -185,12 +199,30 @@ def _judge(
             account=account,
             settings=settings,
         )
+    if needs_pick:
+        return Setup(
+            ready=False,
+            problem="Pick its model",
+            account=account,
+            model=model_name(applied.settings),
+            gone=applied.gone,
+            needs_pick=True,
+            settings=settings,
+        )
     return Setup(
         ready=True,
         account=account,
         model=model_name(applied.settings),
         gone=applied.gone,
         settings=settings,
+    )
+
+
+def _model_picked(applied: Applied, choices: Sequence[Choice]) -> bool:
+    """Whether one of `choices` set the session's model and still holds."""
+    model = next((s for s in applied.settings if s.category == "model"), None)
+    return model is not None and any(
+        c.setting == model.id and c not in applied.gone for c in choices
     )
 
 
