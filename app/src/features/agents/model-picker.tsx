@@ -128,7 +128,7 @@ function Settings({
     return (
       <p className="text-sm text-muted-foreground">
         {/* Nothing listed because something's wrong: say what, not "nothing to pick". */}
-        {!listed.ready && listed.problem
+        {listed.step !== "ready" && listed.problem
           ? `${listed.problem}.`
           : `${name} has nothing to pick: it runs on its own setup.`}
       </p>

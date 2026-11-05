@@ -5,12 +5,16 @@ fields it needs: the project (`project.py`), the installed agents
 (`harnesses/installed.py`), each agent's picks (`acp_client/settings.py`), who the probe
 lists (`probe.py`), and the voice and history (`call_options.py`). Console runs have no
 metadata, and each part falls back to the environment.
+
+`Pick` and `Line` are what the rest of the agent works with too, so they're dataclasses
+(pydantic's, checked the same way) that take their fields in order.
 """
 
 from pathlib import Path
 from typing import Annotated, ClassVar, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, StringConstraints, model_validator
+from pydantic.dataclasses import dataclass
 
 Speaker = Literal["user", "agent"]
 
@@ -18,19 +22,17 @@ Speaker = Literal["user", "agent"]
 Text = Annotated[str, StringConstraints(strip_whitespace=True)]
 
 
-class SavedPick(BaseModel):
-    """A value the user picked for one of an agent's settings (`settings.Pick`)."""
-
-    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
+@dataclass(frozen=True)
+class Pick:
+    """A value the user picked for one of an agent's settings (`acp_client/settings.py`)."""
 
     setting: str
     value: str
 
 
-class HistoryLine(BaseModel):
+@dataclass(frozen=True)
+class Line:
     """One line of the call the user resumed."""
-
-    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True)
 
     role: Speaker
     text: Text
@@ -49,7 +51,7 @@ class JobMetadata(BaseModel):
     # Each installed agent's program, by agent id.
     agents: dict[str, Path] = {}
     # Each agent's picks, in the order they're applied.
-    picks: dict[str, tuple[SavedPick, ...]] = {}
+    picks: dict[str, tuple[Pick, ...]] = {}
     # The agents whose settings the probe lists for the model picker.
     listing: frozenset[str] = frozenset()
     # None when the app sends no voice; never blank.
@@ -57,7 +59,7 @@ class JobMetadata(BaseModel):
         Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)] | None
     ) = None
     user_name: Text = ""
-    history: tuple[HistoryLine, ...] = ()
+    history: tuple[Line, ...] = ()
 
     @model_validator(mode="before")
     @classmethod

@@ -18,9 +18,10 @@ use std::io::Read;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
+use std::sync::mpsc;
 use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
@@ -29,7 +30,7 @@ use crate::agent_picks;
 use crate::db::Db;
 use crate::error::Result;
 use crate::process;
-use crate::setup::{self, Pick, Setup};
+use crate::setup::{self, Pick, Setup, Step};
 use crate::sync;
 
 /// The event every window gets with the new list when a look finds something different.
@@ -129,23 +130,31 @@ pub fn run(mut command: Command, timeout: Duration) -> Option<Output> {
         .ok()?;
     // Read while it runs: a program that writes more than a pipe holds (64 KiB on macOS)
     // waits for a reader, so waiting for it to exit first would wait out the timeout.
+    let deadline = Instant::now() + timeout;
     let mut stdout = child.stdout.take()?;
-    let reader = thread::spawn(move || {
+    let (read, output) = mpsc::channel();
+    thread::spawn(move || {
         let mut out = Vec::new();
-        stdout.read_to_end(&mut out).map(|_| out)
+        // Only fails once `run` has stopped waiting.
+        let _ = read.send(stdout.read_to_end(&mut out).map(|_| out));
     });
-    match process::wait_timeout(&mut child, timeout) {
-        Ok(Some(status)) => Some(Output {
-            status,
-            stdout: reader.join().ok()?.ok()?,
-            stderr: Vec::new(),
-        }),
-        _ => {
-            // The reader ends once the pipe closes.
-            process::kill(&mut child);
-            None
-        }
-    }
+    let Ok(Some(status)) = process::wait_timeout(&mut child, timeout) else {
+        // The reader ends once the pipe closes.
+        process::kill(&mut child);
+        return None;
+    };
+    // The timeout covers the output too: a program it started (a daemon from the shell's rc
+    // files) can hold the pipe open after it exits. A second at least, for the last of it.
+    let left = deadline.saturating_duration_since(Instant::now());
+    let stdout = output
+        .recv_timeout(left.max(Duration::from_secs(1)))
+        .ok()?
+        .ok()?;
+    Some(Output {
+        status,
+        stdout,
+        stderr: Vec::new(),
+    })
 }
 
 fn stdout(output: &Output) -> Option<String> {
@@ -268,6 +277,11 @@ fn detect_all(
     })
 }
 
+/// The name the user knows agent `id` by: "Claude Code".
+pub fn name(id: &str) -> Option<&'static str> {
+    KNOWN.iter().find(|k| k.id == id).map(|k| k.name)
+}
+
 /// The installed ones among `agents`, by id with their programs: what a call hands the voice
 /// agent.
 pub fn installed(agents: &[AgentStatus]) -> Vec<(String, PathBuf)> {
@@ -302,6 +316,18 @@ struct Detection {
     picks: HashMap<String, u64>,
 }
 
+impl Detection {
+    fn replace_setup(&mut self, id: &str, setup: &Setup) -> Option<Vec<AgentStatus>> {
+        let found = self.found.as_mut()?;
+        let agent = found.iter_mut().find(|a| a.id == id)?;
+        if agent.setup.as_ref() == Some(setup) {
+            return None;
+        }
+        agent.setup = Some(setup.clone());
+        Some(found.clone())
+    }
+}
+
 impl Agents {
     fn lock(&self) -> MutexGuard<'_, Detection> {
         sync::lock(&self.state)
@@ -312,15 +338,19 @@ impl Agents {
         self.lock().found.clone()
     }
 
-    /// Puts `setup`, found right after the user picked agent `id`'s settings, in place of
-    /// its setup, and returns the new list; `None` when no look has found that agent.
+    /// Puts `setup`, which the model picker just found for agent `id`, in place of its
+    /// setup, and returns the new list when that changed it; `None` when it didn't, or no
+    /// look has found that agent.
     pub fn replace_setup(&self, id: &str, setup: &Setup) -> Option<Vec<AgentStatus>> {
+        self.lock().replace_setup(id, setup)
+    }
+
+    /// [`Agents::replace_setup`] right after the user picked agent `id`'s settings: a look
+    /// that started before the pick keeps this setup over its own.
+    pub fn picked(&self, id: &str, setup: &Setup) -> Option<Vec<AgentStatus>> {
         let mut state = self.lock();
         *state.picks.entry(id.to_owned()).or_default() += 1;
-        let found = state.found.as_mut()?;
-        let agent = found.iter_mut().find(|a| a.id == id)?;
-        agent.setup = Some(setup.clone());
-        Some(found.clone())
+        state.replace_setup(id, setup)
     }
 
     /// Looks again, or waits for the look already running, and returns what it found and
@@ -404,8 +434,9 @@ impl Agents {
 
 /// `found`, a look's answer, with what it couldn't know taken from `before`, the list it
 /// replaces: the setup of an agent whose settings were picked while it ran, and, for an
-/// agent it opened no session in (omp can't delete one), the model and skipped picks the
-/// last listing found.
+/// agent it opened no session in (omp can't delete one), the model and skipped picks last
+/// found with a session: the model picker's last listing (it lists again each time it
+/// opens) or the last pick.
 fn keep_what_the_look_missed(
     mut found: Vec<AgentStatus>,
     before: Option<&[AgentStatus]>,
@@ -420,11 +451,12 @@ fn keep_what_the_look_missed(
         else {
             continue;
         };
-        // A sign-in problem the look found still shows, as it is.
+        // A problem the look found with the agent itself (signed out, not answering) still
+        // shows, as it is: no pick changes that.
         if agent
             .setup
             .as_ref()
-            .is_some_and(|s| !s.ready && !s.needs_pick && s.fix.is_some())
+            .is_some_and(|s| !matches!(s.step, Step::Ready | Step::Pick))
         {
             continue;
         }
@@ -443,7 +475,7 @@ fn keep_what_the_look_missed(
 pub fn usable(agents: &[AgentStatus]) -> Vec<(String, PathBuf)> {
     let ready: Vec<_> = agents
         .iter()
-        .filter(|a| a.setup.as_ref().is_none_or(|s| s.ready))
+        .filter(|a| a.setup.as_ref().is_none_or(|s| s.step == Step::Ready))
         .cloned()
         .collect();
     installed(&ready)
@@ -546,6 +578,16 @@ mod tests {
         command.args(["-c", "head -c 300000 /dev/zero"]);
         let output = run(command, Duration::from_secs(5)).expect("finished in time");
         assert_eq!(output.stdout.len(), 300_000);
+    }
+
+    #[test]
+    fn gives_up_on_output_a_program_it_started_holds_open() {
+        // The shell exits at once; the sleep it left behind keeps the pipe open.
+        let mut command = Command::new("sh");
+        command.args(["-c", "sleep 5 & echo started"]);
+        let started = Instant::now();
+        assert!(run(command, Duration::from_secs(1)).is_none());
+        assert!(started.elapsed() < Duration::from_secs(4));
     }
 
     #[test]
@@ -802,7 +844,6 @@ mod tests {
 
     fn ready(model: &str) -> Setup {
         Setup {
-            ready: true,
             model: Some(model.into()),
             session: true,
             ..Setup::default()
@@ -811,6 +852,7 @@ mod tests {
 
     fn needs_setup() -> Setup {
         Setup {
+            step: Step::SignIn,
             problem: Some("No model is set".into()),
             session: true,
             ..Setup::default()
@@ -821,7 +863,7 @@ mod tests {
     fn a_pick_replaces_only_that_agents_setup() {
         let agents = Agents::default();
         assert_eq!(
-            agents.replace_setup("goose", &ready("x")),
+            agents.picked("goose", &ready("x")),
             None,
             "nothing found yet"
         );
@@ -831,11 +873,16 @@ mod tests {
             status("omp", Some("/b/omp")),
         ];
         agents.detect_with(None, |_| shown.clone());
-        let found = agents.replace_setup("goose", &ready("Kimi")).unwrap();
+        let found = agents.picked("goose", &ready("Kimi")).unwrap();
 
         assert_eq!(found[0].setup, Some(ready("Kimi")));
         assert_eq!(found[1], shown[1], "the others stay as they were");
         assert_eq!(agents.cached(), Some(found));
+        assert_eq!(
+            agents.replace_setup("goose", &ready("Kimi")),
+            None,
+            "nothing changed, so there's nothing to tell the windows"
+        );
     }
 
     #[test]
@@ -849,7 +896,7 @@ mod tests {
 
         let (found, _) = agents.detect_with(None, |_| {
             // The user picks while the look runs; the look saw the picks from before.
-            agents.replace_setup("goose", &ready("picked"));
+            agents.picked("goose", &ready("picked"));
             vec![goose(ready("old"))]
         });
         assert_eq!(found, vec![goose(ready("picked"))]);
@@ -863,24 +910,50 @@ mod tests {
     }
 
     #[test]
-    fn a_sign_out_found_while_picking_still_shows() {
+    fn a_problem_found_while_picking_still_shows() {
+        let signed_out = Setup {
+            step: Step::SignIn,
+            problem: Some("Not signed in".into()),
+            fix: Some("goose configure".into()),
+            ..Setup::default()
+        };
+        let timed_out = Setup {
+            step: Step::Unreachable,
+            problem: Some("It didn't answer in time".into()),
+            ..Setup::default()
+        };
+        for problem in [signed_out, timed_out] {
+            let agents = Agents::default();
+            let goose = |setup| AgentStatus {
+                setup: Some(setup),
+                ..status("goose", Some("/b/goose"))
+            };
+            agents.detect_with(None, |_| vec![goose(ready("old"))]);
+
+            let (found, _) = agents.detect_with(None, |_| {
+                agents.picked("goose", &ready("picked"));
+                vec![goose(problem.clone())]
+            });
+            assert_eq!(found, vec![goose(problem)]);
+            assert!(usable(&found).is_empty(), "calls don't get it");
+        }
+    }
+
+    #[test]
+    fn a_look_keeps_its_answer_over_a_listing_made_while_it_ran() {
         let agents = Agents::default();
         let goose = |setup| AgentStatus {
             setup: Some(setup),
             ..status("goose", Some("/b/goose"))
         };
         agents.detect_with(None, |_| vec![goose(ready("old"))]);
-        let signed_out = Setup {
-            problem: Some("Not signed in".into()),
-            fix: Some("goose configure".into()),
-            ..Setup::default()
-        };
 
         let (found, _) = agents.detect_with(None, |_| {
-            agents.replace_setup("goose", &ready("picked"));
-            vec![goose(signed_out.clone())]
+            // The picker opens while the look runs: it changes nothing the look misses.
+            agents.replace_setup("goose", &ready("listed"));
+            vec![goose(ready("looked"))]
         });
-        assert_eq!(found, vec![goose(signed_out)]);
+        assert_eq!(found, vec![goose(ready("looked"))]);
     }
 
     #[test]
@@ -890,20 +963,10 @@ mod tests {
             setup: Some(setup),
             ..status("omp", Some("/b/omp"))
         };
-        agents.detect_with(None, |_| {
-            vec![omp(Setup {
-                ready: true,
-                ..Setup::default()
-            })]
-        });
+        agents.detect_with(None, |_| vec![omp(Setup::default())]);
         agents.replace_setup("omp", &ready("Kimi"));
 
-        let (found, _) = agents.detect_with(None, |_| {
-            vec![omp(Setup {
-                ready: true,
-                ..Setup::default()
-            })]
-        });
+        let (found, _) = agents.detect_with(None, |_| vec![omp(Setup::default())]);
         let setup = found[0].setup.as_ref().unwrap();
         assert_eq!(setup.model.as_deref(), Some("Kimi"));
         assert!(!setup.session, "the rest is the look's");

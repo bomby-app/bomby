@@ -29,7 +29,7 @@ const TIMEOUT: Duration = Duration::from_secs(60);
 )]
 #[serde(rename_all(serialize = "camelCase", deserialize = "snake_case"))]
 pub struct Setup {
-    pub ready: bool,
+    pub step: Step,
     /// What's wrong, in the agent's words where it gave any.
     pub problem: Option<String>,
     /// What to run in Terminal to fix it.
@@ -42,12 +42,29 @@ pub struct Setup {
     /// Picks that didn't apply (gone or refused); sessions keep its default for them.
     #[serde(default)]
     pub skipped: Vec<Skipped>,
-    /// Its harness requires a model pick (`model_selection_required`) and none holds.
-    #[serde(default)]
-    pub needs_pick: bool,
     /// Whether the probe opened a session, so `model` and `skipped` are known.
     #[serde(default)]
     pub session: bool,
+}
+
+/// What an agent needs before a call can use it, as the probe decides it (`Step` in
+/// `agent/acp_client/probe.py`); the page and the looks read it, rather than guessing from
+/// the other fields.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "agents.ts"))]
+pub enum Step {
+    /// Its ACP adapter, which Set up installs.
+    Connect,
+    /// Something in its own setup (a sign-in, a model): the user fixes it in the agent.
+    SignIn,
+    /// A model pick its harness requires (`model_selection_required`).
+    Pick,
+    /// It didn't answer: it timed out, quit or couldn't start.
+    Unreachable,
+    /// Nothing: calls can use it.
+    #[default]
+    Ready,
 }
 
 /// A pick that didn't apply, so the session keeps the agent's default for it.
@@ -108,7 +125,12 @@ pub struct SettingOption {
 
 /// The value the user picked for one setting.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "agents.ts"))]
+// Named apart from TypeScript's own `Pick<T, K>`, which it would shadow.
+#[cfg_attr(
+    test,
+    derive(ts_rs::TS),
+    ts(export, export_to = "agents.ts", rename = "SettingPick")
+)]
 pub struct Pick {
     pub setting: String,
     pub value: String,
@@ -142,13 +164,15 @@ pub fn probe(
 
 #[cfg(test)]
 mod tests {
+    use serde_json::Value;
+
     use super::*;
 
     /// The probe's answer with every field set, as its own test pins it
     /// (agent/tests/test_probe_contract.py).
     const ANSWER: &str = include_str!("../../../agent/tests/fixtures/probe-answer.json");
 
-    /// `needs_pick` as the page gets it: `needsPick`.
+    /// `last_seen` as the page gets it: `lastSeen`.
     fn camel(key: &str) -> String {
         let mut parts = key.split('_');
         let first = parts.next().unwrap_or_default().to_owned();
@@ -159,25 +183,46 @@ mod tests {
         })
     }
 
-    fn keys(value: &serde_json::Value) -> Vec<String> {
-        let mut keys: Vec<_> = value.as_object().unwrap().keys().cloned().collect();
-        keys.sort();
-        keys
+    /// Every key in `value` by its path, nested ones too (an array by its first item),
+    /// each named by `name`.
+    fn paths(value: &Value, name: fn(&str) -> String) -> Vec<String> {
+        fn walk(value: &Value, at: &str, name: fn(&str) -> String, found: &mut Vec<String>) {
+            match value {
+                Value::Object(fields) => {
+                    for (key, field) in fields {
+                        let path = format!("{at}.{}", name(key));
+                        walk(field, &path, name, found);
+                        found.push(path);
+                    }
+                }
+                Value::Array(items) => {
+                    if let Some(first) = items.first() {
+                        walk(first, &format!("{at}[]"), name, found);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut found = Vec::new();
+        walk(value, "", name, &mut found);
+        found.sort();
+        found
     }
 
     #[test]
     fn reads_the_probes_answer() {
         let listed: HashMap<String, Listed> = serde_json::from_str(ANSWER).unwrap();
         let goose = &listed["goose"];
+        assert_eq!(goose.setup.step, Step::Pick);
         assert_eq!(goose.setup.model.as_deref(), Some("Kimi K3.1 Pro"));
         assert_eq!(goose.setup.skipped[0].why, Why::Refused);
-        assert!(goose.setup.needs_pick && goose.setup.session);
+        assert!(goose.setup.session);
         assert_eq!(goose.settings[0].options[0].group.as_deref(), Some("Kimi"));
 
-        // Every field the probe sends is read, and nothing the page gets is missing.
-        let sent: serde_json::Value = serde_json::from_str(ANSWER).unwrap();
-        let mut from_probe: Vec<_> = keys(&sent["goose"]).iter().map(|k| camel(k)).collect();
-        from_probe.sort();
-        assert_eq!(from_probe, keys(&serde_json::to_value(goose).unwrap()));
+        // Every field the probe sends, at every level, is read, and nothing the page gets
+        // is missing.
+        let sent: Value = serde_json::from_str(ANSWER).unwrap();
+        let read = serde_json::to_value(&listed).unwrap();
+        assert_eq!(paths(&sent, camel), paths(&read, str::to_owned));
     }
 }

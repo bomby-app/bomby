@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 
-import type { AgentStatus, Listed, Pick } from "@/generated/agents"
+import type { AgentStatus, Listed, SettingPick } from "@/generated/agents"
 
 // The core's view of the agents on this computer (src-tauri/src/agents.rs). The types are
 // generated from the core's own structs (`just app types`), so the two can't drift apart.
@@ -9,11 +9,12 @@ import type { AgentStatus, Listed, Pick } from "@/generated/agents"
 export type {
   AgentStatus,
   Listed,
-  Pick,
   Setting,
   SettingOption,
+  SettingPick,
   Setup,
   Skipped,
+  Step,
 } from "@/generated/agents"
 
 /** What the core found last: instant, except right after launch while it first looks. */
@@ -26,7 +27,10 @@ export function refreshAgents(): Promise<AgentStatus[]> {
   return invoke("refresh_agents")
 }
 
-/** What `agent` lets the user pick, its picks applied, asked of the agent (a few seconds). */
+/**
+ * What `agent` lets the user pick, its picks applied, asked of the agent (a few seconds).
+ * The agents list follows, through `agents-changed`, when the answer changes its row.
+ */
 export function agentSettings(agent: string): Promise<Listed> {
   return invoke("agent_settings", { agent })
 }
@@ -34,10 +38,13 @@ export function agentSettings(agent: string): Promise<Listed> {
 /**
  * Adds `pick` to `agent`'s saved picks and resolves with its settings once they're applied:
  * a pick can change what the next one offers (goose's models follow its provider). Settings
- * never picked keep the agent's own defaults. The agents list follows through
- * `agents-changed`.
+ * never picked keep the agent's own defaults. Rejects, with the saved picks unchanged, when
+ * the agent doesn't take it. The agents list follows through `agents-changed`.
  */
-export function pickAgentSettings(agent: string, pick: Pick): Promise<Listed> {
+export function pickAgentSettings(
+  agent: string,
+  pick: SettingPick
+): Promise<Listed> {
   return invoke("pick_agent_settings", { agent, pick })
 }
 

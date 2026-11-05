@@ -17,6 +17,7 @@ import tempfile
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Literal
 
 from acp import RequestError
 from acp.client.connection import ClientSideConnection
@@ -29,18 +30,11 @@ from acp.schema import (
 )
 
 from harnesses.harness import Harness
+from job import Pick
 
 from .client import HarnessClient, connect
 from .runner import launch
-from .settings import (
-    Applied,
-    Pick,
-    Setting,
-    Skipped,
-    apply,
-    model_name,
-    model_setting,
-)
+from .settings import Setting, Skipped, apply, model_name, needs_pick
 
 logger = logging.getLogger("bomby.acp_client.probe")
 
@@ -52,11 +46,24 @@ _COMMAND = re.compile(r"`([^`]+)`")
 _MAX_DETAIL = 300
 
 
+type Step = Literal["connect", "sign_in", "pick", "unreachable", "ready"]
+"""What the user does next for an agent, the first that applies:
+- `connect`: install its ACP adapter, which the app does (`adapter`).
+- `unreachable`: try again later; it didn't answer in time, quit while starting, or
+  couldn't be started (`problem`).
+- `sign_in`: fix the agent's own setup, in the agent (`fix`, in Terminal): it isn't signed
+  in, refused to open a session, or has no model set.
+- `pick`: pick its model; its harness requires one (`model_selection_required`) and no
+  model pick holds.
+- `ready`: nothing; a call can use it.
+"""
+
+
 @dataclass(frozen=True)
 class Setup:
     """What Settings shows about an installed agent."""
 
-    ready: bool
+    step: Step
     problem: str | None = None
     """What's wrong, in the agent's words where it gave any."""
     fix: str | None = None
@@ -69,8 +76,6 @@ class Setup:
     """The ACP adapter it needs and doesn't have yet, which the app installs: "codex-acp"."""
     skipped: tuple[Skipped, ...] = ()
     """Picks that didn't apply (gone or refused); sessions keep its default for them."""
-    needs_pick: bool = False
-    """Its harness requires a model pick (`model_selection_required`) and none holds."""
     session: bool = False
     """Whether a session was opened, so `model` and `skipped` are known. The background
     check opens none in an agent that can't delete it (omp)."""
@@ -91,7 +96,7 @@ async def probe(
     adapter = harness.adapter_path(environ)
     if adapter is not None and not Path(adapter).is_file():
         return Setup(
-            ready=False, problem="Its ACP adapter isn't set up", adapter=harness.adapter
+            "connect", problem="Its ACP adapter isn't set up", adapter=harness.adapter
         )
     command, args, env = launch(harness, program, environ)
     client = HarnessClient(harness)
@@ -105,12 +110,12 @@ async def probe(
             ):
                 return await _check(harness, conn, client, init, picks, listing)
     except TimeoutError:
-        return Setup(ready=False, problem="It didn't answer in time")
+        return Setup("unreachable", problem="It didn't answer in time")
     # Before OSError, which ConnectionError is a kind of.
     except (RequestError, ConnectionError) as e:
-        return Setup(ready=False, problem=f"It quit while starting: {detail(e)}")
+        return Setup("unreachable", problem=f"It quit while starting: {detail(e)}")
     except OSError as e:
-        return Setup(ready=False, problem=f"It couldn't be started: {detail(e)}")
+        return Setup("unreachable", problem=f"It couldn't be started: {detail(e)}")
 
 
 async def probe_all(
@@ -143,32 +148,37 @@ async def _check(
     deletable = _can_delete(init.agent_capabilities)
     if not deletable and not listing:
         await _wait_for_auth(client, init)
-        setup = _signed_in(client.auth_status, fix)
-        # Without a session there's no telling which setting is the model: any pick counts.
-        return _gate(setup, needs_pick=harness.model_selection_required and not picks)
+        return _setup(
+            client.auth_status,
+            fix,
+            lacks_model=False,
+            # Without a session there's no telling which setting is the model: any pick
+            # counts.
+            lacks_pick=harness.model_selection_required and not picks,
+        )
     try:
         session = await conn.new_session(cwd=str(FOLDER), mcp_servers=[])
     except RequestError as e:
-        return Setup(ready=False, problem=detail(e), fix=fix)
+        return Setup("sign_in", problem=detail(e), fix=fix)
     try:
         applied = await apply(
             conn, session.session_id, harness, session.config_options, picks
         )
         await _wait_for_auth(client, init)
-        setup = replace(
-            _signed_in(client.auth_status, fix),
-            session=True,
-            model=model_name(applied.settings),
-            skipped=applied.skipped,
-            settings=applied.settings if listing else (),
-        )
-        return _gate(
-            setup,
+        model = model_name(applied.settings)
+        setup = _setup(
+            client.auth_status,
             fix,
             # An agent that lists config options but no model has none set up yet.
-            lacks_model=bool(session.config_options) and setup.model is None,
-            needs_pick=harness.model_selection_required
-            and not _model_picked(applied, picks),
+            lacks_model=bool(session.config_options) and model is None,
+            lacks_pick=needs_pick(harness, applied, picks),
+        )
+        return replace(
+            setup,
+            session=True,
+            model=model,
+            skipped=applied.skipped,
+            settings=applied.settings if listing else (),
         )
     finally:
         if deletable:
@@ -184,36 +194,24 @@ async def _wait_for_auth(client: HarnessClient, init: InitializeResponse) -> Non
             _ = await asyncio.wait_for(client.auth_reported.wait(), AUTH_WAIT_S)
 
 
-def _signed_in(auth: Mapping[str, object] | None, fix: str | None) -> Setup:
-    """The setup as far as the agent's reported sign-in goes."""
-    if auth and auth.get("kind") == "none":
-        return Setup(ready=False, problem="Not signed in", fix=fix)
-    label = auth.get("label") if auth else None
-    return Setup(ready=True, account=label if isinstance(label, str) else None)
-
-
-def _gate(
-    setup: Setup,
-    fix: str | None = None,
-    lacks_model: bool = False,
-    needs_pick: bool = False,
+def _setup(
+    auth: Mapping[str, object] | None,
+    fix: str | None,
+    *,
+    lacks_model: bool,
+    lacks_pick: bool,
 ) -> Setup:
-    """`setup`, not ready when the agent has no model or still needs one picked."""
-    if not setup.ready:
-        return setup
+    """An agent that started, by the first thing it lacks: a sign-in (by its reported
+    `auth`), a model, a model pick."""
+    if auth and auth.get("kind") == "none":
+        return Setup("sign_in", problem="Not signed in", fix=fix)
+    label = auth.get("label") if auth else None
+    account = label if isinstance(label, str) else None
     if lacks_model:
-        return replace(setup, ready=False, problem="No model is set", fix=fix)
-    if needs_pick:
-        return replace(setup, ready=False, problem="Pick its model", needs_pick=True)
-    return setup
-
-
-def _model_picked(applied: Applied, picks: Sequence[Pick]) -> bool:
-    """Whether one of `picks` set the session's model and still holds."""
-    model = model_setting(applied.settings)
-    return model is not None and any(
-        c.setting == model.id and applied.holds(c) for c in picks
-    )
+        return Setup("sign_in", problem="No model is set", fix=fix, account=account)
+    if lacks_pick:
+        return Setup("pick", problem="Pick its model", account=account)
+    return Setup("ready", account=account)
 
 
 def _reports_auth(capabilities: AgentCapabilities | None) -> bool:

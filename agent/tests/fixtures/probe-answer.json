@@ -1,6 +1,6 @@
 {
   "goose": {
-    "ready": false,
+    "step": "pick",
     "problem": "Pick its model",
     "fix": "goose configure",
     "account": "Fake Pro",
@@ -14,7 +14,6 @@
         "why": "refused"
       }
     ],
-    "needs_pick": true,
     "session": true,
     "settings": [
       {

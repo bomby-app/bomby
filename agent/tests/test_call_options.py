@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-from call_options import DEFAULT_VOICE, CallOptions, Line
-from job import JobMetadata, read_metadata
+from call_options import DEFAULT_VOICE, CallOptions
+from job import JobMetadata, Line, read_metadata
 
 
 def test_console_runs_use_the_environment_or_the_defaults() -> None:

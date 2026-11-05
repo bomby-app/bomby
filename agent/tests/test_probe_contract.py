@@ -17,14 +17,13 @@ FIXTURE = Path(__file__).resolve().parent / "fixtures" / "probe-answer.json"
 
 # Every field set, none at its default, so a dropped field shows.
 EVERYTHING = Setup(
-    ready=False,
+    step="pick",
     problem="Pick its model",
     fix="goose configure",
     account="Fake Pro",
     model="Kimi K3.1 Pro",
     adapter="codex-acp",
     skipped=(Skipped("provider", "Provider", "p3", "refused"),),
-    needs_pick=True,
     session=True,
     settings=(
         Setting(

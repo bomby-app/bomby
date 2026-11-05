@@ -26,12 +26,12 @@ from livekit.agents.llm import ToolError
 
 from harnesses import HARNESSES, installed
 from harnesses.harness import Harness
-from job import JobFields
+from job import JobFields, Pick
 from project import Project
 from sections import join, section
 
 from .client import HarnessClient, Reply, connect
-from .settings import Pick, apply, saved_picks
+from .settings import Applied, apply, needs_pick
 
 logger = logging.getLogger("bomby.acp_client.runner")
 
@@ -90,6 +90,13 @@ def no_report(harness: Harness) -> str:
         f"{harness.short_name} ended without reporting back, so there's no sign it did "
         "the work. Don't say it's done: tell the user, and offer to try again or to try "
         "another agent."
+    )
+
+
+def no_model_picked(harness: Harness) -> str:
+    return (
+        f"{harness.short_name} needs its model picked in Settings before it can work. "
+        "Tell the user, and offer another agent, if there is one."
     )
 
 
@@ -201,7 +208,7 @@ class AcpRunner:
         picks: Sequence[Pick] = (),
     ) -> None:
         self._harness = harness
-        self._choices = tuple(picks)  # the model and effort the user picked, if any
+        self._picks = tuple(picks)  # the model and effort the user picked, if any
         self._command = command
         self._args = tuple(args)
         self._project = project
@@ -329,10 +336,18 @@ class AcpRunner:
                     **options,
                 )
                 await self._bypass_permissions(conn, created)
-                await self._apply_choices(conn, created)
+                applied = await self._apply_picks(conn, created)
             except ConnectionError:
                 self._connection_lost(conn)
                 raise
+            if needs_pick(self._harness, applied, self._picks):
+                logger.warning(
+                    "%s needs its model picked; closing session %s",
+                    self._harness.id,
+                    created.session_id,
+                )
+                await self._close_session(conn, created.session_id)
+                raise ToolError(no_model_picked(self._harness))
             s.id, s.conn = created.session_id, conn
             s.briefed = self._harness.system_prompt_append
             logger.info(
@@ -473,9 +488,9 @@ class AcpRunner:
         if not self._can_steer:
             logger.warning("%s can't steer: mid-turn requests will wait", self._command)
 
-    async def _apply_choices(
+    async def _apply_picks(
         self, conn: ClientSideConnection, session: NewSessionResponse
-    ) -> None:
+    ) -> Applied:
         """Gives the session the model and effort the user picked. One the agent no longer
         offers leaves its default; Settings shows it too (the probe finds the same)."""
         applied = await apply(
@@ -483,7 +498,7 @@ class AcpRunner:
             session.session_id,
             self._harness,
             session.config_options,
-            self._choices,
+            self._picks,
         )
         for skipped in applied.skipped:
             logger.warning(
@@ -493,6 +508,7 @@ class AcpRunner:
                 skipped.value,
                 skipped.why,
             )
+        return applied
 
     async def _bypass_permissions(
         self, conn: ClientSideConnection, session: NewSessionResponse
@@ -550,19 +566,18 @@ class CallRunners:
         self._project = project
         self._installed = dict(installed)
         self._environ = dict(environ)
-        self._choices = dict(picks or {})
+        self._picks = dict(picks or {})
         self._runners: dict[str, AcpRunner] = {}
 
     @classmethod
     def for_job(cls, fields: JobFields) -> "CallRunners":
         """Runners for the project and the installed agents in the job's metadata, with
-        each agent's setup picks (see `Project.from_job`, `harnesses.installed` and
-        `settings.saved_picks`)."""
+        each agent's picks (see `Project.from_job` and `harnesses.installed`)."""
         return cls(
             Project.from_job(fields, os.environ),
             installed(fields, HARNESSES, os.environ),
             os.environ,
-            saved_picks(fields),
+            fields.picks if fields else {},
         )
 
     @property
@@ -588,7 +603,7 @@ class CallRunners:
             env=env,
             command=command,
             args=args,
-            picks=self._choices.get(harness.id, ()),
+            picks=self._picks.get(harness.id, ()),
         )
         return runner
 

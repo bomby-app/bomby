@@ -2,7 +2,7 @@
 the same metadata it gives a call, and reads one JSON object back, by agent id:
 
     python probe.py '{"agents": {"goose": "/abs/path/goose"}}'
-    {"goose": {"ready": false, "problem": "...", "fix": "goose configure", ...}}
+    {"goose": {"step": "sign_in", "problem": "...", "fix": "goose configure", ...}}
 
 The metadata may also hold each agent's picks, applied before judging (`"picks":
 {"goose": [{"setting": "provider", "value": "openrouter"}]}`), and the agents whose
@@ -18,9 +18,8 @@ import sys
 
 import dev_env
 from acp_client.probe import probe_all
-from acp_client.settings import saved_picks
 from harnesses import HARNESSES, installed
-from job import JobFields, read_metadata
+from job import read_metadata
 
 
 def main(metadata: str) -> str:
@@ -29,15 +28,10 @@ def main(metadata: str) -> str:
         id: (HARNESSES[id], program)
         for id, program in installed(fields, HARNESSES, os.environ).items()
     }
-    setups = asyncio.run(
-        probe_all(agents, os.environ, saved_picks(fields), listing(fields))
-    )
+    picks = fields.picks if fields else {}
+    listing = fields.listing if fields else ()
+    setups = asyncio.run(probe_all(agents, os.environ, picks, listing))
     return json.dumps({id: dataclasses.asdict(s) for id, s in setups.items()})
-
-
-def listing(fields: JobFields) -> frozenset[str]:
-    """The agents whose settings the model picker lists."""
-    return fields.listing if fields else frozenset()
 
 
 def cli(args: list[str]) -> None:

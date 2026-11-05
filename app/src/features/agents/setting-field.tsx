@@ -46,8 +46,12 @@ export function SettingField({
   onChange: (value: string) => void
 }) {
   const id = `setting-${setting.id}`
+  // A select can't hold an empty value, which ACP allows, so such a setting gets the searchable list.
   const Picker =
-    setting.options.length > SEARCH_FROM ? SearchPicker : ListPicker
+    setting.options.length > SEARCH_FROM ||
+    setting.options.some((o) => o.value === "")
+      ? SearchPicker
+      : ListPicker
   return (
     <Field>
       <FieldLabel htmlFor={id}>{setting.name}</FieldLabel>

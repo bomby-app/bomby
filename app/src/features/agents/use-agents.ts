@@ -5,6 +5,7 @@ import {
   agentsStatus,
   onAgentsChanged,
   refreshAgents,
+  type Step,
 } from "./api"
 
 /**
@@ -53,17 +54,15 @@ export function isReady(agent: AgentStatus): boolean {
 
 /**
  * What an agent needs before a call can use it, the same for every agent: installing (none
- * on this Mac), its ACP adapter (`connect`, which Set up installs), or what its own setup
- * lacks (`sign-in`: the agent's fix, in Terminal), or, for an agent whose harness requires
- * it, a model pick (`pick`, in `ModelPicker`). Any other agent's model can be changed
- * there, but never has to be.
+ * on this Mac), or the step the core's probe decided (`Step`): its ACP adapter (`connect`,
+ * which Set up installs), what its own setup lacks (`sign_in`: the agent's fix, in
+ * Terminal), a model pick for an agent whose harness requires one (`pick`, in
+ * `ModelPicker`), or an answer (`unreachable`: check again). Any other agent's model can be
+ * changed there, but never has to be.
  */
-export type SetupStep = "missing" | "connect" | "sign-in" | "pick" | "ready"
+export type SetupStep = "missing" | Step
 
 export function setupStep({ path, setup }: AgentStatus): SetupStep {
   if (path === null) return "missing"
-  if (setup?.adapter) return "connect"
-  if (setup?.needsPick) return "pick"
-  if (setup && !setup.ready) return "sign-in"
-  return "ready"
+  return setup?.step ?? "ready"
 }

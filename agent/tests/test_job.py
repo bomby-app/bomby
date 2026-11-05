@@ -1,15 +1,13 @@
 import pytest
 
-from job import HistoryLine, JobMetadata, read_metadata
+from job import JobMetadata, Line, read_metadata
 
 
 def test_reads_the_metadata_object() -> None:
     fields = read_metadata(
         '{"project": " samba ", "history": [{"role": "user", "text": "hi"}]}'
     )
-    assert fields == JobMetadata(
-        project="samba", history=(HistoryLine(role="user", text="hi"),)
-    )
+    assert fields == JobMetadata(project="samba", history=(Line("user", "hi"),))
 
 
 def test_null_and_unknown_fields_take_the_defaults() -> None:

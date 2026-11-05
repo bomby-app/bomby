@@ -17,7 +17,7 @@ setup: Setup | null, };
  * What the model picker shows: an agent's setup, and the settings it lets the user pick
  * with the picks applied.
  */
-export type Listed = { settings: Array<Setting>, ready: boolean, 
+export type Listed = { settings: Array<Setting>, step: Step, 
 /**
  * What's wrong, in the agent's words where it gave any.
  */
@@ -39,18 +39,9 @@ adapter: string | null,
  */
 skipped: Array<Skipped>, 
 /**
- * Its harness requires a model pick (`model_selection_required`) and none holds.
- */
-needsPick: boolean, 
-/**
  * Whether the probe opened a session, so `model` and `skipped` are known.
  */
 session: boolean, };
-
-/**
- * The value the user picked for one setting.
- */
-export type Pick = { setting: string, value: string, };
 
 /**
  * A session setting the user can pick: a model, an effort, goose's provider.
@@ -68,10 +59,15 @@ export type SettingOption = { value: string, name: string,
 group: string | null, };
 
 /**
+ * The value the user picked for one setting.
+ */
+export type SettingPick = { setting: string, value: string, };
+
+/**
  * What the probe found for one agent (`Setup` in `agent/acp_client/probe.py`). The probe
  * writes snake_case, the page reads camelCase.
  */
-export type Setup = { ready: boolean, 
+export type Setup = { step: Step, 
 /**
  * What's wrong, in the agent's words where it gave any.
  */
@@ -93,10 +89,6 @@ adapter: string | null,
  */
 skipped: Array<Skipped>, 
 /**
- * Its harness requires a model pick (`model_selection_required`) and none holds.
- */
-needsPick: boolean, 
-/**
  * Whether the probe opened a session, so `model` and `skipped` are known.
  */
 session: boolean, };
@@ -109,6 +101,13 @@ export type Skipped = { setting: string,
  * The setting's name, as the agent gives it: "Model".
  */
 name: string, value: string, why: Why, };
+
+/**
+ * What an agent needs before a call can use it, as the probe decides it (`Step` in
+ * `agent/acp_client/probe.py`); the page and the looks read it, rather than guessing from
+ * the other fields.
+ */
+export type Step = "connect" | "sign_in" | "pick" | "unreachable" | "ready";
 
 /**
  * Why a pick didn't apply.

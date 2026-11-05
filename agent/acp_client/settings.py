@@ -24,7 +24,7 @@ from acp.schema import (
 )
 
 from harnesses.harness import Harness
-from job import JobFields
+from job import Pick
 
 logger = logging.getLogger("bomby.acp_client.settings")
 
@@ -60,14 +60,6 @@ class Setting:
 
 
 @dataclass(frozen=True)
-class Pick:
-    """A value the user picked for one setting."""
-
-    setting: str
-    value: str
-
-
-@dataclass(frozen=True)
 class Skipped:
     """A pick that didn't apply, so the session keeps the agent's default for it."""
 
@@ -92,16 +84,6 @@ class Applied:
         return not any(
             s.setting == pick.setting and s.value == pick.value for s in self.skipped
         )
-
-
-def saved_picks(fields: JobFields) -> dict[str, list[Pick]]:
-    """Each agent's picks from the job's metadata (`job.py`), in the order they're applied:
-    `{"picks": {"goose": [{"setting": "provider", "value": "openrouter"}]}}`."""
-    picks = fields.picks if fields else {}
-    return {
-        agent: [Pick(p.setting, p.value) for p in entries]
-        for agent, entries in picks.items()
-    }
 
 
 def pickable(harness: Harness, options: ConfigOptions | None) -> tuple[Setting, ...]:
@@ -160,6 +142,17 @@ def model_setting(settings: Sequence[Setting]) -> Setting | None:
     return next((s for s in settings if s.category == "model"), None)
 
 
+def needs_pick(harness: Harness, applied: Applied, picks: Sequence[Pick]) -> bool:
+    """Whether its harness requires a model pick (`model_selection_required`) and none of
+    `picks` for the session's model holds."""
+    if not harness.model_selection_required:
+        return False
+    model = model_setting(applied.settings)
+    return model is None or not any(
+        pick.setting == model.id and applied.holds(pick) for pick in picks
+    )
+
+
 def model_name(settings: Sequence[Setting]) -> str | None:
     """The model a session runs, by the name the agent gives it."""
     model = model_setting(settings)
@@ -175,10 +168,10 @@ def _category(option: SessionConfigOptionSelect) -> str | None:
 
 
 def _setting(option: SessionConfigOptionSelect) -> Setting:
-    picks = tuple(
-        pick
+    options = tuple(
+        found
         for entry in option.options
-        for pick in (
+        for found in (
             [Option(o.value, o.name, entry.name) for o in entry.options]
             if isinstance(entry, SessionConfigSelectGroup)
             else [Option(entry.value, entry.name)]
@@ -189,5 +182,5 @@ def _setting(option: SessionConfigOptionSelect) -> Setting:
         name=option.name,
         category=_category(option),
         current=option.current_value,
-        options=picks,
+        options=options,
     )

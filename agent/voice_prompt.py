@@ -3,9 +3,9 @@ adds. Each added section is left out when it has nothing to say."""
 
 from pathlib import Path
 
-from call_options import CallOptions, Line
+from call_options import CallOptions
 from harnesses.harness import Harness
-from job import Speaker
+from job import Line, Speaker
 from project import Project
 from sections import join, section
 from tools import agents_note
@@ -60,5 +60,5 @@ def previous_conversation(history: tuple[Line, ...]) -> str:
     """The last lines of the call this one resumes, if it resumes one."""
     if not history:
         return ""
-    lines = "\n".join(f"{SPEAKER_LABEL[l.speaker]}: {l.text}" for l in history)
+    lines = "\n".join(f"{SPEAKER_LABEL[l.role]}: {l.text}" for l in history)
     return section("Previous conversation", join(RESUME_NOTE, lines))

@@ -77,9 +77,13 @@ const COPY: Record<Phase, (name: string) => [string, string]> = {
     "Set up your first agent",
     "I pass what you say to a coding agent already on your Mac. I found one for us.",
   ],
-  "sign-in": (name) => [
+  sign_in: (name) => [
     "Almost there",
     `${name} is on your Mac, but it needs one thing first.`,
+  ],
+  unreachable: (name) => [
+    "Almost there",
+    `${name} is on your Mac, but it didn't answer. Let's check again.`,
   ],
   pick: (name) => [
     "One last pick",
@@ -124,7 +128,9 @@ export function FirstAgent({
             {install.error}
           </p>
         )}
-        {(phase === "sign-in" || phase === "missing") && <CheckAgain />}
+        {(phase === "sign_in" ||
+          phase === "unreachable" ||
+          phase === "missing") && <CheckAgain />}
         {/* Another agent can always be picked, also while this one needs fixing. */}
         {others.some((other) => other.path !== null) && (
           <OtherAgents agents={others} onChoose={onChoose} />
@@ -182,8 +188,10 @@ function statusOf(agent: AgentStatus | null, phase: Phase): string {
       return "Not on this Mac yet"
     case "ready":
       return ["Ready", setup?.account].filter(Boolean).join(" · ")
-    case "sign-in":
+    case "sign_in":
       return setup?.problem ?? "Needs setting up"
+    case "unreachable":
+      return setup?.problem ?? "Didn't answer"
     case "pick":
       return "Pick its model"
     default:
@@ -198,8 +206,10 @@ function shortStatusOf(agent: AgentStatus, phase: Phase): string {
       return "Not on this Mac"
     case "ready":
       return "Ready"
-    case "sign-in":
+    case "sign_in":
       return agent.setup?.problem ?? "Needs setting up"
+    case "unreachable":
+      return "Didn't answer"
     case "pick":
       return "Pick its model"
     default:
@@ -228,7 +238,7 @@ function Action({ agent, phase }: { agent: AgentStatus | null; phase: Phase }) {
       </CopyButton>
     )
   const fix = agent?.setup?.fix
-  if (phase === "sign-in" && fix)
+  if (phase === "sign_in" && fix)
     return (
       <CopyButton text={fix} className={CARD_BUTTON}>
         Copy {fix}

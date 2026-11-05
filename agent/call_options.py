@@ -10,16 +10,10 @@ and `BOMBY_USER_NAME` stand in, and there is no history.
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from job import JobFields, Speaker
+from job import JobFields, Line
 
 # The voice the agent has always had; the app defaults to it too (`settings.rs`).
 DEFAULT_VOICE = "Charon"
-
-
-@dataclass(frozen=True)
-class Line:
-    speaker: Speaker
-    text: str
 
 
 @dataclass(frozen=True)
@@ -40,9 +34,7 @@ class CallOptions:
         return cls(
             voice=fields.voice or fallback,
             user_name=fields.user_name,
-            history=tuple(
-                Line(line.role, line.text) for line in fields.history if line.text
-            ),
+            history=tuple(line for line in fields.history if line.text),
         )
 
     @property

@@ -77,12 +77,14 @@ function action(agent: AgentStatus): ReactNode {
       return <StatusMark state="off" />
     case "connect":
       return <SetUpButton />
-    case "sign-in":
+    case "sign_in":
       return agent.setup?.fix ? (
         <CopyButton text={agent.setup.fix} variant="outline" size="sm">
           Copy command
         </CopyButton>
       ) : undefined
+    case "unreachable":
+      return undefined
     case "pick":
     case "ready":
       return <ModelPicker agent={agent} />
@@ -96,7 +98,7 @@ function detail(agent: AgentStatus): ReactNode {
       return `Not installed. Install ${name}, then check again.`
     case "connect":
       return `Found on this Mac. Set it up to use it in calls.`
-    case "sign-in": {
+    case "sign_in": {
       const problem = setup?.problem && (
         <span className="select-text">{setup.problem}. </span>
       )
@@ -112,6 +114,8 @@ function detail(agent: AgentStatus): ReactNode {
         </>
       )
     }
+    case "unreachable":
+      return `${setup?.problem ?? "It didn't answer"}. Check again in a moment.`
     case "pick":
       return setup?.skipped.length
         ? `${skippedNote(setup.skipped[0], name)} Calls use it once its model is picked.`
