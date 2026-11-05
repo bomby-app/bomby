@@ -21,7 +21,7 @@ from acp_client.runner import (
     steered_note,
     stopped,
 )
-from acp_client.settings import Choice
+from acp_client.settings import Pick
 from harnesses import CLAUDE_CODE, Harness
 from project import Project
 
@@ -35,7 +35,7 @@ def run_with_fake(
     folders: tuple[Path, ...] | None = None,
     env: Mapping[str, str] | None = None,
     harness: Harness = CLAUDE_CODE,
-    choices: tuple[Choice, ...] = (),
+    picks: tuple[Pick, ...] = (),
 ) -> tuple[Any, list[dict[str, Any]]]:
     """Run `scenario` against the fake ACP agent; return its result and the agent's log."""
     log = tmp_path / "acp.jsonl"
@@ -45,7 +45,7 @@ def run_with_fake(
         args=[str(FAKE_AGENT)],
         project=Project(name="test", folders=folders or (tmp_path,)),
         env={**os.environ, **(env or {}), "FAKE_ACP_LOG": str(log)},
-        choices=choices,
+        picks=picks,
     )
 
     async def main() -> Any:
@@ -127,13 +127,13 @@ def test_a_turn_without_a_final_message_fails_instead_of_reading_as_done(
 def test_each_session_gets_the_model_and_effort_the_agent_was_set_up_with(
     tmp_path: Path,
 ) -> None:
-    choices = (Choice("model", "m2"), Choice("effort", "high"))
+    picks = (Pick("model", "m2"), Pick("effort", "high"))
 
     _, events = run_with_fake(
         tmp_path,
         lambda r: text(r.run("reply ok")),
         env={"FAKE_ACP_MODEL": "m1"},
-        choices=choices,
+        picks=picks,
     )
 
     set_ = [
@@ -145,15 +145,15 @@ def test_each_session_gets_the_model_and_effort_the_agent_was_set_up_with(
     assert names(events).index("set_config_option") < names(events).index("prompt")
 
 
-@pytest.mark.parametrize("dropped", [Choice("model", "retired"), Choice("mode", "x")])
+@pytest.mark.parametrize("dropped", [Pick("model", "retired"), Pick("mode", "x")])
 def test_a_pick_the_agent_dropped_leaves_its_default(
-    tmp_path: Path, dropped: Choice
+    tmp_path: Path, dropped: Pick
 ) -> None:
     result, events = run_with_fake(
         tmp_path,
         lambda r: text(r.run("reply ok")),
         env={"FAKE_ACP_MODEL": "m1"},
-        choices=(dropped, Choice("effort", "high")),
+        picks=(dropped, Pick("effort", "high")),
     )
 
     assert result == "Done: ok"
@@ -167,7 +167,7 @@ def test_a_pick_the_agent_dropped_leaves_its_default(
 
 def test_a_pick_the_agent_refuses_never_fails_the_task(tmp_path: Path) -> None:
     goose_like = dataclasses.replace(
-        CLAUDE_CODE, setup_settings=frozenset({"provider"})
+        CLAUDE_CODE, pickable_settings=frozenset({"provider"})
     )
 
     result, events = run_with_fake(
@@ -175,7 +175,7 @@ def test_a_pick_the_agent_refuses_never_fails_the_task(tmp_path: Path) -> None:
         lambda r: text(r.run("reply ok")),
         env={"FAKE_ACP_MODEL": "m1"},
         harness=goose_like,
-        choices=(Choice("provider", "p3"),),
+        picks=(Pick("provider", "p3"),),
     )
 
     assert result == "Done: ok"

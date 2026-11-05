@@ -57,7 +57,7 @@ class Harness:
     """Whether the user must pick its model before a call uses it: for an agent whose ACP
     default isn't the user's own choice (OpenCode's). Others run on their defaults until
     the user picks one."""
-    setup_settings: frozenset[str] = frozenset()
+    pickable_settings: frozenset[str] = frozenset()
     """Session settings the user can pick beyond the model and effort categories, by config
     option id, for one the agent lists without a category (goose's "provider")."""
 

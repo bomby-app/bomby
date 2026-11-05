@@ -17,9 +17,9 @@ use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use crate::agent::{AgentWorker, JobCrash, OnCrash, WorkerConfig};
 use crate::db::{Db, now_ms};
 use crate::error::{Error, Result};
-use crate::setup::Choice;
+use crate::setup::Pick;
 use crate::sync;
-use crate::{agent_choices, agents, credentials, projects, settings, updates, windows};
+use crate::{agent_picks, agents, credentials, projects, settings, updates, windows};
 
 /// The agent's name in `agent/agent.py` (`AGENT_NAME`), which the token dispatches.
 const AGENT_NAME: &str = "bomby";
@@ -134,19 +134,19 @@ struct HistoryLine {
 
 /// The job metadata the agent reads: the project with what the user wrote about it
 /// (`Project.from_job` in `agent/project.py`), the agents found on this computer by id with
-/// their programs and the setup choices each session gets (`saved_choices` in
+/// their programs and the setup picks each session gets (`saved_picks` in
 /// `agent/acp_client/settings.py`), the voice, what the user likes to be called and, on a
 /// resumed call, the conversation so far (`CallOptions.from_job` in `agent/call_options.py`).
 fn dispatch_metadata(
     project: &projects::CallProject,
     agents: &[(String, PathBuf)],
-    choices: &HashMap<String, Vec<Choice>>,
+    picks: &HashMap<String, Vec<Pick>>,
     settings: &settings::CallSettings,
     history: &[HistoryLine],
 ) -> String {
-    let choices: HashMap<_, _> = agents
+    let picks: HashMap<_, _> = agents
         .iter()
-        .filter_map(|(id, _)| Some((id, choices.get(id)?)))
+        .filter_map(|(id, _)| Some((id, picks.get(id)?)))
         .collect();
     let agents: serde_json::Map<_, _> = agents
         .iter()
@@ -157,7 +157,7 @@ fn dispatch_metadata(
         "folders": project.folders,
         "instructions": project.instructions,
         "agents": agents,
-        "choices": choices,
+        "picks": picks,
         "voice": settings.voice,
         "user_name": settings.user_name,
         "history": history,
@@ -301,7 +301,7 @@ pub fn call_token<R: Runtime>(
     call_id: i64,
 ) -> Result<CallToken> {
     let keys = livekit_keys(&app, &vault)?;
-    let (project, history, settings, choices) = {
+    let (project, history, settings, picks) = {
         let conn = db.conn();
         let project_id: i64 = conn
             .query_row(
@@ -315,7 +315,7 @@ pub fn call_token<R: Runtime>(
             projects::for_call(&conn, project_id)?,
             recent_lines(&conn, call_id)?,
             settings::for_call(&conn)?,
-            agent_choices::saved(&conn)?,
+            agent_picks::saved(&conn)?,
         )
     };
     let room = room_name(call_id);
@@ -323,7 +323,7 @@ pub fn call_token<R: Runtime>(
     let agents = call_agents
         .get(call_id)
         .unwrap_or_else(|| agents::usable(&found.cached().unwrap_or_default()));
-    let metadata = dispatch_metadata(&project, &agents, &choices, &settings, &history);
+    let metadata = dispatch_metadata(&project, &agents, &picks, &settings, &history);
     Ok(CallToken {
         participant_token: token(&keys, &room, metadata)?,
         server_url: keys.url,
@@ -541,10 +541,10 @@ mod tests {
             voice: "Kore".into(),
             user_name: "Sam".into(),
         };
-        let choices = HashMap::from([
+        let picks = HashMap::from([
             (
                 "claude".to_owned(),
-                vec![Choice {
+                vec![Pick {
                     setting: "model".into(),
                     value: "opus".into(),
                 }],
@@ -552,7 +552,7 @@ mod tests {
             ("goose".to_owned(), Vec::new()),
         ]);
         let metadata: serde_json::Value = serde_json::from_str(&dispatch_metadata(
-            &project, &agents, &choices, &settings, &history,
+            &project, &agents, &picks, &settings, &history,
         ))
         .unwrap();
         assert_eq!(
@@ -562,8 +562,8 @@ mod tests {
                 "folders": ["/tmp"],
                 "instructions": "A music app.",
                 "agents": { "claude": "/usr/local/bin/claude" },
-                // Only the call's agents' choices go along.
-                "choices": { "claude": [{ "setting": "model", "value": "opus" }] },
+                // Only the call's agents' picks go along.
+                "picks": { "claude": [{ "setting": "model", "value": "opus" }] },
                 "voice": "Kore",
                 "user_name": "Sam",
                 "history": [{ "role": "agent", "text": "Hi." }],

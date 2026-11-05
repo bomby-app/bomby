@@ -31,7 +31,7 @@ from project import Project
 from sections import join, section
 
 from .client import HarnessClient, Reply, connect
-from .settings import Choice, apply, saved_choices
+from .settings import Pick, apply, saved_picks
 
 logger = logging.getLogger("bomby.acp_client.runner")
 
@@ -198,10 +198,10 @@ class AcpRunner:
         env: Mapping[str, str],
         command: str,
         args: Sequence[str] = (),
-        choices: Sequence[Choice] = (),
+        picks: Sequence[Pick] = (),
     ) -> None:
         self._harness = harness
-        self._choices = tuple(choices)  # the model and effort the user picked, if any
+        self._choices = tuple(picks)  # the model and effort the user picked, if any
         self._command = command
         self._args = tuple(args)
         self._project = project
@@ -545,24 +545,24 @@ class CallRunners:
         project: Project,
         installed: Mapping[str, Path],
         environ: Mapping[str, str],
-        choices: Mapping[str, Sequence[Choice]] | None = None,
+        picks: Mapping[str, Sequence[Pick]] | None = None,
     ) -> None:
         self._project = project
         self._installed = dict(installed)
         self._environ = dict(environ)
-        self._choices = dict(choices or {})
+        self._choices = dict(picks or {})
         self._runners: dict[str, AcpRunner] = {}
 
     @classmethod
     def for_job(cls, fields: JobFields) -> "CallRunners":
         """Runners for the project and the installed agents in the job's metadata, with
-        each agent's setup choices (see `Project.from_job`, `harnesses.installed` and
-        `settings.saved_choices`)."""
+        each agent's setup picks (see `Project.from_job`, `harnesses.installed` and
+        `settings.saved_picks`)."""
         return cls(
             Project.from_job(fields, os.environ),
             installed(fields, HARNESSES, os.environ),
             os.environ,
-            saved_choices(fields),
+            saved_picks(fields),
         )
 
     @property
@@ -588,7 +588,7 @@ class CallRunners:
             env=env,
             command=command,
             args=args,
-            choices=self._choices.get(harness.id, ()),
+            picks=self._choices.get(harness.id, ()),
         )
         return runner
 

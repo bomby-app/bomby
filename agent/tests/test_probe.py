@@ -10,7 +10,7 @@ import pytest
 
 import probe as probe_cli
 from acp_client.probe import Setup, probe
-from acp_client.settings import Choice, Skipped, saved_choices
+from acp_client.settings import Pick, Skipped, saved_picks
 from harnesses import Harness
 
 FAKE_AGENT = Path(__file__).resolve().parent / "fake_claude_acp.py"
@@ -26,12 +26,12 @@ def run_probe(
     tmp_path: Path,
     env: dict[str, str],
     harness: Harness = FAKE,
-    choices: tuple[Choice, ...] = (),
+    picks: tuple[Pick, ...] = (),
     listing: bool = False,
 ) -> tuple[Setup, list[str]]:
     log = tmp_path / "acp.jsonl"
     environ = {**os.environ, **env, "FAKE_ACP_LOG": str(log)}
-    setup = asyncio.run(probe(harness, Path(sys.executable), environ, choices, listing))
+    setup = asyncio.run(probe(harness, Path(sys.executable), environ, picks, listing))
     lines = log.read_text().splitlines() if log.exists() else []
     events: list[dict[str, Any]] = [json.loads(line) for line in lines]
     return setup, [e["event"] for e in events]
@@ -63,7 +63,7 @@ def test_listing_offers_the_model_and_effort_not_the_mode(tmp_path: Path) -> Non
 def test_a_harness_can_add_a_setting_the_agent_lists_without_a_category(
     tmp_path: Path,
 ) -> None:
-    harness = dataclasses.replace(FAKE, setup_settings=frozenset({"provider"}))
+    harness = dataclasses.replace(FAKE, pickable_settings=frozenset({"provider"}))
 
     setup, _ = run_probe(
         tmp_path, {**CAN_DELETE, "FAKE_ACP_MODEL": "m1"}, harness, listing=True
@@ -81,11 +81,11 @@ def test_the_background_check_leaves_the_option_lists_out(tmp_path: Path) -> Non
 def test_saved_choices_are_applied_in_order_and_the_settings_follow(
     tmp_path: Path,
 ) -> None:
-    harness = dataclasses.replace(FAKE, setup_settings=frozenset({"provider"}))
-    choices = (Choice("provider", "p2"), Choice("model", "p2-model"))
+    harness = dataclasses.replace(FAKE, pickable_settings=frozenset({"provider"}))
+    picks = (Pick("provider", "p2"), Pick("model", "p2-model"))
 
     setup, events = run_probe(
-        tmp_path, {**CAN_DELETE, "FAKE_ACP_MODEL": "m1"}, harness, choices
+        tmp_path, {**CAN_DELETE, "FAKE_ACP_MODEL": "m1"}, harness, picks
     )
 
     assert setup.ready
@@ -98,7 +98,7 @@ def test_a_pick_the_agent_no_longer_offers_leaves_its_default(tmp_path: Path) ->
     setup, _ = run_probe(
         tmp_path,
         {**CAN_DELETE, "FAKE_ACP_MODEL": "m1"},
-        choices=(Choice("model", "retired"),),
+        picks=(Pick("model", "retired"),),
     )
 
     assert setup.ready
@@ -109,11 +109,11 @@ def test_a_pick_the_agent_no_longer_offers_leaves_its_default(tmp_path: Path) ->
 def test_a_pick_the_agent_refuses_leaves_its_default_and_the_rest_apply(
     tmp_path: Path,
 ) -> None:
-    harness = dataclasses.replace(FAKE, setup_settings=frozenset({"provider"}))
-    choices = (Choice("provider", "p3"), Choice("effort", "high"))
+    harness = dataclasses.replace(FAKE, pickable_settings=frozenset({"provider"}))
+    picks = (Pick("provider", "p3"), Pick("effort", "high"))
 
     setup, _ = run_probe(
-        tmp_path, {**CAN_DELETE, "FAKE_ACP_MODEL": "m1"}, harness, choices, listing=True
+        tmp_path, {**CAN_DELETE, "FAKE_ACP_MODEL": "m1"}, harness, picks, listing=True
     )
 
     assert setup.ready, "a refused pick isn't a sign-in problem"
@@ -139,19 +139,19 @@ def test_an_agent_that_requires_a_pick_waits_for_one(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    ("choices", "ready"),
+    ("picks", "ready"),
     [
-        ((Choice("model", "m2"),), True),
-        ((Choice("model", "retired"),), False),
-        ((Choice("effort", "high"),), False),
+        ((Pick("model", "m2"),), True),
+        ((Pick("model", "retired"),), False),
+        ((Pick("effort", "high"),), False),
     ],
     ids=["model picked", "pick gone", "only effort picked"],
 )
 def test_an_agent_that_requires_a_pick_is_ready_once_its_model_is_picked(
-    tmp_path: Path, choices: tuple[Choice, ...], ready: bool
+    tmp_path: Path, picks: tuple[Pick, ...], ready: bool
 ) -> None:
     setup, _ = run_probe(
-        tmp_path, {**CAN_DELETE, "FAKE_ACP_MODEL": "m1"}, PICK_REQUIRED, choices
+        tmp_path, {**CAN_DELETE, "FAKE_ACP_MODEL": "m1"}, PICK_REQUIRED, picks
     )
 
     assert (setup.ready, setup.needs_pick) == (ready, not ready)
@@ -262,26 +262,26 @@ def test_the_command_line_answers_by_agent_id(
 
 def test_the_command_line_reads_the_picks_and_who_to_list() -> None:
     fields = json.loads(
-        '{"choices": {"goose": [{"setting": "provider", "value": "p2"}]},'
+        '{"picks": {"goose": [{"setting": "provider", "value": "p2"}]},'
         + ' "listing": ["omp"]}'
     )
 
-    assert saved_choices(fields) == {"goose": [Choice("provider", "p2")]}
+    assert saved_picks(fields) == {"goose": [Pick("provider", "p2")]}
     assert probe_cli.listing(fields) == {"omp"}
 
 
 @pytest.mark.parametrize(
     "metadata",
     [
-        '{"choices": []}',
-        '{"choices": {"goose": [{"setting": 1}]}}',
+        '{"picks": []}',
+        '{"picks": {"goose": [{"setting": 1}]}}',
         '{"listing": "omp"}',
     ],
 )
 def test_the_command_line_rejects_bad_choices(metadata: str) -> None:
     fields = json.loads(metadata)
     with pytest.raises(ValueError):
-        _ = saved_choices(fields), probe_cli.listing(fields)
+        _ = saved_picks(fields), probe_cli.listing(fields)
 
 
 def test_an_agent_without_its_adapter_asks_for_it(tmp_path: Path) -> None:

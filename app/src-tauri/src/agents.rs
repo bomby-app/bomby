@@ -5,7 +5,7 @@
 //! Adding one is a row in `KNOWN` here and a harness definition in `agent/harnesses/`,
 //! under the same id. Whether it is set up comes from the harness, through the probe
 //! ([`setup`](crate::setup)), which applies the model and effort the user picked, if any
-//! ([`agent_choices`](crate::agent_choices)).
+//! ([`agent_picks`](crate::agent_picks)).
 //!
 //! Finding them runs the user's login shell and each agent's own program, which takes
 //! seconds, so the core does it once at launch, in the background, and keeps the result in
@@ -25,11 +25,11 @@ use std::time::Duration;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
-use crate::agent_choices;
+use crate::agent_picks;
 use crate::db::Db;
 use crate::error::Result;
 use crate::process;
-use crate::setup::{self, Choice, Setup};
+use crate::setup::{self, Pick, Setup};
 use crate::sync;
 
 /// The event every window gets with the new list when a look finds something different.
@@ -245,7 +245,7 @@ fn version_of(program: &Path) -> Option<String> {
 /// as long as the shell and the slowest of them.
 fn detect_all(
     previous: &HashMap<String, PathBuf>,
-    saved: &HashMap<String, Vec<Choice>>,
+    saved: &HashMap<String, Vec<Pick>>,
 ) -> Vec<AgentStatus> {
     let found = find_all(previous);
     let installed = programs(found.clone());
@@ -331,7 +331,7 @@ impl Agents {
     pub fn detect(
         &self,
         seen: Option<Vec<(String, PathBuf)>>,
-        saved: &HashMap<String, Vec<Choice>>,
+        saved: &HashMap<String, Vec<Pick>>,
     ) -> (Vec<AgentStatus>, bool) {
         self.detect_with(seen, |previous| detect_all(previous, saved))
     }
@@ -483,7 +483,7 @@ fn refresh<R: Runtime>(
     seen: Option<Vec<(String, PathBuf)>>,
 ) -> Vec<AgentStatus> {
     // Without the database (only if it can't be read), every agent shows its defaults.
-    let saved = agent_choices::saved(&app.state::<Db>().conn()).unwrap_or_default();
+    let saved = agent_picks::saved(&app.state::<Db>().conn()).unwrap_or_default();
     let (found, changed) = app.state::<Agents>().detect(seen, &saved);
     if changed {
         // Only fails for an invalid event name or payload; a window that misses it still

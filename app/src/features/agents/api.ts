@@ -64,7 +64,7 @@ export type SettingOption = {
 }
 
 /** The value picked for one setting, in the order they're applied. */
-export type Choice = { setting: string; value: string }
+export type Pick = { setting: string; value: string }
 
 /** What the core found last: instant, except right after launch while it first looks. */
 export function agentsStatus(): Promise<AgentStatus[]> {
@@ -88,9 +88,9 @@ export function agentSettings(agent: string): Promise<Listed> {
  */
 export function pickAgentSettings(
   agent: string,
-  choices: Choice[]
+  picks: Pick[]
 ): Promise<Listed> {
-  return invoke("pick_agent_settings", { agent, choices })
+  return invoke("pick_agent_settings", { agent, picks })
 }
 
 /** Installs every ACP adapter into the app's folder; resolves once the agents are rechecked. */

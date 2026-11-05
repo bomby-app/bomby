@@ -1,7 +1,7 @@
 //! Whether each installed agent is set up: its provider, model and sign-in, as the voice
 //! agent's probe finds them over ACP (`agent/probe.py`,
 //! docs/decisions/check-agent-setup-with-an-acp-probe.md), with the user's picks applied
-//! (`agent_choices.rs`), and, for the model picker, what can be picked
+//! (`agent_picks.rs`), and, for the model picker, what can be picked
 //! (`agent/acp_client/settings.py`). Harnesses are defined there, so nothing here knows any
 //! agent.
 
@@ -88,17 +88,17 @@ pub struct SettingOption {
 
 /// The value the user picked for one setting.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Choice {
+pub struct Pick {
     pub setting: String,
     pub value: String,
 }
 
-/// Probes `agents` (id and program), all at once, each with its `choices` applied.
+/// Probes `agents` (id and program), all at once, each with its `picks` applied.
 /// `listing` is the agent whose settings the model picker lists; the others come back with
 /// none. `None` when the probe couldn't run.
 pub fn probe(
     agents: &[(String, PathBuf)],
-    choices: &HashMap<String, Vec<Choice>>,
+    picks: &HashMap<String, Vec<Pick>>,
     listing: Option<&str>,
 ) -> Option<HashMap<String, Listed>> {
     if agents.is_empty() {
@@ -107,7 +107,7 @@ pub fn probe(
     let programs: HashMap<_, _> = agents.iter().map(|(id, path)| (id, path)).collect();
     let metadata = serde_json::json!({
         "agents": programs,
-        "choices": choices,
+        "picks": picks,
         "listing": listing.into_iter().collect::<Vec<_>>(),
     })
     .to_string();

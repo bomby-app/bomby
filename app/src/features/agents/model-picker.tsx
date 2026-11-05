@@ -69,10 +69,10 @@ export function ModelPicker({
     setBusy(true)
     // The ones before it are saved too: a later setting can depend on them (goose's models
     // on its provider), so its value only means something with theirs.
-    const choices = settings
+    const picks = settings
       .slice(0, index + 1)
       .map((s) => ({ setting: s.id, value: s.current }))
-    pickAgentSettings(agent.id, choices).then(shown, failed)
+    pickAgentSettings(agent.id, picks).then(shown, failed)
   }
 
   // An agent that must have its model picked asks for it, in bubblegum like everything a

@@ -34,7 +34,7 @@ from .client import HarnessClient, connect
 from .runner import launch
 from .settings import (
     Applied,
-    Choice,
+    Pick,
     Setting,
     Skipped,
     apply,
@@ -82,11 +82,11 @@ async def probe(
     harness: Harness,
     program: Path,
     environ: Mapping[str, str],
-    choices: Sequence[Choice] = (),
+    picks: Sequence[Pick] = (),
     listing: bool = False,
 ) -> Setup:
     """Checks `harness`, started from `program` the way a call would start it, with the
-    user's `choices` applied in order. `listing` is for the model picker: it returns the
+    user's `picks` applied in order. `listing` is for the model picker: it returns the
     settings that can be picked, opening a session even in an agent that can't delete it."""
     adapter = harness.adapter_path(environ)
     if adapter is not None and not Path(adapter).is_file():
@@ -103,7 +103,7 @@ async def probe(
                 _,
                 init,
             ):
-                return await _check(harness, conn, client, init, choices, listing)
+                return await _check(harness, conn, client, init, picks, listing)
     except TimeoutError:
         return Setup(ready=False, problem="It didn't answer in time")
     # Before OSError, which ConnectionError is a kind of.
@@ -116,15 +116,15 @@ async def probe(
 async def probe_all(
     agents: Mapping[str, tuple[Harness, Path]],
     environ: Mapping[str, str],
-    choices: Mapping[str, Sequence[Choice]] | None = None,
+    picks: Mapping[str, Sequence[Pick]] | None = None,
     listing: Collection[str] = (),
 ) -> dict[str, Setup]:
-    """Checks every agent at once, each with its own `choices`, listing the settings of
+    """Checks every agent at once, each with its own `picks`, listing the settings of
     those in `listing`."""
     ids = list(agents)
     setups = await asyncio.gather(
         *(
-            probe(harness, program, environ, (choices or {}).get(id, ()), id in listing)
+            probe(harness, program, environ, (picks or {}).get(id, ()), id in listing)
             for id, (harness, program) in agents.items()
         )
     )
@@ -136,7 +136,7 @@ async def _check(
     conn: ClientSideConnection,
     client: HarnessClient,
     init: InitializeResponse,
-    choices: Sequence[Choice],
+    picks: Sequence[Pick],
     listing: bool,
 ) -> Setup:
     fix = setup_command(harness, init.auth_methods or [])
@@ -144,7 +144,7 @@ async def _check(
     if not deletable and not listing:
         await _wait_for_auth(client, init)
         # Without a session there's no telling which setting is the model: any pick counts.
-        needs_pick = harness.model_selection_required and not choices
+        needs_pick = harness.model_selection_required and not picks
         return _judge(client.auth_status, fix, needs_pick=needs_pick)
     try:
         session = await conn.new_session(cwd=str(FOLDER), mcp_servers=[])
@@ -152,7 +152,7 @@ async def _check(
         return Setup(ready=False, problem=detail(e), fix=fix)
     try:
         applied = await apply(
-            conn, session.session_id, harness, session.config_options, choices
+            conn, session.session_id, harness, session.config_options, picks
         )
         await _wait_for_auth(client, init)
         # An agent that lists config options but no model has none set up yet.
@@ -160,7 +160,7 @@ async def _check(
             bool(session.config_options) and model_name(applied.settings) is None
         )
         needs_pick = harness.model_selection_required and not _model_picked(
-            applied, choices
+            applied, picks
         )
         return _judge(
             client.auth_status, fix, applied, lacks_model, needs_pick, listing
@@ -211,11 +211,11 @@ def _judge(
     return setup
 
 
-def _model_picked(applied: Applied, choices: Sequence[Choice]) -> bool:
-    """Whether one of `choices` set the session's model and still holds."""
+def _model_picked(applied: Applied, picks: Sequence[Pick]) -> bool:
+    """Whether one of `picks` set the session's model and still holds."""
     model = model_setting(applied.settings)
     return model is not None and any(
-        c.setting == model.id and applied.holds(c) for c in choices
+        c.setting == model.id and applied.holds(c) for c in picks
     )
 
 

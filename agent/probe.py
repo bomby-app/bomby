@@ -4,7 +4,7 @@ the same metadata it gives a call, and reads one JSON object back, by agent id:
     python probe.py '{"agents": {"goose": "/abs/path/goose"}}'
     {"goose": {"ready": false, "problem": "...", "fix": "goose configure", ...}}
 
-The metadata may also hold each agent's picks, applied before judging (`"choices":
+The metadata may also hold each agent's picks, applied before judging (`"picks":
 {"goose": [{"setting": "provider", "value": "openrouter"}]}`), and the agents whose
 settings the model picker lists (`"listing": ["omp"]`).
 """
@@ -19,7 +19,7 @@ from typing import cast
 
 import dev_env
 from acp_client.probe import probe_all
-from acp_client.settings import saved_choices
+from acp_client.settings import saved_picks
 from harnesses import HARNESSES, installed
 from job import JobFields, read_metadata
 
@@ -31,7 +31,7 @@ def main(metadata: str) -> str:
         for id, program in installed(fields, HARNESSES, os.environ).items()
     }
     setups = asyncio.run(
-        probe_all(agents, os.environ, saved_choices(fields), listing(fields))
+        probe_all(agents, os.environ, saved_picks(fields), listing(fields))
     )
     return json.dumps({id: dataclasses.asdict(s) for id, s in setups.items()})
 

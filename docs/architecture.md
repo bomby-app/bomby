@@ -49,7 +49,7 @@ flowchart LR
 
 ## Data the app keeps
 
-The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS) holds `bomby.db`: `projects`, `calls`, `messages`, `settings`, and the settings picked for each agent (`agent_choices`). LiveKit does not retain transcripts. Secrets stay in the OS keychain. The sidebar renders the project-and-call tree ([decision](decisions/sidebar-tree-of-projects-and-calls.md)).
+The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS) holds `bomby.db`: `projects`, `calls`, `messages`, `settings`, and the settings picked for each agent (`agent_picks`). LiveKit does not retain transcripts. Secrets stay in the OS keychain. The sidebar renders the project-and-call tree ([decision](decisions/sidebar-tree-of-projects-and-calls.md)).
 
 ## Contracts
 
@@ -61,7 +61,7 @@ The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS)
   "folders": ["/Users/me/Dev/samba", "/Users/me/Dev/shared"],
   "instructions": "A music app: the API is in Go, the site in Svelte.",
   "agents": {"claude": "/Users/me/.local/bin/claude", "opencode": "/Users/me/.opencode/bin/opencode"},
-  "choices": {"claude": [{"setting": "model", "value": "opus"}], "opencode": [{"setting": "model", "value": "provider/model-id"}]},
+  "picks": {"claude": [{"setting": "model", "value": "opus"}], "opencode": [{"setting": "model", "value": "provider/model-id"}]},
   "voice": "Charon",
   "user_name": "Sam",
   "history": [{"role": "user", "text": "fix the login"}, {"role": "agent", "text": "Claude's on it."}]
@@ -71,7 +71,7 @@ The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS)
 - All fields are optional. `folders` must be absolute, existing paths; the first is the working directory and the rest become ACP `additionalDirectories`. Defaults are the home folder, project `home`, and voice `GEMINI_VOICE` or Charon.
 - `instructions` is what the user wrote about the project in its settings, up to 5,000 characters; empty when they wrote nothing, and then neither the voice model nor the coding agents hear of it.
 - `agents` maps installed harness ids to programs: only those the setup probe finds ready. The voice model can use only agents in this list; console runs find them on PATH ([decision](decisions/detect-acp-native-agents.md)).
-- `choices` holds the session settings the user picked for each agent, if any (model, effort, goose's provider), which the runner applies in order to every session it opens with `session/set_config_option`. One the agent no longer offers, or refuses, is skipped, leaving its default ([decision](decisions/pick-agent-settings-like-buzz-and-zed.md)).
+- `picks` holds the session settings the user picked for each agent, if any (model, effort, goose's provider), which the runner applies in order to every session it opens with `session/set_config_option`. One the agent no longer offers, or refuses, is skipped, leaving its default ([decision](decisions/pick-agent-settings-like-buzz-and-zed.md)).
 - `user_name` is what the user asked to be called in Settings, Intro, up to 50 characters; empty when they'd rather not say, and then the prompt doesn't mention a name. Only the voice model gets it ([decision](decisions/the-users-name-only-for-the-voice.md)).
 - `history` appears only when resuming a call and contains its last 50 lines ([decision](decisions/resume-a-call-with-its-last-lines.md)).
 - The agent reads it once (`agent/job.py`); the project, the installed agents and the call options each take their fields from that. Console runs use `BOMBY_PROJECT`, `BOMBY_FOLDERS`, `BOMBY_INSTRUCTIONS` and `BOMBY_USER_NAME` from `agent/.env`. Invalid metadata fails the call at start.
@@ -84,7 +84,7 @@ The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS)
 
 **Briefing.** Each session receives `prompts/harness-briefing.md` plus the project name, folders and instructions once (never again with follow-ups or steering): through the system prompt when supported, otherwise before its first task. It requires a short, plain-text, outcome-first final report for speech.
 
-**Agent errors.** A harness that fails fails the task with one short line for the voice model, "<agent> isn't ready right now" or "<agent> stopped before finishing", plus an instruction to say sorry and offer another agent (`not_ready` and `stopped` in `agent/acp_client/runner.py`, owner's choice, 2026-11-04). A turn that ends without a final message fails the same way ("<agent> ended without reporting back", `no_report`), so it never reads as done. The details go to `agent.log`; Settings shows what to fix, from the setup probe ([decision](decisions/check-agent-setup-with-an-acp-probe.md)).
+**Agent errors.** A harness that fails fails the task with one short line for the voice model, "<agent> isn't ready right now" or "<agent> stopped before finishing", plus an instruction to say sorry and offer another agent (`not_ready` and `stopped` in `agent/acp_client/runner.py`, owner's pick, 2026-11-04). A turn that ends without a final message fails the same way ("<agent> ended without reporting back", `no_report`), so it never reads as done. The details go to `agent.log`; Settings shows what to fix, from the setup probe ([decision](decisions/check-agent-setup-with-an-acp-probe.md)).
 
 **A crashed job.** When a call's job raises, livekit-agents logs `unhandled exception while running the job task` with the job's `room` (`bomby-<call id>-<ms>`). The core reads it from the worker's output (`job_crash` in `src-tauri/src/agent.rs`) and sends `call-agent-crashed` (`{ room, reason }`) to the main window, which fails the call at once if it's in that room (a resumed call joins a new room, so a late crash from an earlier one is ignored) instead of waiting out the 30 s join timeout (`call-provider.tsx`): the page says "Bomby couldn't start the call. Try again?" and the reason goes to `app.log`. A folder that's gone is caught before the call starts (`open_call`), so it never gets that far.
 

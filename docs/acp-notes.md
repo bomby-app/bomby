@@ -91,4 +91,4 @@ Checked on 2026-11-05 against each agent's source at the installed version, and 
 | goose 1.57.0 (`crates/goose/src/acp/server/dispatch.rs`, `server.rs` `on_set_model`) | `model` | `thinking_effort` | `provider` (no category), `mode` | the session (`switch_provider`) |
 | omp 18.16.0 (`packages/coding-agent/src/modes/acp/acp-agent.ts`) | `model`, once a provider is signed in | `thinking` | `mode` | the session: `setModel` saves a default only with `persist`, which ACP doesn't pass |
 
-Bomby's model picker offers the `model` and `thought_level` settings and any a harness names in `setup_settings` (goose's `provider`), in the agent's order, and leaves `mode` to the runner (`agent/acp_client/settings.py`). An unknown value fails with `invalidParams` everywhere.
+Bomby's model picker offers the `model` and `thought_level` settings and any a harness names in `pickable_settings` (goose's `provider`), in the agent's order, and leaves `mode` to the runner (`agent/acp_client/settings.py`). An unknown value fails with `invalidParams` everywhere.

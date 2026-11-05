@@ -60,7 +60,7 @@ class Setting:
 
 
 @dataclass(frozen=True)
-class Choice:
+class Pick:
     """A value the user picked for one setting."""
 
     setting: str
@@ -87,28 +87,27 @@ class Applied:
     settings: tuple[Setting, ...]
     skipped: tuple[Skipped, ...]
 
-    def holds(self, choice: Choice) -> bool:
-        """Whether `choice` was applied, or already current."""
+    def holds(self, pick: Pick) -> bool:
+        """Whether `pick` was applied, or already current."""
         return not any(
-            s.setting == choice.setting and s.value == choice.value
-            for s in self.skipped
+            s.setting == pick.setting and s.value == pick.value for s in self.skipped
         )
 
 
-def saved_choices(fields: JobFields) -> dict[str, list[Choice]]:
+def saved_picks(fields: JobFields) -> dict[str, list[Pick]]:
     """Each agent's picks from the job's metadata (`job.py`), in the order they're applied:
-    `{"choices": {"goose": [{"setting": "provider", "value": "openrouter"}]}}`."""
-    raw: object = (fields or {}).get("choices", {})
+    `{"picks": {"goose": [{"setting": "provider", "value": "openrouter"}]}}`."""
+    raw: object = (fields or {}).get("picks", {})
     by_agent = cast(dict[str, object], raw) if isinstance(raw, dict) else None
     if by_agent is None:
-        raise ValueError("choices must be an object, by agent id")
-    choices: dict[str, list[Choice]] = {}
+        raise ValueError("picks must be an object, by agent id")
+    picks: dict[str, list[Pick]] = {}
     for agent, entries in by_agent.items():
         items = cast(list[object], entries) if isinstance(entries, list) else None
         if items is None:
-            raise ValueError(f"{agent}'s choices must be a list")
-        choices[agent] = [_choice(item) for item in items]
-    return choices
+            raise ValueError(f"{agent}'s picks must be a list")
+        picks[agent] = [_pick(item) for item in items]
+    return picks
 
 
 def pickable(harness: Harness, options: ConfigOptions | None) -> tuple[Setting, ...]:
@@ -118,7 +117,7 @@ def pickable(harness: Harness, options: ConfigOptions | None) -> tuple[Setting, 
         _setting(o)
         for o in options or []
         if isinstance(o, SessionConfigOptionSelect)
-        and (_category(o) in CATEGORIES or o.id in harness.setup_settings)
+        and (_category(o) in CATEGORIES or o.id in harness.pickable_settings)
     )
 
 
@@ -127,32 +126,30 @@ async def apply(
     session_id: str,
     harness: Harness,
     options: ConfigOptions | None,
-    choices: Sequence[Choice],
+    picks: Sequence[Pick],
 ) -> Applied:
     """Sets each pick on the session, in order, skipping one the agent no longer offers or
     refuses, and one that's already current. A refused pick never fails the session: the
     user can always change it."""
     settings = pickable(harness, options)
     skipped: list[Skipped] = []
-    for choice in choices:
-        setting = next((s for s in settings if s.id == choice.setting), None)
-        if setting is None or setting.option(choice.value) is None:
-            name = setting.name if setting else choice.setting
-            skipped.append(Skipped(choice.setting, name, choice.value, "gone"))
+    for pick in picks:
+        setting = next((s for s in settings if s.id == pick.setting), None)
+        if setting is None or setting.option(pick.value) is None:
+            name = setting.name if setting else pick.setting
+            skipped.append(Skipped(pick.setting, name, pick.value, "gone"))
             continue
-        if setting.current == choice.value:
+        if setting.current == pick.value:
             continue
         try:
             response = await conn.set_config_option(
-                config_id=choice.setting, session_id=session_id, value=choice.value
+                config_id=pick.setting, session_id=session_id, value=pick.value
             )
         except RequestError as e:
             logger.warning(
-                "%s refused %s %s: %s", harness.id, choice.setting, choice.value, e
+                "%s refused %s %s: %s", harness.id, pick.setting, pick.value, e
             )
-            skipped.append(
-                Skipped(choice.setting, setting.name, choice.value, "refused")
-            )
+            skipped.append(Skipped(pick.setting, setting.name, pick.value, "refused"))
             continue
         settings = pickable(harness, response.config_options)
     return Applied(settings, tuple(skipped))
@@ -172,12 +169,12 @@ def model_name(settings: Sequence[Setting]) -> str | None:
     return chosen.name if chosen else model.current
 
 
-def _choice(item: object) -> Choice:
+def _pick(item: object) -> Pick:
     entry = cast(dict[str, object], item) if isinstance(item, dict) else {}
     setting, value = entry.get("setting"), entry.get("value")
     if isinstance(setting, str) and isinstance(value, str):
-        return Choice(setting, value)
-    raise ValueError(f"not a choice: {item!r}")
+        return Pick(setting, value)
+    raise ValueError(f"not a pick: {item!r}")
 
 
 def _category(option: SessionConfigOptionSelect) -> str | None:
@@ -186,10 +183,10 @@ def _category(option: SessionConfigOptionSelect) -> str | None:
 
 
 def _setting(option: SessionConfigOptionSelect) -> Setting:
-    choices = tuple(
-        choice
+    picks = tuple(
+        pick
         for entry in option.options
-        for choice in (
+        for pick in (
             [Option(o.value, o.name, entry.name) for o in entry.options]
             if isinstance(entry, SessionConfigSelectGroup)
             else [Option(entry.value, entry.name)]
@@ -200,5 +197,5 @@ def _setting(option: SessionConfigOptionSelect) -> Setting:
         name=option.name,
         category=_category(option),
         current=option.current_value,
-        options=choices,
+        options=picks,
     )

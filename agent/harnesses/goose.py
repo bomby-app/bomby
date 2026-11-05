@@ -14,5 +14,5 @@ GOOSE = Harness(
     program="goose",
     args=("acp",),
     bypass_mode="auto",
-    setup_settings=frozenset({"provider"}),
+    pickable_settings=frozenset({"provider"}),
 )
