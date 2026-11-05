@@ -27,10 +27,11 @@ import { useAdapterInstall } from "./use-adapter-install"
 import { saveSetup } from "./use-agents"
 
 /**
- * Setting an agent up, the same steps for every agent
- * (docs/decisions/set-up-every-agent-the-same-way.md): connect its ACP adapter if it needs
- * one, sign in, then pick its model and effort from what it offers, and save. Calls use an
- * agent only once it's set up. Opened from Settings, Agents and the first-run splash.
+ * The last step of setting an agent up (`setupStep` in `use-agents.ts`): pick its model and
+ * effort from what it offers, and save. Calls use an agent only once it's saved here.
+ * Opened from Settings, Agents (Pick model, Change) and the first-run splash. Connecting
+ * and signing in happen on the agent's row or card; the dialog shows them only for an agent
+ * whose needs show once a session opens, like omp without a provider.
  */
 export function AgentSetupDialog({
   agent,
@@ -137,7 +138,11 @@ function SetupFlow({
   return (
     <>
       <DialogHeader>
-        <DialogTitle>Set up {agent.name}</DialogTitle>
+        <DialogTitle>
+          {step === "choose" || step === "asking"
+            ? `Pick ${agent.name}'s model`
+            : `Set up ${agent.name}`}
+        </DialogTitle>
         <DialogDescription>{describe(step, agent.name)}</DialogDescription>
       </DialogHeader>
 
@@ -146,6 +151,12 @@ function SetupFlow({
           <LoaderCircle className="size-4 animate-spin" />
           Asking {agent.name} what it offers...
         </p>
+      )}
+
+      {step === "connect" && (
+        <div>
+          <SetUpButton size="default" />
+        </div>
       )}
 
       {step === "sign-in" && offer && (
@@ -185,11 +196,8 @@ function SetupFlow({
         <FieldError>{error ?? install.error}</FieldError>
       )}
 
-      <DialogFooter>
-        {step === "connect" && (
-          <SetUpButton size="default">Connect</SetUpButton>
-        )}
-        {step === "choose" && (
+      {step === "choose" && (
+        <DialogFooter>
           <Button
             variant="highlighter"
             disabled={asking || saving}
@@ -198,8 +206,8 @@ function SetupFlow({
             {(asking || saving) && <LoaderCircle className="animate-spin" />}
             {saving ? "Saving..." : asking ? "Checking..." : "Save"}
           </Button>
-        )}
-      </DialogFooter>
+        </DialogFooter>
+      )}
     </>
   )
 }
@@ -207,13 +215,12 @@ function SetupFlow({
 function describe(step: Step, name: string): string {
   switch (step) {
     case "asking":
-      return `Bomby uses ${name} on your own account and setup.`
+    case "choose":
+      return `What ${name} runs on in your calls. Its own settings stay as they are.`
     case "connect":
-      return `Bomby talks to ${name} through a small connector. Connect installs it.`
+      return `${name} is on your Mac. Set up gets it ready for Bomby.`
     case "sign-in":
       return `${name} needs one thing before Bomby can use it.`
-    case "choose":
-      return `Pick what ${name} runs on in your calls. Its own settings stay as they are.`
   }
 }
 

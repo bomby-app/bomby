@@ -13,7 +13,13 @@ import { AgentSetupDialog } from "@/features/agents/agent-setup-dialog"
 import type { AgentStatus } from "@/features/agents/api"
 import { CopyButton } from "@/features/agents/copy-button"
 import { CLAUDE_INSTALL } from "@/features/agents/install-first-agent"
-import { checkAgentsAgain, isReady } from "@/features/agents/use-agents"
+import { SetUpButton } from "@/features/agents/set-up-button"
+import { useAdapterInstall } from "@/features/agents/use-adapter-install"
+import {
+  checkAgentsAgain,
+  isReady,
+  setupStep,
+} from "@/features/agents/use-agents"
 import { cn } from "@/lib/utils"
 
 import {
@@ -47,18 +53,23 @@ export function firstAgent(
   )
 }
 
-/** Where the agent is: `adapter`, `fix` and `pick` all go through its setup flow. */
+/** Where the agent is: its setup step (`setupStep`), or still looking for one. */
 type Phase = "looking" | "none" | "adapter" | "fix" | "pick" | "ready"
+
+const PHASE = {
+  missing: "none",
+  connect: "adapter",
+  "sign-in": "fix",
+  pick: "pick",
+  ready: "ready",
+} as const
 
 function phaseOf(
   agents: AgentStatus[] | null,
   agent: AgentStatus | null
 ): Phase {
   if (agents === null) return "looking"
-  if (agent === null || agent.path === null) return "none"
-  if (agent.setup?.adapter) return "adapter"
-  if (isReady(agent)) return "ready"
-  return agent.setup?.ready === false ? "fix" : "pick"
+  return agent === null ? "none" : PHASE[setupStep(agent)]
 }
 
 const COPY: Record<Phase, (name: string) => [string, string]> = {
@@ -106,26 +117,28 @@ export function FirstAgent({
     phase === "ready" && !allSet
       ? ["Your agent's ready", "Now your keys, and we're ready to talk."]
       : COPY[phase](agent?.name ?? "")
+  const install = useAdapterInstall()
   const others = agents?.filter((other) => other.id !== agent?.id) ?? []
-  const [settingUp, setSettingUp] = useState(false)
+  const [picking, setPicking] = useState(false)
 
   return (
     <div className="flex flex-col items-center">
       <StepHeading title={title} body={body} />
 
-      <AgentCard
-        agent={agent}
-        phase={phase}
-        onSetUp={() => setSettingUp(true)}
-      />
+      <AgentCard agent={agent} phase={phase} onPick={() => setPicking(true)} />
       <AgentSetupDialog
         agent={agent}
-        open={settingUp}
-        onOpenChange={setSettingUp}
+        open={picking}
+        onOpenChange={setPicking}
       />
 
       <div className="mt-7 flex min-h-[18px] flex-col items-center gap-3">
-        {phase === "none" && <CheckAgain />}
+        {install.error && (
+          <p className="text-[13px] leading-[18px] text-destructive">
+            {install.error}
+          </p>
+        )}
+        {(phase === "fix" || phase === "none") && <CheckAgain />}
         {/* Another agent can always be picked, also while this one needs fixing. */}
         {others.some((other) => other.path !== null) && (
           <OtherAgents agents={others} onChoose={onChoose} />
@@ -138,11 +151,11 @@ export function FirstAgent({
 function AgentCard({
   agent,
   phase,
-  onSetUp,
+  onPick,
 }: {
   agent: AgentStatus | null
   phase: Phase
-  onSetUp: () => void
+  onPick: () => void
 }) {
   return (
     <SetupCard
@@ -150,7 +163,7 @@ function AgentCard({
       tile={<AgentTile id={agent?.id ?? "claude"} />}
       name={agent?.name ?? "Claude Code"}
       status={<StatusLine tone={toneOf(phase)} text={statusOf(agent, phase)} />}
-      action={<Action phase={phase} onSetUp={onSetUp} />}
+      action={<Action agent={agent} phase={phase} onPick={onPick} />}
     />
   )
 }
@@ -212,23 +225,43 @@ function shortStatusOf(agent: AgentStatus, phase: Phase): string {
   }
 }
 
-function Action({ phase, onSetUp }: { phase: Phase; onSetUp: () => void }) {
-  if (phase === "adapter" || phase === "fix" || phase === "pick")
+/** The card's next step, in place; only picking the model opens a dialog. */
+function Action({
+  agent,
+  phase,
+  onPick,
+}: {
+  agent: AgentStatus | null
+  phase: Phase
+  onPick: () => void
+}) {
+  const primary = cn(
+    CARD_BUTTON,
+    "bg-primary text-primary-foreground hover:bg-primary/90"
+  )
+  if (phase === "adapter")
     return (
-      <Button
-        className={cn(
-          CARD_BUTTON,
-          "bg-primary text-primary-foreground hover:bg-primary/90"
-        )}
-        onClick={onSetUp}
-      >
+      <SetUpButton size="default" className={primary}>
         Set up now
+      </SetUpButton>
+    )
+  if (phase === "pick")
+    return (
+      <Button className={primary} onClick={onPick}>
+        Pick model
       </Button>
     )
   if (phase === "none")
     return (
       <CopyButton text={CLAUDE_INSTALL} className={CARD_BUTTON}>
         Copy install
+      </CopyButton>
+    )
+  const fix = agent?.setup?.fix
+  if (phase === "fix" && fix)
+    return (
+      <CopyButton text={fix} className={CARD_BUTTON}>
+        Copy {fix}
       </CopyButton>
     )
   return null

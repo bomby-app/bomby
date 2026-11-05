@@ -60,6 +60,23 @@ export async function saveSetup(
  * Installed, set up, and not found to need anything since. One the core couldn't probe
  * counts as ready.
  */
-export function isReady({ path, setUp, setup }: AgentStatus): boolean {
-  return path !== null && setUp && setup?.ready !== false
+export function isReady(agent: AgentStatus): boolean {
+  return setupStep(agent) === "ready"
+}
+
+/**
+ * What an agent needs next, the same for every agent
+ * (docs/decisions/set-up-every-agent-the-same-way.md): its ACP adapter (`connect`), what
+ * its own setup lacks (`sign-in`: the agent's fix, in Terminal), then its model and
+ * effort (`pick`, in `AgentSetupDialog`). Connect and sign-in happen in place; only
+ * picking opens the dialog.
+ */
+export type SetupStep = "missing" | "connect" | "sign-in" | "pick" | "ready"
+
+export function setupStep({ path, setUp, setup }: AgentStatus): SetupStep {
+  if (path === null) return "missing"
+  if (setup?.adapter) return "connect"
+  if (setup && !setup.ready && !setup.choiceGone) return "sign-in"
+  if (!setUp || setup?.choiceGone) return "pick"
+  return "ready"
 }
