@@ -41,7 +41,8 @@ export function useAgentSettings(agent: string): AgentSettings {
   const [error, setError] = useState<string | null>(null)
 
   function shown(next: Listed) {
-    lastListed.set(agent, next)
+    // Only a real answer is kept: one without a session (a timeout) is asked again.
+    if (next.session) lastListed.set(agent, next)
     setListed(next)
     setError(null)
     setBusy(null)

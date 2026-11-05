@@ -479,9 +479,8 @@ impl Agents {
 
 /// `found`, a look's answer, with what it couldn't know taken from `before`, the list it
 /// replaces: the setup of an agent whose settings were picked while it ran, and, for an
-/// agent it opened no session in (omp can't delete one), the model and skipped picks last
-/// found with a session: the model picker's last listing (it lists again each time it
-/// opens) or the last pick.
+/// agent it opened no session in (omp can't delete one), the setup last found with a
+/// session, by a look, the model picker or a pick.
 fn keep_what_the_look_missed(
     mut found: Vec<AgentStatus>,
     before: Option<&[AgentStatus]>,
@@ -504,11 +503,10 @@ fn keep_what_the_look_missed(
         {
             continue;
         }
-        if picked_since(agent.id) {
+        let sessionless = !agent.setup.as_ref().is_some_and(|s| s.session);
+        // Without a session a look knows only the sign-in: the last session's answer stands.
+        if picked_since(agent.id) || (sessionless && old.session) {
             agent.setup = Some(old.clone());
-        } else if let Some(new) = agent.setup.as_mut().filter(|s| !s.session) {
-            new.model.clone_from(&old.model);
-            new.skipped.clone_from(&old.skipped);
         }
     }
     found
@@ -1019,19 +1017,25 @@ mod tests {
     }
 
     #[test]
-    fn a_look_without_a_session_keeps_the_model_the_last_listing_found() {
-        let agents = Agents::default();
+    fn a_look_without_a_session_keeps_what_the_last_session_found() {
         let omp = |setup| AgentStatus {
             setup: Some(setup),
             ..status("omp", Some("/b/omp"))
         };
-        agents.detect_with(None, |_| vec![omp(Setup::default())]);
-        agents.replace_setup("omp", &ready("Kimi"));
+        let no_model = Setup {
+            step: Step::SignIn,
+            problem: Some("No model is set".into()),
+            session: true,
+            ..Setup::default()
+        };
+        for checked in [ready("Kimi"), no_model] {
+            let agents = Agents::default();
+            agents.detect_with(None, |_| vec![omp(checked.clone())]);
 
-        let (found, _) = agents.detect_with(None, |_| vec![omp(Setup::default())]);
-        let setup = found[0].setup.as_ref().unwrap();
-        assert_eq!(setup.model.as_deref(), Some("Kimi"));
-        assert!(!setup.session, "the rest is the look's");
+            // A later look opens no session: it sees only that omp starts.
+            let (found, _) = agents.detect_with(None, |_| vec![omp(Setup::default())]);
+            assert_eq!(found, vec![omp(checked)]);
+        }
     }
 
     #[test]
