@@ -9,7 +9,11 @@ import { useSettingsNavigation } from "@/lib/settings-navigation"
 
 import type { AgentStatus } from "../agents/api"
 import { checkAgentsAgain, isReady, useAgents } from "../agents/use-agents"
-import { checkKeysAgain, useSavedKeys } from "../credentials/use-saved-keys"
+import {
+  checkKeysAgain,
+  type Keys,
+  useSavedKeys,
+} from "../credentials/use-saved-keys"
 import { GeminiLogo, LiveKitLogo } from "./provider-logos"
 
 /**
@@ -33,9 +37,9 @@ export function SetupSettings() {
       <ul className="flex flex-col divide-y rounded-lg border">
         <StatusRow
           logo={<LiveKitLogo />}
-          name="LiveKit keys"
+          name="LiveKit"
           ready={keys?.livekit}
-          detail={keys?.livekit ? "Saved in your keychain." : "Not added yet."}
+          detail={keys ? livekitDetail(keys) : null}
           action={
             <GoButton to={{ section: "credentials", field: "livekit" }}>
               Add keys
@@ -94,6 +98,14 @@ function GoButton({
       {children}
     </Button>
   )
+}
+
+/** Where calls' LiveKit runs, or what it still needs. */
+function livekitDetail(keys: Keys): string {
+  if (keys.server === "thisMac") return "Runs on this Mac."
+  return keys.theirLiveKit
+    ? "Your keys, saved in your keychain."
+    : "Not added yet."
 }
 
 /** "Claude Code and omp are ready.", or what stands in the way. */

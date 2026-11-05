@@ -33,9 +33,9 @@ gsap.registerPlugin(useGSAP)
  * the glow comes up while Bomby rises with its eyes closed, opens them as it arrives and
  * looks around, says hello, lets the hello go, then moves up for the setup to fade in
  * under it.
- * Setup is the agent, then, one more step, the LiveKit and Gemini keys; steps already done
- * are skipped. The round arrow on comes only once a call has all three, and nothing gets
- * past it before that: the app can't work without them.
+ * Setup is the agent, then, one more step, the keys: Gemini's, and LiveKit's unless it runs
+ * on this Mac. Steps already done are skipped. The round arrow on comes only once a call has
+ * all it needs, and nothing gets past it before that: the app can't work without them.
  */
 
 const GREETING: Record<Daypart, string> = {

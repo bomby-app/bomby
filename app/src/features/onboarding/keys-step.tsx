@@ -16,7 +16,11 @@ import { saveCredentials, saveGeminiKey } from "@/features/credentials/api"
 import { GeminiForm } from "@/features/credentials/gemini-form"
 import { parseLiveKitEnv } from "@/features/credentials/livekit-env"
 import { LiveKitForm } from "@/features/credentials/livekit-form"
-import { checkKeysAgain } from "@/features/credentials/use-saved-keys"
+import {
+  checkKeysAgain,
+  chooseLiveKitServer,
+  type Keys,
+} from "@/features/credentials/use-saved-keys"
 import { GeminiLogo, LiveKitLogo } from "@/features/setup/provider-logos"
 import { cn } from "@/lib/utils"
 
@@ -62,15 +66,12 @@ async function pasteGemini(): Promise<string | null> {
 }
 
 /**
- * The splash's second step: the LiveKit and Gemini keys a call talks through, the user's
- * own (docs/decisions/users-bring-their-own-keys-and-claude.md). Each pastes from the
- * clipboard in one click; typing them is a dialog away.
+ * The splash's second step: what a call talks through. LiveKit runs on this Mac unless the
+ * user brings their own (docs/decisions/livekit-on-this-mac-or-cloud.md), and the Gemini key
+ * is theirs (docs/decisions/users-bring-their-own-keys-and-claude.md). Each key pastes from
+ * the clipboard in one click; typing them is a dialog away.
  */
-export function KeysStep({
-  keys,
-}: {
-  keys: { livekit: boolean; gemini: boolean }
-}) {
+export function KeysStep({ keys }: { keys: Keys }) {
   const [livekitError, pasteLiveKitNow, pastingLiveKit] = useActionState(
     pasteLiveKit,
     null
@@ -81,12 +82,17 @@ export function KeysStep({
   )
   const [typing, setTyping] = useState(false)
   const error = livekitError ?? geminiError
+  const theirs = keys.server === "theirs"
 
   return (
     <div className="flex flex-col items-center">
       <StepHeading
         title="Just one more step"
-        body="I talk through your own LiveKit and Gemini, so nothing goes through us. Paste your keys and we're ready."
+        body={
+          theirs
+            ? "I talk through your own LiveKit and Gemini, so nothing goes through us. Paste your keys and we're ready."
+            : "I run LiveKit right here on your Mac. Paste your Gemini key and we're ready."
+        }
       />
 
       <SetupCard
@@ -100,11 +106,18 @@ export function KeysStep({
         status={
           <StatusLine
             tone={keys.livekit ? "done" : "todo"}
-            text={keys.livekit ? "Saved in your keychain" : "Not added yet"}
+            text={
+              !theirs
+                ? "Runs on this Mac"
+                : keys.theirLiveKit
+                  ? "Saved in your keychain"
+                  : "Not added yet"
+            }
           />
         }
         action={
-          !keys.livekit && (
+          theirs &&
+          !keys.theirLiveKit && (
             <form action={pasteLiveKitNow}>
               <Button
                 type="submit"
@@ -160,24 +173,50 @@ export function KeysStep({
           error ? "mt-2" : "mt-7"
         )}
       >
-        Copy them from <Link href={LIVEKIT_KEYS}>LiveKit Cloud</Link> (Settings,
-        API keys) and <Link href={GEMINI_KEYS}>Google AI Studio</Link>, or{" "}
-        <InlineLink onClick={() => setTyping(true)}>type them in</InlineLink>.
+        {theirs ? (
+          <>
+            Copy them from <Link href={LIVEKIT_KEYS}>LiveKit Cloud</Link>{" "}
+            (Settings, API keys) and{" "}
+            <Link href={GEMINI_KEYS}>Google AI Studio</Link>, or{" "}
+            <InlineLink onClick={() => setTyping(true)}>
+              type them in
+            </InlineLink>
+            . Or{" "}
+            <InlineLink onClick={() => void chooseLiveKitServer("thisMac")}>
+              run LiveKit on this Mac
+            </InlineLink>
+            .
+          </>
+        ) : (
+          <>
+            Copy it from <Link href={GEMINI_KEYS}>Google AI Studio</Link>, or{" "}
+            <InlineLink onClick={() => setTyping(true)}>type it in</InlineLink>.
+            Have LiveKit Cloud?{" "}
+            <InlineLink onClick={() => void chooseLiveKitServer("theirs")}>
+              Use it instead
+            </InlineLink>
+            .
+          </>
+        )}
       </p>
 
       <Dialog open={typing} onOpenChange={setTyping}>
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Your keys</DialogTitle>
+            <DialogTitle>
+              {theirs ? "Your keys" : "Your Gemini key"}
+            </DialogTitle>
             <DialogDescription>
               Kept in your Mac's keychain, never sent anywhere else.
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-8">
-            <section className="flex flex-col gap-3">
-              <h2 className="text-sm font-medium">LiveKit</h2>
-              <LiveKitForm />
-            </section>
+            {theirs && (
+              <section className="flex flex-col gap-3">
+                <h2 className="text-sm font-medium">LiveKit</h2>
+                <LiveKitForm />
+              </section>
+            )}
             <section className="flex flex-col gap-3">
               <h2 className="text-sm font-medium">Gemini</h2>
               <GeminiForm />
