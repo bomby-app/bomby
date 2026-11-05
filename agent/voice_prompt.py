@@ -38,7 +38,7 @@ def the_user(name: str) -> str:
         return ""
     return section(
         "The user",
-        f"You're talking to {name}. Use their name now and then, not in every reply.",
+        f"You're talking to {name}. Address the user by their name when needed.",
     )
 
 

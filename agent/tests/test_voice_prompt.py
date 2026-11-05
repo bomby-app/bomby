@@ -25,8 +25,8 @@ def test_a_named_user_comes_before_the_agents() -> None:
     )
 
     assert text == (
-        f"{VOICE}\n\n## The user\n\nYou're talking to Sam. Use their name now and then, "
-        f"not in every reply.\n\n{agents_note(AGENTS)}"
+        f"{VOICE}\n\n## The user\n\nYou're talking to Sam. Address the user by their "
+        f"name when needed.\n\n{agents_note(AGENTS)}"
     )
 
 
