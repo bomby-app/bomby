@@ -1,12 +1,7 @@
 import { Trash2 } from "lucide-react"
-import {
-  type KeyboardEvent,
-  useEffect,
-  useEffectEvent,
-  useRef,
-  useState,
-} from "react"
+import { useEffect, useEffectEvent, useRef, useState } from "react"
 
+import { InlineEditInput } from "@/components/inline-edit-input"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -36,7 +31,6 @@ import {
   FieldLegend,
   FieldSet,
 } from "@/components/ui/field"
-import { Input } from "@/components/ui/input"
 
 import type { Project, ProjectInput } from "./api"
 import { FolderList } from "./folder-list"
@@ -152,34 +146,15 @@ function NameField({
   name: string
   onSave: (changes: { name: string }) => Promise<boolean>
 }) {
-  const [draft, setDraft] = useState(name)
-
-  async function commit() {
-    if (draft.trim() === name) return setDraft(name)
-    if (!(await onSave({ name: draft }))) setDraft(name)
-  }
-
-  function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === "Enter") event.currentTarget.blur()
-    if (event.key === "Escape") {
-      // Keep Esc from reaching anything else while editing.
-      event.preventDefault()
-      setDraft(name)
-      event.currentTarget.blur()
-    }
-  }
-
   return (
     <Field>
       <FieldLabel htmlFor="project-name">Name</FieldLabel>
-      <Input
+      <InlineEditInput
         id="project-name"
-        value={draft}
+        value={name}
         spellCheck={false}
         autoComplete="off"
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => void commit()}
-        onKeyDown={onKeyDown}
+        onSave={(next) => onSave({ name: next })}
       />
     </Field>
   )
