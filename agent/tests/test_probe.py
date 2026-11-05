@@ -12,6 +12,7 @@ import probe as probe_cli
 from acp_client.probe import Setup, probe
 from acp_client.settings import Pick, Skipped, saved_picks
 from harnesses import Harness
+from job import read_metadata
 
 FAKE_AGENT = Path(__file__).resolve().parent / "fake_claude_acp.py"
 FAKE = Harness(
@@ -275,7 +276,7 @@ def test_the_command_line_answers_by_agent_id(
 
 
 def test_the_command_line_reads_the_picks_and_who_to_list() -> None:
-    fields = json.loads(
+    fields = read_metadata(
         '{"picks": {"goose": [{"setting": "provider", "value": "p2"}]},'
         + ' "listing": ["omp"]}'
     )
@@ -293,9 +294,14 @@ def test_the_command_line_reads_the_picks_and_who_to_list() -> None:
     ],
 )
 def test_the_command_line_rejects_bad_choices(metadata: str) -> None:
-    fields = json.loads(metadata)
-    with pytest.raises(ValueError):
-        _ = saved_picks(fields), probe_cli.listing(fields)
+    with pytest.raises(ValueError, match="picks|listing"):
+        _ = read_metadata(metadata)
+
+
+def test_the_command_line_reads_no_choices_as_none() -> None:
+    fields = read_metadata('{"agents": {}}')
+    assert saved_picks(fields) == {}
+    assert probe_cli.listing(fields) == frozenset()
 
 
 def test_an_agent_without_its_adapter_asks_for_it(tmp_path: Path) -> None:

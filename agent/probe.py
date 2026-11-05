@@ -15,7 +15,6 @@ import json
 import logging
 import os
 import sys
-from typing import cast
 
 import dev_env
 from acp_client.probe import probe_all
@@ -38,11 +37,7 @@ def main(metadata: str) -> str:
 
 def listing(fields: JobFields) -> frozenset[str]:
     """The agents whose settings the model picker lists."""
-    raw: object = (fields or {}).get("listing", [])
-    ids = cast(list[object], raw) if isinstance(raw, list) else None
-    if ids is None or not all(isinstance(id, str) for id in ids):
-        raise ValueError("listing must be a list of agent ids")
-    return frozenset(cast(list[str], ids))
+    return fields.listing if fields else frozenset()
 
 
 def cli(args: list[str]) -> None:

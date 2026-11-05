@@ -13,7 +13,7 @@ every session it opens; the probe applies them too, to show what a session runs 
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, cast
+from typing import Literal
 
 from acp import RequestError
 from acp.client.connection import ClientSideConnection
@@ -97,17 +97,11 @@ class Applied:
 def saved_picks(fields: JobFields) -> dict[str, list[Pick]]:
     """Each agent's picks from the job's metadata (`job.py`), in the order they're applied:
     `{"picks": {"goose": [{"setting": "provider", "value": "openrouter"}]}}`."""
-    raw: object = (fields or {}).get("picks", {})
-    by_agent = cast(dict[str, object], raw) if isinstance(raw, dict) else None
-    if by_agent is None:
-        raise ValueError("picks must be an object, by agent id")
-    picks: dict[str, list[Pick]] = {}
-    for agent, entries in by_agent.items():
-        items = cast(list[object], entries) if isinstance(entries, list) else None
-        if items is None:
-            raise ValueError(f"{agent}'s picks must be a list")
-        picks[agent] = [_pick(item) for item in items]
-    return picks
+    picks = fields.picks if fields else {}
+    return {
+        agent: [Pick(p.setting, p.value) for p in entries]
+        for agent, entries in picks.items()
+    }
 
 
 def pickable(harness: Harness, options: ConfigOptions | None) -> tuple[Setting, ...]:
@@ -173,14 +167,6 @@ def model_name(settings: Sequence[Setting]) -> str | None:
         return None
     chosen = model.option(model.current)
     return chosen.name if chosen else model.current
-
-
-def _pick(item: object) -> Pick:
-    entry = cast(dict[str, object], item) if isinstance(item, dict) else {}
-    setting, value = entry.get("setting"), entry.get("value")
-    if isinstance(setting, str) and isinstance(value, str):
-        return Pick(setting, value)
-    raise ValueError(f"not a pick: {item!r}")
 
 
 def _category(option: SessionConfigOptionSelect) -> str | None:

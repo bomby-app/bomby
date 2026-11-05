@@ -3,8 +3,9 @@ adds. Each added section is left out when it has nothing to say."""
 
 from pathlib import Path
 
-from call_options import CallOptions, Line, Speaker
+from call_options import CallOptions, Line
 from harnesses.harness import Harness
+from job import Speaker
 from project import Project
 from sections import join, section
 from tools import agents_note

@@ -3,7 +3,7 @@ import json
 import pytest
 
 from call_options import DEFAULT_VOICE, CallOptions, Line
-from job import read_metadata
+from job import JobMetadata, read_metadata
 
 
 def test_console_runs_use_the_environment_or_the_defaults() -> None:
@@ -38,7 +38,7 @@ def test_reads_the_voice_and_history_from_the_app() -> None:
 
 
 def test_a_call_without_history_is_new() -> None:
-    assert not CallOptions.from_job({"voice": "Kore", "history": []}, {}).resumed
+    assert not CallOptions.from_job(JobMetadata(voice="Kore"), {}).resumed
 
 
 @pytest.mark.parametrize(

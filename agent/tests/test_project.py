@@ -48,12 +48,12 @@ def test_project_defaults_to_the_home_folder() -> None:
 @pytest.mark.parametrize(
     ("metadata", "error"),
     [
-        ('{"folders": "/tmp"}', "list of paths"),
-        ('{"folders": ""}', "list of paths"),
+        ('{"folders": "/tmp"}', "folders\n  Input should be a valid array"),
+        ('{"folders": ""}', "folders\n  Input should be a valid array"),
         ('{"folders": ["relative/path"]}', "absolute path"),
         ('{"folders": ["~/Dev"]}', "absolute path"),
         ('{"folders": ["/no/such/folder"]}', "does not exist"),
-        ('{"instructions": 3}', "must be text"),
+        ('{"instructions": 3}', "instructions\n  Input should be a valid string"),
     ],
 )
 def test_bad_project_metadata_is_rejected(metadata: str, error: str) -> None:

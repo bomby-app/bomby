@@ -31,7 +31,7 @@ def test_installed_agents_come_from_the_job_metadata() -> None:
 
 
 def test_a_call_with_no_agents_has_none() -> None:
-    assert installed({"project": "samba"}, HARNESSES, {}) == {}
+    assert installed(read_metadata('{"project": "samba"}'), HARNESSES, {}) == {}
 
 
 @pytest.mark.parametrize(
