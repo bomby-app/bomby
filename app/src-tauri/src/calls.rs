@@ -17,7 +17,7 @@ use crate::agent::{AgentWorker, JobCrash, OnCrash, WorkerConfig};
 use crate::db::{Db, now_ms};
 use crate::error::{Error, Result};
 use crate::sync;
-use crate::{agents, credentials, projects, settings, windows};
+use crate::{agents, credentials, projects, settings, updates, windows};
 
 /// The agent's name in `agent/agent.py` (`AGENT_NAME`), which the token dispatches.
 const AGENT_NAME: &str = "bomby";
@@ -232,11 +232,8 @@ pub fn open_call<R: Runtime>(
     project_id: i64,
     resume_call_id: Option<i64>,
 ) -> Result<i64> {
-    if crate::updates::restarting(&app) {
-        return Err(Error::Invalid(
-            "Bomby is restarting to update. Start the call again in a moment.".into(),
-        ));
-    }
+    // Holds off an update's restart while the call opens; refused if one is under way.
+    let opening = updates::CallOpening::begin(&app)?;
     folders_are_there(&projects::for_call(&db.conn(), project_id)?)?;
     let keys = livekit_keys(&app, &vault)?;
     let gemini = vault
@@ -275,6 +272,7 @@ pub fn open_call<R: Runtime>(
         }
     };
     call_agents.set(call_id, found);
+    opening.opened(call_id);
     Ok(call_id)
 }
 
@@ -321,7 +319,8 @@ pub fn call_token<R: Runtime>(
 }
 
 #[tauri::command(async)]
-pub fn end_call(db: State<'_, Db>, call_id: i64) -> Result<()> {
+pub fn end_call<R: Runtime>(app: AppHandle<R>, db: State<'_, Db>, call_id: i64) -> Result<()> {
+    updates::call_ended(&app, call_id);
     db.conn().execute(
         "UPDATE calls SET ended_at = ?1 WHERE id = ?2 AND ended_at IS NULL",
         params![now_ms(), call_id],

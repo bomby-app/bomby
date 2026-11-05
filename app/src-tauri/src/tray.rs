@@ -90,11 +90,6 @@ impl TrayStatus {
 #[derive(Default)]
 pub struct Tray(Mutex<TrayStatus>);
 
-/// Whether a call is on, or starting, as the page last reported.
-pub fn on_call<R: Runtime>(app: &AppHandle<R>) -> bool {
-    sync::lock(&app.state::<Tray>().0).call.is_some()
-}
-
 /// Puts the mascot in the menu bar. Its menu opens on a click, as menu bar items do on macOS.
 pub fn init<R: Runtime>(app: &AppHandle<R>) -> Result<()> {
     let status = TrayStatus::default();

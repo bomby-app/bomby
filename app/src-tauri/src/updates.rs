@@ -6,12 +6,15 @@
 //! into it, before installing. Only release builds load the plugin (lib.rs), so nothing
 //! here calls it in a development build, which shows its version and never updates.
 //!
-//! Installing waits for the user and never cuts off a call: it's refused while one is on,
-//! a call that starts during the download holds the update until the user restarts, and
-//! once Bomby is restarting no call can start (`calls::open_call` asks `restarting`).
+//! Installing waits for the user and never cuts off a call. The core itself tracks calls,
+//! under the same lock as the update: `calls::open_call` holds a `CallOpening` while it
+//! opens one and records it, `calls::end_call` forgets it. Installing is refused while a
+//! call is on, a call that starts during the download keeps the update waiting until the
+//! user restarts, and once Bomby is restarting no call can open.
 //!
 //! The page follows the status through `update-status` events, sent to every window.
 
+use std::collections::HashSet;
 use std::sync::Mutex;
 
 use serde::Serialize;
@@ -19,7 +22,7 @@ use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use tauri_plugin_updater::{Update, UpdaterExt};
 
 use crate::error::{Error, Result};
-use crate::{app_log, sync, tray};
+use crate::{app_log, sync};
 
 const EVENT: &str = "update-status";
 
@@ -53,11 +56,22 @@ pub enum UpdateStatus {
     },
 }
 
-/// The status, the update a check found, and its bytes once downloaded.
+/// The status, the update a check found and its bytes once downloaded, and the calls an
+/// install must wait for.
 struct Slot {
     status: UpdateStatus,
     update: Option<Update>,
     bytes: Option<Vec<u8>>,
+    /// Calls being opened right now (`CallOpening`).
+    opening: usize,
+    /// Calls opened and not ended yet.
+    calls: HashSet<i64>,
+}
+
+impl Slot {
+    fn on_call(&self) -> bool {
+        self.opening > 0 || !self.calls.is_empty()
+    }
 }
 
 pub struct Updates(Mutex<Slot>);
@@ -73,6 +87,8 @@ impl Default for Updates {
             status,
             update: None,
             bytes: None,
+            opening: 0,
+            calls: HashSet::new(),
         }))
     }
 }
@@ -97,9 +113,45 @@ pub fn check_in_background<R: Runtime>(app: &AppHandle<R>) {
     });
 }
 
-/// Whether Bomby is installing an update and restarting: no call may start now.
-pub fn restarting<R: Runtime>(app: &AppHandle<R>) -> bool {
-    sync::lock(&app.state::<Updates>().0).status == UpdateStatus::Restarting
+/// A call being opened (`calls::open_call`). While it's held, an update waits rather than
+/// restart; `opened` records the call until `call_ended`.
+pub struct CallOpening<'a, R: Runtime> {
+    app: &'a AppHandle<R>,
+}
+
+impl<'a, R: Runtime> CallOpening<'a, R> {
+    /// Refused while Bomby is restarting into an update.
+    pub fn begin(app: &'a AppHandle<R>) -> Result<Self> {
+        let updates = app.state::<Updates>();
+        let mut slot = sync::lock(&updates.0);
+        if slot.status == UpdateStatus::Restarting {
+            return Err(Error::Invalid(
+                "Bomby is restarting to update. Start the call again in a moment.".into(),
+            ));
+        }
+        slot.opening += 1;
+        Ok(Self { app })
+    }
+
+    /// The call opened: an update waits until it ends.
+    pub fn opened(self, call_id: i64) {
+        sync::lock(&self.app.state::<Updates>().0)
+            .calls
+            .insert(call_id);
+    }
+}
+
+impl<R: Runtime> Drop for CallOpening<'_, R> {
+    fn drop(&mut self) {
+        let updates = self.app.state::<Updates>();
+        let mut slot = sync::lock(&updates.0);
+        slot.opening = slot.opening.saturating_sub(1);
+    }
+}
+
+/// The call ended: an update no longer waits for it.
+pub fn call_ended<R: Runtime>(app: &AppHandle<R>, call_id: i64) {
+    sync::lock(&app.state::<Updates>().0).calls.remove(&call_id);
 }
 
 #[tauri::command]
@@ -119,12 +171,12 @@ pub async fn check_for_updates<R: Runtime>(app: AppHandle<R>) -> UpdateStatus {
 /// restarts Bomby, unless a call started meanwhile.
 #[tauri::command(async)]
 pub async fn install_update<R: Runtime>(app: AppHandle<R>) -> Result<()> {
-    if tray::on_call(&app) {
-        return Err(end_the_call_first());
-    }
     let (update, bytes) = {
         let updates = app.state::<Updates>();
         let slot = sync::lock(&updates.0);
+        if slot.on_call() {
+            return Err(end_the_call_first());
+        }
         match (&slot.status, &slot.update) {
             (UpdateStatus::Available { .. } | UpdateStatus::Downloaded { .. }, Some(update)) => {
                 (update.clone(), slot.bytes.clone())
@@ -157,7 +209,7 @@ pub async fn install_update<R: Runtime>(app: AppHandle<R>) -> Result<()> {
         let updates = app.state::<Updates>();
         let mut slot = sync::lock(&updates.0);
         slot.bytes = Some(bytes.clone());
-        slot.status = if tray::on_call(&app) {
+        slot.status = if slot.on_call() {
             UpdateStatus::Downloaded {
                 version: version.clone(),
             }
