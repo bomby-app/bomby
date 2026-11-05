@@ -19,6 +19,7 @@ from acp_client.runner import (
     child_environment,
     no_model_picked,
     no_report,
+    not_ready,
     steered_note,
     stopped,
 )
@@ -203,6 +204,19 @@ def test_an_agent_whose_model_pick_is_gone_takes_no_task(
 
     assert message == no_model_picked(pick_required)
     assert names(events) == ["initialize", "new_session", "set_session_mode", ended]
+
+
+def test_an_agent_that_requires_a_pick_but_lists_no_model_isnt_ready(
+    tmp_path: Path,
+) -> None:
+    # Nothing to pick: its own setup lacks a model, as Settings says.
+    pick_required = dataclasses.replace(CLAUDE_CODE, model_selection_required=True)
+
+    message, _ = run_with_fake(
+        tmp_path, tool_error, harness=pick_required, picks=(Pick("model", "m1"),)
+    )
+
+    assert message == not_ready(pick_required)
 
 
 def test_project_folders_become_cwd_and_extra_directories(tmp_path: Path) -> None:

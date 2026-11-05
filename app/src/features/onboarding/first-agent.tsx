@@ -261,7 +261,6 @@ function Action({ agent, phase }: { agent: AgentStatus | null; phase: Phase }) {
 /** "Run it in Terminal, then check again", or just "Check again" with nothing to run. */
 function CheckAgain({ afterCommand }: { afterCommand: boolean }) {
   const [checking, startChecking] = useTransition()
-  const label = checking ? "checking..." : "check again"
   return (
     <span className="flex items-center gap-1.5 text-[13px] leading-[18px] text-foreground/55">
       {afterCommand && "Run it in Terminal, then"}
@@ -269,7 +268,11 @@ function CheckAgain({ afterCommand }: { afterCommand: boolean }) {
         disabled={checking}
         onClick={() => startChecking(checkAgentsAgain)}
       >
-        {afterCommand ? label : label[0].toUpperCase() + label.slice(1)}
+        {checking
+          ? "checking..."
+          : afterCommand
+            ? "check again"
+            : "Check again"}
       </InlineLink>
     </span>
   )

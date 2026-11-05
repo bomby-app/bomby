@@ -32,7 +32,7 @@ from sections import join, section
 
 from .client import HarnessClient, Reply, connect
 from .sessions import close_session, discard_session
-from .settings import Applied, apply, needs_pick
+from .settings import Applied, apply, model_setting, needs_pick
 
 logger = logging.getLogger("bomby.acp_client.runner")
 
@@ -355,7 +355,12 @@ class AcpRunner:
                     created.session_id,
                 )
                 await discard_session(conn, created.session_id, self._capabilities)
-                raise ToolError(no_model_picked(self._harness))
+                # With no model to pick at all, its own setup lacks one, as Settings says.
+                raise ToolError(
+                    no_model_picked(self._harness)
+                    if model_setting(applied.settings)
+                    else not_ready(self._harness)
+                )
             s.id, s.conn = created.session_id, conn
             s.briefed = self._harness.system_prompt_append
             logger.info(
