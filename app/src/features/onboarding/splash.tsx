@@ -20,16 +20,11 @@ import {
 import { FilmGrain } from "@/components/film-grain"
 import { Mascot, type MascotState } from "@/components/mascot"
 import { isReady, setupStep, useAgents } from "@/features/agents/use-agents"
-import type { LiveKitServer } from "@/features/credentials/api"
-import {
-  chooseLiveKitServer,
-  useSavedKeys,
-} from "@/features/credentials/use-saved-keys"
+import { useSavedKeys } from "@/features/credentials/use-saved-keys"
 
 import { finishFirstRun } from "./api"
 import { FirstAgent, firstAgent } from "./first-agent"
 import { KeysStep } from "./keys-step"
-import { LiveKitStep } from "./livekit-step"
 
 gsap.registerPlugin(useGSAP)
 
@@ -38,10 +33,9 @@ gsap.registerPlugin(useGSAP)
  * the glow comes up while Bomby rises with its eyes closed, opens them as it arrives and
  * looks around, says hello, lets the hello go, then moves up for the setup to fade in
  * under it.
- * Setup is the agent, then where calls run (this Mac or their LiveKit Cloud, picked and gone
- * on from with the round arrow), then the keys; steps already done are skipped. The round
- * arrow on from the keys comes only once a call has everything, and nothing gets past it
- * before that: the app can't work without them.
+ * Setup is the agent, then, one more step, the LiveKit and Gemini keys; steps already done
+ * are skipped. The round arrow on comes only once a call has all three, and nothing gets
+ * past it before that: the app can't work without them.
  */
 
 const GREETING: Record<Daypart, string> = {
@@ -92,21 +86,12 @@ export function Splash({ onDone }: { onDone: () => void }) {
     agent !== null &&
     pickingFor === agent.id &&
     ["pick", "ready"].includes(setupStep(agent))
-  // Where calls run, picked on screen until the arrow saves it.
-  const [server, setServer] = useState<LiveKitServer | null>(null)
-  const [serverChosen, setServerChosen] = useState(false)
-  // Once the agent is ready: where calls run, then the keys, which say all is set at the
-  // end. With every key saved already, the agent's card says it instead.
-  const step =
-    !agentReady || picking || keys === null
-      ? "agent"
-      : serverChosen
-        ? "keys"
-        : keysReady
-          ? "agent"
-          : "livekit"
-  // The arrow goes on from where calls run, and leaves once everything is ready.
-  const canGo = step === "livekit" || ready
+  // The keys come once the agent is ready.
+  const keysMissing = agentReady && !picking && keys !== null && !keysReady
+  // Once shown, the keys step stays and says all is set itself.
+  const [keysShown, setKeysShown] = useState(false)
+  if (keysMissing && !keysShown) setKeysShown(true)
+  const step = keysMissing || (keysShown && ready) ? "keys" : "agent"
   // The step on screen: it follows `step`, fading out, then in.
   const [shown, setShown] = useState(step)
   const latestStep = useRef(step)
@@ -211,17 +196,17 @@ export function Splash({ onDone }: { onDone: () => void }) {
     { dependencies: [shown, introDone], scope: root }
   )
 
-  // The arrow, whenever it can go on.
+  // The arrow, once everything is ready.
   useGSAP(
     () => {
-      if (!introDone || !canGo) return
+      if (!introDone || !ready) return
       gsap.fromTo(
         arrow.current,
         { autoAlpha: 0, scale: 0.85 },
         { autoAlpha: 1, scale: 1, duration: 0.8, ease: "sine.out", delay: 0.4 }
       )
     },
-    { dependencies: [introDone, canGo], scope: root }
+    { dependencies: [introDone, ready], scope: root }
   )
 
   useEffect(() => {
@@ -246,22 +231,9 @@ export function Splash({ onDone }: { onDone: () => void }) {
     })
   }
 
-  // Saves where calls run, then on to the keys.
-  function chooseServer() {
-    startLeaving(async () => {
-      await chooseLiveKitServer(server ?? keys?.server ?? "thisMac")
-      setServerChosen(true)
-    })
-  }
-
-  function goOn() {
-    if (step === "livekit") chooseServer()
-    else finish()
-  }
-
   // Return goes on once the arrow is there.
   const onKey = useEffectEvent((event: KeyboardEvent) => {
-    if (event.key === "Enter" && introDone && canGo && !leaving) goOn()
+    if (event.key === "Enter" && introDone && ready && !leaving) finish()
   })
   useEffect(() => {
     window.addEventListener("keydown", onKey)
@@ -291,7 +263,7 @@ export function Splash({ onDone }: { onDone: () => void }) {
         <h1 className="font-heading text-[40px] leading-[44px] font-bold tracking-[-0.035em]">
           {GREETING[daypart]}, I'm bomby.
         </h1>
-        <p className="text-[15px] leading-5 text-foreground/60">
+        <p className="text-[15px] leading-5 text-muted-foreground">
           Let's set up your first agent.
         </p>
       </div>
@@ -303,8 +275,6 @@ export function Splash({ onDone }: { onDone: () => void }) {
       >
         {shown === "keys" && keys ? (
           <KeysStep keys={keys} allSet={ready} />
-        ) : shown === "livekit" && keys ? (
-          <LiveKitStep value={server ?? keys.server} onChange={setServer} />
         ) : (
           <FirstAgent
             agents={agents}
@@ -328,14 +298,14 @@ export function Splash({ onDone }: { onDone: () => void }) {
         Beta
       </span>
 
-      {introDone && canGo && (
+      {introDone && ready && (
         <button
           ref={arrow}
           type="button"
           aria-label="Continue"
           disabled={leaving}
           className="group invisible absolute right-6 bottom-5 flex size-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-[0_10px_24px_-12px_rgb(18_18_18/0.55)] outline-none focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-ring dark:shadow-[0_10px_28px_-12px_rgb(232_255_58/0.5)]"
-          onClick={goOn}
+          onClick={finish}
         >
           <ArrowRight
             className="size-5 transition-transform duration-300 group-hover:translate-x-0.5"

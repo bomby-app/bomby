@@ -11,6 +11,7 @@
 @theme inline {
   --font-heading: "Bricolage Grotesque", var(--font-sans);
   --color-claude: var(--claude);
+  --color-livekit-cloud: var(--livekit-cloud);
   --color-highlighter: var(--highlighter);
   --color-highlighter-foreground: var(--highlighter-foreground);
   --color-claude-foreground: var(--claude-foreground);
@@ -155,6 +156,8 @@
   /* Claude's own colours, for its tile on the splash (Paper "splash"). */
   --agent-claude: #d97757;
   --agent-claude-tile: #fbf1ec;
+  /* LiveKit Cloud's choice on the splash, apart from Local's white logo. */
+  --livekit-cloud: #3b8bff;
 }
 
 .dark {

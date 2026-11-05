@@ -53,7 +53,7 @@ Owner's choices, 2026-11-04:
 
 Ready setup marks are an ink thumbs-up on highlighter. A missing item in Setup is a bubblegum button with ink text that goes to where it is added (Add key, Set up); the ink cross on bubblegum remains for a missing item without an action. In the agents panel each task's status is one ink icon on a disc, its label a tooltip: bubblegum while it waits or joins a running task (queued, added), highlighter for working (spinning), done, failed and stopped (owner, 2026-11-05).
 
-Ink on highlighter (16.8:1) and bubblegum (9.7:1) is readable. Highlighter on white (1.1:1) and bubblegum on white (1.9:1) are never text or icons. Links use ink with a 3px highlighter underline; dark-mode links may use highlighter text.
+Ink on highlighter (16.8:1) and bubblegum (9.7:1) is readable. Highlighter on white (1.1:1) and bubblegum on white (1.9:1) are never text or icons. Links are full-contrast text (ink in light, white in dark) in medium weight, underlined only on hover, beside muted body text (owner, 2026-11-05).
 
 ## Type
 
@@ -91,8 +91,7 @@ Paper page `splash`, option A (owner, 2026-11-04), in `app/src/features/onboardi
 - **Film grain.** `components/film-grain.tsx`: moving grain over the glow, one tiny WebGL shader with no libraries, at 24 frames a second, blended with overlay at 9% (12% in dark); one still frame with reduced motion.
 - **Mascot with depth.** `<Mascot depth />`: Paper's lit bubble (a gradient from above, a rim of light, catchlights in the eyes, a soft shadow), an ink bubble with highlighter eyes in light and the reverse in dark (`--mascot-*` tokens). Its closed eyes are the curved lids of the Done state; waking crossfades them into round eyes that open from a squint (560 ms), with the blink on its own layer. `look` turns the eyes left or right.
 - **The agent step.** Claude Code when it's installed, ready or not, else Codex, else the first ready agent (owner, 2026-11-05), with Set up now (installs its adapter), the command it needs, or Ready; "Use … instead" picks another. Claude's tile keeps Claude's own colours, as the owner's board shows (`--agent-claude`).
-- **Where should calls run?** Two radio cards, "On this Mac" (nothing to set up, selected) and "LiveKit Cloud" (their own project and keys); the round arrow, or Return, goes on with the one selected (`livekit-step.tsx`). Draft copy for the owner's Paper review (2026-11-05).
-- **Just one more step.** The keys on the same cards: Gemini's always, LiveKit's only for LiveKit Cloud. Paste all reads LiveKit Cloud's Environment variables box from the clipboard, Paste key the Gemini key; "type them in" opens the Settings forms in a dialog. With every key in, it says "You're all set" and the round arrow goes on. Steps already done are skipped.
+- **Just one more step.** LiveKit as two cards in one row, then Gemini (Paper "05 Keys · LiveKit choice" and "Cloud · A widens", owner, 2026-11-05). Local (white logo) is selected by default; choosing Cloud (blue logo) eases Local down to its tile and widens Cloud, whose Paste all reads LiveKit Cloud's Environment variables box from the clipboard. Paste key takes the Gemini key; the paste buttons share one width, and a saved key says "Saved". "type them in" opens one form with one Save. The heading's line and the footnote never change. With every key in, the step says "You're all set" and the round arrow goes on; it doesn't go back to the agent's card.
 - **Done.** With all three, the agent's card says "You're all set" and the round continue arrow appears, bottom right. It opens the projects home.
 
 ## Projects home
