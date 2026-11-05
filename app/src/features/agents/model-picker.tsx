@@ -54,7 +54,18 @@ export function ModelPicker({
           <ChevronDown className="opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-80">
+      <PopoverContent
+        align="end"
+        className="w-80"
+        onInteractOutside={(e) => {
+          // The model list (Base UI's Combobox) opens in its own portal: a click there is inside.
+          if (
+            e.target instanceof Element &&
+            e.target.closest('[data-slot="combobox-content"]')
+          )
+            e.preventDefault()
+        }}
+      >
         <ModelSettings name={agent.name} settings={settings} />
       </PopoverContent>
     </Popover>
