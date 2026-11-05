@@ -21,6 +21,12 @@ const TIMEOUT: Duration = Duration::from_secs(60);
 /// What the probe found for one agent (`Setup` in `agent/acp_client/probe.py`). The probe
 /// writes snake_case, the page reads camelCase.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+// ts-rs ignores serde's split rename_all, so it's told the page's names itself.
+#[cfg_attr(
+    test,
+    derive(ts_rs::TS),
+    ts(export, export_to = "agents.ts", rename_all = "camelCase")
+)]
 #[serde(rename_all(serialize = "camelCase", deserialize = "snake_case"))]
 pub struct Setup {
     pub ready: bool,
@@ -46,6 +52,7 @@ pub struct Setup {
 
 /// A pick that didn't apply, so the session keeps the agent's default for it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "agents.ts"))]
 pub struct Skipped {
     pub setting: String,
     /// The setting's name, as the agent gives it: "Model".
@@ -57,6 +64,7 @@ pub struct Skipped {
 /// Why a pick didn't apply.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "agents.ts"))]
 pub enum Why {
     /// The agent no longer offers it: a model removed or renamed.
     Gone,
@@ -67,6 +75,7 @@ pub enum Why {
 /// What the model picker shows: an agent's setup, and the settings it lets the user pick
 /// with the picks applied.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "agents.ts"))]
 pub struct Listed {
     #[serde(flatten)]
     pub setup: Setup,
@@ -77,6 +86,7 @@ pub struct Listed {
 /// A session setting the user can pick: a model, an effort, goose's provider.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "agents.ts"))]
 pub struct Setting {
     pub id: String,
     pub name: String,
@@ -88,6 +98,7 @@ pub struct Setting {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "agents.ts"))]
 pub struct SettingOption {
     pub value: String,
     pub name: String,
@@ -97,6 +108,7 @@ pub struct SettingOption {
 
 /// The value the user picked for one setting.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "agents.ts"))]
 pub struct Pick {
     pub setting: String,
     pub value: String,
@@ -132,32 +144,40 @@ pub fn probe(
 mod tests {
     use super::*;
 
+    /// The probe's answer with every field set, as its own test pins it
+    /// (agent/tests/test_probe_contract.py).
+    const ANSWER: &str = include_str!("../../../agent/tests/fixtures/probe-answer.json");
+
+    /// `needs_pick` as the page gets it: `needsPick`.
+    fn camel(key: &str) -> String {
+        let mut parts = key.split('_');
+        let first = parts.next().unwrap_or_default().to_owned();
+        parts.fold(first, |name, part| {
+            let mut chars = part.chars();
+            let upper = chars.next().map(|c| c.to_ascii_uppercase());
+            name + &upper.into_iter().chain(chars).collect::<String>()
+        })
+    }
+
+    fn keys(value: &serde_json::Value) -> Vec<String> {
+        let mut keys: Vec<_> = value.as_object().unwrap().keys().cloned().collect();
+        keys.sort();
+        keys
+    }
+
     #[test]
     fn reads_the_probes_answer() {
-        let out = r#"{"goose": {"ready": false, "problem": "No provider", "fix": "goose configure", "account": null, "model": null, "adapter": null, "skipped": [{"setting": "model", "name": "Model", "value": "x", "why": "gone"}], "needs_pick": true, "session": true, "settings": [{"id": "provider", "name": "Provider", "category": null, "current": "openrouter", "options": [{"value": "openrouter", "name": "OpenRouter", "group": null}]}]}}"#;
-        let listed: HashMap<String, Listed> = serde_json::from_str(out).unwrap();
+        let listed: HashMap<String, Listed> = serde_json::from_str(ANSWER).unwrap();
         let goose = &listed["goose"];
-        assert_eq!(
-            goose.setup,
-            Setup {
-                ready: false,
-                problem: Some("No provider".into()),
-                fix: Some("goose configure".into()),
-                skipped: vec![Skipped {
-                    setting: "model".into(),
-                    name: "Model".into(),
-                    value: "x".into(),
-                    why: Why::Gone,
-                }],
-                needs_pick: true,
-                session: true,
-                ..Setup::default()
-            }
-        );
-        assert_eq!(goose.settings[0].options[0].name, "OpenRouter");
-        // The page gets camelCase.
-        let sent = serde_json::to_value(goose).unwrap();
-        assert_eq!(sent["needsPick"], true);
-        assert_eq!(sent["settings"][0]["id"], "provider");
+        assert_eq!(goose.setup.model.as_deref(), Some("Kimi K3.1 Pro"));
+        assert_eq!(goose.setup.skipped[0].why, Why::Refused);
+        assert!(goose.setup.needs_pick && goose.setup.session);
+        assert_eq!(goose.settings[0].options[0].group.as_deref(), Some("Kimi"));
+
+        // Every field the probe sends is read, and nothing the page gets is missing.
+        let sent: serde_json::Value = serde_json::from_str(ANSWER).unwrap();
+        let mut from_probe: Vec<_> = keys(&sent["goose"]).iter().map(|k| camel(k)).collect();
+        from_probe.sort();
+        assert_eq!(from_probe, keys(&serde_json::to_value(goose).unwrap()));
     }
 }

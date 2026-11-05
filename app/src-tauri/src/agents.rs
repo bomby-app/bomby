@@ -106,6 +106,7 @@ const KNOWN: &[Known] = &[
 
 /// What Settings shows for one agent.
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "agents.ts"))]
 #[serde(rename_all = "camelCase")]
 pub struct AgentStatus {
     id: &'static str,

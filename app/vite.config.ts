@@ -17,6 +17,8 @@ const ignorePatterns = [
   "src/components/agents-ui/**",
   "src/hooks/agents-ui/**",
   "src/hooks/use-mobile.ts",
+  // TypeScript types generated from the core's structs (`just app types`).
+  "src/generated/**",
 ]
 
 // One config for the whole frontend toolchain (Vite+): build and dev server, `vp lint`

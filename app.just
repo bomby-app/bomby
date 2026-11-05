@@ -63,11 +63,20 @@ icon:
 add +components:
     bun x shadcn add --yes {{components}}
 
-# Run the Rust core's unit tests
+# Run the Rust core's unit tests, and check the TypeScript types generated from its structs are current
 [group('check')]
 [working-directory: 'app']
 test:
-    cargo test --manifest-path src-tauri/Cargo.toml
+    rm -rf src-tauri/target/ts-rs
+    TS_RS_EXPORT_DIR="$PWD/src-tauri/target/ts-rs" cargo test --manifest-path src-tauri/Cargo.toml
+    diff -r src-tauri/target/ts-rs src/generated || { echo "The generated types are out of date: run just app types"; exit 1; }
+
+# Write the TypeScript types generated from the core's structs (ts-rs) to src/generated, where the page imports them
+[group('check')]
+[working-directory: 'app']
+types:
+    rm -rf src/generated
+    TS_RS_EXPORT_DIR="$PWD/src/generated" cargo test --manifest-path src-tauri/Cargo.toml export_bindings
 
 # Everything a change must pass: format, lint and types for both halves, tests
 [group('check')]
