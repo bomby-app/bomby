@@ -43,7 +43,7 @@ UI tokens (Paper board "07 Colour in UI"), light / dark:
 | `--sidebar-accent` / `-foreground` | `#E8E8E4` / `#121212` | `#242424` / `#F5F5F2` | Sidebar hover and selection |
 | `--claude` | `#FF9BD2` | `#FF9BD2` | Claude sessions and working indicators; fill only, ink text on it |
 | `--destructive` | `#D92D20` | `#F97066` | End call and delete; never the mascot |
-| `--highlighter` | `#E8FF3A` | `#E8FF3A` | Good news (a requirement ready, a task done): a disc with an ink icon, never a bare lime icon or text |
+| `--highlighter` | `#E8FF3A` | `#E8FF3A` | Good news (a requirement ready, a task done): a disc with an ink icon, never a bare lime icon or text. A dialog's Save button, ink on it (`Button variant="highlighter"`, owner, 2026-11-05) |
 
 Owner's choices, 2026-11-04:
 

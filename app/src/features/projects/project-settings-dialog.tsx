@@ -88,13 +88,23 @@ export function ProjectSettingsDialog({
     return done
   }
 
+  const instructions = useInstructionsDraft(project, save)
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        // Closing drops what wasn't saved.
+        if (!next) instructions.reset()
+        onOpenChange(next)
+      }}
+    >
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Project settings</DialogTitle>
           <DialogDescription>
-            The name and folders are saved as you change them.
+            The name and folders are saved as you change them; the instructions
+            when you save.
           </DialogDescription>
         </DialogHeader>
 
@@ -113,17 +123,16 @@ export function ProjectSettingsDialog({
             />
           </FieldSet>
 
-          {/* Remounted the same way, for the saved instructions. */}
-          <InstructionsSetting
-            key={`${project.id}:${project.instructions}`}
-            instructions={project.instructions}
-            onSave={save}
+          <InstructionsField
+            id="project-instructions"
+            value={instructions.value}
+            onChange={instructions.change}
           />
 
           {error && <FieldError>{error}</FieldError>}
         </FieldGroup>
 
-        <DialogFooter className="sm:justify-start">
+        <DialogFooter className="sm:justify-between">
           <DeleteProject
             name={project.name}
             onConfirm={async () => {
@@ -132,6 +141,17 @@ export function ProjectSettingsDialog({
               onDeleted()
             }}
           />
+          <Button
+            variant="highlighter"
+            disabled={!instructions.changed || instructions.saving}
+            onClick={() => void instructions.save()}
+          >
+            {instructions.saving
+              ? "Saving..."
+              : instructions.saved
+                ? "Saved"
+                : "Save"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -161,44 +181,45 @@ function NameField({
 }
 
 /**
- * The project's instructions, saved with their own button: they're long enough to edit for
- * a while, and the dialog can close (Esc, a click outside) at any moment.
+ * The instructions as they're being edited, saved with the dialog's Save button: they're
+ * long enough to edit for a while, and the dialog can close at any moment. The draft starts
+ * over when another project is shown or the saved instructions change.
  */
-function InstructionsSetting({
-  instructions,
-  onSave,
-}: {
-  instructions: string
-  onSave: (changes: { instructions: string }) => Promise<boolean>
-}) {
-  const [draft, setDraft] = useState(instructions)
+function useInstructionsDraft(
+  project: Project,
+  save: (changes: { instructions: string }) => Promise<boolean>
+) {
+  const [value, setValue] = useState(project.instructions)
   const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [shown, setShown] = useState(`${project.id}:${project.instructions}`)
 
-  async function save() {
-    setSaving(true)
-    // Saved, it remounts with the new instructions; failed, the draft stays to try again.
-    await onSave({ instructions: draft })
-    setSaving(false)
+  const current = `${project.id}:${project.instructions}`
+  if (current !== shown) {
+    setShown(current)
+    setValue(project.instructions)
   }
 
-  return (
-    <div className="flex flex-col gap-3">
-      <InstructionsField
-        id="project-instructions"
-        value={draft}
-        onChange={setDraft}
-      />
-      <Button
-        variant="secondary"
-        size="sm"
-        className="self-start"
-        disabled={saving || draft.trim() === instructions}
-        onClick={() => void save()}
-      >
-        {saving ? "Saving..." : "Save instructions"}
-      </Button>
-    </div>
-  )
+  return {
+    value,
+    saving,
+    saved,
+    changed: value.trim() !== project.instructions,
+    change: (next: string) => {
+      setValue(next)
+      setSaved(false)
+    },
+    reset: () => {
+      setValue(project.instructions)
+      setSaved(false)
+    },
+    save: async () => {
+      setSaving(true)
+      // A failed save keeps the draft to try again; the dialog shows the error.
+      setSaved(await save({ instructions: value }))
+      setSaving(false)
+    },
+  }
 }
 
 function DeleteProject({

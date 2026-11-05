@@ -20,6 +20,9 @@ const buttonVariants = cva(
         link: "text-primary underline-offset-4 hover:underline",
         // Bubblegum: only Claude, what's missing, or bringing a call back (docs/brand.md).
         claude: "bg-claude text-claude-foreground hover:bg-claude/85",
+        // Highlighter: the one loud moment, like a dialog's Save (docs/brand.md). Ink on it.
+        highlighter:
+          "bg-highlighter text-highlighter-foreground hover:bg-highlighter/85",
       },
       size: {
         default:
