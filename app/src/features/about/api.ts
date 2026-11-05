@@ -10,6 +10,8 @@ export type UpdateStatus =
   | { kind: "upToDate" }
   | { kind: "available"; version: string }
   | { kind: "downloading"; version: string; percent: number | null }
+  /** Downloaded and waiting for a restart: a call started during the download. */
+  | { kind: "downloaded"; version: string }
   | { kind: "restarting" }
   | { kind: "failed"; message: string }
 

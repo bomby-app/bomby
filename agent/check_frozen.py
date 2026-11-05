@@ -9,9 +9,13 @@ also shows that hardened runtime loads every library.
 """
 
 import os
+import queue
+import signal
 import subprocess
 import sys
+import threading
 import time
+from typing import IO
 
 READY_LINE = "process initialized"
 READY_TIMEOUT_S = 90
@@ -56,28 +60,48 @@ def check_worker(program: str) -> None:
         text=True,
         process_group=0,
     )
-    assert worker.stdin and worker.stdout
-    deadline = time.monotonic() + READY_TIMEOUT_S
-    lines: list[str] = []
-    for line in worker.stdout:
-        lines.append(line)
-        if READY_LINE in line:
-            break
-        if time.monotonic() > deadline:
-            break
-    if not any(READY_LINE in line for line in lines):
-        os.killpg(worker.pid, 9)
-        raise SystemExit("The worker started no job process:\n" + "".join(lines[-30:]))
-    print("worker: starts a job process")
+    try:
+        assert worker.stdin and worker.stdout
+        wait_for_job_process(worker.stdout)
+        print("worker: starts a job process")
 
-    worker.stdin.close()  # what the app quitting looks like to the worker
-    deadline = time.monotonic() + EXIT_TIMEOUT_S
-    while group_size(worker.pid) and time.monotonic() < deadline:
-        time.sleep(0.5)
-    if left := group_size(worker.pid):
-        os.killpg(worker.pid, 9)
-        raise SystemExit(f"{left} of the worker's processes outlived the app")
-    print("worker: stops with the app")
+        worker.stdin.close()  # what the app quitting looks like to the worker
+        deadline = time.monotonic() + EXIT_TIMEOUT_S
+        while group_size(worker.pid) and time.monotonic() < deadline:
+            time.sleep(0.5)
+        if left := group_size(worker.pid):
+            raise SystemExit(f"{left} of the worker's processes outlived the app")
+        print("worker: stops with the app")
+    finally:
+        # Whatever happened, nothing of the worker is left running.
+        if group_size(worker.pid):
+            os.killpg(worker.pid, signal.SIGKILL)
+        _ = worker.wait(timeout=EXIT_TIMEOUT_S)
+
+
+def wait_for_job_process(stdout: IO[str]) -> None:
+    """Waits, up to READY_TIMEOUT_S even when the worker goes quiet, for its job process."""
+    lines: queue.Queue[str | None] = queue.Queue()
+
+    def read() -> None:
+        for line in stdout:
+            lines.put(line)
+        lines.put(None)  # the worker closed its output
+
+    threading.Thread(target=read, daemon=True).start()
+    seen: list[str] = []
+    deadline = time.monotonic() + READY_TIMEOUT_S
+    while (left := deadline - time.monotonic()) > 0:
+        try:
+            line = lines.get(timeout=left)
+        except queue.Empty:
+            break
+        if line is None:
+            break
+        seen.append(line)
+        if READY_LINE in line:
+            return
+    raise SystemExit("The worker started no job process:\n" + "".join(seen[-30:]))
 
 
 if __name__ == "__main__":

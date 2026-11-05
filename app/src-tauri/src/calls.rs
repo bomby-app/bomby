@@ -232,6 +232,11 @@ pub fn open_call<R: Runtime>(
     project_id: i64,
     resume_call_id: Option<i64>,
 ) -> Result<i64> {
+    if crate::updates::restarting(&app) {
+        return Err(Error::Invalid(
+            "Bomby is restarting to update. Start the call again in a moment.".into(),
+        ));
+    }
     folders_are_there(&projects::for_call(&db.conn(), project_id)?)?;
     let keys = livekit_keys(&app, &vault)?;
     let gemini = vault

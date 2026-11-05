@@ -4,8 +4,11 @@
 //! latest published GitHub release's `latest.json` (`plugins.updater` in tauri.conf.json),
 //! signed with the updater key; the plugin checks that signature, and the version signed
 //! into it, before installing. Only release builds load the plugin (lib.rs), so nothing
-//! here calls it in a development build. Installing always waits for the user and for the call to
-//! end, then restarts Bomby. Development builds show their version and never update.
+//! here calls it in a development build, which shows its version and never updates.
+//!
+//! Installing waits for the user and never cuts off a call: it's refused while one is on,
+//! a call that starts during the download holds the update until the user restarts, and
+//! once Bomby is restarting no call can start (`calls::open_call` asks `restarting`).
 //!
 //! The page follows the status through `update-status` events, sent to every window.
 
@@ -38,6 +41,10 @@ pub enum UpdateStatus {
         version: String,
         percent: Option<u8>,
     },
+    /// Downloaded and checked, waiting for a restart (a call started during the download).
+    Downloaded {
+        version: String,
+    },
     /// Installed; Bomby is restarting into it.
     Restarting,
     /// What went wrong, for the user. The raw error is in app.log.
@@ -46,8 +53,14 @@ pub enum UpdateStatus {
     },
 }
 
-/// The status, and the update a check found, ready to install.
-pub struct Updates(Mutex<(UpdateStatus, Option<Update>)>);
+/// The status, the update a check found, and its bytes once downloaded.
+struct Slot {
+    status: UpdateStatus,
+    update: Option<Update>,
+    bytes: Option<Vec<u8>>,
+}
+
+pub struct Updates(Mutex<Slot>);
 
 impl Default for Updates {
     fn default() -> Self {
@@ -56,7 +69,11 @@ impl Default for Updates {
         } else {
             UpdateStatus::Idle
         };
-        Self(Mutex::new((status, None)))
+        Self(Mutex::new(Slot {
+            status,
+            update: None,
+            bytes: None,
+        }))
     }
 }
 
@@ -80,11 +97,16 @@ pub fn check_in_background<R: Runtime>(app: &AppHandle<R>) {
     });
 }
 
+/// Whether Bomby is installing an update and restarting: no call may start now.
+pub fn restarting<R: Runtime>(app: &AppHandle<R>) -> bool {
+    sync::lock(&app.state::<Updates>().0).status == UpdateStatus::Restarting
+}
+
 #[tauri::command]
 pub fn about<R: Runtime>(app: AppHandle<R>, updates: State<'_, Updates>) -> About {
     About {
         version: app.package_info().version.to_string(),
-        status: sync::lock(&updates.0).0.clone(),
+        status: sync::lock(&updates.0).status.clone(),
     }
 }
 
@@ -93,26 +115,94 @@ pub async fn check_for_updates<R: Runtime>(app: AppHandle<R>) -> UpdateStatus {
     check(&app).await
 }
 
-/// Downloads and installs the update the last check found, then restarts Bomby.
+/// Downloads the update the last check found (unless it already is), then installs it and
+/// restarts Bomby, unless a call started meanwhile.
 #[tauri::command(async)]
 pub async fn install_update<R: Runtime>(app: AppHandle<R>) -> Result<()> {
     if tray::on_call(&app) {
-        return Err(Error::Invalid(
-            "Bomby restarts to update. End the call first.".into(),
-        ));
+        return Err(end_the_call_first());
     }
-    let update = {
+    let (update, bytes) = {
         let updates = app.state::<Updates>();
         let slot = sync::lock(&updates.0);
-        match (&slot.0, &slot.1) {
-            (UpdateStatus::Available { .. }, Some(update)) => update.clone(),
+        match (&slot.status, &slot.update) {
+            (UpdateStatus::Available { .. } | UpdateStatus::Downloaded { .. }, Some(update)) => {
+                (update.clone(), slot.bytes.clone())
+            }
             _ => return Err(Error::Invalid("There's no update to install.".into())),
         }
     };
+    let version = update.version.clone();
 
+    let bytes = match bytes {
+        Some(bytes) => bytes,
+        None => match download(&app, &update).await {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                let _ = app_log::append(
+                    &app,
+                    &format!("update {version} failed to download: {error}"),
+                );
+                set(&app, UpdateStatus::Available { version });
+                return Err(Error::Invalid(
+                    "Bomby couldn't download the update. Check your connection, then try again."
+                        .into(),
+                ));
+            }
+        },
+    };
+
+    // Ready to install. A call that started during the download keeps it waiting.
+    {
+        let updates = app.state::<Updates>();
+        let mut slot = sync::lock(&updates.0);
+        slot.bytes = Some(bytes.clone());
+        slot.status = if tray::on_call(&app) {
+            UpdateStatus::Downloaded {
+                version: version.clone(),
+            }
+        } else {
+            // From here, `open_call` refuses new calls.
+            UpdateStatus::Restarting
+        };
+        let _ = app.emit(EVENT, &slot.status);
+        if slot.status != UpdateStatus::Restarting {
+            return Ok(());
+        }
+    }
+
+    match update.install(&bytes) {
+        Ok(()) => {
+            app.request_restart();
+            Ok(())
+        }
+        Err(error) => {
+            let _ = app_log::append(
+                &app,
+                &format!("update {version} failed to install: {error}"),
+            );
+            // The download is kept, to try again.
+            set(&app, UpdateStatus::Downloaded { version });
+            Err(Error::Invalid(
+                "Bomby couldn't install the update. Check that it's in your Applications folder, then try again."
+                    .into(),
+            ))
+        }
+    }
+}
+
+fn end_the_call_first() -> Error {
+    Error::Invalid("Bomby restarts to update. End the call first.".into())
+}
+
+/// Downloads `update` and checks its signature, reporting progress.
+async fn download<R: Runtime>(
+    app: &AppHandle<R>,
+    update: &Update,
+) -> std::result::Result<Vec<u8>, tauri_plugin_updater::Error> {
     let version = update.version.clone();
     set(
-        &app,
+        app,
         UpdateStatus::Downloading {
             version: version.clone(),
             percent: None,
@@ -120,8 +210,8 @@ pub async fn install_update<R: Runtime>(app: AppHandle<R>) -> Result<()> {
     );
     let mut downloaded: u64 = 0;
     let mut shown = None;
-    let result = update
-        .download_and_install(
+    update
+        .download(
             |chunk, total| {
                 downloaded += chunk as u64;
                 let percent = total
@@ -131,7 +221,7 @@ pub async fn install_update<R: Runtime>(app: AppHandle<R>) -> Result<()> {
                 if percent != shown {
                     shown = percent;
                     set(
-                        &app,
+                        app,
                         UpdateStatus::Downloading {
                             version: version.clone(),
                             percent,
@@ -141,27 +231,7 @@ pub async fn install_update<R: Runtime>(app: AppHandle<R>) -> Result<()> {
             },
             || {},
         )
-        .await;
-
-    match result {
-        Ok(()) => {
-            set(&app, UpdateStatus::Restarting);
-            app.request_restart();
-            Ok(())
-        }
-        Err(error) => {
-            let _ = app_log::append(
-                &app,
-                &format!("update {version} failed to install: {error}"),
-            );
-            // The update is still there to try again.
-            set(&app, UpdateStatus::Available { version });
-            Err(Error::Invalid(
-                "Bomby couldn't install the update. Check that it's in your Applications folder, then try again."
-                    .into(),
-            ))
-        }
-    }
+        .await
 }
 
 async fn check<R: Runtime>(app: &AppHandle<R>) -> UpdateStatus {
@@ -171,12 +241,15 @@ async fn check<R: Runtime>(app: &AppHandle<R>) -> UpdateStatus {
     {
         let updates = app.state::<Updates>();
         let slot = sync::lock(&updates.0);
-        // A check or an install is already running; it reports when it's done.
+        // A check or an install is running, or an update is downloaded and waiting: keep it.
         if matches!(
-            slot.0,
-            UpdateStatus::Checking | UpdateStatus::Downloading { .. } | UpdateStatus::Restarting
+            slot.status,
+            UpdateStatus::Checking
+                | UpdateStatus::Downloading { .. }
+                | UpdateStatus::Downloaded { .. }
+                | UpdateStatus::Restarting
         ) {
-            return slot.0.clone();
+            return slot.status.clone();
         }
     }
     set(app, UpdateStatus::Checking);
@@ -203,14 +276,20 @@ async fn check<R: Runtime>(app: &AppHandle<R>) -> UpdateStatus {
             )
         }
     };
-    *sync::lock(&app.state::<Updates>().0) = (status.clone(), update);
+    {
+        let updates = app.state::<Updates>();
+        let mut slot = sync::lock(&updates.0);
+        slot.status = status.clone();
+        slot.update = update;
+        slot.bytes = None;
+    }
     let _ = app.emit(EVENT, &status);
     status
 }
 
 /// Records `status` and tells every window.
 fn set<R: Runtime>(app: &AppHandle<R>, status: UpdateStatus) {
-    sync::lock(&app.state::<Updates>().0).0 = status.clone();
+    sync::lock(&app.state::<Updates>().0).status = status.clone();
     let _ = app.emit(EVENT, &status);
 }
 
@@ -234,6 +313,13 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&downloading).unwrap(),
             serde_json::json!({ "kind": "downloading", "version": "0.2.0", "percent": 40 })
+        );
+        assert_eq!(
+            serde_json::to_value(UpdateStatus::Downloaded {
+                version: "0.2.0".into()
+            })
+            .unwrap(),
+            serde_json::json!({ "kind": "downloaded", "version": "0.2.0" })
         );
         assert_eq!(
             serde_json::to_value(UpdateStatus::UpToDate).unwrap(),

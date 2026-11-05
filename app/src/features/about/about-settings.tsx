@@ -111,6 +111,20 @@ function UpdateRow({
           }
         />
       )
+    case "downloaded":
+      return (
+        <MascotCard
+          state="done"
+          announce="status"
+          headline={`Version ${status.version} is downloaded.`}
+          detail="Restart Bomby to finish, once your call is over."
+          action={
+            <Button disabled={busy} onClick={onInstall}>
+              Restart to update
+            </Button>
+          }
+        />
+      )
     case "downloading":
       return (
         <MascotCard
@@ -183,7 +197,8 @@ function quietLine(status: UpdateStatus): string {
 /** About's mark in the settings sidebar: a highlighter dot while an update is ready. */
 export function AboutBadge() {
   const info = useAbout()
-  if (info?.status.kind !== "available") return null
+  const kind = info?.status.kind
+  if (kind !== "available" && kind !== "downloaded") return null
   return (
     <SidebarMenuBadge>
       <span className="size-2 rounded-full bg-highlighter" />

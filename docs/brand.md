@@ -117,6 +117,7 @@ Short, everyday sentences with contractions. Name the actor: Claude does the wor
 | Call ended | Talk soon. |
 | Update ready | Version 0.2.0 is ready. / Restart Bomby to update. It takes a few seconds. [Restart to update] |
 | Update on its way | Getting version 0.2.0... / 42% · Bomby restarts when it's done. |
+| Update waiting for a call to end | Version 0.2.0 is downloaded. / Restart Bomby to finish, once your call is over. [Restart to update] |
 
 `agent/prompts/voice.md` applies this voice to the spoken agent, written as behaviour rather than adjectives because Gemini Live reads every word as an instruction (owner, 2026-11-04): one-or-two-sentence, outcome-first replies; even tone; no hype; humour only when the user jokes; silence while the user is quiet.
 
