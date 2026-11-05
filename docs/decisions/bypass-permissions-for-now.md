@@ -8,7 +8,7 @@ The shell is Claude Code's real power, and the owner wants it fully available. C
 
 ## Decision
 
-Sessions run in `bypassPermissions` mode; the client also auto-approves any permission request that still arrives. A project's folders set Claude's working directory and extra directories, which tell Claude where the project lives, but do not stop it from going elsewhere.
+Sessions run in `bypassPermissions` mode; the client also auto-approves any permission request that still arrives. A project's folders set the agent's working directory and extra directories, which tell the agent where the project lives, but do not stop it from going elsewhere.
 
 ## Consequences
 

@@ -130,14 +130,15 @@ struct HistoryLine {
     text: String,
 }
 
-/// The job metadata the agent reads: the project (`Project.from_job` in
-/// `agent/project.py`), the agents found on this computer by id with their programs, the
-/// voice and, on a resumed call, the conversation so far (`CallOptions.from_job` in
+/// The job metadata the agent reads: the project with what the user wrote about it
+/// (`Project.from_job` in `agent/project.py`), the agents found on this computer by id with their programs, the
+/// voice, what the user likes to be called and, on a resumed call, the conversation so far
+/// (`CallOptions.from_job` in
 /// `agent/call_options.py`).
 fn dispatch_metadata(
     project: &projects::CallProject,
     agents: &[(String, PathBuf)],
-    voice: &str,
+    settings: &settings::CallSettings,
     history: &[HistoryLine],
 ) -> String {
     let agents: serde_json::Map<_, _> = agents
@@ -147,8 +148,10 @@ fn dispatch_metadata(
     serde_json::json!({
         "project": project.name,
         "folders": project.folders,
+        "instructions": project.instructions,
         "agents": agents,
-        "voice": voice,
+        "voice": settings.voice,
+        "user_name": settings.user_name,
         "history": history,
     })
     .to_string()
@@ -276,8 +279,8 @@ pub fn open_call<R: Runtime>(
     Ok(call_id)
 }
 
-/// A token for a new room on the call, dispatching the agent with the project, the voice and
-/// the call's last lines (none on a new call). It only reads: LiveKit's session fetches
+/// A token for a new room on the call, dispatching the agent with the project, the call's
+/// settings and its last lines (none on a new call). It only reads: LiveKit's session fetches
 /// tokens on its own too (on mount, and on end and disconnects, to have the next one ready),
 /// so getting one must not change anything (docs/livekit-notes.md).
 #[tauri::command(async)]
@@ -290,7 +293,7 @@ pub fn call_token<R: Runtime>(
     call_id: i64,
 ) -> Result<CallToken> {
     let keys = livekit_keys(&app, &vault)?;
-    let (project, history, voice) = {
+    let (project, history, settings) = {
         let conn = db.conn();
         let project_id: i64 = conn
             .query_row(
@@ -303,7 +306,7 @@ pub fn call_token<R: Runtime>(
         (
             projects::for_call(&conn, project_id)?,
             recent_lines(&conn, call_id)?,
-            settings::voice(&conn)?,
+            settings::for_call(&conn)?,
         )
     };
     let room = room_name(call_id);
@@ -311,7 +314,7 @@ pub fn call_token<R: Runtime>(
     let agents = call_agents
         .get(call_id)
         .unwrap_or_else(|| agents::usable(&found.cached().unwrap_or_default()));
-    let metadata = dispatch_metadata(&project, &agents, &voice, &history);
+    let metadata = dispatch_metadata(&project, &agents, &settings, &history);
     Ok(CallToken {
         participant_token: token(&keys, &room, metadata)?,
         server_url: keys.url,
@@ -505,11 +508,12 @@ mod tests {
     }
 
     #[test]
-    fn the_metadata_carries_the_project_agents_voice_and_history() {
+    fn the_metadata_carries_the_project_agents_settings_and_history() {
         let db = Db::in_memory().unwrap();
         let conn = db.conn();
         conn.execute(
-            "INSERT INTO projects (name, created_at) VALUES ('samba', 0)",
+            "INSERT INTO projects (name, instructions, created_at)
+             VALUES ('samba', 'A music app.', 0)",
             [],
         )
         .unwrap();
@@ -524,15 +528,22 @@ mod tests {
             text: "Hi.".into(),
         }];
         let agents = [("claude".to_owned(), PathBuf::from("/usr/local/bin/claude"))];
+        let settings = settings::CallSettings {
+            voice: "Kore".into(),
+            user_name: "Sam".into(),
+        };
         let metadata: serde_json::Value =
-            serde_json::from_str(&dispatch_metadata(&project, &agents, "Kore", &history)).unwrap();
+            serde_json::from_str(&dispatch_metadata(&project, &agents, &settings, &history))
+                .unwrap();
         assert_eq!(
             metadata,
             serde_json::json!({
                 "project": "samba",
                 "folders": ["/tmp"],
+                "instructions": "A music app.",
                 "agents": { "claude": "/usr/local/bin/claude" },
                 "voice": "Kore",
+                "user_name": "Sam",
                 "history": [{ "role": "agent", "text": "Hi." }],
             })
         );
@@ -562,6 +573,7 @@ mod tests {
         let project = |folders: Vec<String>| projects::CallProject {
             name: "samba".into(),
             folders,
+            instructions: String::new(),
         };
         assert!(folders_are_there(&project(vec![here.clone()])).is_ok());
         let gone = folders_are_there(&project(vec![here, "/Users/me/Dev/gone".into()]));

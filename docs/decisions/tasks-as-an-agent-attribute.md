@@ -8,8 +8,8 @@ The app's agents panel lists what each agent is doing on the call. The roadmap p
 
 ## Decision
 
-- The voice agent keeps the call's latest 20 tasks (`agent/task_board.py`): agent, session, what it was asked (shortened), status (`working`, `added` to a running task, `done`, `failed`, `stopped`) and times.
-- It publishes the whole list as one attribute on its own participant, `bomby.tasks` (JSON), whenever a task starts or ends. The page reads it with `useAgent().attributes` (`features/call/agents-panel.tsx`).
+- The voice agent keeps the call's latest 20 tasks (`agent/task_board.py`): agent, session, what it was asked (shortened), status (`queued` behind its session's running task on an agent that can't steer, `working`, `added` to a running task, `done`, `failed`, `stopped`) and times.
+- It publishes the whole list as one attribute on its own participant, `bomby.tasks` (JSON), whenever a task starts, is taken from the queue or ends. The page reads it with `useAgent().attributes` (`features/call/agents-panel.tsx`).
 - The voice model still gets only the final result ([results-only-as-tool-results.md](results-only-as-tool-results.md)).
 
 ## Why

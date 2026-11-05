@@ -13,7 +13,14 @@ from livekit.agents.llm import ToolError
 
 from acp_client import AcpRunner
 from acp_client.client import pick_allow
-from acp_client.runner import Turn, briefing, child_environment, steered_note
+from acp_client.runner import (
+    Turn,
+    briefing,
+    child_environment,
+    no_report,
+    steered_note,
+    stopped,
+)
 from harnesses import CLAUDE_CODE, Harness
 from project import Project
 
@@ -101,6 +108,19 @@ def test_new_session_appends_system_prompt_and_bypasses_permissions(
     assert mode["mode_id"] == "bypassPermissions"
 
 
+def test_a_turn_without_a_final_message_fails_instead_of_reading_as_done(
+    tmp_path: Path,
+) -> None:
+    async def scenario(runner: AcpRunner) -> str:
+        with pytest.raises(ToolError) as error:
+            _ = await runner.run("silent")
+        return str(error.value)
+
+    message, _ = run_with_fake(tmp_path, scenario)
+
+    assert message == no_report(CLAUDE_CODE)
+
+
 def test_project_folders_become_cwd_and_extra_directories(tmp_path: Path) -> None:
     main, other = tmp_path / "main", tmp_path / "other"
     main.mkdir()
@@ -134,6 +154,25 @@ def test_without_a_system_prompt_the_briefing_goes_with_the_first_task(
     assert f"also includes {other}" in first[0]
     new_session = next(e for e in events if e["event"] == "new_session")
     assert new_session["system_prompt"] is None
+
+
+def test_the_briefing_ends_with_the_project_and_its_description(tmp_path: Path) -> None:
+    project = Project(name="samba", folders=(tmp_path,), instructions="A music app.")
+
+    expected = (
+        f"## This project\n\nsamba. You're working in {tmp_path}.\n\n"
+        "The user's description of this project:\n\nA music app."
+    )
+    assert briefing(project).endswith(expected)
+
+
+def test_the_briefing_says_nothing_of_a_description_the_user_never_wrote(
+    tmp_path: Path,
+) -> None:
+    text = briefing(Project(name="samba", folders=(tmp_path,)))
+
+    assert text.endswith(f"## This project\n\nsamba. You're working in {tmp_path}.")
+    assert "description" not in text
 
 
 def test_follow_ups_continue_the_same_session(tmp_path: Path) -> None:
@@ -190,6 +229,8 @@ def test_a_request_mid_turn_is_steered_into_it(tmp_path: Path) -> None:
     async def scenario(runner: AcpRunner) -> tuple[str, Turn]:
         first = await until_prompted(runner, "wait landing page", "page")
         steered = await runner.run("make the header blue", "page")
+        # A steered request answers only once the turn it joined has ended.
+        assert first.done()
         return await first, steered
 
     (first, steered), events = run_with_fake(tmp_path, scenario)
@@ -200,6 +241,38 @@ def test_a_request_mid_turn_is_steered_into_it(tmp_path: Path) -> None:
     assert steer["idle_behavior"] == "promptRequired"
     assert steer["injected"] is True
     assert names(events).count("prompt") == 1
+
+
+def test_a_steered_request_fails_when_the_turn_it_joined_is_stopped(
+    tmp_path: Path,
+) -> None:
+    async def scenario(runner: AcpRunner) -> str:
+        first = await until_prompted(runner, "hang", "page")
+        steered = asyncio.create_task(runner.run("make the header blue", "page"))
+        await asyncio.sleep(0.2)  # let the steer reach the agent
+        _ = first.cancel()
+        with pytest.raises(ToolError) as stopped_error:
+            _ = await steered
+        return str(stopped_error.value)
+
+    message, _ = run_with_fake(tmp_path, scenario)
+
+    assert message == stopped(CLAUDE_CODE)
+
+
+def test_a_steered_request_fails_when_the_turn_it_joined_stops_early(
+    tmp_path: Path,
+) -> None:
+    async def scenario(runner: AcpRunner) -> tuple[str, str]:
+        first = await until_prompted(runner, "cutoff Half done.", "page")
+        with pytest.raises(ToolError) as error:
+            _ = await runner.run("make the header blue", "page")
+        return await first, str(error.value)
+
+    (first, steered), _ = run_with_fake(tmp_path, scenario)
+
+    assert first.startswith("Claude stopped early (max_tokens)")
+    assert steered == stopped(CLAUDE_CODE)
 
 
 PLAIN = dataclasses.replace(
@@ -222,13 +295,21 @@ def test_without_steering_a_request_waits_for_the_running_turn(
 ) -> None:
     async def scenario(runner: AcpRunner) -> list[str]:
         first = await until_prompted(runner, "hang")
-        second = asyncio.create_task(text(runner.run("turns")))
+        taken = asyncio.Event()
+
+        async def on_start() -> None:
+            taken.set()
+
+        second = asyncio.create_task(text(runner.run("turns", on_start=on_start)))
         await asyncio.sleep(0.5)
         assert not second.done()  # queued behind the running turn
+        assert not taken.is_set()  # and not taken yet
         _ = first.cancel()
         with pytest.raises(asyncio.CancelledError):
             await first
-        return [await second]
+        result = await second
+        assert taken.is_set()
+        return [result]
 
     result, events = run_with_fake(tmp_path, scenario, env=env, harness=harness)
 

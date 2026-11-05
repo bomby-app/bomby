@@ -1,4 +1,5 @@
-"""What one call works on: a project name and its folders, from the job's dispatch metadata."""
+"""What one call works on: a project's name, its folders and what the user wrote about
+it, from the job's dispatch metadata."""
 
 import os
 from collections.abc import Mapping
@@ -13,15 +14,17 @@ DEFAULT_PROJECT = "home"
 
 @dataclass(frozen=True)
 class Project:
-    """A project name and the folders an agent works in.
+    """A project name, the folders an agent works in, and the user's description.
 
     The first folder is the working directory and the rest are added as extra directories.
     They tell the agent where the project lives; they don't fence it in, since sessions
-    bypass permissions.
+    bypass permissions. `instructions` is what the user wrote about the project, empty
+    when they wrote nothing; the voice model and every coding agent are told it once.
     """
 
     name: str
     folders: tuple[Path, ...]
+    instructions: str = ""
 
     @property
     def cwd(self) -> Path:
@@ -35,14 +38,17 @@ class Project:
     def from_job(cls, fields: JobFields, environ: Mapping[str, str]) -> "Project":
         """The project from the job's metadata (`job.py`), else from the environment.
 
-        The metadata has `{"project": "samba", "folders": ["/abs/path", ...]}`. Console
-        runs have no metadata, so `BOMBY_PROJECT` and `BOMBY_FOLDERS` (separated by
-        `os.pathsep`) stand in. Without folders, the project is the home folder.
+        The metadata has `{"project": "samba", "folders": ["/abs/path", ...],
+        "instructions": "..."}`. Console runs have no metadata, so `BOMBY_PROJECT`,
+        `BOMBY_FOLDERS` (separated by `os.pathsep`) and `BOMBY_INSTRUCTIONS` stand in.
+        Without folders, the project is the home folder.
         """
         name: object
         folders: object
+        instructions: object
         if fields is not None:
             name, folders = fields.get("project"), fields.get("folders")
+            instructions = fields.get("instructions")
             if folders is None:
                 folders = []
         else:
@@ -50,6 +56,7 @@ class Project:
             folders = [
                 f for f in environ.get("BOMBY_FOLDERS", "").split(os.pathsep) if f
             ]
+            instructions = environ.get("BOMBY_INSTRUCTIONS")
 
         items = cast(list[object], folders) if isinstance(folders, list) else None
         if items is None or not all(isinstance(f, str) for f in items):
@@ -62,4 +69,8 @@ class Project:
                 raise ValueError(f"project folder does not exist: {path}")
         if not isinstance(name, str) or not name.strip():
             name = DEFAULT_PROJECT
-        return cls(name=name.strip(), folders=paths)
+        if instructions is not None and not isinstance(instructions, str):
+            raise ValueError("project instructions must be text")
+        return cls(
+            name=name.strip(), folders=paths, instructions=(instructions or "").strip()
+        )

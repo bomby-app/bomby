@@ -1,6 +1,5 @@
 import logging
 import os
-from pathlib import Path
 from typing import override
 
 from google.genai import types
@@ -15,7 +14,8 @@ from call import Call
 from call_options import CallOptions
 from job import read_metadata
 from task_board import TaskBoard
-from tools import ALL_TOOLS, agents_note
+from tools import ALL_TOOLS
+from voice_prompt import voice_instructions
 
 dev_env.load()
 
@@ -44,8 +44,6 @@ THINKING_CONFIG = (
     else NOT_GIVEN
 )
 
-INSTRUCTIONS = (Path(__file__).resolve().parent / "prompts" / "voice.md").read_text()
-
 # The language the user speaks. Gemini's native-audio models pick their spoken language
 # themselves (no language code), so the prompt holds them to it; the transcription takes a
 # hint, which stops noise being written down as Portuguese or Russian (2026-11-04).
@@ -55,10 +53,10 @@ LANGUAGE_CODES = ["en-US"]
 class Assistant(Agent):
     def __init__(self, options: CallOptions, runners: CallRunners) -> None:
         self._resumed: bool = options.resumed
-        base = f"{INSTRUCTIONS.rstrip()}\n\n{agents_note(runners.available)}"
+        instructions = voice_instructions(runners.project, options, runners.available)
         # LiveKit's own signatures are partially untyped; the ignores below are theirs.
         super().__init__(  # pyright: ignore[reportUnknownMemberType]
-            instructions=options.instructions(base), tools=ALL_TOOLS
+            instructions=instructions, tools=ALL_TOOLS
         )
 
     @override

@@ -1,4 +1,12 @@
-import { Check, CircleSlash, Inbox, LoaderCircle, Plus, X } from "lucide-react"
+import {
+  Check,
+  CircleSlash,
+  Inbox,
+  ListEnd,
+  LoaderCircle,
+  Plus,
+  X,
+} from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -9,6 +17,11 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { AgentLogo } from "@/features/agents/agent-logos"
 import { cn } from "@/lib/utils"
 
@@ -80,38 +93,49 @@ function TaskRow({ task }: { task: Task }) {
   )
 }
 
+const HIGHLIGHTER = "bg-highlighter text-highlighter-foreground"
+
+/**
+ * Each status is one ink icon on a disc, its label a tooltip and what screen readers hear:
+ * bubblegum while a task waits or joins another (queued, added), highlighter otherwise
+ * (owner, 2026-11-05; docs/brand.md).
+ */
 const STATUS = {
-  working: { label: "Working", Icon: LoaderCircle },
-  added: { label: "Added", Icon: Plus },
-  done: { label: "Done", Icon: Check },
-  failed: { label: "Failed", Icon: X },
-  stopped: { label: "Stopped", Icon: CircleSlash },
+  queued: {
+    label: "Queued",
+    Icon: ListEnd,
+    disc: "bg-claude text-claude-foreground",
+  },
+  working: { label: "Working", Icon: LoaderCircle, disc: HIGHLIGHTER },
+  added: {
+    label: "Added to the running task",
+    Icon: Plus,
+    disc: "bg-claude text-claude-foreground",
+  },
+  done: { label: "Done", Icon: Check, disc: HIGHLIGHTER },
+  failed: { label: "Failed", Icon: X, disc: HIGHLIGHTER },
+  stopped: { label: "Stopped", Icon: CircleSlash, disc: HIGHLIGHTER },
 } as const
 
 function TaskStatus({ status }: { status: Task["status"] }) {
-  const { label, Icon } = STATUS[status] ?? STATUS.done
+  const { label, Icon, disc } = STATUS[status] ?? STATUS.done
   return (
-    <span
-      className={cn(
-        "ml-auto flex shrink-0 items-center gap-1 text-xs text-muted-foreground",
-        status === "failed" && "text-destructive"
-      )}
-    >
-      {status === "done" ? (
-        // Good news is an ink mark on a highlighter disc (docs/brand.md).
-        <span className="flex size-3.5 items-center justify-center rounded-full bg-highlighter text-highlighter-foreground">
-          <Icon className="size-2.5" strokeWidth={3} />
-        </span>
-      ) : (
-        <Icon
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
           className={cn(
-            "size-3.5",
-            // Highlighter in dark mode, ink in light (never highlighter on white).
-            status === "working" && "animate-spin text-primary"
+            "ml-auto flex size-4 shrink-0 items-center justify-center rounded-full",
+            disc
           )}
-        />
-      )}
-      {label}
-    </span>
+        >
+          <Icon
+            className={cn("size-2.5", status === "working" && "animate-spin")}
+            strokeWidth={3}
+          />
+          <span className="sr-only">{label}</span>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
   )
 }

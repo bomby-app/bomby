@@ -1,4 +1,4 @@
-import { type FormEvent, useState } from "react"
+import { useActionState, useState } from "react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -21,10 +21,11 @@ import { Input } from "@/components/ui/input"
 
 import type { Project } from "./api"
 import { FolderList } from "./folder-list"
+import { InstructionsField, submittedInstructions } from "./instructions-field"
 import { folderName, uniqueName } from "./names"
 import { useProjects } from "./projects-provider"
 
-/** New project: a name and the folders the agents can work in. */
+/** New project: a name, the folders the agents can work in, and optional instructions. */
 export function NewProjectDialog({
   open,
   onOpenChange,
@@ -51,6 +52,9 @@ export function NewProjectDialog({
   )
 }
 
+/** A failed create, and which attempt it was: the field remounts with what was typed. */
+type Failed = { error: string; instructions: string; attempt: number }
+
 function NewProjectForm({
   onCreated,
 }: {
@@ -59,11 +63,30 @@ function NewProjectForm({
   const { projects, create } = useProjects()
   const [name, setName] = useState("")
   const [folders, setFolders] = useState<string[]>([])
-  const [error, setError] = useState<string | null>(null)
-  const [creating, setCreating] = useState(false)
+  // The name and folders are state, since picking a folder names the project; the
+  // instructions are an uncontrolled field the action reads from the form. A failed
+  // create keeps what was typed, since React resets the form after the action either way.
+  const [failed, createProject, creating] = useActionState(
+    async (
+      previous: Failed | null,
+      formData: FormData
+    ): Promise<Failed | null> => {
+      const instructions = submittedInstructions(formData)
+      try {
+        onCreated(await create({ name, folders, instructions }))
+        return null
+      } catch (e) {
+        return {
+          error: String(e),
+          instructions,
+          attempt: (previous?.attempt ?? 0) + 1,
+        }
+      }
+    },
+    null
+  )
 
   function changeFolders(next: string[]) {
-    setError(null)
     // Name it after the first folder, unless a name was typed.
     if (!name.trim() && next[0]) {
       setName(
@@ -76,20 +99,8 @@ function NewProjectForm({
     setFolders(next)
   }
 
-  async function submit(event: FormEvent) {
-    event.preventDefault()
-    setCreating(true)
-    setError(null)
-    try {
-      onCreated(await create({ name, folders }))
-    } catch (e) {
-      setError(String(e))
-      setCreating(false)
-    }
-  }
-
   return (
-    <form onSubmit={submit} className="flex flex-col gap-6">
+    <form action={createProject} className="flex flex-col gap-6">
       <DialogHeader>
         <DialogTitle>New project</DialogTitle>
         <DialogDescription>
@@ -105,17 +116,19 @@ function NewProjectForm({
             value={name}
             spellCheck={false}
             autoComplete="off"
-            onChange={(e) => {
-              setName(e.target.value)
-              setError(null)
-            }}
+            onChange={(e) => setName(e.target.value)}
           />
         </Field>
         <FieldSet>
           <FieldLegend variant="label">Folders</FieldLegend>
           <FolderList folders={folders} onChange={changeFolders} minimum={0} />
         </FieldSet>
-        {error && <FieldError>{error}</FieldError>}
+        <InstructionsField
+          key={failed?.attempt}
+          id="new-project-instructions"
+          defaultValue={failed?.instructions}
+        />
+        {failed && <FieldError>{failed.error}</FieldError>}
       </FieldGroup>
 
       <DialogFooter>

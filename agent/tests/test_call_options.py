@@ -6,9 +6,12 @@ from call_options import DEFAULT_VOICE, CallOptions, Line
 from job import read_metadata
 
 
-def test_console_runs_use_the_env_voice_or_the_default() -> None:
+def test_console_runs_use_the_environment_or_the_defaults() -> None:
     assert CallOptions.from_job(None, {}) == CallOptions(voice=DEFAULT_VOICE)
-    assert CallOptions.from_job(None, {"GEMINI_VOICE": "Puck"}).voice == "Puck"
+    environ = {"GEMINI_VOICE": "Puck", "BOMBY_USER_NAME": " Sam "}
+    assert CallOptions.from_job(None, environ) == CallOptions(
+        voice="Puck", user_name="Sam"
+    )
 
 
 def test_reads_the_voice_and_history_from_the_app() -> None:
@@ -16,6 +19,7 @@ def test_reads_the_voice_and_history_from_the_app() -> None:
         {
             "project": "samba",
             "voice": "Kore",
+            "user_name": "  Sam ",
             "history": [
                 {"role": "user", "text": " fix the login "},
                 {"role": "agent", "text": "Claude's on it."},
@@ -25,6 +29,7 @@ def test_reads_the_voice_and_history_from_the_app() -> None:
     )
     options = CallOptions.from_job(read_metadata(metadata), {"GEMINI_VOICE": "Puck"})
     assert options.voice == "Kore"
+    assert options.user_name == "Sam"
     assert options.history == (
         Line("user", "fix the login"),
         Line("agent", "Claude's on it."),
@@ -32,20 +37,8 @@ def test_reads_the_voice_and_history_from_the_app() -> None:
     assert options.resumed
 
 
-def test_a_new_call_keeps_the_instructions_as_they_are() -> None:
-    options = CallOptions.from_job({"voice": "Kore", "history": []}, {})
-    assert not options.resumed
-    assert options.instructions("Be brief.") == "Be brief."
-
-
-def test_a_resumed_call_appends_the_previous_conversation() -> None:
-    options = CallOptions(
-        voice="Kore",
-        history=(Line("user", "fix the login"), Line("agent", "Done.")),
-    )
-    text = options.instructions("Be brief.")
-    assert text.startswith("Be brief.\n\n## Previous conversation\n\n")
-    assert text.endswith("User: fix the login\nYou: Done.")
+def test_a_call_without_history_is_new() -> None:
+    assert not CallOptions.from_job({"voice": "Kore", "history": []}, {}).resumed
 
 
 @pytest.mark.parametrize(
@@ -53,6 +46,7 @@ def test_a_resumed_call_appends_the_previous_conversation() -> None:
     [
         json.dumps({"voice": 3}),
         json.dumps({"voice": " "}),
+        json.dumps({"user_name": 3}),
         json.dumps({"history": "hello"}),
         json.dumps({"history": [{"role": "system", "text": "x"}]}),
         json.dumps({"history": [{"role": "user"}]}),

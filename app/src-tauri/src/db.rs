@@ -58,6 +58,11 @@ const MIGRATIONS: &[&str] = &[
         value TEXT NOT NULL
     );
     ",
+    // 4: what the user wrote about a project, for the voice agent and the coding agents;
+    // empty when they wrote nothing.
+    "
+    ALTER TABLE projects ADD COLUMN instructions TEXT NOT NULL DEFAULT '';
+    ",
 ];
 
 /// The open database, shared by every command through Tauri state.

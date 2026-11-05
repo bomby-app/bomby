@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import json
+from collections.abc import Awaitable, Callable
 from types import SimpleNamespace
 from typing import cast, final, get_args
 
@@ -35,16 +36,33 @@ def test_with_no_agents_the_note_says_work_cant_start() -> None:
 
 @final
 class FakeRunner:
-    """Stands in for an `AcpRunner`: `run` waits on `release`, then returns `turn`."""
+    """Stands in for an `AcpRunner`: `run` takes the task, waits on `release`, then
+    returns `turn`. A `busy` one waits on `release` before taking the task too, like a
+    session whose running task has to end first."""
 
-    def __init__(self, turn: Turn) -> None:
+    def __init__(self, turn: Turn, busy: bool = False, steers: bool = False) -> None:
         self.turn = turn
+        self.busy = busy
+        self.steers = steers
         self.release = asyncio.Event()
 
     def is_busy(self, _name: str) -> bool:
-        return False
+        return self.busy
 
-    async def run(self, _task: str, _session: str) -> Turn:
+    @property
+    def can_steer(self) -> bool:
+        return self.steers
+
+    async def run(
+        self,
+        _task: str,
+        _session: str,
+        on_start: Callable[[], Awaitable[None]] | None = None,
+    ) -> Turn:
+        if self.busy:
+            _ = await self.release.wait()
+        if on_start is not None:
+            await on_start()
         _ = await self.release.wait()
         return self.turn
 
@@ -64,9 +82,10 @@ class FakeContext:
 
     def __init__(self, runner: FakeRunner, board: TaskBoard) -> None:
         self.userdata = SimpleNamespace(runners=FakeRunners(runner), board=board)
+        self.updates: list[str] = []
 
-    async def update(self, _message: str) -> None:
-        pass
+    async def update(self, message: str) -> None:
+        self.updates.append(message)
 
 
 def board() -> tuple[TaskBoard, list[str]]:
@@ -95,6 +114,33 @@ def test_a_finished_task_is_done_and_a_steered_one_added() -> None:
     assert asyncio.run(scenario(Turn("Fixed."))) == ("Fixed.", ["working", "done"])
     steered = Turn("Folded in.", steered=True)
     assert asyncio.run(scenario(steered)) == ("Folded in.", ["working", "added"])
+
+
+def test_a_task_for_a_busy_session_is_queued_until_the_agent_takes_it() -> None:
+    async def scenario() -> list[str]:
+        runner = FakeRunner(Turn("Fixed."), busy=True)
+        b, sent = board()
+        task = asyncio.create_task(call_start_task(runner, b))
+        await asyncio.sleep(0)
+        runner.release.set()
+        _ = await task
+        return sent
+
+    assert asyncio.run(scenario()) == ["queued", "working", "done"]
+
+
+def test_gemini_hears_whether_a_request_joins_the_running_task_or_waits() -> None:
+    async def first_update(steers: bool) -> str:
+        runner = FakeRunner(Turn("Fixed."), busy=True, steers=steers)
+        runner.release.set()
+        context = FakeContext(runner, board()[0])
+        _ = await start_task(
+            cast(RunContext[Call], cast(object, context)), "go green", "page", "claude"
+        )
+        return context.updates[0]
+
+    assert "joins the task that's running" in asyncio.run(first_update(steers=True))
+    assert "runs next as a task of its own" in asyncio.run(first_update(steers=False))
 
 
 def test_a_cancelled_task_ends_stopped() -> None:

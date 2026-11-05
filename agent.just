@@ -5,7 +5,8 @@
 #     just agent console        talk to the agent in the terminal
 #     just agent check          lint, types and tests, before every commit
 #
-# Set the console call's project in agent/.env (BOMBY_PROJECT, BOMBY_FOLDERS).
+# Set the console call's project in agent/.env (BOMBY_PROJECT, BOMBY_FOLDERS,
+# BOMBY_INSTRUCTIONS).
 
 # List the agent recipes
 default:
@@ -16,9 +17,11 @@ default:
 install: adapters
     uv sync
 
-# Build each ACP adapter into one program in adapters/bin, run by path so it never depends
-# on PATH or a JS runtime. Optional packages hold the agents' own bundled binaries, which
-# the adapters don't need: they run the user's install.
+# Each adapter is one program in adapters/bin, run by path so it never depends on PATH or
+# a JS runtime. Optional packages hold the agents' own bundled binaries, which the adapters
+# don't need: they run the user's install.
+
+# Build each ACP adapter into one program in adapters/bin
 [working-directory: 'agent/adapters']
 adapters:
     #!/usr/bin/env bash

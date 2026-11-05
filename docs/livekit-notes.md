@@ -14,7 +14,7 @@ Checked 2026-11-03/04 against `livekit-agents` 1.8.10, LiveKit CLI 2.18.8 and do
 
 ## Running the agent
 
-- `lk agent console` uses local mic and speakers without a LiveKit server; `--text` types instead. Console logging is DEBUG and has no `--log-level` flag. Jobs have empty metadata, so `BOMBY_PROJECT` and `BOMBY_FOLDERS` stand in.
+- `lk agent console` uses local mic and speakers without a LiveKit server; `--text` types instead. Console logging is DEBUG and has no `--log-level` flag. Jobs have empty metadata, so `BOMBY_PROJECT`, `BOMBY_FOLDERS`, `BOMBY_INSTRUCTIONS` and `BOMBY_USER_NAME` stand in.
 - `lk agent dev` uses the CLI's selected project (`lk project list`), overriding `LIVEKIT_*` in `agent/.env`. `uv run python agent.py dev` uses `.env`; `just web-test` uses that path.
 - `python agent.py console` is deprecated in favor of `lk agent console`.
 

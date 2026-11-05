@@ -29,8 +29,9 @@ async def start_task(
 
     Work is organized in named sessions. Each session is one conversation with the agent
     that remembers everything it did in this call; sessions run in parallel. A task sent to
-    a session that is still working reaches it mid-task and returns at once; the running
-    task's result covers it.
+    a session that is still working reaches it mid-task and returns when that task ends,
+    beside its result, which covers both; with an agent that can't take it mid-task, it
+    waits and runs next as a task of its own. Every result means that work is finished.
 
     Args:
         task: What the user wants, with every detail they gave, as one clear request. The
@@ -47,15 +48,28 @@ async def start_task(
     board = context.userdata.board
     name = session_name(session)
     who = harness.short_name
-    if runner.is_busy(name):
-        await context.update(f"Sent to {who} mid-task, in session {name}: {task}")
+    if runner.is_busy(name) and runner.can_steer:
+        await context.update(
+            f"Sent to {who} mid-task, in session {name}: {task}. It joins the task that's "
+            + "running, and the result comes when that task is done."
+        )
+    elif runner.is_busy(name):
+        await context.update(
+            f"{who} is still busy in session {name}, so this waits and runs next as a "
+            + f"task of its own, with its own result: {task}"
+        )
     else:
         await context.update(f"{who} has started on this, in session {name}: {task}")
-    # Recorded before anything can be cancelled, so the cleanup below always finds it.
-    id = board.add(harness, name, task)
+    # Recorded before anything can be cancelled, so the cleanup below always finds it. A
+    # busy session takes it once its running task ends (or at once, when it's steered in).
+    id = board.add(harness, name, task, "queued" if runner.is_busy(name) else "working")
+
+    async def started() -> None:
+        await board.start(id)
+
     try:
         await board.publish()
-        turn = await runner.run(task, name)
+        turn = await runner.run(task, name, on_start=started)
     except asyncio.CancelledError:
         await board.finish(id, "stopped")
         raise

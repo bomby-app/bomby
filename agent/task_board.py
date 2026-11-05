@@ -20,8 +20,9 @@ ATTRIBUTE = "bomby.tasks"
 KEEP = 20
 TASK_CHARS = 160
 
-Status = Literal["working", "added", "done", "failed", "stopped"]
-"""`added`: sent to a session that was still working, so it joined that task."""
+Status = Literal["queued", "working", "added", "done", "failed", "stopped"]
+"""`queued`: waiting for its session's running task to end before the agent starts on it.
+`added`: sent to a session that was still working, so it joined that task."""
 
 
 @dataclass
@@ -53,8 +54,11 @@ class TaskBoard:
     def tasks(self) -> list[Task]:
         return list(self._tasks)
 
-    def add(self, harness: Harness, session: str, task: str) -> str:
-        """Records a new working task, without publishing it yet (see `publish`)."""
+    def add(
+        self, harness: Harness, session: str, task: str, status: Status = "working"
+    ) -> str:
+        """Records a new task, `working` or `queued`, without publishing it yet (see
+        `publish`)."""
         short = task if len(task) <= TASK_CHARS else task[: TASK_CHARS - 1] + "…"
         entry = Task(
             id=str(next(self._ids)),
@@ -62,11 +66,18 @@ class TaskBoard:
             agentName=harness.short_name,
             session=session,
             task=short,
-            status="working",
+            status=status,
             startedAt=_now_ms(),
         )
         self._tasks = [*self._tasks, entry][-KEEP:]
         return entry.id
+
+    async def start(self, id: str) -> None:
+        """A queued task is now being worked on."""
+        for entry in self._tasks:
+            if entry.id == id and entry.status == "queued":
+                entry.status = "working"
+                await self.publish()
 
     async def finish(self, id: str, status: Status) -> None:
         for entry in self._tasks:

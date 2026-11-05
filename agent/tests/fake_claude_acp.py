@@ -15,9 +15,12 @@ initialize, like an adapter without it. Setup scenarios, by environment variable
 Prompts:
 
 - "reply <text>": narrate, run a tool call, then send "Done: <text>" as the final message
+- "silent": narrate, run a tool call, then end the turn with no final message
 - "permission": ask for permission, then report the option the client chose
-- "hang": wait until the client cancels, then stop with `cancelled`
+- "hang": take steered messages and wait until the client cancels, then stop with
+  `cancelled`
 - "wait <text>": wait for a steered message, then reply "Done: <text> + <steered text>"
+- "cutoff <text>": wait for a steered message, then say <text> and stop with `max_tokens`
 - "turns": reply with how many prompts this session has had, e.g. "turn 2"
 - "fail <text>": fail the turn with <text> as the error's details
 - "crash <text>": print <text> to stderr and exit
@@ -217,6 +220,13 @@ class FakeClaude:
             await say(text[6:], "m2")
             return PromptResponse(stop_reason="end_turn")
 
+        if text == "silent":
+            await say("Let me look. ")
+            await self._client.session_update(
+                session_id, start_tool_call("t1", "Read file")
+            )
+            return PromptResponse(stop_reason="end_turn")
+
         if text == "permission":
             options = [
                 PermissionOption(
@@ -238,7 +248,11 @@ class FakeClaude:
             return PromptResponse(stop_reason="end_turn")
 
         if text == "hang":
-            _ = await session.cancelled.wait()
+            session.steered = asyncio.Queue()
+            try:
+                _ = await session.cancelled.wait()
+            finally:
+                session.steered = None
             return PromptResponse(stop_reason="cancelled")
 
         if text.startswith("wait "):
@@ -249,6 +263,15 @@ class FakeClaude:
                 session.steered = None
             await say(f"Done: {text[5:]} + {steered}")
             return PromptResponse(stop_reason="end_turn")
+
+        if text.startswith("cutoff "):
+            session.steered = asyncio.Queue()
+            try:
+                _ = await session.steered.get()
+            finally:
+                session.steered = None
+            await say(text[7:])
+            return PromptResponse(stop_reason="max_tokens")
 
         if text == "turns":
             await say(f"turn {session.turns}")

@@ -4,14 +4,15 @@ process per harness, named sessions in it.
 The voice model names a session per piece of work; sessions run in parallel, and each keeps
 its context from request to request. A request to a session that is still working is
 steered into its running turn when the harness can steer. The voice model only ever sees
-the agent's final message, as the tool result, when a turn ends.
+the agent's final message, as the tool result, when a turn ends: a steered request's result
+comes then too, so a result always means the work is done.
 """
 
 import asyncio
 import contextlib
 import logging
 import os
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,6 +28,7 @@ from harnesses import HARNESSES, installed
 from harnesses.harness import Harness
 from job import JobFields
 from project import Project
+from sections import join, section
 
 from .client import HarnessClient, Reply, connect
 
@@ -82,6 +84,14 @@ def not_ready(harness: Harness) -> str:
     )
 
 
+def no_report(harness: Harness) -> str:
+    return (
+        f"{harness.short_name} ended without reporting back, so there's no sign it did "
+        "the work. Don't say it's done: tell the user, and offer to try again or to try "
+        "another agent."
+    )
+
+
 def stopped(harness: Harness) -> str:
     return (
         f"{harness.short_name} stopped before finishing. Say sorry and offer to try "
@@ -90,15 +100,23 @@ def stopped(harness: Harness) -> str:
 
 
 def briefing(project: Project) -> str:
-    """What a harness is told once per session: how its result is used, and the folders
-    it works in. Every harness gets it, whether or not it reads ACP's
-    `additionalDirectories`."""
+    """What a harness is told once per session: how its result is used, the folders it
+    works in (every harness gets them, whether or not it reads ACP's
+    `additionalDirectories`) and the user's description of the project, if any."""
     folders = f"You're working in {project.cwd}"
     if project.extra_folders:
         folders += ", and this project also includes " + ", ".join(
             project.extra_folders
         )
-    return f"{BRIEFING}\n\n## This project\n\n{project.name}. {folders}."
+    description = (
+        join("The user's description of this project:", project.instructions)
+        if project.instructions
+        else ""
+    )
+    return join(
+        BRIEFING,
+        section("This project", join(f"{project.name}. {folders}.", description)),
+    )
 
 
 def session_name(name: str) -> str:
@@ -108,10 +126,11 @@ def session_name(name: str) -> str:
 
 
 def steered_note(harness: Harness) -> str:
-    """What a request sent mid-turn returns at once: the running turn's result covers it."""
+    """What a request sent mid-turn returns once the turn it joined ends, beside that
+    turn's result, which covers it."""
     return (
-        f"{harness.short_name} got this while it was still working, and is folding it "
-        + "into the task that is running. That task's result covers it."
+        f"{harness.short_name} did this as part of the task it was already working on. "
+        + "That task's result, which arrives with this, covers it."
     )
 
 
@@ -126,6 +145,26 @@ class Turn:
 
 
 @final
+class _RunningTurn:
+    """A prompt turn in progress, which the requests steered into it wait on."""
+
+    def __init__(self) -> None:
+        self._ended = asyncio.Event()
+        self._error: str | None = None
+
+    def end(self, error: str | None = None) -> None:
+        """The turn is over; `error` is the voice's line when it didn't finish."""
+        self._error = error
+        self._ended.set()
+
+    async def wait(self) -> None:
+        """Until the turn is over. Raises the turn's `ToolError` when it didn't finish."""
+        _ = await self._ended.wait()
+        if self._error is not None:
+            raise ToolError(self._error)
+
+
+@final
 class _Session:
     """One named session in the call."""
 
@@ -136,6 +175,7 @@ class _Session:
         self.briefed = False  # the briefing went with a first task
         self.open_lock = asyncio.Lock()  # opening the ACP session
         self.turn_lock = asyncio.Lock()  # held while a prompt turn runs
+        self.running: _RunningTurn | None = None  # set while the lock is held
 
 
 @final
@@ -182,29 +222,64 @@ class AcpRunner:
     def env(self) -> Mapping[str, str]:
         return self._env
 
+    @property
+    def can_steer(self) -> bool:
+        """Whether a request to a busy session joins its running turn instead of waiting.
+        Known once the agent has started, which a busy session always has."""
+        return self._can_steer
+
     def is_busy(self, name: str) -> bool:
         """Whether the session called `name` has a turn running."""
         session = self._sessions.get(session_name(name))
-        return session is not None and session.turn_lock.locked()
+        return session is not None and session.running is not None
 
-    async def run(self, task: str, session: str = DEFAULT_SESSION) -> Turn:
+    async def run(
+        self,
+        task: str,
+        session: str = DEFAULT_SESSION,
+        on_start: Callable[[], Awaitable[None]] | None = None,
+    ) -> Turn:
         """Send `task` to the session called `session`; return the agent's final message.
 
         A new name opens a new session. Mid-turn, the task is steered into the running
-        turn and this returns a steered `Turn` at once: that turn's result answers it.
+        turn, and this returns a steered `Turn` when that turn ends: its result answers
+        both. Cancelling a steered request stops only the waiting, not the turn. Without
+        steering, it waits for the running turn and then takes its own. `on_start` runs once
+        the agent takes the task: steered in, or its own turn starting.
         """
         if self._closed:
             raise ToolError(self._ending())
         s = self._sessions.setdefault(
             session_name(session), _Session(session_name(session))
         )
-        if s.turn_lock.locked() and self._can_steer:
+        running = s.running
+        if running is not None and self._can_steer:
             conn, session_id = await self._open(s)
             if await self._steer(conn, s, session_id, task):
+                if on_start is not None:
+                    await on_start()
+                await running.wait()
                 return Turn(steered_note(self._harness), steered=True)
         async with s.turn_lock:
-            conn, session_id = await self._open(s)
-            return Turn(await self._prompt(conn, s, session_id, task))
+            # Set before anything awaits, so a request steered in now waits on this turn.
+            running = s.running = _RunningTurn()
+            try:
+                if on_start is not None:
+                    await on_start()
+                conn, session_id = await self._open(s)
+                text, finished = await self._prompt(conn, s, session_id, task)
+            except ToolError as e:
+                running.end(error=str(e))
+                raise
+            except BaseException:
+                running.end(error=stopped(self._harness))
+                raise
+            finally:
+                s.running = None
+            # The original request hears how it stopped; one steered in only that it didn't
+            # get done.
+            running.end(error=None if finished else stopped(self._harness))
+            return Turn(text)
 
     async def aclose(self) -> None:
         """Close every session, then the adapter process. No new work after this."""
@@ -268,7 +343,8 @@ class AcpRunner:
 
     async def _prompt(
         self, conn: ClientSideConnection, s: _Session, session_id: str, task: str
-    ) -> str:
+    ) -> tuple[str, bool]:
+        """Runs one turn: the agent's final message, and whether the turn ended normally."""
         name = self._harness.short_name
         reply = self._client.replies[session_id] = Reply()
         logger.info("%s turn in %s started: %s", self._harness.id, s.name, task)
@@ -295,11 +371,19 @@ class AcpRunner:
         logger.info(
             "%s turn in %s ended: %s", self._harness.id, s.name, response.stop_reason
         )
-        text = reply.text or f"{name} finished without a final message."
-        if response.stop_reason != "end_turn":
+        if not reply.text:
+            # Some models end a turn with nothing to say; passing that on as a result
+            # reads as done (OpenCode on one OpenRouter model, 2026-11-05).
+            logger.warning(
+                "%s turn in %s ended without a final message", self._harness.id, s.name
+            )
+            raise ToolError(no_report(self._harness))
+        text = reply.text
+        finished = response.stop_reason == "end_turn"
+        if not finished:
             text = f"{name} stopped early ({response.stop_reason}). Its last message: {text}"
         logger.info("%s turn in %s result: %s", self._harness.id, s.name, text)
-        return text
+        return text, finished
 
     async def _steer(
         self, conn: ClientSideConnection, s: _Session, session_id: str, task: str
