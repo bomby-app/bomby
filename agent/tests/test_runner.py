@@ -73,11 +73,23 @@ def names(events: list[dict[str, Any]]) -> list[str]:
 async def until_prompted(
     runner: AcpRunner, task: str, session: str = "main"
 ) -> asyncio.Task[str]:
-    """Start `task` in `session` and return once its turn is running."""
+    """Start `task` in `session` and return once the fake agent has its prompt."""
+    log = Path(runner.env["FAKE_ACP_LOG"])
+
+    def prompts() -> int:
+        if not log.exists():
+            return 0
+        return sum(
+            e.get("text") == task
+            for e in map(json.loads, log.read_text().splitlines())
+            if e["event"] == "prompt"
+        )
+
+    before = prompts()
     running = asyncio.create_task(text(runner.run(task, session)))
-    for _ in range(200):
-        if runner.is_busy(session):
-            await asyncio.sleep(0.2)  # let the prompt reach the agent
+    # A fixed sleep raced a loaded machine: a cancel sent before the prompt landed was lost.
+    for _ in range(400):
+        if prompts() > before:
             return running
         await asyncio.sleep(0.05)
     raise AssertionError("the turn never started")
