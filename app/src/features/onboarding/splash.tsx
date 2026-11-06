@@ -34,11 +34,10 @@ gsap.registerPlugin(useGSAP)
  * the glow comes up while Bomby rises with its eyes closed, opens them as it arrives and
  * looks around, says hello, lets the hello go, then moves up for the setup to fade in
  * under it.
- * Setup is a short form of two steps: the agent, then the LiveKit and Gemini keys. Which
- * one shows follows from what's set up and what the user chose, never from flags kept along
- * the way: the agent step until its agent is ready (and its model picker closed) or the
- * user sets it up later, then the keys. The round arrow comes once the keys are in, and
- * with them the agent or Set up later: a call needs the keys to talk, and an agent to work.
+ * Setup is a short form of two steps: the agent, then the LiveKit and Gemini keys
+ * (`splashStep`). Only the user moves it on: a step that's done shows the round arrow (or
+ * Return), and Set up later goes on without an agent. The keys' arrow opens the app: a call
+ * needs the keys to talk, and an agent to work.
  */
 
 const GREETING: Record<Daypart, string> = {
@@ -81,7 +80,11 @@ export function Splash({ onDone }: { onDone: () => void }) {
     setChoices((current) => ({ ...current, ...choice }))
   const { agents } = useAgents()
   const { keys } = useSavedKeys()
-  const { agent, agentReady, step, ready } = splashStep(agents, keys, choices)
+  const { agent, agentReady, step, canContinue } = splashStep(
+    agents,
+    keys,
+    choices
+  )
   // The step on screen: it follows `step`, fading out, then in.
   const [shown, setShown] = useState(step)
   // For the timelines' callbacks, which run after the render that started them.
@@ -187,17 +190,17 @@ export function Splash({ onDone }: { onDone: () => void }) {
     { dependencies: [shown, introDone], scope: root }
   )
 
-  // The arrow, once everything is ready.
+  // The arrow, each time a step is done.
   useGSAP(
     () => {
-      if (!introDone || !ready) return
+      if (!introDone || !canContinue) return
       gsap.fromTo(
         arrow.current,
         { autoAlpha: 0, scale: 0.85 },
         { autoAlpha: 1, scale: 1, duration: 0.8, ease: "sine.out", delay: 0.4 }
       )
     },
-    { dependencies: [introDone, ready], scope: root }
+    { dependencies: [introDone, canContinue, step], scope: root }
   )
 
   useEffect(() => {
@@ -222,9 +225,15 @@ export function Splash({ onDone }: { onDone: () => void }) {
     })
   }
 
+  // On to the keys, or out of the splash once they're in.
+  function next() {
+    if (step === "agent") choose({ onKeys: true })
+    else finish()
+  }
+
   // Return goes on once the arrow is there.
   const onKey = useEffectEvent((event: KeyboardEvent) => {
-    if (event.key === "Enter" && introDone && ready && !leaving) finish()
+    if (event.key === "Enter" && introDone && canContinue && !leaving) next()
   })
   useEffect(() => {
     window.addEventListener("keydown", onKey)
@@ -267,19 +276,16 @@ export function Splash({ onDone }: { onDone: () => void }) {
         {shown === "keys" && keys ? (
           <KeysStep
             keys={keys}
-            allSet={ready}
+            allSet={canContinue}
             withoutAgent={!agentReady}
-            onSetUpAgent={() => choose({ later: false })}
+            onSetUpAgent={() => choose({ onKeys: false })}
           />
         ) : (
           <FirstAgent
             agents={agents}
             agent={agent}
             onChoose={(chosen) => choose({ chosen })}
-            onLater={() => choose({ later: true })}
-            onPicking={(open) =>
-              choose({ pickingFor: open ? (agent?.id ?? null) : null })
-            }
+            onLater={() => choose({ onKeys: true })}
           />
         )}
       </div>
@@ -294,14 +300,14 @@ export function Splash({ onDone }: { onDone: () => void }) {
         Beta
       </span>
 
-      {introDone && ready && (
+      {introDone && canContinue && (
         <button
           ref={arrow}
           type="button"
           aria-label="Continue"
           disabled={leaving}
           className="group invisible absolute right-6 bottom-5 flex size-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-[0_10px_24px_-12px_rgb(18_18_18/0.55)] outline-none focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-ring dark:shadow-[0_10px_28px_-12px_rgb(232_255_58/0.5)]"
-          onClick={finish}
+          onClick={next}
         >
           <ArrowRight
             className="size-5 transition-transform duration-300 group-hover:translate-x-0.5"

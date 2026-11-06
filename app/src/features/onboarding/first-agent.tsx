@@ -78,15 +78,12 @@ export function FirstAgent({
   agent,
   onChoose,
   onLater,
-  onPicking,
 }: {
   agents: AgentStatus[] | null
   agent: AgentStatus | null
   onChoose: (id: string) => void
   /** Goes on to the keys without an agent. */
   onLater: () => void
-  /** Whether the agent's model picker is open. */
-  onPicking: (open: boolean) => void
 }) {
   const phase = phaseOf(agent)
   const [title, body] = COPY[phase](agent?.name ?? "")
@@ -97,7 +94,7 @@ export function FirstAgent({
     <div className="flex flex-col items-center">
       <StepHeading title={title} body={body} />
 
-      <AgentCard agent={agent} phase={phase} onPicking={onPicking} />
+      <AgentCard agent={agent} phase={phase} />
 
       <div className="mt-7 flex min-h-[18px] flex-col items-center gap-3">
         {install.error && (
@@ -119,11 +116,9 @@ export function FirstAgent({
 function AgentCard({
   agent,
   phase,
-  onPicking,
 }: {
   agent: AgentStatus | null
   phase: Phase
-  onPicking: (open: boolean) => void
 }) {
   return (
     <SetupCard
@@ -131,9 +126,7 @@ function AgentCard({
       tile={<AgentTile id={agent?.id ?? "claude"} />}
       name={agent?.name ?? "Claude Code"}
       status={<StatusLine tone={toneOf(phase)} text={statusOf(agent, phase)} />}
-      action={
-        agent && <Action agent={agent} phase={phase} onPicking={onPicking} />
-      }
+      action={agent && <Action agent={agent} phase={phase} />}
     />
   )
 }
@@ -203,15 +196,7 @@ const PRIMARY = cn(
 )
 
 /** The card's next step, in place; a ready agent shows its model, to change if wanted. */
-function Action({
-  agent,
-  phase,
-  onPicking,
-}: {
-  agent: AgentStatus
-  phase: Phase
-  onPicking: (open: boolean) => void
-}) {
+function Action({ agent, phase }: { agent: AgentStatus; phase: Phase }) {
   switch (phase) {
     case "missing":
       return <InstallButton agent={agent} size="default" className={PRIMARY} />
@@ -231,7 +216,6 @@ function Action({
           size="default"
           // A width of its own, for the model's name to fit or slide in.
           className={cn(CARD_BUTTON, "w-48")}
-          onOpenChange={onPicking}
         />
       )
     case "looking":

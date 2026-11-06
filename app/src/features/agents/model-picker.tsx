@@ -24,13 +24,10 @@ import { setupStep } from "./use-agents"
  */
 export function ModelPicker({
   agent,
-  onOpenChange,
   className,
   ...props
 }: {
   agent: AgentStatus
-  /** Whether it's open, for a screen that would move on while it is (the splash). */
-  onOpenChange?: (open: boolean) => void
 } & Omit<ComponentProps<typeof Button>, "onClick">) {
   const settings = useAgentSettings(agent.id)
   // Bubblegum, like everything a call still needs (docs/brand.md).
@@ -39,7 +36,6 @@ export function ModelPicker({
     <Popover
       onOpenChange={(open) => {
         if (open) settings.load()
-        onOpenChange?.(open)
       }}
     >
       <PopoverTrigger asChild>

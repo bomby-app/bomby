@@ -46,11 +46,11 @@ function step(
   keys: Keys | null,
   choices: Partial<Choices> = {}
 ) {
-  const { agent, step, ready } = splashStep(agents, keys, {
+  const { agent, step, canContinue } = splashStep(agents, keys, {
     ...NO_CHOICES,
     ...choices,
   })
-  return { agent: agent?.id ?? null, step, ready }
+  return { agent: agent?.id ?? null, step, canContinue }
 }
 
 describe("splashStep", () => {
@@ -58,7 +58,7 @@ describe("splashStep", () => {
     expect(step(null, ALL_KEYS)).toEqual({
       agent: null,
       step: "agent",
-      ready: false,
+      canContinue: false,
     })
   })
 
@@ -66,56 +66,46 @@ describe("splashStep", () => {
     expect(step(none, NO_KEYS)).toEqual({
       agent: "claude",
       step: "agent",
-      ready: false,
+      canContinue: false,
     })
   })
 
-  it("goes on to the keys after Set up later, once they're known", () => {
-    expect(step(none, null, { later: true }).step).toBe("agent")
-    expect(step(none, NO_KEYS, { later: true })).toEqual({
-      agent: "claude",
-      step: "keys",
-      ready: false,
-    })
-    expect(step(none, ALL_KEYS, { later: true }).ready).toBe(true)
-  })
-
-  it("goes back to the agent step when Set up later is undone", () => {
-    expect(step(none, ALL_KEYS, { later: false }).step).toBe("agent")
-  })
-
-  it("goes on to the keys as soon as the agent is ready", () => {
-    expect(step([agent("claude")], NO_KEYS)).toEqual({
-      agent: "claude",
-      step: "keys",
-      ready: false,
-    })
-    expect(step([agent("claude")], ALL_KEYS)).toEqual({
-      agent: "claude",
-      step: "keys",
-      ready: true,
-    })
-  })
-
-  it("stays on the agent step while its model picker is open", () => {
-    const agents = [agent("claude")]
-    expect(step(agents, ALL_KEYS, { pickingFor: "claude" })).toEqual({
-      agent: "claude",
+  it("stays on a ready agent, with the arrow, until the user goes on", () => {
+    expect(step([agent("codex")], NO_KEYS)).toEqual({
+      agent: "codex",
       step: "agent",
-      ready: false,
+      canContinue: true,
     })
-    // Another agent's picker, left open, holds nothing up.
-    expect(step(agents, ALL_KEYS, { pickingFor: "codex" }).step).toBe("keys")
+    // Even with the keys in: the user still sees the agent step and moves on.
+    expect(step([agent("codex")], ALL_KEYS).step).toBe("agent")
   })
 
-  it("waits for the effort after a required model pick, then goes on", () => {
-    const picking = { pickingFor: "opencode" }
-    expect(step([agent("opencode", "pick")], NO_KEYS, picking).step).toBe(
-      "agent"
-    )
-    // The model is picked and the agent ready, with the picker still open.
-    expect(step([agent("opencode")], NO_KEYS, picking).step).toBe("agent")
-    expect(step([agent("opencode")], NO_KEYS).step).toBe("keys")
+  it("shows the keys once the user goes on, with the arrow once they're in", () => {
+    const onKeys = { onKeys: true }
+    expect(step([agent("codex")], NO_KEYS, onKeys)).toEqual({
+      agent: "codex",
+      step: "keys",
+      canContinue: false,
+    })
+    expect(step([agent("codex")], ALL_KEYS, onKeys).canContinue).toBe(true)
+  })
+
+  it("waits for the keys to be known before showing them", () => {
+    expect(step([agent("codex")], null, { onKeys: true }).step).toBe("agent")
+  })
+
+  it("goes on to the keys after Set up later, and back on Set up an agent", () => {
+    expect(step(none, ALL_KEYS, { onKeys: true })).toEqual({
+      agent: "claude",
+      step: "keys",
+      canContinue: true,
+    })
+    expect(step(none, ALL_KEYS, { onKeys: false }).step).toBe("agent")
+  })
+
+  it("has no arrow on an agent that isn't ready yet", () => {
+    for (const state of ["connect", "sign_in", "pick", "unreachable"] as const)
+      expect(step([agent("codex", state)], ALL_KEYS).canContinue).toBe(false)
   })
 
   it("keeps Claude Code first when it's installed but not signed in", () => {
@@ -123,7 +113,7 @@ describe("splashStep", () => {
     expect(step(agents, ALL_KEYS)).toEqual({
       agent: "claude",
       step: "agent",
-      ready: false,
+      canContinue: false,
     })
   })
 

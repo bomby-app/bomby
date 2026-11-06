@@ -1,5 +1,5 @@
 import type { AgentStatus } from "@/features/agents/api"
-import { isReady, setupStep } from "@/features/agents/use-agents"
+import { isReady } from "@/features/agents/use-agents"
 import type { Keys } from "@/features/credentials/use-saved-keys"
 
 /** Offered first when installed, ready or not (owner, 2026-11-05). */
@@ -9,17 +9,11 @@ const PREFERRED = ["claude", "codex"]
 export type Choices = {
   /** Another agent, picked from Other supported agents. */
   chosen: string | null
-  /** Set up later: on to the keys without an agent. */
-  later: boolean
-  /** The agent whose model picker is open. */
-  pickingFor: string | null
+  /** On to the keys: with the round arrow once the agent's ready, or Set up later. */
+  onKeys: boolean
 }
 
-export const NO_CHOICES: Choices = {
-  chosen: null,
-  later: false,
-  pickingFor: null,
-}
+export const NO_CHOICES: Choices = { chosen: null, onKeys: false }
 
 /** Where the splash is, worked out from what the core reports and what the user chose. */
 export type SplashStep = {
@@ -27,33 +21,29 @@ export type SplashStep = {
   agent: AgentStatus | null
   agentReady: boolean
   step: "agent" | "keys"
-  /** The keys are in, and the agent is ready or left for later: the arrow goes on. */
-  ready: boolean
+  /** The step is done: the round arrow shows, to the keys or out of the splash. */
+  canContinue: boolean
 }
 
 /**
- * The splash as a short form, nothing kept along the way: the agent step until its agent
- * is ready (and its model picker closed) or the user sets it up later, then the keys.
+ * The splash as a short form, nothing kept along the way: the agent step until the user
+ * goes on (the arrow, once its agent is ready, or Set up later), then the keys, done once
+ * they're in. Only the user moves it on; a step that's done shows the arrow.
  */
 export function splashStep(
   agents: AgentStatus[] | null,
   keys: Keys | null,
-  { chosen, later, pickingFor }: Choices
+  { chosen, onKeys }: Choices
 ): SplashStep {
   const agent = firstAgent(agents, chosen)
   const agentReady = agent !== null && isReady(agent)
-  // A picker that goes away open (another agent, a sign-out) holds nothing up.
-  const picking =
-    agent !== null &&
-    pickingFor === agent.id &&
-    ["pick", "ready"].includes(setupStep(agent))
-  const agentDone = later || (agentReady && !picking)
   const keysReady = keys !== null && keys.livekit && keys.gemini
+  const step = onKeys && keys !== null ? "keys" : "agent"
   return {
     agent,
     agentReady,
-    step: agentDone && keys !== null ? "keys" : "agent",
-    ready: agentDone && keysReady,
+    step,
+    canContinue: step === "agent" ? agentReady : keysReady,
   }
 }
 
