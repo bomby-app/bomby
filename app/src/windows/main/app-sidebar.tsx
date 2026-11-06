@@ -41,7 +41,7 @@ export function AppSidebar({
         >
           <AppLogo />
           <Wordmark />
-          <Badge className="h-4 bg-claude px-1.5 text-[10px] font-semibold tracking-wider text-claude-foreground uppercase">
+          <Badge className="h-4 bg-claude px-1.5 font-mono text-label font-semibold text-claude-foreground uppercase">
             Beta
           </Badge>
         </button>

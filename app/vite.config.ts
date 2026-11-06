@@ -66,7 +66,15 @@ export default defineConfig({
   },
   plugins: [react({ compiler: true }), tailwindcss()],
   resolve: {
-    alias: { "@": path.resolve(import.meta.dirname, "./src") },
+    alias: [
+      { find: "@", replacement: path.resolve(import.meta.dirname, "./src") },
+      // cn() configured with the theme's own type and shadow names (src/lib/cn.ts).
+      // Exact match only, so src/lib/cn.ts can still import "cn/config".
+      {
+        find: /^cn$/,
+        replacement: path.resolve(import.meta.dirname, "./src/lib/cn.ts"),
+      },
+    ],
   },
   // One HTML page per window (src-tauri/src/windows.rs opens the others by file name).
   build: {

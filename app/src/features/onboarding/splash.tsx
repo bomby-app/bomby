@@ -328,7 +328,7 @@ export function Splash({ onDone }: { onDone: () => void }) {
         </p>
       )}
 
-      <span className="absolute bottom-[22px] left-6 rounded-full bg-claude px-2.5 py-1 font-mono text-[11px] leading-[14px] font-semibold tracking-[0.08em] text-claude-foreground uppercase">
+      <span className="absolute bottom-[22px] left-6 rounded-full bg-claude px-2.5 py-1 font-mono text-label font-semibold text-claude-foreground uppercase">
         Beta
       </span>
 

@@ -259,7 +259,7 @@ function ChooseButton({
       type="button"
       aria-label={label}
       onClick={onClick}
-      className="absolute inset-0 rounded-[18px] outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+      className="absolute inset-0 rounded-2xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
     />
   )
 }

@@ -26,7 +26,7 @@ export function SetupCard({
   return (
     <div
       className={cn(
-        "flex w-[440px] items-center gap-4 rounded-[18px] border bg-card p-4 shadow-[0_1px_2px_rgb(18_18_18/0.04),0_12px_32px_-12px_rgb(18_18_18/0.12)] dark:shadow-[0_12px_32px_-12px_rgb(0_0_0/0.6)]",
+        "flex w-[440px] items-center gap-4 rounded-2xl border bg-card p-4 shadow-card",
         className
       )}
     >
@@ -61,7 +61,7 @@ export function Tile({
         "flex shrink-0 items-center justify-center bg-muted text-foreground",
         small
           ? "size-8 rounded-[9px] [&_svg]:size-[18px]"
-          : "size-14 rounded-[14px] [&_svg]:size-[30px]",
+          : "size-14 rounded-xl [&_svg]:size-[30px]",
         className
       )}
     >
@@ -108,10 +108,8 @@ export const CARD_BUTTON =
 export function StepHeading({ title, body }: { title: string; body: string }) {
   return (
     <>
-      <h1 className="pt-1.5 font-heading text-[34px] leading-[38px] font-bold tracking-[-0.03em]">
-        {title}
-      </h1>
-      <p className="mt-2.5 w-[400px] text-center text-[15px] leading-[22px] text-muted-foreground">
+      <h1 className="pt-1.5 font-heading text-title font-bold">{title}</h1>
+      <p className="mt-2.5 w-[400px] text-center text-lead text-muted-foreground">
         {body}
       </p>
     </>

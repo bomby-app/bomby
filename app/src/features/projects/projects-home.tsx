@@ -73,10 +73,10 @@ export function ProjectsHome({
           <div ref={mascot}>
             <Mascot depth state="idle" size={92} />
           </div>
-          <h1 className="pt-5 font-heading text-[40px] leading-[44px] font-bold tracking-[-0.035em]">
+          <h1 className="pt-5 font-heading text-display font-bold">
             {GREETING[daypart]}
           </h1>
-          <p className="pt-2 text-[15px] leading-[22px] text-muted-foreground">
+          <p className="pt-2 text-lead text-muted-foreground">
             {projects.length === 0
               ? "Nothing here yet. Let's start your first project."
               : "Pick up where we left off, or just tell me which one."}
@@ -86,20 +86,20 @@ export function ProjectsHome({
         {projects.length === 0 ? (
           <div className="flex flex-col items-center gap-3.5">
             <Button
-              className="h-auto gap-2 rounded-[12px] py-3 pr-5 pl-4 text-[15px] leading-5 font-semibold shadow-[0_10px_24px_-12px_rgb(18_18_18/0.5)] [&_svg]:size-[18px] [&_svg]:stroke-[2.4]"
+              className="h-auto gap-2 rounded-xl py-3 pr-5 pl-4 text-[15px] leading-5 font-semibold shadow-primary [&_svg]:size-[18px] [&_svg]:stroke-[2.4]"
               onClick={onNewProject}
             >
               <Plus />
               Create your first project
             </Button>
-            <p className="text-[13px] leading-[18px] text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               Pick any folder on your Mac. Your agent works right there.
             </p>
           </div>
         ) : (
           <div className="flex w-[480px] max-w-full flex-col gap-2.5">
             <div className="flex items-center justify-between px-1">
-              <span className="font-mono text-[11px] leading-[14px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
+              <span className="font-mono text-label font-medium text-muted-foreground uppercase">
                 Recent
               </span>
               {recent.length > RECENT_COUNT && (
@@ -112,19 +112,19 @@ export function ProjectsHome({
                 </button>
               )}
             </div>
-            <ul className="flex flex-col rounded-2xl bg-card p-1.5 shadow-[0_0_0_1px_var(--border),0_20px_40px_-24px_rgb(18_18_18/0.18)]">
+            <ul className="flex flex-col rounded-2xl bg-card p-1.5 shadow-float">
               {shown.map((project) => (
                 <li key={project.id}>
                   <button
                     type="button"
-                    className="flex w-full items-center gap-3.5 rounded-[11px] py-2.5 pr-3 pl-2.5 text-left outline-none hover:bg-accent focus-visible:bg-accent"
+                    className="flex w-full items-center gap-3.5 rounded-lg py-2.5 pr-3 pl-2.5 text-left outline-none hover:bg-accent focus-visible:bg-accent"
                     onClick={() => onOpen(project.id)}
                   >
-                    <span className="flex size-10 shrink-0 items-center justify-center rounded-[10px] bg-muted [&_svg]:size-[18px]">
+                    <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted [&_svg]:size-[18px]">
                       <Folder />
                     </span>
-                    <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
-                      <span className="truncate text-[15px] leading-[19px] font-semibold">
+                    <span className="flex min-w-0 flex-1 flex-col gap-1">
+                      <span className="truncate text-base leading-5 font-semibold">
                         {project.name}
                       </span>
                       <span className="truncate font-mono text-xs leading-[15px] text-muted-foreground">

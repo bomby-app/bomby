@@ -60,6 +60,45 @@ Ink on highlighter (16.8:1) and bubblegum (9.7:1) is readable. Highlighter on wh
 - **Bricolage Grotesque Bold**: lowercase wordmark at -0.02em and display headlines.
 - App interface: the OS font (owner, 2026-11-03). Web body: Bricolage Regular or Medium. Paper app previews use Inter only as a stand-in.
 
+The Paper file's tokens carry the same names as `app/src/index.css` (dark values as `--color-dark-*`). Roles (Paper board "09 Type"), size / line height:
+
+| Role | Size | Class | Use |
+| --- | --- | --- | --- |
+| Display | 40 / 44, Bricolage Bold, -0.03em | `text-display` | The projects home's greeting |
+| Title | 34 / 38, Bricolage Bold, -0.03em | `text-title` | Splash step headings |
+| Heading | 16 / 24 semibold (16 / 20 in cards) | `text-base` | Section and card headings |
+| Lead | 15 / 22 | `text-lead` | The line under a display or title |
+| Body | 14 / 20, regular or medium | `text-sm` | Everything else |
+| Small | 12 / 16, mono | `font-mono text-xs` | Paths, counts |
+| Label | 11 / 14, mono, uppercase, 0.08em | `font-mono text-label uppercase` | Section labels, the Beta badge |
+
+The one exception is the 10px count in the agents panel's 16px disc. The splash keeps a few values off the scale until the owner approves snapping them (13 / 18 text, its 12px card buttons, the greeting's -0.035em).
+
+## Spacing and radius
+
+Paper board "10 Spacing and radius". Spacing goes in 4px steps: 4, 8, 12, 16, 20, 24, 28, 32, 40.
+
+| Radius | px | Use |
+| --- | --- | --- |
+| `rounded-sm` | 6 | Sidebar items |
+| `rounded-md` | 8 | Small buttons, tooltips, 32 and 36px tiles |
+| `rounded-lg` | 10 | The base (`--radius`): buttons, inputs, select trigger, popovers, settings cards, project rows |
+| `rounded-xl` | 14 | Dialogs, 56px splash tiles, splash and home buttons |
+| `rounded-2xl` | 18 | Splash cards, the recent projects list |
+| `rounded-full` | - | Discs, dots, badges, the continue arrow |
+
+A nested corner is the outer radius minus the padding.
+
+## Elevation
+
+Paper board "11 Elevation". Three shadows, as `--elevation-*` in `:root` and `.dark` and used as `shadow-card`, `shadow-float` and `shadow-primary`:
+
+- **Card**: the splash cards.
+- **Float**: lists, popovers, select content. A 1px border ring plus a soft drop.
+- **Primary**: the projects home's main button. Ink in light, a highlighter glow in dark.
+
+Settings stays flat, with borders only.
+
 ## Mascot states and motion
 
 Only the eyes change, never the bubble shape or colours. States follow `useAgent()`:
