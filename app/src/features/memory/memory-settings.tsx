@@ -50,6 +50,8 @@ export function MemorySettings() {
   const [saved, setSaved] = useState<Saved | null>(null)
   // Saves run one after another, in click order, so a quick off and on can't land swapped.
   const queue = useRef<Promise<unknown>>(Promise.resolve())
+  const waiting = useRef(0)
+  const failed = useRef(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -63,19 +65,29 @@ export function MemorySettings() {
   function change(next: Partial<Saved>, write: () => Promise<void>) {
     setError(null)
     setSaved((now) => now && { ...now, ...next })
-    queue.current = queue.current.then(write).catch(async (e: unknown) => {
-      setError(String(e))
-      // Back to what the core has, whichever save failed; never rejects, or the queue stops.
-      try {
-        const [memory, incognito] = await Promise.all([
-          memorySetting(),
-          memoryIncognito(),
-        ])
-        setSaved((now) => now && { ...now, memory, incognito })
-      } catch {
-        // The error above already shows.
-      }
-    })
+    waiting.current += 1
+    queue.current = queue.current
+      .then(write)
+      .catch((e: unknown) => {
+        failed.current = true
+        setError(String(e))
+      })
+      .then(async () => {
+        waiting.current -= 1
+        if (waiting.current > 0 || !failed.current) return
+        // A save failed: once none is left to run, show what the core has.
+        failed.current = false
+        try {
+          const [memory, incognito] = await Promise.all([
+            memorySetting(),
+            memoryIncognito(),
+          ])
+          if (waiting.current > 0) failed.current = true
+          else setSaved((now) => now && { ...now, memory, incognito })
+        } catch {
+          // The error above already shows.
+        }
+      })
   }
 
   if (!saved) {
