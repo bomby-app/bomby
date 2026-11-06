@@ -14,7 +14,12 @@
       "identifier": "opener:allow-open-url",
       "allow": [
         { "url": "https://cloud.livekit.io" },
-        { "url": "https://aistudio.google.com/apikey" }
+        { "url": "https://aistudio.google.com/apikey" },
+        { "url": "https://code.claude.com/docs/en/quickstart" },
+        { "url": "https://learn.chatgpt.com/docs/codex/cli" },
+        { "url": "https://opencode.ai/docs/" },
+        { "url": "https://omp.sh/docs/quickstart" },
+        { "url": "https://goose-docs.ai/docs/quickstart/" }
       ]
     },
     "dialog:allow-open",
@@ -32,7 +37,6 @@
     "allow-call-messages",
     "allow-app-log",
     "allow-delete-call",
-    "clipboard-manager:allow-write-text",
     "clipboard-manager:allow-read-text",
     "allow-credentials-info",
     "allow-save-credentials",

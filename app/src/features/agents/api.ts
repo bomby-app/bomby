@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
+import { openUrl } from "@tauri-apps/plugin-opener"
 
 import type { AgentStatus, Listed, SettingPick } from "@/generated/agents"
 
@@ -51,6 +52,11 @@ export function pickAgentSettings(
 /** Installs every ACP adapter into the app's folder; resolves once the agents are rechecked. */
 export function installAdapters(): Promise<void> {
   return invoke("install_adapters")
+}
+
+/** Opens `agent`'s own install page in the browser (allowed in `capabilities/`). */
+export function openInstallPage(agent: AgentStatus): Promise<void> {
+  return openUrl(agent.installPage)
 }
 
 /** Calls `handler` with the new list whenever a look finds something different. */

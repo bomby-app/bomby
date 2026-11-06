@@ -65,9 +65,21 @@ async function pasteGemini(): Promise<string | null> {
 /**
  * The splash's second step: the LiveKit and Gemini keys a call talks through, the user's
  * own (docs/decisions/users-bring-their-own-keys-and-claude.md). Each pastes from the
- * clipboard in one click; typing them is a dialog away.
+ * clipboard in one click; typing them is a dialog away. After Set up later there's no agent
+ * yet: the heading says a call can still talk, and the footnote offers the way back.
  */
-export function KeysStep({ keys, allSet }: { keys: Keys; allSet: boolean }) {
+export function KeysStep({
+  keys,
+  allSet,
+  withoutAgent,
+  onSetUpAgent,
+}: {
+  keys: Keys
+  allSet: boolean
+  /** The user went on without an agent (Set up later). */
+  withoutAgent: boolean
+  onSetUpAgent: () => void
+}) {
   const [livekitError, pasteLiveKitNow, pastingLiveKit] = useActionState(
     pasteLiveKit,
     null
@@ -85,8 +97,14 @@ export function KeysStep({ keys, allSet }: { keys: Keys; allSet: boolean }) {
   return (
     <div className="flex flex-col items-center">
       <StepHeading
-        title={allSet ? "You're all set" : "Just one more step"}
-        body="Pick where calls run and paste your keys."
+        title={
+          allSet
+            ? "You're all set"
+            : withoutAgent
+              ? "Let's still talk"
+              : "Just one more step"
+        }
+        body="Pick your voice provider."
       />
 
       {/* Both cards stay mounted, so switching only animates widths and borders. */}
@@ -216,6 +234,12 @@ export function KeysStep({ keys, allSet }: { keys: Keys; allSet: boolean }) {
           <InlineLink onClick={() => setTyping(true)}>type them in</InlineLink>.
         </span>
       </p>
+      {withoutAgent && (
+        <p className="mt-3 flex items-center gap-1.5 text-[13px] leading-[18px] text-muted-foreground">
+          Changed your mind?
+          <InlineLink onClick={onSetUpAgent}>Set up an agent</InlineLink>
+        </p>
+      )}
 
       <KeysDialog keys={keys} open={typing} onOpenChange={setTyping} />
     </div>

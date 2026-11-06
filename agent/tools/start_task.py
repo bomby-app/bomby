@@ -84,9 +84,14 @@ def agents_note(available: list[Harness]) -> str:
     """The prompt's Agents section for one call: which agents `start_task` can use, and the
     default."""
     if not available:
+        supported = ", ".join(h.short_name for h in HARNESSES.values())
         return (
-            "## Agents\n\nNo agent is installed on this computer, so work can't start. "
-            "Tell the user to add one in Bomby's settings."
+            "## Agents\n\nNo coding agent is ready on this computer yet, so work can't "
+            "start on this call. You can still talk. When the user asks for work, or "
+            "early in the call, tell them kindly and briefly: you need one of the agents "
+            f"Bomby supports ({supported}) installed and signed in. Suggest Claude Code "
+            "as a good first one. They install it from its own page, through Settings, "
+            "Agents in Bomby, and the next call picks it up. Never pretend a task started."
         )
     names = [f"`{h.id}` ({h.short_name})" for h in available]
     listed = (

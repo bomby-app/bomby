@@ -11,6 +11,7 @@ mod call_server;
 mod calls;
 mod credentials;
 mod db;
+mod dev;
 mod error;
 mod local_server;
 mod notifications;

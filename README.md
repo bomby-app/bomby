@@ -56,7 +56,16 @@ just install    # the pinned tools (mise) and every part's dependencies
 just app dev    # start the app
 ```
 
-Then open Settings, paste your LiveKit and Gemini keys under Credentials, and check that Setup and Agents look ready. Tell Bomby what to call you under Intro if you like. Add a project with its folders (and, if you want, a few words about it) and start a call.
+The first run sets up an agent and your keys; Settings has them all after that. Tell Bomby what to call you under Intro if you like. Add a project with its folders (and, if you want, a few words about it) and start a call.
+
+To see a state your Mac isn't in, without installing or signing out of anything (development builds only):
+
+```bash
+just app dev --splash                 # the first-run splash at every launch
+just app dev --agents=none            # as if no agent were installed (or --agents=codex,goose)
+just app dev --signed-out             # Claude Code signed out, on an empty config folder
+just app dev --no-keys                # no LiveKit or Gemini keys; any you add last for the run
+```
 
 ### Without the app
 

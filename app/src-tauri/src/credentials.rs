@@ -17,6 +17,7 @@ use keyring::Entry;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Runtime, State};
 
+use crate::dev;
 use crate::error::{Error, Result};
 use crate::sync;
 
@@ -94,6 +95,9 @@ fn remove(entry: &Entry) -> Result<()> {
 }
 
 fn write<R: Runtime>(app: &AppHandle<R>, keys: &Keys) -> Result<()> {
+    if dev::no_keys() {
+        return Ok(());
+    }
     let entry = entry(app, ACCOUNT)?;
     if keys.livekit.is_none() && keys.gemini_key.is_none() {
         return remove(&entry);
@@ -102,8 +106,13 @@ fn write<R: Runtime>(app: &AppHandle<R>, keys: &Keys) -> Result<()> {
     Ok(())
 }
 
-/// Reads the entry; no keys yet when there is none.
+/// Reads the entry; no keys yet when there is none. With `just app dev --no-keys`, neither
+/// this nor `write` touches the keychain: the keys start empty and last for the run
+/// ([`dev`]).
 fn read_keychain<R: Runtime>(app: &AppHandle<R>) -> Result<Keys> {
+    if dev::no_keys() {
+        return Ok(Keys::default());
+    }
     match read(&entry(app, ACCOUNT)?)? {
         Some(json) => serde_json::from_str(&json).map_err(Error::Corrupt),
         None => Ok(Keys::default()),

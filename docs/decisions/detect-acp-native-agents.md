@@ -16,11 +16,11 @@ People use more than Claude Code, and many agents speak ACP. Bomby should work w
 
 ## Adding an agent
 
-1. A row in `KNOWN` in `agents.rs`: id, name, program, usual install places.
+1. A row in `KNOWN` in `agents.rs`: id, name, program, usual install places, and its own install page, which Install opens. Allow that page in `opener:allow-open-url` in `capabilities/main.json` and `settings.json` (a test checks).
 2. A `Harness` in `agent/harnesses/` with the same id: `program` and `args` for a native agent, or `adapter` and `program_env` for one behind an adapter, `setup_command` if its ACP `authMethods` name no command to set it up, `model_selection_required` if its ACP default model isn't the user's own choice, and `pickable_settings` for a setting it lists without a category that the user should be able to pick. List it in `HARNESSES` and add its id to `AgentName`. Its setup check and error messages need nothing more ([probe](check-agent-setup-with-an-acp-probe.md)).
 3. Optionally a logo in `app/src/features/agents/agent-logos.tsx`.
 
 ## Consequences
 
 - Every agent uses the user's own setup. Claude, Codex and omp support steering; OpenCode and goose queue mid-task requests behind the running turn. OpenCode permissions are approved once, omp does not prompt, Claude uses `bypassPermissions`, Codex `agent-full-access` and goose `auto`.
-- A call needs at least one agent; with none, starting one says so and points at Settings, Agents.
+- A call opens with no agent ready (owner, 2026-11-06): the voice says, kindly, that work needs one of the supported agents installed and signed in, suggests Claude Code, and points at Settings, Agents (`agents_note` in `agent/tools/start_task.py`). Bomby links to each agent's own install page and reports whether it's ready; installing and signing in stay the agent's own.

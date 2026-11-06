@@ -6,6 +6,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::thread;
 use std::time::Duration;
 
 use livekit_api::access_token::{AccessToken, VideoGrants};
@@ -261,25 +262,25 @@ pub fn open_call<R: Runtime>(
     let gemini = vault
         .gemini_key(&app)?
         .ok_or_else(|| Error::Invalid("Add your Gemini API key in Settings first.".into()))?;
-    // Looks again, so an agent installed since launch is picked up; only where the programs
-    // are, not their versions or setup.
-    let found = agents::usable_now(&app);
-    if found.is_empty() {
-        return Err(Error::Invalid(
-            "Bomby can't find an agent that's ready to work. See Settings, Agents.".into(),
-        ));
-    }
-    // Last, so this Mac's server starts only for a call that can open.
-    let server = call_server::for_new_call(&app, &db, &vault, &local)?;
-    let log_dir = app.path().app_log_dir()?;
-    worker.ensure(
-        WorkerConfig {
-            livekit: server.clone(),
-            gemini_key: gemini,
-        },
-        &log_dir,
-        report_crashes(&app),
-    )?;
+    // Finds the agents (a login shell) while the server and worker start.
+    let (found, started) = thread::scope(|scope| {
+        let lookup = scope.spawn(|| agents::usable_now(&app));
+        let started = (|| -> Result<LiveKitKeys> {
+            let server = call_server::for_new_call(&app, &db, &vault, &local)?;
+            let log_dir = app.path().app_log_dir()?;
+            worker.ensure(
+                WorkerConfig {
+                    livekit: server.clone(),
+                    gemini_key: gemini,
+                },
+                &log_dir,
+                report_crashes(&app),
+            )?;
+            Ok(server)
+        })();
+        (lookup.join().unwrap_or_default(), started)
+    });
+    let server = started?;
 
     let conn = db.conn();
     // Read before the call is recorded, so a failed read leaves no call without its agents.

@@ -18,13 +18,18 @@ import {
   useDaypart,
 } from "@/components/day-glow"
 import { FilmGrain } from "@/components/film-grain"
+import { InlineLink } from "@/components/inline-link"
 import { Mascot, type MascotState } from "@/components/mascot"
-import { isReady, setupStep, useAgents } from "@/features/agents/use-agents"
-import { useSavedKeys } from "@/features/credentials/use-saved-keys"
+import { useAgents } from "@/features/agents/use-agents"
+import {
+  checkKeysAgain,
+  useSavedKeys,
+} from "@/features/credentials/use-saved-keys"
 
 import { finishFirstRun } from "./api"
-import { FirstAgent, firstAgent } from "./first-agent"
+import { FirstAgent } from "./first-agent"
 import { KeysStep } from "./keys-step"
+import { NO_CHOICES, splashStep } from "./splash-step"
 
 gsap.registerPlugin(useGSAP)
 
@@ -33,9 +38,10 @@ gsap.registerPlugin(useGSAP)
  * the glow comes up while Bomby rises with its eyes closed, opens them as it arrives and
  * looks around, says hello, lets the hello go, then moves up for the setup to fade in
  * under it.
- * Setup is the agent, then, one more step, the LiveKit and Gemini keys; steps already done
- * are skipped. The round arrow on comes only once a call has all three, and nothing gets
- * past it before that: the app can't work without them.
+ * Setup is a short form of two steps: the agent, then the LiveKit and Gemini keys
+ * (`splashStep`). Only the user moves it on: a step that's done shows the round arrow (or
+ * Return), and Set up later goes on without an agent. The keys' arrow opens the app: a call
+ * needs the keys to talk, and an agent to work.
  */
 
 const GREETING: Record<Daypart, string> = {
@@ -72,32 +78,28 @@ export function Splash({ onDone }: { onDone: () => void }) {
   const [leaving, startLeaving] = useTransition()
   const [saveError, setSaveError] = useState<string | null>(null)
 
+  // What the user chose; the step follows from it and what the core reports (`splashStep`).
+  const [choices, setChoices] = useState(NO_CHOICES)
+  const choose = (choice: Partial<typeof choices>) =>
+    setChoices((current) => ({ ...current, ...choice }))
   const { agents } = useAgents()
-  const [chosen, setChosen] = useState<string | null>(null)
-  const agent = firstAgent(agents, chosen)
-  const { keys } = useSavedKeys()
-  const agentReady = agent !== null && isReady(agent)
-  const keysReady = keys !== null && keys.livekit && keys.gemini
-  const ready = agentReady && keysReady
-  // The agent step waits for this agent's open picker to close. Worked out on each render,
-  // so a picker that goes away open (another agent, a sign-out) holds nothing up.
-  const [pickingFor, setPickingFor] = useState<string | null>(null)
-  const picking =
-    agent !== null &&
-    pickingFor === agent.id &&
-    ["pick", "ready"].includes(setupStep(agent))
-  // The keys come once the agent is ready.
-  const keysMissing = agentReady && !picking && keys !== null && !keysReady
-  // Once shown, the keys step stays and says all is set itself.
-  const [keysShown, setKeysShown] = useState(false)
-  if (keysMissing && !keysShown) setKeysShown(true)
-  const step = keysMissing || (keysShown && ready) ? "keys" : "agent"
+  const { keys, error: keysError } = useSavedKeys()
+  const { agent, agentReady, step, canContinue } = splashStep(
+    agents,
+    keys,
+    choices
+  )
   // The step on screen: it follows `step`, fading out, then in.
   const [shown, setShown] = useState(step)
+  // For the timelines' callbacks, which run after the render that started them.
   const latestStep = useRef(step)
   useEffect(() => {
     latestStep.current = step
   })
+  // The step whose fade-in has finished: nothing goes on before it's fully there.
+  const [arrived, setArrived] = useState<string | null>(null)
+  const canGoOn =
+    introDone && step === shown && arrived === shown && canContinue
 
   const root = useRef<HTMLDivElement>(null)
   const mascotBox = useRef<HTMLDivElement>(null)
@@ -191,22 +193,30 @@ export function Splash({ onDone }: { onDone: () => void }) {
   useGSAP(
     () => {
       if (!introDone) return
-      gsap.to(content.current, { autoAlpha: 1, y: 0, duration: 1, ease: EASE })
+      // Already in after the intro, so it arrives at once.
+      const alreadyIn = gsap.getProperty(content.current, "autoAlpha") === 1
+      gsap.to(content.current, {
+        autoAlpha: 1,
+        y: 0,
+        duration: alreadyIn ? 0 : 1,
+        ease: EASE,
+        onComplete: () => setArrived(shown),
+      })
     },
     { dependencies: [shown, introDone], scope: root }
   )
 
-  // The arrow, once everything is ready.
+  // The arrow, each time a step is done.
   useGSAP(
     () => {
-      if (!introDone || !ready) return
+      if (!canGoOn) return
       gsap.fromTo(
         arrow.current,
         { autoAlpha: 0, scale: 0.85 },
         { autoAlpha: 1, scale: 1, duration: 0.8, ease: "sine.out", delay: 0.4 }
       )
     },
-    { dependencies: [introDone, ready], scope: root }
+    { dependencies: [canGoOn, shown], scope: root }
   )
 
   useEffect(() => {
@@ -231,9 +241,23 @@ export function Splash({ onDone }: { onDone: () => void }) {
     })
   }
 
-  // Return goes on once the arrow is there.
+  // On to the keys, or out of the splash once they're in.
+  function next() {
+    if (step === "agent") choose({ onKeys: true })
+    else finish()
+  }
+
+  // Return goes on like the arrow, unless it's for a focused control.
   const onKey = useEffectEvent((event: KeyboardEvent) => {
-    if (event.key === "Enter" && introDone && ready && !leaving) finish()
+    if (
+      event.key !== "Enter" ||
+      event.repeat ||
+      event.isComposing ||
+      event.defaultPrevented ||
+      forAControl(event.target)
+    )
+      return
+    if (canGoOn && !leaving) next()
   })
   useEffect(() => {
     window.addEventListener("keydown", onKey)
@@ -274,16 +298,18 @@ export function Splash({ onDone }: { onDone: () => void }) {
         style={{ top: SETUP_TOP }}
       >
         {shown === "keys" && keys ? (
-          <KeysStep keys={keys} allSet={ready} />
+          <KeysStep
+            keys={keys}
+            allSet={canContinue}
+            withoutAgent={!agentReady}
+            onSetUpAgent={() => choose({ onKeys: false })}
+          />
         ) : (
           <FirstAgent
             agents={agents}
             agent={agent}
-            allSet={ready}
-            onChoose={setChosen}
-            onPicking={(open) =>
-              setPickingFor(open ? (agent?.id ?? null) : null)
-            }
+            onChoose={(chosen) => choose({ chosen })}
+            onLater={() => choose({ onKeys: true })}
           />
         )}
       </div>
@@ -293,19 +319,27 @@ export function Splash({ onDone }: { onDone: () => void }) {
           {saveError}
         </p>
       )}
+      {keys === null && keysError && (
+        <p className="absolute inset-x-0 bottom-7 flex justify-center gap-1.5 text-[13px] leading-[18px] text-destructive">
+          {keysError}
+          <InlineLink onClick={() => void checkKeysAgain()}>
+            Try again
+          </InlineLink>
+        </p>
+      )}
 
       <span className="absolute bottom-[22px] left-6 rounded-full bg-claude px-2.5 py-1 font-mono text-[11px] leading-[14px] font-semibold tracking-[0.08em] text-claude-foreground uppercase">
         Beta
       </span>
 
-      {introDone && ready && (
+      {canGoOn && (
         <button
           ref={arrow}
           type="button"
           aria-label="Continue"
           disabled={leaving}
           className="group invisible absolute right-6 bottom-5 flex size-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-[0_10px_24px_-12px_rgb(18_18_18/0.55)] outline-none focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-ring dark:shadow-[0_10px_28px_-12px_rgb(232_255_58/0.5)]"
-          onClick={finish}
+          onClick={next}
         >
           <ArrowRight
             className="size-5 transition-transform duration-300 group-hover:translate-x-0.5"
@@ -314,5 +348,14 @@ export function Splash({ onDone }: { onDone: () => void }) {
         </button>
       )}
     </div>
+  )
+}
+
+function forAControl(target: EventTarget | null): boolean {
+  return (
+    target instanceof Element &&
+    target.closest(
+      "button, a, input, textarea, select, [contenteditable], [role=dialog], [role=menu], [role=listbox]"
+    ) !== null
   )
 }

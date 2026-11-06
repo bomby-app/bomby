@@ -13,10 +13,16 @@
     "core:window:allow-close",
     {
       "identifier": "opener:allow-open-url",
-      "allow": [{ "url": "https://github.com/bomby-app/bomby" }]
+      "allow": [
+        { "url": "https://github.com/bomby-app/bomby" },
+        { "url": "https://code.claude.com/docs/en/quickstart" },
+        { "url": "https://learn.chatgpt.com/docs/codex/cli" },
+        { "url": "https://opencode.ai/docs/" },
+        { "url": "https://omp.sh/docs/quickstart" },
+        { "url": "https://goose-docs.ai/docs/quickstart/" }
+      ]
     },
     "clipboard-manager:allow-read-text",
-    "clipboard-manager:allow-write-text",
     "allow-credentials-info",
     "allow-save-credentials",
     "allow-clear-credentials",
