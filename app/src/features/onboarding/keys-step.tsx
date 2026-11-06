@@ -66,7 +66,7 @@ async function pasteGemini(): Promise<string | null> {
  * The splash's second step: the LiveKit and Gemini keys a call talks through, the user's
  * own (docs/decisions/users-bring-their-own-keys-and-claude.md). Each pastes from the
  * clipboard in one click; typing them is a dialog away. After Set up later there's no agent
- * yet: the step says a call can still talk, and offers the way back to set one up.
+ * yet: the heading says a call can still talk, and the footnote offers the way back.
  */
 export function KeysStep({
   keys,
@@ -104,11 +104,7 @@ export function KeysStep({
               ? "Let's still talk"
               : "Just one more step"
         }
-        body={
-          withoutAgent
-            ? "No agent yet, and that's fine. Pick your voice provider, and I'll help you get one."
-            : "Pick your voice provider."
-        }
+        body="Pick your voice provider."
       />
 
       {/* Both cards stay mounted, so switching only animates widths and borders. */}
