@@ -45,7 +45,7 @@ export function ChoiceRow({
   id: string
   value: string
   chosen: boolean
-  /** Drawn in the text colour at 18px, unless it sizes itself. */
+  /** Drawn in the text colour at 18px, unless it sets its own width. */
   logo: ReactNode
   title: string
   description: string
@@ -58,7 +58,7 @@ export function ChoiceRow({
         htmlFor={id}
         className="flex cursor-default items-center gap-3 px-4 py-3.5"
       >
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-foreground [&_svg:not([class*='size-'])]:size-[18px]">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-foreground [&_svg:not([class*='w-'])]:size-[18px]">
           {logo}
         </span>
         <span className="flex min-w-0 flex-1 flex-col gap-0.5 text-sm">
