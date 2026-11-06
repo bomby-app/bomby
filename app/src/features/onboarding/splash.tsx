@@ -96,8 +96,10 @@ export function Splash({ onDone }: { onDone: () => void }) {
   useEffect(() => {
     latestStep.current = step
   })
-  // Not while a step fades in.
-  const canGoOn = introDone && step === shown && canContinue
+  // The step whose fade-in has finished: nothing goes on before it's fully there.
+  const [arrived, setArrived] = useState<string | null>(null)
+  const canGoOn =
+    introDone && step === shown && arrived === shown && canContinue
 
   const root = useRef<HTMLDivElement>(null)
   const mascotBox = useRef<HTMLDivElement>(null)
@@ -191,7 +193,15 @@ export function Splash({ onDone }: { onDone: () => void }) {
   useGSAP(
     () => {
       if (!introDone) return
-      gsap.to(content.current, { autoAlpha: 1, y: 0, duration: 1, ease: EASE })
+      // Already in after the intro, so it arrives at once.
+      const alreadyIn = gsap.getProperty(content.current, "autoAlpha") === 1
+      gsap.to(content.current, {
+        autoAlpha: 1,
+        y: 0,
+        duration: alreadyIn ? 0 : 1,
+        ease: EASE,
+        onComplete: () => setArrived(shown),
+      })
     },
     { dependencies: [shown, introDone], scope: root }
   )
