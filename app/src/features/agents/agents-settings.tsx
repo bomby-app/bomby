@@ -3,12 +3,11 @@ import { type ReactNode, useState, useTransition } from "react"
 
 import { CheckAgainButton } from "@/components/check-again-button"
 import { ErrorCard } from "@/components/error-card"
-import { StatusMark, StatusRow } from "@/components/status-row"
+import { StatusRow } from "@/components/status-row"
 
 import { AgentLogo } from "./agent-logos"
 import { type AgentStatus, sentence, versionNumber } from "./api"
-import { CopyButton } from "./copy-button"
-import { InstallFirstAgent } from "./install-first-agent"
+import { InstallButton } from "./install-button"
 import { modelName } from "./model-picker"
 import { ModelSettings, skippedNote } from "./model-settings"
 import { SetUpButton } from "./set-up-button"
@@ -22,7 +21,8 @@ import { checkAgentsAgain, isReady, setupStep, useAgents } from "./use-agents"
  * what their setup probe found (docs/decisions/check-agent-setup-with-an-acp-probe.md). The
  * core looks at launch, so the list shows at once, and again on Check again. Each row shows
  * what the agent needs (`setupStep`), or, once it's ready, the model it runs on, which opens
- * the row to change it. Whatever the core reports is listed; a new agent needs no change here.
+ * the row to change it; one that isn't installed offers its own install page. Whatever the
+ * core reports is listed; a new agent needs no change here.
  */
 export function AgentsSettings() {
   const { agents, error } = useAgents()
@@ -33,34 +33,30 @@ export function AgentsSettings() {
   return (
     <div className="flex flex-col gap-6">
       <p className="text-sm text-muted-foreground">
-        Bomby hands work to the agents you have installed. A call needs at least
-        one.
+        Bomby hands work to the agents you have installed. Without one, a call
+        can still talk, but can't start work.
       </p>
       {error && <ErrorCard message={error} />}
       {install.error && <ErrorCard message={install.error} />}
-      {agents?.every((agent) => agent.path === null) ? (
-        <InstallFirstAgent />
-      ) : (
-        <ul className="flex flex-col divide-y overflow-hidden rounded-lg border">
-          {agents === null ? (
-            <StatusRow
-              logo={<SquareTerminal />}
-              name="Agents"
-              ready={null}
-              detail={null}
+      <ul className="flex flex-col divide-y overflow-hidden rounded-lg border">
+        {agents === null ? (
+          <StatusRow
+            logo={<SquareTerminal />}
+            name="Agents"
+            ready={null}
+            detail={null}
+          />
+        ) : (
+          agents.map((agent) => (
+            <AgentRow
+              key={agent.id}
+              agent={agent}
+              open={openId === agent.id}
+              onOpenChange={(open) => setOpenId(open ? agent.id : null)}
             />
-          ) : (
-            agents.map((agent) => (
-              <AgentRow
-                key={agent.id}
-                agent={agent}
-                open={openId === agent.id}
-                onOpenChange={(open) => setOpenId(open ? agent.id : null)}
-              />
-            ))
-          )}
-        </ul>
-      )}
+          ))
+        )}
+      </ul>
       <div>
         <CheckAgainButton
           checking={checking}
@@ -82,15 +78,10 @@ export function AgentsSettings() {
 function action(agent: AgentStatus): ReactNode {
   switch (setupStep(agent)) {
     case "missing":
-      return <StatusMark state="off" />
+      return <InstallButton agent={agent} variant="outline" size="sm" />
     case "connect":
       return <SetUpButton />
     case "sign_in":
-      return agent.setup?.fix ? (
-        <CopyButton text={agent.setup.fix} variant="outline" size="sm">
-          Copy command
-        </CopyButton>
-      ) : undefined
     case "unreachable":
     case "pick":
     case "ready":
@@ -142,20 +133,14 @@ function detail(agent: AgentStatus): ReactNode {
   const { name, version, setup } = agent
   switch (setupStep(agent)) {
     case "missing":
-      return `Not installed. Install ${name}, then check again.`
+      return "Not installed. Install it, then check again."
     case "connect":
       return `Found on this Mac. Set it up to use it in calls.`
     case "sign_in": {
       const problem = setup?.problem && (
         <span className="select-text">{sentence(setup.problem)} </span>
       )
-      return setup?.fix ? (
-        <>
-          Needs setup. {problem}Run{" "}
-          <code className="font-mono text-xs select-text">{setup.fix}</code> in
-          Terminal, then check again.
-        </>
-      ) : (
+      return (
         <>
           Needs setup. {problem}Set it up in {name}, then check again.
         </>

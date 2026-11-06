@@ -17,8 +17,8 @@ import {
 import { GeminiLogo, LiveKitLogo } from "./provider-logos"
 
 /**
- * The Setup section of the settings window: what a call needs (the user's keys and an
- * agent), each ready or a button to where it is fixed
+ * The Setup section of the settings window: what a call needs (the user's keys, and an
+ * agent for work), each ready or a button to where it is fixed
  * (docs/decisions/users-bring-their-own-keys-and-claude.md). Both come from stores the
  * page keeps, so the rows show at once each time the section opens.
  */
@@ -31,7 +31,8 @@ export function SetupSettings() {
   return (
     <div className="flex flex-col gap-6">
       <p className="text-sm text-muted-foreground">
-        A call needs these three. Bomby uses your own accounts.
+        A call needs LiveKit and Gemini, and an agent to do the work. Bomby uses
+        your own accounts.
       </p>
       {error && <ErrorCard message={error} />}
       <ul className="flex flex-col divide-y rounded-lg border">

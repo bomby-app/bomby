@@ -1,4 +1,4 @@
-import { ChevronDown, LoaderCircle, Minus, ThumbsUp, X } from "lucide-react"
+import { ChevronDown, LoaderCircle, ThumbsUp, X } from "lucide-react"
 import type { ReactNode } from "react"
 
 import {
@@ -83,26 +83,13 @@ export function StatusRow({
 
 /**
  * Ready is an ink thumbs-up on a highlighter disc, missing an ink cross on bubblegum (the
- * brand's colour for problems). Both fills hold ink at full contrast in light and dark. Off
- * is a quiet dash on muted, for something optional that just isn't there.
+ * brand's colour for problems). Both fills hold ink at full contrast in light and dark.
  */
-export function StatusMark({
-  state,
-}: {
-  state: "checking" | "ready" | "missing" | "off"
-}) {
+function StatusMark({ state }: { state: "checking" | "ready" | "missing" }) {
   if (state === "checking") {
     return (
       <span className="flex size-6 shrink-0 items-center justify-center">
         <LoaderCircle className="size-4 animate-spin text-muted-foreground" />
-      </span>
-    )
-  }
-  if (state === "off") {
-    return (
-      <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
-        <Minus className="size-3.5" strokeWidth={2.5} />
-        <span className="sr-only">Not installed</span>
       </span>
     )
   }
