@@ -36,13 +36,13 @@ const NO_KEYS: Keys = {
   livekit: true,
   theirLiveKit: false,
   voice: null,
-  voiceKeys: { gemini: false, rime: false },
+  voiceKeys: { gemini: false, openai: false, rime: false },
   voiceKey: false,
 }
 const ALL_KEYS: Keys = {
   ...NO_KEYS,
   voice: "rime",
-  voiceKeys: { gemini: false, rime: true },
+  voiceKeys: { gemini: false, openai: false, rime: true },
   voiceKey: true,
 }
 
@@ -103,8 +103,10 @@ describe("splashStep", () => {
     expect(keys({ voice: null, voiceKey: false }).canContinue).toBe(false)
     // Rime picked, only Gemini's key saved.
     expect(
-      keys({ voiceKeys: { gemini: true, rime: false }, voiceKey: false })
-        .canContinue
+      keys({
+        voiceKeys: { gemini: true, openai: false, rime: false },
+        voiceKey: false,
+      }).canContinue
     ).toBe(false)
     expect(keys({ livekit: false }).canContinue).toBe(false)
   })

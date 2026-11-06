@@ -17,7 +17,7 @@ from rimelabs_sdk.realtime import PrismFiller
 
 from sections import PLAIN, Style
 
-from .provider import Voice, VoiceProvider
+from .provider import OptionValue, Voice, VoiceProvider
 
 logger = logging.getLogger("bomby.rime")
 
@@ -152,7 +152,7 @@ class Rime(VoiceProvider):
 
     @override
     def realtime_model(
-        self, voice: str, options: Mapping[str, bool]
+        self, voice: str, options: Mapping[str, OptionValue], backend: str
     ) -> llm.RealtimeModel:
         # Playback is Prism's own estimate of what the user heard: the plugin measures it
         # only with its audio output wrapper, which 1.8.11 keeps private.
@@ -163,7 +163,7 @@ class Rime(VoiceProvider):
         )
 
     @override
-    async def keep_alive(self, model: llm.RealtimeModel) -> None:
+    async def keep_alive(self, model: llm.RealtimeModel | llm.DuplexModel) -> None:
         if not isinstance(model, RealtimeModel):
             return
         while True:

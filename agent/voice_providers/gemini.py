@@ -15,7 +15,7 @@ from livekit.agents.types import NotGiven
 from livekit.plugins import google
 from livekit.plugins.google.tools import GoogleSearch
 
-from .provider import Tools, Voice, VoiceProvider
+from .provider import Option, OptionValue, Switch, Tools, Voice, VoiceProvider
 
 MODELS = {
     "fast": "gemini-3.8-live",
@@ -110,7 +110,7 @@ class Gemini(VoiceProvider):
     )
     default_voice: ClassVar[str] = "Leda"
     voice_env: ClassVar[str] = "GEMINI_VOICE"
-    options: ClassVar[Mapping[str, bool]] = {GOOGLE_SEARCH: True}
+    options: ClassVar[tuple[Option, ...]] = (Switch(GOOGLE_SEARCH, default=True),)
 
     @property
     @override
@@ -119,7 +119,7 @@ class Gemini(VoiceProvider):
 
     @override
     def realtime_model(
-        self, voice: str, options: Mapping[str, bool]
+        self, voice: str, options: Mapping[str, OptionValue], backend: str
     ) -> llm.RealtimeModel:
         # Everything Gemini gets at connect time is final for the session. The plugin
         # reconnects on a tool change and can only inject later instructions as a turn.
@@ -135,7 +135,7 @@ class Gemini(VoiceProvider):
         )
 
     @override
-    def tools(self, options: Mapping[str, bool]) -> Tools:
+    def tools(self, options: Mapping[str, OptionValue]) -> Tools:
         return [GoogleSearch()] if options.get(GOOGLE_SEARCH) else []
 
 

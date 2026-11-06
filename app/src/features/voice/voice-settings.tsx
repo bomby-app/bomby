@@ -2,12 +2,21 @@ import { ApiKeyForm } from "@/components/api-key-form"
 import { ChoiceList, ChoiceRow } from "@/components/choice-list"
 import { InfoTip } from "@/components/info-tip"
 import { Field, FieldError, FieldLabel } from "@/components/ui/field"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
 import { useSettingsNavigation } from "@/lib/settings-navigation"
+import { cn } from "@/lib/utils"
 
 import {
   clearVoiceKey,
+  type OptionValue,
   type ProviderOption,
   type ProviderSettings,
   saveVoiceKey,
@@ -116,32 +125,115 @@ function ProviderRow({
         save={(key) => saveVoiceKey(id, key)}
         remove={() => clearVoiceKey(id)}
       />
-      {provider.options.map((option) => (
-        <OptionRow
-          key={option.id}
-          provider={id}
-          option={option}
-          onChange={(on) =>
-            void change(() => setVoiceOption(id, option.id, on))
-          }
-        />
-      ))}
+      {groups(provider.options).map((group) =>
+        group.kind === "switch" ? (
+          <SwitchRow
+            key={group.option.id}
+            provider={id}
+            option={group.option}
+            onChange={(value) =>
+              void change(() => setVoiceOption(id, group.option.id, value))
+            }
+          />
+        ) : (
+          <ChoicesRow
+            key={group.options[0]?.id}
+            provider={id}
+            options={group.options}
+            onChange={(option, value) =>
+              void change(() => setVoiceOption(id, option, value))
+            }
+          />
+        )
+      )}
     </ChoiceRow>
   )
 }
 
+type SwitchOption = Extract<ProviderOption, { kind: "switch" }>
+type ChoiceOption = Extract<ProviderOption, { kind: "choice" }>
+
+/** Each switch on its own row; choices next to each other share one (Paper: model and effort). */
+type Group =
+  | { kind: "switch"; option: SwitchOption }
+  | { kind: "choices"; options: ChoiceOption[] }
+
+function groups(options: ProviderOption[]): Group[] {
+  const grouped: Group[] = []
+  for (const option of options) {
+    const last = grouped.at(-1)
+    if (option.kind === "switch") grouped.push({ kind: "switch", option })
+    else if (last?.kind === "choices") last.options.push(option)
+    else grouped.push({ kind: "choices", options: [option] })
+  }
+  return grouped
+}
+
+/** Choices on one line under a rule: the first takes the room, the rest 140px each. */
+function ChoicesRow({
+  provider,
+  options,
+  onChange,
+}: {
+  provider: VoiceProvider
+  options: ChoiceOption[]
+  onChange: (option: string, value: OptionValue) => void
+}) {
+  return (
+    <div className="flex flex-col">
+      <Separator />
+      <div className="flex gap-3 pt-3.5">
+        {options.map((option, index) => {
+          const copy = PROVIDERS[provider].options[option.id]
+          if (copy?.kind !== "choice") return null
+          const id = `${provider}-${option.id}`
+          return (
+            <div
+              key={option.id}
+              className={cn(
+                "flex min-w-0 flex-col gap-2",
+                index === 0 ? "flex-1" : "w-[140px] shrink-0"
+              )}
+            >
+              <div className="flex h-5 items-center gap-1">
+                <FieldLabel htmlFor={id}>{copy.title}</FieldLabel>
+                {copy.info && <InfoTip>{copy.info}</InfoTip>}
+              </div>
+              <Select
+                value={option.value}
+                onValueChange={(value) => onChange(option.id, value)}
+              >
+                <SelectTrigger id={id} className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent position="popper">
+                  {option.values.map((value) => (
+                    <SelectItem key={value} value={value}>
+                      {value}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 /** One of the provider's switches, under its key. */
-function OptionRow({
+function SwitchRow({
   provider,
   option,
   onChange,
 }: {
   provider: VoiceProvider
-  option: ProviderOption
+  option: SwitchOption
   onChange: (on: boolean) => void
 }) {
   const copy = PROVIDERS[provider].options[option.id]
-  if (!copy) return null
+  if (copy?.kind !== "switch") return null
   const Icon = copy.icon
   const id = `${provider}-${option.id}`
 

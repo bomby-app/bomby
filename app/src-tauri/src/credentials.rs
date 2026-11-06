@@ -53,6 +53,8 @@ struct Keys {
     livekit: Option<LiveKitKeys>,
     gemini_key: Option<String>,
     #[serde(default)]
+    openai_key: Option<String>,
+    #[serde(default)]
     rime_key: Option<String>,
     /// For memory across conversations (`settings::Memory::Zep`).
     #[serde(default)]
@@ -63,6 +65,7 @@ impl Keys {
     fn voice_key(&mut self, provider: VoiceProvider) -> &mut Option<String> {
         match provider {
             VoiceProvider::Gemini => &mut self.gemini_key,
+            VoiceProvider::OpenAi => &mut self.openai_key,
             VoiceProvider::Rime => &mut self.rime_key,
         }
     }
@@ -70,6 +73,7 @@ impl Keys {
     fn is_empty(&self) -> bool {
         self.livekit.is_none()
             && self.gemini_key.is_none()
+            && self.openai_key.is_none()
             && self.rime_key.is_none()
             && self.zep_key.is_none()
     }
@@ -351,9 +355,10 @@ mod tests {
     }
 
     #[test]
-    fn an_entry_saved_before_rime_and_zep_still_reads() {
+    fn an_entry_saved_before_openai_rime_and_zep_still_reads() {
         let mut keys: Keys = serde_json::from_str(r#"{"livekit":null,"gemini_key":"g"}"#).unwrap();
         assert_eq!(keys.voice_key(VoiceProvider::Gemini).as_deref(), Some("g"));
+        assert_eq!(*keys.voice_key(VoiceProvider::OpenAi), None);
         assert_eq!(*keys.voice_key(VoiceProvider::Rime), None);
         assert!(!keys.is_empty());
         *keys.voice_key(VoiceProvider::Gemini) = None;

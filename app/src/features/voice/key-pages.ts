@@ -7,5 +7,6 @@ import type { VoiceProvider } from "./api"
  */
 export const KEY_PAGES: Record<VoiceProvider, string> = {
   gemini: "https://aistudio.google.com/apikey",
+  openai: "https://platform.openai.com/api-keys",
   rime: "https://app.rime.ai/tokens",
 }

@@ -161,7 +161,158 @@
       "options": [
         {
           "id": "google_search",
+          "kind": "switch",
           "default": true
+        }
+      ]
+    },
+    {
+      "id": "openai",
+      "name": "OpenAI",
+      "key_env": "OPENAI_API_KEY",
+      "default_voice": "gleam",
+      "voices": [
+        {
+          "id": "gleam",
+          "name": "Gleam",
+          "description": "Warm and conversational, North American"
+        },
+        {
+          "id": "ripple",
+          "name": "Ripple",
+          "description": "Warm and conversational, Australian"
+        },
+        {
+          "id": "vesper",
+          "name": "Vesper",
+          "description": "Clear and direct, British"
+        },
+        {
+          "id": "willow",
+          "name": "Willow",
+          "description": "Expressive and bright, Irish"
+        },
+        {
+          "id": "stone",
+          "name": "Stone",
+          "description": "Calm and precise, Irish"
+        },
+        {
+          "id": "meridian",
+          "name": "Meridian",
+          "description": "Grounded and measured, North American"
+        },
+        {
+          "id": "bossa",
+          "name": "Bossa",
+          "description": "Clear and direct, Brazilian Portuguese"
+        },
+        {
+          "id": "tempo",
+          "name": "Tempo",
+          "description": "Grounded and measured, Brazilian Portuguese"
+        },
+        {
+          "id": "cedar",
+          "name": "Cedar",
+          "description": "Open and upbeat, North American"
+        },
+        {
+          "id": "marin",
+          "name": "Marin",
+          "description": "Animated and earnest, North American"
+        },
+        {
+          "id": "nuri",
+          "name": "Nuri",
+          "description": "Warm and animated, German"
+        },
+        {
+          "id": "juni",
+          "name": "Juni",
+          "description": "Bright and expressive, German"
+        },
+        {
+          "id": "flitz",
+          "name": "Flitz",
+          "description": "Rich and playful, German"
+        },
+        {
+          "id": "brise",
+          "name": "Brise",
+          "description": "Clear and conversational, French"
+        },
+        {
+          "id": "sillage",
+          "name": "Sillage",
+          "description": "Warm and grounded, French"
+        },
+        {
+          "id": "nira",
+          "name": "Nira",
+          "description": "Soft and thoughtful, Hindi"
+        },
+        {
+          "id": "harema",
+          "name": "Harema",
+          "description": "Gentle and engaging, Japanese"
+        },
+        {
+          "id": "shida",
+          "name": "Shida",
+          "description": "Quiet and grounded, Japanese"
+        },
+        {
+          "id": "noeul",
+          "name": "Noeul",
+          "description": "Airy and expressive, Korean"
+        }
+      ],
+      "options": [
+        {
+          "id": "web_search",
+          "kind": "switch",
+          "default": true
+        },
+        {
+          "id": "response_model",
+          "kind": "choice",
+          "default": "gpt-6-luna",
+          "values": [
+            "gpt-6-astra",
+            "gpt-6.1-sol",
+            "gpt-6.1-terra",
+            "gpt-6-luna"
+          ],
+          "follows": null,
+          "per": {}
+        },
+        {
+          "id": "reasoning_effort",
+          "kind": "choice",
+          "default": "medium",
+          "values": [
+            "none",
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
+          "follows": "response_model",
+          "per": {
+            "gpt-6-astra": [
+              "low",
+              "medium",
+              "high",
+              "xhigh"
+            ],
+            "gpt-6.1-sol": [
+              "low",
+              "medium",
+              "high",
+              "xhigh"
+            ]
+          }
         }
       ]
     },

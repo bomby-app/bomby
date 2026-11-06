@@ -17,7 +17,7 @@ from memory import UNAVAILABLE, Memory, MemoryUnavailable
 from memory import notify as notify_memory
 from task_board import TaskBoard
 from tools import ALL_TOOLS, MEMORY_TOOLS
-from voice_prompt import local_zone, voice_instructions
+from voice_prompt import backend_instructions, local_zone, voice_instructions
 
 dev_env.load()
 
@@ -28,14 +28,10 @@ class Assistant(Agent):
     def __init__(
         self,
         options: CallOptions,
-        runners: CallRunners,
+        instructions: str,
         remembers: bool = False,
-        remembered: str = "",
     ) -> None:
         self._resumed: bool = options.resumed
-        instructions = voice_instructions(
-            runners.project, options, runners.available, remembered
-        )
         # Bomby's tools, the voice provider's own, then recall for calls that remember.
         tools = [
             *ALL_TOOLS,
@@ -133,12 +129,17 @@ async def entrypoint(ctx: JobContext) -> None:
 
     _ = ctx.room.on("track_subscribed", on_track_subscribed)  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
 
-    model = options.provider.realtime_model(options.voice, options.options)
+    # The voice model's instructions and, for a provider that delegates, its backend's.
+    instructions = voice_instructions(
+        runners.project, options, runners.available, remembered
+    )
+    backend = backend_instructions(runners.project, options, runners.available)
+    model = options.provider.realtime_model(options.voice, options.options, backend)
     session: AgentSession[Call] = AgentSession(userdata=call, llm=model)
 
     if memory:
         memory.attach(session)
-    assistant = Assistant(options, runners, memory is not None, remembered)
+    assistant = Assistant(options, instructions, memory is not None)
     await session.start(agent=assistant, room=ctx.room)  # pyright: ignore[reportUnknownMemberType]
 
     # Keeps a provider that closes quiet conversations open until the call ends.

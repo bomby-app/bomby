@@ -12,7 +12,7 @@ Bomby is in beta and runs on Apple Silicon Macs.
 
 ## How it works
 
-1. **You talk.** Start a call on a project. Bomby listens and answers out loud, through the voice model you pick, Gemini Live or Rime's Prism, over LiveKit. Give the project instructions, and Bomby and your agent know what it is before you say a word.
+1. **You talk.** Start a call on a project. Bomby listens and answers out loud, through the voice model you pick, Gemini Live, OpenAI's GPT-Live or Rime's Prism, over LiveKit. Give the project instructions, and Bomby and your agent know what it is before you say a word.
 2. **Your agent works.** Real work goes to an agent installed on your computer, in the project's folders, over the [Agent Client Protocol](https://agentclientprotocol.com) (ACP). Each piece of work gets its own session, and sessions run side by side.
 3. **You hear the result.** When the agent finishes, Bomby tells you what happened. The tasks panel in the call shows what each agent is doing.
 
@@ -35,7 +35,7 @@ Claude is the default; ask for another one by name ("ask goose to..."). Each age
 ## What you need
 
 - A Mac with Apple Silicon
-- An API key for the voice: [Gemini](https://aistudio.google.com/apikey) or [Rime](https://app.rime.ai/tokens)
+- An API key for the voice: [Gemini](https://aistudio.google.com/apikey), [OpenAI](https://platform.openai.com/api-keys) (on a paid tier) or [Rime](https://app.rime.ai/tokens)
 - Nothing for LiveKit: calls run on your Mac. Or use your own [LiveKit Cloud](https://cloud.livekit.io) project (the free tier is enough): its URL, API key and API secret
 - At least one agent from the list above. No agent yet? Install Claude Code:
 
@@ -88,7 +88,7 @@ just agent console-text             # or type
 | Path | What's there |
 | --- | --- |
 | `app/` | The desktop app: Tauri v2, a React frontend in `src/`, a Rust core in `src-tauri/` |
-| `agent/` | The voice agent: Python, LiveKit Agents, and Gemini Live or Rime's Prism (`voice_providers/`). `harnesses/` defines each agent, `acp_client/` runs them, `tools/` is what the voice can do |
+| `agent/` | The voice agent: Python, LiveKit Agents, and Gemini Live, OpenAI's GPT-Live or Rime's Prism (`voice_providers/`). `harnesses/` defines each agent, `acp_client/` runs them, `tools/` is what the voice can do |
 | `docs/` | Architecture, roadmap, decisions and notes on every library we rely on |
 
 ```bash
@@ -98,7 +98,7 @@ just check    # lint, types and tests in every part: what each change must pass
 
 Start with [docs/AGENTS.md](docs/AGENTS.md), then [docs/architecture.md](docs/architecture.md) and [docs/roadmap.md](docs/roadmap.md). Adding another ACP agent is a few lines; see [the decision on detecting agents](docs/decisions/detect-acp-native-agents.md).
 
-Bomby is built on [LiveKit](https://livekit.io), with [Gemini Live](https://ai.google.dev/gemini-api/docs/live) or [Rime's Prism](https://docs.rime.ai/docs/prism/overview), and works with the agents above. It isn't affiliated with any of them.
+Bomby is built on [LiveKit](https://livekit.io), with [Gemini Live](https://ai.google.dev/gemini-api/docs/live), [OpenAI's GPT-Live](https://developers.openai.com/api/docs/guides/live) or [Rime's Prism](https://docs.rime.ai/docs/prism/overview), and works with the agents above. It isn't affiliated with any of them.
 
 ## License
 

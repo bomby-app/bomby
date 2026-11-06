@@ -7,15 +7,25 @@ from job import Line
 from project import Project
 from sections import PLAIN
 from tools import agents_note
-from voice_prompt import PROMPTS, local_zone, the_time, voice_instructions
-from voice_providers import PROVIDERS, RIME
+from voice_prompt import (
+    PROMPTS,
+    backend_instructions,
+    local_zone,
+    the_time,
+    voice_instructions,
+)
+from voice_providers import GEMINI, OPENAI, PROVIDERS, RIME
 
 NOW = datetime(2026, 11, 6, 0, 2, tzinfo=UTC)
 # Gemini's tone prompt, then when and where the call starts.
 VOICE = f"{PROMPTS['gemini', 'sharp']}\n\n{the_time(NOW, local_zone())}"
 TONES = ("sharp", "chatty", "playful")
 # Where each provider's shared rules start; everything from there is word for word.
-RULES = {"gemini": "## Non-negotiable rules", "rime": "Whatever happens in the call"}
+RULES = {
+    "gemini": "## Non-negotiable rules",
+    "openai": "Interruption policy:",
+    "rime": "Whatever happens in the call",
+}
 
 AGENTS = [HARNESSES["claude"]]
 
@@ -130,3 +140,39 @@ def test_the_call_knows_the_date_time_and_place() -> None:
         "in Other (Region/Sub/Other) as this call starts."
     )
     assert the_time(now, "").endswith("12:02 AM as this call starts.")
+
+
+def test_only_a_provider_that_delegates_briefs_a_backend() -> None:
+    for chosen in (GEMINI, RIME):
+        options = CallOptions(voice=chosen.default_voice, provider=chosen)
+        assert backend_instructions(project(), options, AGENTS, now=NOW) == ""
+
+    options = CallOptions(voice="gleam", provider=OPENAI, user_name="Sam")
+    backend = backend_instructions(project("A music app."), options, AGENTS, now=NOW)
+
+    assert backend.startswith("# Working behind Bomby")
+    # The backend picks the agent by id, and knows the project.
+    assert f"\n\n{agents_note(AGENTS)}\n\n" in backend
+    assert "## Project" in backend
+    assert backend.endswith("A music app.")
+    # It writes the coding agents' tasks: the user's name stays with the voice.
+    assert "Sam" not in backend
+
+
+def test_gpt_live_hears_its_persona_and_plain_sections() -> None:
+    options = CallOptions(
+        voice="gleam",
+        provider=OPENAI,
+        user_name="Sam",
+        history=(Line("user", "fix the login"), Line("agent", "Done.")),
+    )
+    text = voice_instructions(project("A music app."), options, AGENTS, "Likes tea.")
+
+    for mark in ("#", "`", "*"):
+        assert mark not in text
+    for policy in ("Backchannel policy:", "Interruption policy:", "Delegation policy:"):
+        assert policy in text
+    # It can't call recall itself, so it asks its backend.
+    assert "recall_about_user" not in text
+    assert "generate <|SpawnThinking|> to look up anything else" in text
+    assert text.endswith("User: fix the login\nYou: Done.")

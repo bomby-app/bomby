@@ -681,7 +681,7 @@ mod tests {
         let voice = CallVoice {
             provider: VoiceProvider::Gemini,
             voice: "Kore".into(),
-            options: BTreeMap::from([("google_search", false)]),
+            options: BTreeMap::from([("google_search", voice::OptionValue::On(false))]),
         };
         let settings = settings::CallSettings {
             user_name: "Sam".into(),

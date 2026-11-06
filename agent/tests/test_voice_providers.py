@@ -10,7 +10,16 @@ from livekit.plugins.rime.realtime import PrismHistoryUpdateError
 from livekit.plugins.rime.realtime import RealtimeModel as PrismModel
 
 from tools import ALL_TOOLS
-from voice_providers import GEMINI, PROVIDERS, RIME, catalogue, provider, rime
+from voice_providers import (
+    GEMINI,
+    OPENAI,
+    PROVIDERS,
+    RIME,
+    Choice,
+    catalogue,
+    provider,
+    rime,
+)
 from voice_providers.gemini import ModelChoice
 from voice_providers.rime import KEEP_ALIVE_LABELS, TOOL_FILLERS, in_prism_order
 
@@ -35,12 +44,35 @@ def test_each_provider_defaults_to_one_of_its_own_voices() -> None:
 
 def test_the_apps_catalogue_lists_every_provider_in_order(tmp_path: Path) -> None:
     written = cast(dict[str, list[dict[str, object]]], json.loads(catalogue.render()))
-    gemini, rime_entry = written["providers"]
-    assert [gemini["id"], rime_entry["id"]] == list(PROVIDERS)
+    gemini, openai_entry, rime_entry = written["providers"]
+    assert [gemini["id"], openai_entry["id"], rime_entry["id"]] == list(PROVIDERS)
+    assert list(PROVIDERS) == ["gemini", "openai", "rime"]
     assert gemini["key_env"] == "GOOGLE_API_KEY"
     assert gemini["default_voice"] == "Leda"
-    assert gemini["options"] == [{"id": "google_search", "default": True}]
+    assert gemini["options"] == [
+        {"id": "google_search", "kind": "switch", "default": True}
+    ]
     assert rime_entry["options"] == []
+    without_none = ["low", "medium", "high", "xhigh"]
+    assert openai_entry["options"] == [
+        {"id": "web_search", "kind": "switch", "default": True},
+        {
+            "id": "response_model",
+            "kind": "choice",
+            "default": "gpt-6-luna",
+            "values": ["gpt-6-astra", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-luna"],
+            "follows": None,
+            "per": {},
+        },
+        {
+            "id": "reasoning_effort",
+            "kind": "choice",
+            "default": "medium",
+            "values": ["none", *without_none],
+            "follows": "response_model",
+            "per": {"gpt-6-astra": without_none, "gpt-6.1-sol": without_none},
+        },
+    ]
 
     path = str(tmp_path / "voice-providers.json")
     assert catalogue.main(["check", path]) == 1
@@ -53,7 +85,7 @@ def test_rime_talks_through_prism_with_the_users_key(
 ) -> None:
     monkeypatch.setenv("RIME_API_KEY", "a-key")
 
-    model = RIME.realtime_model("aurora", {})
+    model = RIME.realtime_model("aurora", {}, "")
 
     assert isinstance(model, PrismModel)
     assert model.model == RIME.model == "prism"
@@ -62,7 +94,7 @@ def test_rime_talks_through_prism_with_the_users_key(
 def test_rime_brings_no_tools_of_its_own() -> None:
     # Prism takes function tools only; a provider tool like Google Search fails the call.
     assert RIME.tools({}) == []
-    assert RIME.options == {}
+    assert RIME.options == ()
 
 
 def test_start_task_has_no_filler_line_on_rime() -> None:
@@ -86,7 +118,7 @@ def test_rime_keeps_a_quiet_call_open(monkeypatch: pytest.MonkeyPatch) -> None:
     assert rime.KEEP_ALIVE_S < 300
     monkeypatch.setenv("RIME_API_KEY", "a-key")
     monkeypatch.setattr(rime, "KEEP_ALIVE_S", 0.01)
-    model = RIME.realtime_model("aurora", {})
+    model = RIME.realtime_model("aurora", {}, "")
     sent: list[object] = []
 
     def update_options(**options: object) -> None:
@@ -105,8 +137,9 @@ def test_rime_keeps_a_quiet_call_open(monkeypatch: pytest.MonkeyPatch) -> None:
     assert all(options == {"response_metadata": KEEP_ALIVE_LABELS} for options in sent)
 
 
-def test_gemini_needs_no_keep_alive() -> None:
-    model = GEMINI.realtime_model("Leda", {})
+def test_gemini_needs_no_keep_alive(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GOOGLE_API_KEY", "a-key")
+    model = GEMINI.realtime_model("Leda", {}, "")
     asyncio.run(asyncio.wait_for(GEMINI.keep_alive(model), 1))
 
 
@@ -196,7 +229,7 @@ def test_the_session_reorders_ordinary_updates_and_leaves_explicit_edits(
     monkeypatch.setattr(RealtimeSession, "chat_ctx", property(lambda _self: record))
 
     async def scenario() -> None:
-        model = cast(PrismModel, RIME.realtime_model("aurora", {}))
+        model = cast(PrismModel, RIME.realtime_model("aurora", {}, ""))
         session: RealtimeSession = model.session()
         await session.update_chat_ctx(livekit)
         edit = getattr(plugin, "_edit").set(object())  # noqa: B009
@@ -213,3 +246,83 @@ def test_the_session_reorders_ordinary_updates_and_leaves_explicit_edits(
         ["user", "call", "said", "first", "final_call", "final"],
         ["user", "said", "call", "first", "final_call", "final"],
     ]
+
+
+def test_openai_starts_on_luna_at_medium_effort_with_web_search() -> None:
+    assert OPENAI.default_voice == "gleam"
+    assert len(OPENAI.voices) == 19
+    assert OPENAI.resolve({}) == {
+        "web_search": True,
+        "response_model": "gpt-6-luna",
+        "reasoning_effort": "medium",
+    }
+    assert [type(t).__name__ for t in OPENAI.tools(OPENAI.resolve({}))] == ["WebSearch"]
+    assert OPENAI.tools(OPENAI.resolve({"web_search": False})) == []
+
+
+def test_an_effort_follows_the_response_model() -> None:
+    def effort(given: dict[str, bool | str]) -> object:
+        return OPENAI.resolve(given)["reasoning_effort"]
+
+    assert (
+        effort({"response_model": "gpt-6.1-terra", "reasoning_effort": "none"})
+        == "none"
+    )
+    # Astra and 6.1 Sol don't reason without effort: their default instead.
+    assert (
+        effort({"response_model": "gpt-6-astra", "reasoning_effort": "none"})
+        == "medium"
+    )
+    assert (
+        effort({"response_model": "gpt-6.1-sol", "reasoning_effort": "xhigh"})
+        == "xhigh"
+    )
+    # A model since retired is the default again, and so is an effort no model has.
+    assert OPENAI.resolve({"response_model": "gpt-5"})["response_model"] == "gpt-6-luna"
+    assert effort({"reasoning_effort": "max"}) == "medium"
+
+
+def test_an_option_of_the_wrong_kind_fails_the_call() -> None:
+    with pytest.raises(ValueError, match="response_model"):
+        _ = OPENAI.resolve({"response_model": True})
+    with pytest.raises(ValueError, match="web_search"):
+        _ = OPENAI.resolve({"web_search": "yes"})
+    with pytest.raises(ValueError, match="google_search"):
+        _ = GEMINI.resolve({"google_search": "maybe"})
+
+
+def test_a_choice_falls_back_to_its_first_value_when_the_default_isnt_offered() -> None:
+    choice = Choice(
+        "c", values=("a", "b", "c"), default="c", follows="m", per={"x": ("a", "b")}
+    )
+    assert choice.offered("x") == ("a", "b")
+    assert choice.default_in(choice.offered("x")) == "a"
+    assert choice.offered("y") == ("a", "b", "c")
+
+
+def test_openai_talks_through_gpt_live_with_the_backend_and_the_picks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from livekit.plugins.openai.realtime import GPTLiveModel
+
+    monkeypatch.setenv("OPENAI_API_KEY", "a-key")
+    picks = OPENAI.resolve(
+        {"response_model": "gpt-6.1-terra", "reasoning_effort": "high"}
+    )
+
+    model = OPENAI.realtime_model("gleam", picks, "Hand work to the agents.")
+
+    assert isinstance(model, GPTLiveModel)
+    assert model.model == OPENAI.model == "gpt-live-1"
+    opts = getattr(model, "_opts")  # noqa: B009
+    assert opts.voice == "gleam"
+    assert opts.delegation == "responses"
+    assert opts.responses == {
+        "model": "gpt-6.1-terra",
+        "instructions": "Hand work to the agents.",
+        "reasoning": {"effort": "high"},
+    }
+
+
+def test_only_openai_delegates() -> None:
+    assert [p.id for p in PROVIDERS.values() if p.delegates] == ["openai"]

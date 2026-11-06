@@ -1,12 +1,17 @@
 import { invoke } from "@tauri-apps/api/core"
 
-import type { VoiceProvider, VoiceSettings } from "@/generated/voice"
+import type {
+  OptionValue,
+  VoiceProvider,
+  VoiceSettings,
+} from "@/generated/voice"
 
 // The core's voice commands (src-tauri/src/voice.rs, and the keys in credentials.rs): who
 // Bomby talks through, each provider's key, voice and options. A key goes in and never
 // comes back out; the page sees only whether one is saved.
 
 export type {
+  OptionValue,
   ProviderOption,
   ProviderSettings,
   Voice,
@@ -31,12 +36,13 @@ export function setVoice(
   return invoke("set_voice", { provider, voice })
 }
 
+/** A switch's on or off, or a choice's value, for the provider's next call. */
 export function setVoiceOption(
   provider: VoiceProvider,
   option: string,
-  on: boolean
+  value: OptionValue
 ): Promise<void> {
-  return invoke("set_voice_option", { provider, option, on })
+  return invoke("set_voice_option", { provider, option, value })
 }
 
 /** Every window hears keys-changed. */

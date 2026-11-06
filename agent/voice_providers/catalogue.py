@@ -1,5 +1,5 @@
 """The voice providers as the app needs them before any call, for Settings and the splash:
-each one's id, name, key variable, voices and options. `just agent providers` writes it to
+each one's id, name, key variable, voices and options (switches and choices). `just agent providers` writes it to
 `app/src-tauri/voice-providers.json`, which the core embeds (`voice.rs`), and `just agent
 check` fails when that file is out of date, so the definitions here stay the one source.
 
@@ -11,11 +11,26 @@ import sys
 from pathlib import Path
 
 from . import PROVIDERS
-from .provider import VoiceProvider
+from .provider import Choice, Option, Switch, VoiceProvider
 
 GENERATED = (
     "Generated from agent/voice_providers/ by `just agent providers`; don't edit."
 )
+
+
+def _option(option: Option) -> dict[str, object]:
+    match option:
+        case Switch():
+            return {"id": option.id, "kind": "switch", "default": option.default}
+        case Choice():
+            return {
+                "id": option.id,
+                "kind": "choice",
+                "default": option.default,
+                "values": list(option.values),
+                "follows": option.follows or None,
+                "per": {leader: list(values) for leader, values in option.per.items()},
+            }
 
 
 def _entry(provider: VoiceProvider) -> dict[str, object]:
@@ -28,10 +43,7 @@ def _entry(provider: VoiceProvider) -> dict[str, object]:
             {"id": v.id, "name": v.name, "description": v.description}
             for v in provider.voices
         ],
-        "options": [
-            {"id": option, "default": default}
-            for option, default in provider.options.items()
-        ],
+        "options": [_option(option) for option in provider.options],
     }
 
 

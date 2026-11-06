@@ -294,22 +294,19 @@ def test_what_is_remembered_follows_the_user_section() -> None:
 
 
 def test_only_a_call_with_memory_can_recall() -> None:
-    from acp_client import CallRunners
     from agent import Assistant
-    from job import JobMetadata
 
-    runners = CallRunners.for_job(JobMetadata(folders=(Path.home(),)))
     options = CallOptions(voice="Leda")
 
     def names(assistant: Assistant) -> list[str]:
         return [getattr(tool, "id", "") for tool in assistant.tools]
 
-    assert "recall_about_user" not in names(Assistant(options, runners))
-    assert "recall_about_user" in names(Assistant(options, runners, remembers=True))
+    assert "recall_about_user" not in names(Assistant(options, ""))
+    assert "recall_about_user" in names(Assistant(options, "", remembers=True))
     # Gemini calls search the web with Google's own search unless the user turned it off.
-    assert "gemini_google_search" in names(Assistant(options, runners))
+    assert "gemini_google_search" in names(Assistant(options, ""))
     off = CallOptions(voice="Leda", provider_options={"google_search": False})
-    assert "gemini_google_search" not in names(Assistant(off, runners))
+    assert "gemini_google_search" not in names(Assistant(off, ""))
 
 
 def test_recall_that_cant_reach_zep_says_so_and_tells_the_app(

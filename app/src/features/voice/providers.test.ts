@@ -22,6 +22,8 @@ describe("provider copy", () => {
       expect(new Set(Object.keys(copy.options))).toEqual(
         new Set(provider.options.map((o) => o.id))
       )
+      for (const option of provider.options)
+        expect(copy.options[option.id]?.kind).toBe(option.kind)
     }
   })
 })

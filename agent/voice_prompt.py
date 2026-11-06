@@ -1,7 +1,11 @@
 """The voice model's instructions for one call: the voice provider's prompt for the
 user's tone (`prompts/<provider>/sharp.md`, `chatty.md` or `playful.md`), then what this
 call adds, in the provider's style (`sections.py`). Each added section is left out when
-it has nothing to say."""
+it has nothing to say.
+
+A provider that `delegates` (GPT-Live) has a backend that reasons and calls the tools, with
+instructions of its own: `prompts/<provider>/backend.md`, then the agents and the project
+(`backend_instructions`). Every other provider's backend instructions are empty."""
 
 import os
 from datetime import datetime
@@ -24,13 +28,26 @@ PROMPTS: dict[tuple[str, Tone], str] = {
     for t in TONES
 }
 
+# The backend's own instructions, for each provider that delegates.
+BACKENDS: dict[str, str] = {
+    p.id: (PROMPTS_DIR / p.id / "backend.md").read_text().rstrip()
+    for p in PROVIDERS.values()
+    if p.delegates
+}
+
 SPEAKER_LABEL: dict[Speaker, str] = {"user": "User", "agent": "You"}
 
 
-def remembered_note(style: Style) -> str:
+def remembered_note(style: Style, delegates: bool = False) -> str:
+    # A voice model that delegates can't call the tool itself; it asks its backend.
+    look_up = (
+        "generate <|SpawnThinking|> to look up anything else"
+        if delegates
+        else f"look up anything else with {style.code('recall_about_user')}"
+    )
     return (
         "From earlier conversations with the user. Each fact says when it held true. Use "
-        f"what helps, and look up anything else with {style.code('recall_about_user')}."
+        f"what helps, and {look_up}."
     )
 
 
@@ -54,10 +71,31 @@ def voice_instructions(
         PROMPTS[options.provider.id, options.tone],
         the_time(now or datetime.now().astimezone(), local_zone(), style),
         the_user(options.user_name, style),
-        what_you_remember(remembered, style),
+        what_you_remember(remembered, style, options.provider.delegates),
         agents_note(agents, style, project.agents_off),
         project_context(project, style),
         previous_conversation(options.history, style),
+    )
+
+
+def backend_instructions(
+    project: Project,
+    options: CallOptions,
+    agents: list[Harness],
+    now: datetime | None = None,
+) -> str:
+    """The backend's instructions for one call, or empty for a provider that doesn't
+    delegate. The backend writes the tasks the coding agents get, so it hears neither the
+    user's name nor what memory knows (docs/decisions/the-users-name-only-for-the-voice.md);
+    it can ask for what it needs with `recall_about_user`."""
+    if not options.provider.delegates:
+        return ""
+    style = options.provider.backend_style
+    return join(
+        BACKENDS[options.provider.id],
+        the_time(now or datetime.now().astimezone(), local_zone(), style),
+        agents_note(agents, style, project.agents_off),
+        project_context(project, style),
     )
 
 
@@ -85,14 +123,16 @@ def the_user(name: str, style: Style = MARKDOWN) -> str:
     )
 
 
-def what_you_remember(remembered: str, style: Style = MARKDOWN) -> str:
+def what_you_remember(
+    remembered: str, style: Style = MARKDOWN, delegates: bool = False
+) -> str:
     """What memory across calls knows about the user, if it knows anything yet."""
     if not remembered:
         return ""
     return style.section(
         "What you remember",
         join(
-            remembered_note(style),
+            remembered_note(style, delegates),
             remembered,
         ),
     )

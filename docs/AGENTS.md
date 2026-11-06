@@ -15,6 +15,7 @@ Every doc has one job; keep it that way.
 | [frontend-notes.md](frontend-notes.md) | The app's web half: shadcn, Tailwind v4, Vite+, React Compiler, Agents UI. |
 | [zep-notes.md](zep-notes.md) | Zep facts for memory across calls, checked against the installed client. |
 | [gemini-notes.md](gemini-notes.md) | Gemini 3.8 Live facts and caveats, checked against the plugin. |
+| [openai-notes.md](openai-notes.md) | OpenAI GPT-Live facts, limits and prompting, checked against LiveKit's engine and OpenAI's docs. |
 | [rime-notes.md](rime-notes.md) | Rime Prism facts, limits and prompting, checked against the plugin and SDK. |
 
 ## How we document

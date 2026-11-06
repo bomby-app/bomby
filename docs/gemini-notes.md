@@ -40,7 +40,7 @@ Sources:
 
 ## Voices
 
-- Live accepts TTS voice names through `RealtimeModel(voice=...)`. The app offers the 30 prebuilt voices in `app/src-tauri/src/settings.rs`; Leda is default (owner, 2026-11-06).
+- Live accepts TTS voice names through `RealtimeModel(voice=...)`. The app offers the 30 prebuilt voices in `agent/voice_providers/gemini.py`, which reach it through the catalogue; Leda is default (owner, 2026-11-06).
 - `GET /v1beta/voices` also lists custom and catalog voices with pagination. Whether Live accepts those ids is untested; Bomby deliberately uses the 30 defaults.
 
 ## Language

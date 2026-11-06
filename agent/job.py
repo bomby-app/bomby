@@ -62,8 +62,9 @@ class JobMetadata(BaseModel):
     # The voice model the call talks through, by id (`voice_providers/`); empty for the
     # default.
     provider: Text = ""
-    # The provider's switches the user set, by option id; the rest take their defaults.
-    provider_options: dict[str, bool] = {}
+    # What the user set for the provider, by option id: a switch's on or off, a choice's
+    # value (`voice_providers/provider.py`); the rest take their defaults.
+    provider_options: dict[str, bool | str] = {}
     voice: (
         Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)] | None
     ) = None

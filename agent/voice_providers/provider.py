@@ -1,5 +1,5 @@
 """What sets one voice model (a provider) apart from another: how to reach it, its
-voices, the tools it brings and the options the user can switch.
+voices, the tools it brings and the options the user can set.
 
 Everything else in a call, from the prompt to `start_task`, memory and the task board, is
 the same for every provider.
@@ -7,7 +7,7 @@ the same for every provider.
 
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import ClassVar
 
 from livekit.agents import llm
@@ -26,6 +26,51 @@ class Voice:
     name: str
     description: str
     """How it sounds: "Firm, middle pitch"."""
+
+
+type OptionValue = bool | str
+"""What one option is set to: a switch's on or off, or a choice's value."""
+
+
+@dataclass(frozen=True)
+class Switch:
+    """An option that's on or off: Gemini's Google Search."""
+
+    id: str
+    default: bool
+
+
+@dataclass(frozen=True)
+class Choice:
+    """An option set to one of its values: GPT-Live's response model.
+
+    One can follow another choice, listed before it, whose value decides which of these
+    values there are: the response model decides the efforts it has."""
+
+    id: str
+    values: tuple[str, ...]
+    """Every value, in the order the app lists them; what the plugin takes."""
+    default: str
+    follows: str = ""
+    """The id of the choice this one follows, or empty."""
+    per: Mapping[str, tuple[str, ...]] = field(
+        default_factory=dict[str, tuple[str, ...]]
+    )
+    """With `follows`: the values there are for each value of that choice; one it doesn't
+    list has them all."""
+
+    def offered(self, leader: OptionValue | None) -> tuple[str, ...]:
+        """The values there are when the choice this one follows is `leader`."""
+        if not self.follows or not isinstance(leader, str):
+            return self.values
+        return self.per.get(leader, self.values)
+
+    def default_in(self, offered: tuple[str, ...]) -> str:
+        """The default when it's offered, else the first value that is."""
+        return self.default if self.default in offered else offered[0]
+
+
+type Option = Switch | Choice
 
 
 class VoiceProvider(ABC):
@@ -52,9 +97,16 @@ class VoiceProvider(ABC):
     """Whether the model can call a tool twice for one request, so `start_task` answers a
     repeat instead of sending it again. Prism can; Gemini doesn't, and never gets the
     check."""
-    options: ClassVar[Mapping[str, bool]] = {}
-    """The switches the user can flip for this provider, by id, with their defaults:
-    Gemini's {"google_search": True}. The app sends the ones it has."""
+    delegates: ClassVar[bool] = False
+    """Whether a second model, the backend, reasons and calls the tools, with its own
+    instructions (GPT-Live's response model), so the voice model never sees the tools.
+    Gemini and Prism do both themselves and get none."""
+    backend_style: ClassVar[Style] = MARKDOWN
+    """With `delegates`, how the backend's instructions are written
+    (`prompts/<id>/backend.md` and what each call adds)."""
+    options: ClassVar[tuple[Option, ...]] = ()
+    """What the user can set for this provider, in the order Settings shows them: Gemini's
+    Google Search switch. The app sends the ones it has."""
 
     @property
     @abstractmethod
@@ -63,23 +115,43 @@ class VoiceProvider(ABC):
 
     @abstractmethod
     def realtime_model(
-        self, voice: str, options: Mapping[str, bool]
-    ) -> llm.RealtimeModel:
-        """A new model for one call's session, speaking in `voice`."""
+        self, voice: str, options: Mapping[str, OptionValue], backend: str
+    ) -> llm.RealtimeModel | llm.DuplexModel:
+        """A new model for one call's session, speaking in `voice`. `backend` is the
+        backend's instructions for a provider that `delegates`, and empty for any other."""
 
-    async def keep_alive(self, model: llm.RealtimeModel) -> None:
+    async def keep_alive(self, model: llm.RealtimeModel | llm.DuplexModel) -> None:
         """Runs for the whole call beside the session, for a provider that closes a quiet
         conversation on its own. Gemini's needs nothing."""
         del model
 
-    def tools(self, options: Mapping[str, bool]) -> Tools:
+    def tools(self, options: Mapping[str, OptionValue]) -> Tools:
         """The provider's own tools for a call, beside Bomby's (`tools/`)."""
         del options
         return []
 
-    def resolve(self, given: Mapping[str, bool]) -> dict[str, bool]:
+    def resolve(self, given: Mapping[str, OptionValue]) -> dict[str, OptionValue]:
         """Every option this provider has: the value the app sent, else its default.
-        Options it doesn't have are ignored, like unknown metadata fields."""
-        return {
-            name: given.get(name, default) for name, default in self.options.items()
-        }
+        Options it doesn't have are ignored, like unknown metadata fields, and so is a
+        choice's value it doesn't offer (a model since retired); a value of the wrong kind
+        raises ValueError, which fails the call at start like any invalid metadata."""
+        resolved: dict[str, OptionValue] = {}
+        for option in self.options:
+            value = given.get(option.id)
+            match option:
+                case Switch():
+                    if value is not None and not isinstance(value, bool):
+                        raise ValueError(f"{self.name}'s {option.id} is on or off.")
+                    resolved[option.id] = option.default if value is None else value
+                case Choice():
+                    if value is not None and not isinstance(value, str):
+                        raise ValueError(
+                            f"{self.name}'s {option.id} is one of its values."
+                        )
+                    offered = option.offered(resolved.get(option.follows))
+                    resolved[option.id] = (
+                        value
+                        if isinstance(value, str) and value in offered
+                        else option.default_in(offered)
+                    )
+        return resolved

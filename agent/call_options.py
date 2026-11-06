@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from job import JobFields, Line
-from voice_providers import GEMINI, VoiceProvider, provider
+from voice_providers import GEMINI, OptionValue, VoiceProvider, provider
 
 Tone = Literal["sharp", "chatty", "playful"]
 TONES: tuple[Tone, ...] = ("sharp", "chatty", "playful")
@@ -31,8 +31,10 @@ def tone(value: str) -> Tone:
 class CallOptions:
     voice: str
     provider: VoiceProvider = GEMINI
-    # The provider's switches the app sent; `options` adds the defaults.
-    provider_options: Mapping[str, bool] = field(default_factory=dict[str, bool])
+    # The provider's options the app sent; `options` adds the defaults.
+    provider_options: Mapping[str, OptionValue] = field(
+        default_factory=dict[str, OptionValue]
+    )
     # Empty when the user hasn't said what to call them.
     user_name: str = ""
     tone: Tone = DEFAULT_TONE
@@ -43,7 +45,8 @@ class CallOptions:
 
     @classmethod
     def from_job(cls, fields: JobFields, environ: Mapping[str, str]) -> "CallOptions":
-        """Raises ValueError for a provider Bomby doesn't have."""
+        """Raises ValueError for a provider Bomby doesn't have, or an option set to a
+        value of the wrong kind."""
         if fields is None:
             chosen = provider(environ.get("VOICE_PROVIDER", "").strip())
             return cls(
@@ -56,6 +59,8 @@ class CallOptions:
             )
 
         chosen = provider(fields.provider)
+        # Checked now, so a bad value fails the call at start.
+        _ = chosen.resolve(fields.provider_options)
         return cls(
             voice=fields.voice or environ.get(chosen.voice_env) or chosen.default_voice,
             provider=chosen,
@@ -68,7 +73,7 @@ class CallOptions:
         )
 
     @property
-    def options(self) -> dict[str, bool]:
+    def options(self) -> dict[str, OptionValue]:
         """Every option the provider has, as the app set it or by default."""
         return self.provider.resolve(self.provider_options)
 

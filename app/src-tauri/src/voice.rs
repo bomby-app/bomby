@@ -26,6 +26,10 @@ const DEFAULT_PROVIDER: VoiceProvider = VoiceProvider::Gemini;
 pub enum VoiceProvider {
     /// Gemini Live, with a Google AI Studio key.
     Gemini,
+    /// OpenAI's GPT-Live, with an OpenAI key.
+    #[serde(rename = "openai")]
+    #[cfg_attr(test, ts(rename = "openai"))]
+    OpenAi,
     /// Rime's Prism.
     Rime,
 }
@@ -53,22 +57,55 @@ struct CatalogueEntry {
     key_env: String,
     default_voice: String,
     voices: Vec<Voice>,
-    options: Vec<OptionDefault>,
+    options: Vec<OptionDef>,
 }
 
+/// One of a provider's options, as the agent defines it (`Switch` and `Choice` in
+/// `agent/voice_providers/provider.py`).
 #[derive(Deserialize)]
-struct OptionDefault {
-    id: String,
-    default: bool,
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum OptionDef {
+    /// On or off: Gemini's Google Search.
+    Switch { id: String, default: bool },
+    /// One of its values: GPT-Live's response model.
+    Choice {
+        id: String,
+        default: String,
+        values: Vec<String>,
+        /// The choice whose value decides which of these values there are.
+        follows: Option<String>,
+        /// With `follows`: the values for each of its values; one not listed has them all.
+        #[serde(default)]
+        per: BTreeMap<String, Vec<String>>,
+    },
+}
+
+impl OptionDef {
+    fn id(&self) -> &str {
+        match self {
+            Self::Switch { id, .. } | Self::Choice { id, .. } => id,
+        }
+    }
+}
+
+/// What an option is set to: a switch's on or off, a choice's value. Sent to the agent and
+/// taken from the page as JSON `true`/`false` or a string.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "voice.ts"))]
+pub enum OptionValue {
+    On(bool),
+    Value(String),
 }
 
 impl VoiceProvider {
-    pub const ALL: [Self; 2] = [Self::Gemini, Self::Rime];
+    pub const ALL: [Self; 3] = [Self::Gemini, Self::OpenAi, Self::Rime];
 
     /// Its id in the job's metadata (`PROVIDERS` in `agent/voice_providers/`).
     pub fn id(self) -> &'static str {
         match self {
             Self::Gemini => "gemini",
+            Self::OpenAi => "openai",
             Self::Rime => "rime",
         }
     }
@@ -105,19 +142,16 @@ impl VoiceProvider {
         &self.entry().voices
     }
 
-    /// Its switches and their defaults, as the agent has them (`options`).
-    fn options(self) -> impl Iterator<Item = (&'static str, bool)> {
-        self.entry()
-            .options
-            .iter()
-            .map(|option| (option.id.as_str(), option.default))
+    /// Its options, in the order the agent lists them (`options`).
+    fn options(self) -> &'static [OptionDef] {
+        &self.entry().options
     }
 
     /// Where its voice is saved; Gemini keeps the key every install had before.
     fn voice_setting(self) -> String {
         match self {
             Self::Gemini => "voice".to_owned(),
-            Self::Rime => format!("voice_{}", self.id()),
+            Self::OpenAi | Self::Rime => format!("voice_{}", self.id()),
         }
     }
 
@@ -135,11 +169,21 @@ pub struct Voice {
     description: String,
 }
 
-#[derive(Serialize)]
+/// One of a provider's options as Settings shows it: a switch, or a choice with the values
+/// it has now (an effort, the ones its response model has).
+#[derive(Debug, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "voice.ts"))]
-pub struct ProviderOption {
-    id: &'static str,
-    on: bool,
+pub enum ProviderOption {
+    Switch {
+        id: &'static str,
+        on: bool,
+    },
+    Choice {
+        id: &'static str,
+        value: String,
+        values: Vec<&'static str>,
+    },
 }
 
 /// One provider as the Voice settings show it.
@@ -171,7 +215,7 @@ pub struct VoiceSettings {
 pub(crate) struct CallVoice {
     pub(crate) provider: VoiceProvider,
     pub(crate) voice: String,
-    pub(crate) options: BTreeMap<&'static str, bool>,
+    pub(crate) options: BTreeMap<&'static str, OptionValue>,
 }
 
 /// The picked provider. Until one is: the first with a saved key, so an install that had a
@@ -240,39 +284,111 @@ fn save_voice(conn: &Connection, provider: VoiceProvider, id: &str) -> Result<()
     put(conn, &provider.voice_setting(), id)
 }
 
-fn options(conn: &Connection, provider: VoiceProvider) -> Result<BTreeMap<&'static str, bool>> {
-    provider
-        .options()
-        .map(|(id, default)| {
-            let on = match get(conn, &provider.option_setting(id))?.as_deref() {
-                Some("1") => true,
-                Some("0") => false,
-                _ => default,
-            };
-            Ok((id, on))
+/// Each option as the user set it, else its default. A choice keeps a value only while it's
+/// offered (an effort the newly picked response model doesn't have is its default again),
+/// the way the agent resolves them (`VoiceProvider.resolve`).
+fn options(conn: &Connection, provider: VoiceProvider) -> Result<Vec<ProviderOption>> {
+    let mut resolved: Vec<ProviderOption> = Vec::new();
+    for option in provider.options() {
+        let saved = get(conn, &provider.option_setting(option.id()))?;
+        resolved.push(match option {
+            OptionDef::Switch { id, default } => ProviderOption::Switch {
+                id,
+                on: match saved.as_deref() {
+                    Some("1") => true,
+                    Some("0") => false,
+                    _ => *default,
+                },
+            },
+            OptionDef::Choice { id, default, .. } => {
+                let values = offered(option, &resolved);
+                let value = match saved {
+                    Some(value) if values.contains(&value.as_str()) => value,
+                    _ if values.contains(&default.as_str()) => default.clone(),
+                    _ => values.first().map_or_else(String::new, |v| (*v).to_owned()),
+                };
+                ProviderOption::Choice { id, value, values }
+            }
+        });
+    }
+    Ok(resolved)
+}
+
+/// The values a choice has, given what the options before it are set to.
+fn offered(option: &'static OptionDef, before: &[ProviderOption]) -> Vec<&'static str> {
+    let OptionDef::Choice {
+        values,
+        follows,
+        per,
+        ..
+    } = option
+    else {
+        return Vec::new();
+    };
+    let leader = follows.as_deref().and_then(|follows| {
+        before.iter().find_map(|option| match option {
+            ProviderOption::Choice { id, value, .. } if *id == follows => Some(value.as_str()),
+            _ => None,
+        })
+    });
+    leader
+        .and_then(|leader| per.get(leader))
+        .unwrap_or(values)
+        .iter()
+        .map(String::as_str)
+        .collect()
+}
+
+/// The options as the call's metadata carries them (`provider_options`).
+fn option_values(options: Vec<ProviderOption>) -> BTreeMap<&'static str, OptionValue> {
+    options
+        .into_iter()
+        .map(|option| match option {
+            ProviderOption::Switch { id, on } => (id, OptionValue::On(on)),
+            ProviderOption::Choice { id, value, .. } => (id, OptionValue::Value(value)),
         })
         .collect()
 }
 
-fn save_option(conn: &Connection, provider: VoiceProvider, option: &str, on: bool) -> Result<()> {
-    if !provider.options().any(|(id, _)| id == option) {
-        return Err(Error::Invalid(format!(
-            "{} has no option {option}.",
-            provider.name()
-        )));
-    }
-    put(
-        conn,
-        &provider.option_setting(option),
-        if on { "1" } else { "0" },
-    )
+/// Saves a switch as "1" or "0", where it always was, and a choice as its value, once it's
+/// one the choice has now.
+fn save_option(
+    conn: &Connection,
+    provider: VoiceProvider,
+    option: &str,
+    value: &OptionValue,
+) -> Result<()> {
+    let def = provider
+        .options()
+        .iter()
+        .find(|def| def.id() == option)
+        .ok_or_else(|| Error::Invalid(format!("{} has no option {option}.", provider.name())))?;
+    let saved = match (def, value) {
+        (OptionDef::Switch { .. }, OptionValue::On(on)) => if *on { "1" } else { "0" }.to_owned(),
+        (OptionDef::Choice { .. }, OptionValue::Value(value)) => {
+            if !offered(def, &options(conn, provider)?).contains(&value.as_str()) {
+                return Err(Error::Invalid(format!(
+                    "{value} isn't one of {}'s choices for {option}.",
+                    provider.name()
+                )));
+            }
+            value.clone()
+        }
+        _ => {
+            return Err(Error::Invalid(format!(
+                "{}'s {option} can't be set to that.",
+                provider.name()
+            )));
+        }
+    };
+    put(conn, &provider.option_setting(option), &saved)
 }
 
 pub(crate) fn for_call(conn: &Connection, provider: VoiceProvider) -> Result<CallVoice> {
     Ok(CallVoice {
         provider,
         voice: voice(conn, provider)?,
-        options: options(conn, provider)?,
+        options: option_values(options(conn, provider)?),
     })
 }
 
@@ -313,10 +429,7 @@ pub fn voice_settings<R: Runtime>(
                 voice: voice(&conn, provider)?,
                 default_voice: provider.default_voice(),
                 voices: provider.voices().to_vec(),
-                options: options(&conn, provider)?
-                    .into_iter()
-                    .map(|(id, on)| ProviderOption { id, on })
-                    .collect(),
+                options: options(&conn, provider)?,
             })
         })
         .collect::<Result<_>>()?;
@@ -345,14 +458,15 @@ pub fn set_voice(db: State<'_, Db>, provider: VoiceProvider, voice: String) -> R
     save_voice(&db.conn(), provider, &voice)
 }
 
+/// A switch's on or off, or a choice's value, for the provider's next call.
 #[tauri::command(async)]
 pub fn set_voice_option(
     db: State<'_, Db>,
     provider: VoiceProvider,
     option: String,
-    on: bool,
+    value: OptionValue,
 ) -> Result<()> {
-    save_option(&db.conn(), provider, &option, on)
+    save_option(&db.conn(), provider, &option, &value)
 }
 
 #[cfg(test)]
@@ -448,16 +562,88 @@ mod tests {
     fn google_search_is_on_until_turned_off_and_only_gemini_has_it() {
         let db = Db::in_memory().unwrap();
         let conn = db.conn();
-        let search = |conn: &Connection| options(conn, VoiceProvider::Gemini).unwrap();
-        assert_eq!(search(&conn), BTreeMap::from([("google_search", true)]));
-        save_option(&conn, VoiceProvider::Gemini, "google_search", false).unwrap();
-        assert_eq!(search(&conn), BTreeMap::from([("google_search", false)]));
+        let search =
+            |conn: &Connection| option_values(options(conn, VoiceProvider::Gemini).unwrap());
+        let on = |on| BTreeMap::from([("google_search", OptionValue::On(on))]);
+        assert_eq!(search(&conn), on(true));
+        save_option(
+            &conn,
+            VoiceProvider::Gemini,
+            "google_search",
+            &OptionValue::On(false),
+        )
+        .unwrap();
+        assert_eq!(search(&conn), on(false));
+        // Saved where every install had it.
+        assert_eq!(
+            get(&conn, "voice_option.gemini.google_search")
+                .unwrap()
+                .as_deref(),
+            Some("0")
+        );
+        assert!(matches!(
+            save_option(
+                &conn,
+                VoiceProvider::Gemini,
+                "google_search",
+                &OptionValue::Value("yes".into())
+            ),
+            Err(Error::Invalid(_))
+        ));
 
         assert!(options(&conn, VoiceProvider::Rime).unwrap().is_empty());
         assert!(matches!(
-            save_option(&conn, VoiceProvider::Rime, "google_search", true),
+            save_option(
+                &conn,
+                VoiceProvider::Rime,
+                "google_search",
+                &OptionValue::On(true)
+            ),
             Err(Error::Invalid(_))
         ));
+    }
+
+    #[test]
+    fn an_effort_follows_the_response_model() {
+        let db = Db::in_memory().unwrap();
+        let conn = db.conn();
+        let openai = VoiceProvider::OpenAi;
+        let set = |option: &str, value: &str| {
+            save_option(&conn, openai, option, &OptionValue::Value(value.into()))
+        };
+        let value = |id: &str| option_values(options(&conn, openai).unwrap())[id].clone();
+        let text = |v: &str| OptionValue::Value(v.into());
+
+        assert_eq!(value("web_search"), OptionValue::On(true));
+        assert_eq!(value("response_model"), text("gpt-6-luna"));
+        assert_eq!(value("reasoning_effort"), text("medium"));
+
+        set("reasoning_effort", "none").unwrap();
+        assert_eq!(value("reasoning_effort"), text("none"));
+        // Astra has no "none": its effort is the default again, and "none" can't be picked.
+        set("response_model", "gpt-6-astra").unwrap();
+        assert_eq!(value("reasoning_effort"), text("medium"));
+        assert!(matches!(
+            set("reasoning_effort", "none"),
+            Err(Error::Invalid(_))
+        ));
+        let ProviderOption::Choice { values, .. } = &options(&conn, openai).unwrap()[2] else {
+            panic!("the effort is a choice");
+        };
+        assert_eq!(values, &["low", "medium", "high", "xhigh"]);
+        // Back on Luna, the saved "none" holds again.
+        set("response_model", "gpt-6-luna").unwrap();
+        assert_eq!(value("reasoning_effort"), text("none"));
+
+        assert!(matches!(
+            set("response_model", "gpt-5"),
+            Err(Error::Invalid(_))
+        ));
+        assert!(matches!(
+            save_option(&conn, openai, "response_model", &OptionValue::On(true)),
+            Err(Error::Invalid(_))
+        ));
+        assert_eq!(voice(&conn, openai).unwrap(), "gleam");
     }
 
     #[test]

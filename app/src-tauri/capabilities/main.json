@@ -15,6 +15,7 @@
       "allow": [
         { "url": "https://cloud.livekit.io" },
         { "url": "https://aistudio.google.com/apikey" },
+        { "url": "https://platform.openai.com/api-keys" },
         { "url": "https://app.rime.ai/tokens" },
         { "url": "https://code.claude.com/docs/en/quickstart" },
         { "url": "https://learn.chatgpt.com/docs/codex/cli" },
