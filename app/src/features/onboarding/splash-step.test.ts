@@ -35,9 +35,16 @@ const NO_KEYS: Keys = {
   server: "thisMac",
   livekit: true,
   theirLiveKit: false,
-  gemini: false,
+  voice: null,
+  voiceKeys: { gemini: false, rime: false },
+  voiceKey: false,
 }
-const ALL_KEYS: Keys = { ...NO_KEYS, gemini: true }
+const ALL_KEYS: Keys = {
+  ...NO_KEYS,
+  voice: "rime",
+  voiceKeys: { gemini: false, rime: true },
+  voiceKey: true,
+}
 
 const none = [agent("claude", "missing"), agent("codex", "missing")]
 

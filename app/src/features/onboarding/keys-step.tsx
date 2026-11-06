@@ -6,7 +6,7 @@ import { useActionState, useState } from "react"
 
 import { InlineLink } from "@/components/inline-link"
 import { Button } from "@/components/ui/button"
-import { saveCredentials, saveGeminiKey } from "@/features/credentials/api"
+import { saveCredentials } from "@/features/credentials/api"
 import { parseLiveKitEnv } from "@/features/credentials/livekit-env"
 import {
   checkKeysAgain,
@@ -15,6 +15,7 @@ import {
   type Keys,
 } from "@/features/credentials/use-saved-keys"
 import { GeminiLogo, LiveKitLogo } from "@/features/setup/provider-logos"
+import { saveVoiceKey } from "@/features/voice/api"
 import { cn } from "@/lib/utils"
 
 import { KeysDialog } from "./keys-dialog"
@@ -54,7 +55,7 @@ async function pasteGemini(): Promise<string | null> {
   if (!GEMINI_KEY.test(key))
     return "Copy your API key from Google AI Studio, then paste again."
   try {
-    await saveGeminiKey(key)
+    await saveVoiceKey("gemini", key)
   } catch (e) {
     return String(e)
   }
@@ -195,9 +196,11 @@ export function KeysStep({
           </Tile>
         }
         name="Gemini"
-        status={keys.gemini && <StatusLine tone="done" text="Saved" />}
+        status={
+          keys.voiceKeys.gemini && <StatusLine tone="done" text="Saved" />
+        }
         action={
-          !keys.gemini && (
+          !keys.voiceKeys.gemini && (
             <form action={pasteGeminiNow}>
               <Button
                 type="submit"

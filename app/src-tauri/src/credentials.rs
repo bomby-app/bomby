@@ -11,6 +11,7 @@
 //! Secrets never go back to the page: it sees whether one is saved. The core uses them to
 //! mint call tokens and passes them to the agent when it starts one.
 
+use std::collections::BTreeMap;
 use std::sync::Mutex;
 
 use keyring::Entry;
@@ -20,6 +21,7 @@ use tauri::{AppHandle, Emitter, Runtime, State};
 use crate::dev;
 use crate::error::{Error, Result};
 use crate::sync;
+use crate::voice::VoiceProvider;
 
 /// Sent to every window after a key is saved or removed, with no payload.
 pub const KEYS_CHANGED: &str = "keys-changed";
@@ -50,9 +52,27 @@ impl std::fmt::Debug for LiveKitKeys {
 struct Keys {
     livekit: Option<LiveKitKeys>,
     gemini_key: Option<String>,
+    #[serde(default)]
+    rime_key: Option<String>,
     /// For memory across conversations (`settings::Memory::Zep`).
     #[serde(default)]
     zep_key: Option<String>,
+}
+
+impl Keys {
+    fn voice_key(&mut self, provider: VoiceProvider) -> &mut Option<String> {
+        match provider {
+            VoiceProvider::Gemini => &mut self.gemini_key,
+            VoiceProvider::Rime => &mut self.rime_key,
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.livekit.is_none()
+            && self.gemini_key.is_none()
+            && self.rime_key.is_none()
+            && self.zep_key.is_none()
+    }
 }
 
 /// What the page may see.
@@ -102,7 +122,7 @@ fn write<R: Runtime>(app: &AppHandle<R>, keys: &Keys) -> Result<()> {
         return Ok(());
     }
     let entry = entry(app, ACCOUNT)?;
-    if keys.livekit.is_none() && keys.gemini_key.is_none() && keys.zep_key.is_none() {
+    if keys.is_empty() {
         return remove(&entry);
     }
     entry.set_password(&serde_json::to_string(keys).map_err(Error::Corrupt)?)?;
@@ -163,8 +183,17 @@ impl Vault {
         Ok(self.keys(app)?.livekit)
     }
 
-    pub fn gemini_key<R: Runtime>(&self, app: &AppHandle<R>) -> Result<Option<String>> {
-        Ok(self.keys(app)?.gemini_key)
+    /// Every voice provider's key that's saved. The worker gets them all, so picking
+    /// another provider doesn't restart it.
+    pub fn voice_keys<R: Runtime>(
+        &self,
+        app: &AppHandle<R>,
+    ) -> Result<BTreeMap<VoiceProvider, String>> {
+        let mut keys = self.keys(app)?;
+        Ok(VoiceProvider::ALL
+            .into_iter()
+            .filter_map(|p| Some((p, keys.voice_key(p).take()?)))
+            .collect())
     }
 
     pub fn zep_key<R: Runtime>(&self, app: &AppHandle<R>) -> Result<Option<String>> {
@@ -237,32 +266,36 @@ pub fn clear_credentials<R: Runtime>(app: AppHandle<R>, vault: State<'_, Vault>)
     })
 }
 
-/// Whether a Gemini key is saved. The key itself stays in the core.
+/// Saves a voice provider's key; whether one is saved comes with `voice::voice_settings`.
+/// The key itself stays in the core.
 #[tauri::command(async)]
-pub fn has_gemini_key<R: Runtime>(app: AppHandle<R>, vault: State<'_, Vault>) -> Result<bool> {
-    Ok(vault.gemini_key(&app)?.is_some())
-}
-
-#[tauri::command(async)]
-pub fn save_gemini_key<R: Runtime>(
+pub fn save_voice_key<R: Runtime>(
     app: AppHandle<R>,
     vault: State<'_, Vault>,
+    provider: VoiceProvider,
     key: String,
 ) -> Result<()> {
     let key = key.trim();
     if key.is_empty() || key.contains(char::is_whitespace) {
-        return Err(Error::Invalid("Paste the whole Gemini API key.".into()));
+        return Err(Error::Invalid(format!(
+            "Paste the whole {} API key.",
+            provider.name()
+        )));
     }
     vault.update(&app, |keys| {
-        keys.gemini_key = Some(key.to_owned());
+        *keys.voice_key(provider) = Some(key.to_owned());
         Ok(())
     })
 }
 
 #[tauri::command(async)]
-pub fn clear_gemini_key<R: Runtime>(app: AppHandle<R>, vault: State<'_, Vault>) -> Result<()> {
+pub fn clear_voice_key<R: Runtime>(
+    app: AppHandle<R>,
+    vault: State<'_, Vault>,
+    provider: VoiceProvider,
+) -> Result<()> {
     vault.update(&app, |keys| {
-        keys.gemini_key = None;
+        *keys.voice_key(provider) = None;
         Ok(())
     })
 }
@@ -315,6 +348,16 @@ mod tests {
             api_key: "OLD".into(),
             api_secret: "old-secret".into(),
         })
+    }
+
+    #[test]
+    fn an_entry_saved_before_rime_and_zep_still_reads() {
+        let mut keys: Keys = serde_json::from_str(r#"{"livekit":null,"gemini_key":"g"}"#).unwrap();
+        assert_eq!(keys.voice_key(VoiceProvider::Gemini).as_deref(), Some("g"));
+        assert_eq!(*keys.voice_key(VoiceProvider::Rime), None);
+        assert!(!keys.is_empty());
+        *keys.voice_key(VoiceProvider::Gemini) = None;
+        assert!(keys.is_empty(), "nothing left, so the entry is removed");
     }
 
     #[test]

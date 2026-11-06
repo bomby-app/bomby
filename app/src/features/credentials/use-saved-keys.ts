@@ -1,8 +1,8 @@
+import { type VoiceProvider, voiceSettings } from "@/features/voice/api"
 import { createStore, useStore } from "@/lib/store"
 
 import {
   credentialsInfo,
-  hasGeminiKey,
   type LiveKitServer,
   livekitServer,
   onKeysChanged,
@@ -11,7 +11,7 @@ import {
 
 /**
  * Which keys are saved, for this page: only whether each exists, never a key itself (the
- * core keeps them; src-tauri/src/credentials.rs). Read from the core once, then again
+ * core keeps them; src-tauri/src/credentials.rs), and who Bomby talks through. Read from the core once, then again
  * whenever any window saves or removes one (keys-changed) and on Check again. Every
  * component shares it, so a section that opens again shows it at once.
  */
@@ -20,7 +20,12 @@ export type Keys = {
   /** Ready for a call: this Mac's, or their keys saved. */
   livekit: boolean
   theirLiveKit: boolean
-  gemini: boolean
+  /** Who Bomby talks through; null until the user picks one. */
+  voice: VoiceProvider | null
+  /** Which providers' keys are saved. */
+  voiceKeys: Record<VoiceProvider, boolean>
+  /** The picked provider's key is saved. */
+  voiceKey: boolean
 }
 
 type SavedKeys = {
@@ -45,18 +50,24 @@ export function useSavedKeys(): SavedKeys {
  */
 export async function checkKeysAgain(): Promise<void> {
   try {
-    const [server, theirs, gemini] = await Promise.all([
+    const [server, theirs, voices] = await Promise.all([
       livekitServer(),
       credentialsInfo(),
-      hasGeminiKey(),
+      voiceSettings(),
     ])
     const theirLiveKit = !!theirs?.hasSecret
+    const voice = voices.provider
+    const voiceKeys = Object.fromEntries(
+      voices.providers.map((p) => [p.provider, p.hasKey])
+    ) as Record<VoiceProvider, boolean>
     store.set({
       keys: {
         server,
         livekit: server === "thisMac" || theirLiveKit,
         theirLiveKit,
-        gemini,
+        voice,
+        voiceKeys,
+        voiceKey: voice !== null && voiceKeys[voice],
       },
       error: null,
     })

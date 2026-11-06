@@ -1,6 +1,7 @@
-//! App settings that aren't secrets, kept in the database's `settings` table: the agent's
-//! voice, what the user likes to be called and the tone they prefer, all sent with every call
-//! (`calls::call_token`), and whether the first run is done.
+//! App settings that aren't secrets, kept in the database's `settings` table: what the user
+//! likes to be called and the tone they prefer, both sent with every call
+//! (`calls::call_token`), memory across calls, the LiveKit server, and whether the first run
+//! is done. The voice provider, its voice and options are `voice.rs`'s.
 
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
@@ -9,7 +10,6 @@ use tauri::State;
 use crate::db::Db;
 use crate::error::{Error, Result};
 
-const VOICE_KEY: &str = "voice";
 /// What the user likes to be called; empty or missing when they'd rather not say.
 const USER_NAME_KEY: &str = "user_name";
 const MAX_USER_NAME_LEN: usize = 50;
@@ -32,7 +32,7 @@ pub enum Memory {
     Zep,
 }
 
-/// How Bomby talks: each picks its own voice prompt (`agent/prompts/<tone>.md`).
+/// How Bomby talks: each picks its own voice prompt (`agent/prompts/<provider>/<tone>.md`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "voice.ts"))]
@@ -74,63 +74,8 @@ impl LiveKitServer {
     }
 }
 
-/// Used when none is chosen; the agent defaults to it too (`agent/call_options.py`).
-pub const DEFAULT_VOICE: &str = "Leda";
-
-/// Gemini's 30 prebuilt voices: name, style and pitch, as Google lists them for Gemini 3.8
-/// (ai.google.dev/gemini-api/docs/speech-generation#voices, and AI Studio for the pitch,
-/// 2026-11-04). Live supports all of them. The larger voice library and custom voices
-/// (`GET /v1beta/voices`) are left out on purpose.
-pub const VOICES: [(&str, &str, &str); 30] = [
-    ("Zephyr", "Bright", "Higher"),
-    ("Puck", "Upbeat", "Middle"),
-    ("Charon", "Informative", "Lower"),
-    ("Kore", "Firm", "Middle"),
-    ("Fenrir", "Excitable", "Lower middle"),
-    ("Leda", "Youthful", "Higher"),
-    ("Orus", "Firm", "Lower middle"),
-    ("Aoede", "Breezy", "Middle"),
-    ("Callirrhoe", "Easy-going", "Middle"),
-    ("Autonoe", "Bright", "Middle"),
-    ("Enceladus", "Breathy", "Lower"),
-    ("Iapetus", "Clear", "Lower middle"),
-    ("Umbriel", "Easy-going", "Lower middle"),
-    ("Algieba", "Smooth", "Lower"),
-    ("Despina", "Smooth", "Middle"),
-    ("Erinome", "Clear", "Middle"),
-    ("Algenib", "Gravelly", "Lower"),
-    ("Rasalgethi", "Informative", "Middle"),
-    ("Laomedeia", "Upbeat", "Higher"),
-    ("Achernar", "Soft", "Higher"),
-    ("Alnilam", "Firm", "Lower middle"),
-    ("Schedar", "Even", "Lower middle"),
-    ("Gacrux", "Mature", "Middle"),
-    ("Pulcherrima", "Forward", "Middle"),
-    ("Achird", "Friendly", "Lower middle"),
-    ("Zubenelgenubi", "Casual", "Lower middle"),
-    ("Vindemiatrix", "Gentle", "Middle"),
-    ("Sadachbia", "Lively", "Lower"),
-    ("Sadaltager", "Knowledgeable", "Middle"),
-    ("Sulafat", "Warm", "Middle"),
-];
-
-#[derive(Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "voice.ts"))]
-pub struct Voice {
-    name: &'static str,
-    style: &'static str,
-    pitch: &'static str,
-}
-
-#[derive(Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "voice.ts"))]
-pub struct VoiceSettings {
-    voice: String,
-    voices: Vec<Voice>,
-}
-
 /// The value saved under `key`, if any.
-fn get(conn: &Connection, key: &str) -> Result<Option<String>> {
+pub(crate) fn get(conn: &Connection, key: &str) -> Result<Option<String>> {
     Ok(conn
         .query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| {
             row.get(0)
@@ -139,7 +84,7 @@ fn get(conn: &Connection, key: &str) -> Result<Option<String>> {
 }
 
 /// Saves `value` under `key`, replacing what was there.
-fn put(conn: &Connection, key: &str, value: &str) -> Result<()> {
+pub(crate) fn put(conn: &Connection, key: &str, value: &str) -> Result<()> {
     conn.execute(
         "INSERT INTO settings (key, value) VALUES (?1, ?2)
          ON CONFLICT (key) DO UPDATE SET value = excluded.value",
@@ -150,7 +95,6 @@ fn put(conn: &Connection, key: &str, value: &str) -> Result<()> {
 
 /// The settings a call takes along (`calls::dispatch_metadata`).
 pub(crate) struct CallSettings {
-    pub(crate) voice: String,
     /// Empty when the user hasn't given one.
     pub(crate) user_name: String,
     pub(crate) tone: Tone,
@@ -158,38 +102,9 @@ pub(crate) struct CallSettings {
 
 pub(crate) fn for_call(conn: &Connection) -> Result<CallSettings> {
     Ok(CallSettings {
-        voice: voice(conn)?,
         user_name: read_user_name(conn)?,
         tone: read_tone(conn)?,
     })
-}
-
-/// The chosen voice, or the default.
-fn voice(conn: &Connection) -> Result<String> {
-    Ok(get(conn, VOICE_KEY)?.unwrap_or_else(|| DEFAULT_VOICE.to_owned()))
-}
-
-fn save_voice(conn: &Connection, name: &str) -> Result<()> {
-    if !VOICES.iter().any(|(voice, _, _)| *voice == name) {
-        return Err(Error::Invalid(format!("{name} isn't a Gemini voice.")));
-    }
-    put(conn, VOICE_KEY, name)
-}
-
-#[tauri::command(async)]
-pub fn voice_settings(db: State<'_, Db>) -> Result<VoiceSettings> {
-    Ok(VoiceSettings {
-        voice: voice(&db.conn())?,
-        voices: VOICES
-            .iter()
-            .map(|&(name, style, pitch)| Voice { name, style, pitch })
-            .collect(),
-    })
-}
-
-#[tauri::command(async)]
-pub fn set_voice(db: State<'_, Db>, name: String) -> Result<()> {
-    save_voice(&db.conn(), &name)
 }
 
 /// What the user likes to be called, or empty.
@@ -328,25 +243,6 @@ pub fn finish_first_run(db: State<'_, Db>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn defaults_to_leda_and_keeps_a_chosen_voice() {
-        let db = Db::in_memory().unwrap();
-        let conn = db.conn();
-        assert_eq!(voice(&conn).unwrap(), DEFAULT_VOICE);
-        save_voice(&conn, "Kore").unwrap();
-        save_voice(&conn, "Sulafat").unwrap();
-        assert_eq!(voice(&conn).unwrap(), "Sulafat");
-    }
-
-    #[test]
-    fn rejects_a_voice_gemini_doesnt_have() {
-        let db = Db::in_memory().unwrap();
-        assert!(matches!(
-            save_voice(&db.conn(), "Hal"),
-            Err(Error::Invalid(_))
-        ));
-    }
 
     #[test]
     fn keeps_the_users_name_trimmed_and_lets_it_be_cleared() {

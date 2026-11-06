@@ -9,8 +9,8 @@ import {
   FieldLabel,
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { clearVoiceKey, saveVoiceKey } from "@/features/voice/api"
 
-import { clearGeminiKey, saveGeminiKey } from "./api"
 import { useSavedKeys } from "./use-saved-keys"
 
 type Status =
@@ -27,7 +27,7 @@ export function GeminiForm({ focus = false }: { focus?: boolean }) {
   // Shared with every window: saving or removing it anywhere updates it here. `saved` is
   // null until the core answers, or when it couldn't read the keychain (`readError`).
   const { keys, error: readError } = useSavedKeys()
-  const saved = keys?.gemini ?? null
+  const saved = keys?.voiceKeys.gemini ?? null
   const [key, setKey] = useState("")
   const [status, setStatus] = useState<Status>({ kind: "idle" })
   const input = useRef<HTMLInputElement>(null)
@@ -40,7 +40,7 @@ export function GeminiForm({ focus = false }: { focus?: boolean }) {
     event.preventDefault()
     setStatus({ kind: "saving" })
     try {
-      await saveGeminiKey(key)
+      await saveVoiceKey("gemini", key)
       setKey("")
       setStatus({ kind: "saved" })
     } catch (error) {
@@ -50,7 +50,7 @@ export function GeminiForm({ focus = false }: { focus?: boolean }) {
 
   async function remove() {
     try {
-      await clearGeminiKey()
+      await clearVoiceKey("gemini")
       setStatus({ kind: "idle" })
     } catch (error) {
       setStatus({ kind: "error", message: String(error) })

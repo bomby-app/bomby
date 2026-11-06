@@ -22,6 +22,7 @@ use crate::error::{Error, Result};
 use crate::local_server::LocalServer;
 use crate::setup::Pick;
 use crate::sync;
+use crate::voice::{self, CallVoice};
 use crate::{agent_picks, agents, call_server, credentials, projects, settings, updates, windows};
 
 /// The agent's name in `agent/agent.py` (`AGENT_NAME`), which the token dispatches.
@@ -94,6 +95,8 @@ struct OpenedWith {
     memory_user: String,
     /// Reads memory but saves nothing.
     memory_incognito: bool,
+    /// The voice provider it talks through, with its voice and options.
+    voice: CallVoice,
 }
 
 /// A call id and what it opened with.
@@ -157,13 +160,14 @@ struct HistoryLine {
 /// The job metadata the agent reads: the project with what the user wrote about it
 /// (`Project.from_job` in `agent/project.py`), the agents found on this computer by id with
 /// their programs and the picks each session gets (`JobMetadata.picks` in `agent/job.py`,
-/// applied by `apply` in `agent/acp_client/settings.py`), the voice, what the user likes to
-/// be called and, on a resumed call, the conversation so far (`CallOptions.from_job` in
-/// `agent/call_options.py`).
+/// applied by `apply` in `agent/acp_client/settings.py`), the voice provider with its voice
+/// and options, what the user likes to be called and, on a resumed call, the conversation so
+/// far (`CallOptions.from_job` in `agent/call_options.py`).
 fn dispatch_metadata(
     project: &projects::CallProject,
     agents: &[(String, PathBuf)],
     picks: &HashMap<String, Vec<Pick>>,
+    voice: &CallVoice,
     settings: &settings::CallSettings,
     memory: (&str, bool),
     history: &[HistoryLine],
@@ -182,7 +186,9 @@ fn dispatch_metadata(
         "instructions": project.instructions,
         "agents": agents,
         "picks": picks,
-        "voice": settings.voice,
+        "provider": voice.provider.id(),
+        "provider_options": voice.options,
+        "voice": voice.voice,
         "user_name": settings.user_name,
         "tone": settings.tone,
         "memory_user": memory.0,
@@ -284,9 +290,8 @@ pub fn open_call<R: Runtime>(
     // Holds off an update's restart while the call opens; refused if one is under way.
     let opening = updates::CallOpening::begin(&app)?;
     folders_are_there(&projects::for_call(&db.conn(), project_id)?)?;
-    let gemini = vault
-        .gemini_key(&app)?
-        .ok_or_else(|| Error::Invalid("Add your Gemini API key in Settings first.".into()))?;
+    let provider = voice::for_new_call(&app, &db, &vault)?;
+    let voice_keys = vault.voice_keys(&app)?;
     // Read before the server starts, so this Mac's server starts only for a call that can open.
     let (memory_user, zep_key) = memory_for_call(&app, &db, &vault)?;
     let memory_incognito = settings::incognito(&db.conn())?;
@@ -299,7 +304,7 @@ pub fn open_call<R: Runtime>(
             worker.ensure(
                 WorkerConfig {
                     livekit: server.clone(),
-                    gemini_key: gemini,
+                    voice_keys,
                     zep_key,
                 },
                 &log_dir,
@@ -314,6 +319,7 @@ pub fn open_call<R: Runtime>(
     let conn = db.conn();
     // Read before the call is recorded, so a failed read leaves no call without its agents.
     let picks = agent_picks::saved(&conn)?;
+    let call_voice = voice::for_call(&conn, provider)?;
     let call_id = match resume_call_id {
         Some(call_id) => {
             reopen(&conn, project_id, call_id)?;
@@ -335,6 +341,7 @@ pub fn open_call<R: Runtime>(
             picks,
             memory_user,
             memory_incognito,
+            voice: call_voice,
         },
     );
     opening.opened(call_id);
@@ -379,9 +386,11 @@ pub fn call_token<R: Runtime>(
         picks,
         memory_user,
         memory_incognito,
+        voice,
     } = match call_agents.get(call_id) {
         Some(opened) => opened,
         None => OpenedWith {
+            voice: voice::for_call(&db.conn(), voice::for_new_call(&app, &db, &vault)?)?,
             server: call_server::current(&app, &db, &vault, &local)?,
             agents: agents::usable(&found.cached().unwrap_or_default()),
             picks: agent_picks::saved(&db.conn())?,
@@ -394,6 +403,7 @@ pub fn call_token<R: Runtime>(
         &project,
         &agents,
         &picks,
+        &voice,
         &settings,
         (&memory_user, memory_incognito),
         &history,
@@ -469,7 +479,18 @@ pub fn call_messages(db: State<'_, Db>, call_id: i64) -> Result<Vec<Message>> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::*;
+    use crate::voice::VoiceProvider;
+
+    fn rime() -> CallVoice {
+        CallVoice {
+            provider: VoiceProvider::Rime,
+            voice: "aurora".into(),
+            options: BTreeMap::new(),
+        }
+    }
 
     #[test]
     fn the_current_call_keeps_its_server_and_agents_until_the_next_one_opens() {
@@ -494,6 +515,7 @@ mod tests {
             )]),
             memory_user: "bomby-0123456789abcdef".into(),
             memory_incognito: false,
+            voice: rime(),
         };
         agents.set(1, claude.clone());
         assert_eq!(agents.get(1), Some(claude));
@@ -505,6 +527,7 @@ mod tests {
             picks: HashMap::new(),
             memory_user: String::new(),
             memory_incognito: false,
+            voice: rime(),
         };
         agents.set(2, none.clone());
         assert_eq!(agents.get(1), None);
@@ -635,8 +658,12 @@ mod tests {
             text: "Hi.".into(),
         }];
         let agents = [("claude".to_owned(), PathBuf::from("/usr/local/bin/claude"))];
-        let settings = settings::CallSettings {
+        let voice = CallVoice {
+            provider: VoiceProvider::Gemini,
             voice: "Kore".into(),
+            options: BTreeMap::from([("google_search", false)]),
+        };
+        let settings = settings::CallSettings {
             user_name: "Sam".into(),
             tone: settings::Tone::Chatty,
         };
@@ -654,6 +681,7 @@ mod tests {
             &project,
             &agents,
             &picks,
+            &voice,
             &settings,
             ("bomby-0123456789abcdef", true),
             &history,
@@ -668,6 +696,8 @@ mod tests {
                 "agents": { "claude": "/usr/local/bin/claude" },
                 // Only the call's agents' picks go along.
                 "picks": { "claude": [{ "setting": "model", "value": "opus" }] },
+                "provider": "gemini",
+                "provider_options": { "google_search": false },
                 "voice": "Kore",
                 "user_name": "Sam",
                 "tone": "chatty",

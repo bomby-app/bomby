@@ -19,7 +19,7 @@ import {
   FieldSet,
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import { saveCredentials, saveGeminiKey } from "@/features/credentials/api"
+import { saveCredentials } from "@/features/credentials/api"
 import {
   changed,
   LiveKitFields,
@@ -29,6 +29,7 @@ import {
   checkKeysAgain,
   type Keys,
 } from "@/features/credentials/use-saved-keys"
+import { saveVoiceKey } from "@/features/voice/api"
 
 /** The splash's "type them in": every key it needs, saved together. */
 export function KeysDialog({
@@ -74,7 +75,7 @@ function KeysForm({ keys, onSaved }: { keys: Keys; onSaved: () => void }) {
             apiKey: livekit.fields.apiKey,
             apiSecret: livekit.fields.apiSecret || undefined,
           })
-        if (typedGemini) await saveGeminiKey(gemini)
+        if (typedGemini) await saveVoiceKey("gemini", gemini)
       } catch (e) {
         setError(String(e))
         return
@@ -121,7 +122,9 @@ function KeysForm({ keys, onSaved }: { keys: Keys; onSaved: () => void }) {
               id="keys-gemini-api-key"
               type="password"
               placeholder={
-                keys.gemini ? "Saved. Type a new one to replace it." : ""
+                keys.voiceKeys.gemini
+                  ? "Saved. Type a new one to replace it."
+                  : ""
               }
               value={gemini}
               autoComplete="off"

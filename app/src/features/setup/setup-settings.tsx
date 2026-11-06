@@ -50,8 +50,12 @@ export function SetupSettings() {
         <StatusRow
           logo={<GeminiLogo />}
           name="Gemini API key"
-          ready={keys?.gemini}
-          detail={keys?.gemini ? "Saved in your keychain." : "Not added yet."}
+          ready={keys?.voiceKeys.gemini}
+          detail={
+            keys?.voiceKeys.gemini
+              ? "Saved in your keychain."
+              : "Not added yet."
+          }
           action={
             <GoButton to={{ section: "credentials", field: "gemini" }}>
               Add key

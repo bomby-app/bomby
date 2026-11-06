@@ -12,7 +12,7 @@
 //! (docs/decisions/ship-the-agent-and-adapter-as-sidecars.md). Both run the same entry,
 //! `agent/bundle.py`.
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
@@ -26,6 +26,7 @@ use crate::credentials::LiveKitKeys;
 use crate::error::{Error, Result};
 use crate::process;
 use crate::sync;
+use crate::voice::VoiceProvider;
 
 /// How long a fresh worker gets to register with LiveKit.
 const READY_TIMEOUT: Duration = Duration::from_secs(60);
@@ -54,7 +55,9 @@ pub type OnCrash = Arc<dyn Fn(JobCrash) + Send + Sync>;
 #[derive(PartialEq, Eq)]
 pub struct WorkerConfig {
     pub livekit: LiveKitKeys,
-    pub gemini_key: String,
+    /// Every voice provider's key that's saved, so picking another provider doesn't
+    /// restart the worker; each call's metadata names the one it talks through.
+    pub voice_keys: BTreeMap<VoiceProvider, String>,
     /// Whenever one is saved; each call's metadata says whether it remembers.
     pub zep_key: Option<String>,
 }
@@ -157,12 +160,17 @@ fn start(config: &WorkerConfig, log_dir: &Path, on_crash: OnCrash) -> Result<(Ch
         .env("LIVEKIT_URL", &config.livekit.url)
         .env("LIVEKIT_API_KEY", &config.livekit.api_key)
         .env("LIVEKIT_API_SECRET", &config.livekit.api_secret)
-        .env("GOOGLE_API_KEY", &config.gemini_key)
         // Exit when this app does, however it ends (`agent/lifeline.py`).
         .env("BOMBY_EXIT_WITH_APP", "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    for provider in VoiceProvider::ALL {
+        match config.voice_keys.get(&provider) {
+            Some(key) => command.env(provider.key_env(), key),
+            None => command.env_remove(provider.key_env()),
+        };
+    }
     match &config.zep_key {
         Some(key) => command.env("ZEP_API_KEY", key),
         None => command.env_remove("ZEP_API_KEY"),

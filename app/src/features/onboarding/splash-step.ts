@@ -37,7 +37,7 @@ export function splashStep(
 ): SplashStep {
   const agent = firstAgent(agents, chosen)
   const agentReady = agent !== null && isReady(agent)
-  const keysReady = keys !== null && keys.livekit && keys.gemini
+  const keysReady = keys !== null && keys.livekit && keys.voiceKey
   const step = onKeys && keys !== null ? "keys" : "agent"
   return {
     agent,
