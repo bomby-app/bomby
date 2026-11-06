@@ -96,8 +96,7 @@ export function Splash({ onDone }: { onDone: () => void }) {
   useEffect(() => {
     latestStep.current = step
   })
-  // The arrow and Return go on only once the step on screen is the one that's done, so
-  // nothing skips a step while they fade.
+  // Not while a step fades in.
   const canGoOn = introDone && step === shown && canContinue
 
   const root = useRef<HTMLDivElement>(null)
@@ -238,8 +237,7 @@ export function Splash({ onDone }: { onDone: () => void }) {
     else finish()
   }
 
-  // Return goes on once the arrow is there, unless it's meant for something else: a focused
-  // button or field, a menu or dialog, a held key, or text being composed.
+  // Return goes on like the arrow, unless it's for a focused control.
   const onKey = useEffectEvent((event: KeyboardEvent) => {
     if (
       event.key !== "Enter" ||
@@ -311,7 +309,6 @@ export function Splash({ onDone }: { onDone: () => void }) {
           {saveError}
         </p>
       )}
-      {/* The keys couldn't be read at all, so the keys step can't show: say so, and retry. */}
       {keys === null && keysError && (
         <p className="absolute inset-x-0 bottom-7 flex justify-center gap-1.5 text-[13px] leading-[18px] text-destructive">
           {keysError}
@@ -344,7 +341,6 @@ export function Splash({ onDone }: { onDone: () => void }) {
   )
 }
 
-/** Whether a key press belongs to a control (a button, a field, a menu, a dialog). */
 function forAControl(target: EventTarget | null): boolean {
   return (
     target instanceof Element &&

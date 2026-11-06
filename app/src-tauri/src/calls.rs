@@ -262,12 +262,7 @@ pub fn open_call<R: Runtime>(
     let gemini = vault
         .gemini_key(&app)?
         .ok_or_else(|| Error::Invalid("Add your Gemini API key in Settings first.".into()))?;
-    // Two things that don't wait on each other, side by side: the agents are looked up again
-    // (through the user's login shell, which can take seconds), so one installed since
-    // launch is picked up, while the call's LiveKit server and the worker start (seconds,
-    // the first time). Only where the programs are, not their versions or setup. A call
-    // with none still opens: Bomby talks, and helps the user get one (`agents_note` in
-    // agent/tools/start_task.py).
+    // The agent lookup (a login shell) runs while the server and worker start. No agent is fine.
     let (found, started) = thread::scope(|scope| {
         let lookup = scope.spawn(|| agents::usable_now(&app));
         let started = (|| -> Result<LiveKitKeys> {
@@ -283,7 +278,6 @@ pub fn open_call<R: Runtime>(
             )?;
             Ok(server)
         })();
-        // A lookup that panicked finds nothing; the call still opens and talks.
         (lookup.join().unwrap_or_default(), started)
     });
     let server = started?;
