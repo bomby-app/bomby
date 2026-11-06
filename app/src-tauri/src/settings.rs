@@ -242,7 +242,8 @@ pub fn set_tone(db: State<'_, Db>, tone: Tone) -> Result<()> {
     put(&db.conn(), TONE_KEY, tone.as_str())
 }
 
-/// Whether this is the first run: the splash shows until it has set up an agent.
+/// Whether this is the first run: the splash shows until the user finishes it, with the
+/// keys in and an agent ready or left for later.
 #[tauri::command(async)]
 pub fn first_run(db: State<'_, Db>) -> Result<bool> {
     Ok(get(&db.conn(), FIRST_RUN_KEY)?.is_none())

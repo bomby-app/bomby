@@ -33,9 +33,11 @@ gsap.registerPlugin(useGSAP)
  * the glow comes up while Bomby rises with its eyes closed, opens them as it arrives and
  * looks around, says hello, lets the hello go, then moves up for the setup to fade in
  * under it.
- * Setup is the agent, then, one more step, the LiveKit and Gemini keys; steps already done
- * are skipped. The round arrow on comes only once a call has all three, and nothing gets
- * past it before that: the app can't work without them.
+ * Setup is a short form of two steps: the agent, then the LiveKit and Gemini keys. Which
+ * one shows follows from what's set up and what the user chose, never from flags kept along
+ * the way: the agent step until its agent is ready (and its model picker closed) or the
+ * user sets it up later, then the keys. The round arrow comes once the keys are in, and
+ * with them the agent or Set up later: a call needs the keys to talk, and an agent to work.
  */
 
 const GREETING: Record<Daypart, string> = {
@@ -72,28 +74,28 @@ export function Splash({ onDone }: { onDone: () => void }) {
   const [leaving, startLeaving] = useTransition()
   const [saveError, setSaveError] = useState<string | null>(null)
 
-  const { agents } = useAgents()
+  // What the user chose: another agent, setting the agent up later, a model picker open.
   const [chosen, setChosen] = useState<string | null>(null)
-  const agent = firstAgent(agents, chosen)
-  const { keys } = useSavedKeys()
-  const agentReady = agent !== null && isReady(agent)
-  const keysReady = keys !== null && keys.livekit && keys.gemini
-  const ready = agentReady && keysReady
-  // The agent step waits for this agent's open picker to close. Worked out on each render,
-  // so a picker that goes away open (another agent, a sign-out) holds nothing up.
+  const [later, setLater] = useState(false)
   const [pickingFor, setPickingFor] = useState<string | null>(null)
+
+  const { agents } = useAgents()
+  const { keys } = useSavedKeys()
+  const agent = firstAgent(agents, chosen)
+  const agentReady = agent !== null && isReady(agent)
+  // Worked out on each render, so a picker that goes away open (another agent, a
+  // sign-out) holds nothing up.
   const picking =
     agent !== null &&
     pickingFor === agent.id &&
     ["pick", "ready"].includes(setupStep(agent))
-  // The keys come once the agent is ready.
-  const keysMissing = agentReady && !picking && keys !== null && !keysReady
-  // Once shown, the keys step stays and says all is set itself.
-  const [keysShown, setKeysShown] = useState(false)
-  if (keysMissing && !keysShown) setKeysShown(true)
-  const step = keysMissing || (keysShown && ready) ? "keys" : "agent"
+  const agentDone = later || (agentReady && !picking)
+  const keysReady = keys !== null && keys.livekit && keys.gemini
+  const step = agentDone && keys !== null ? "keys" : "agent"
+  const ready = agentDone && keysReady
   // The step on screen: it follows `step`, fading out, then in.
   const [shown, setShown] = useState(step)
+  // For the timelines' callbacks, which run after the render that started them.
   const latestStep = useRef(step)
   useEffect(() => {
     latestStep.current = step
@@ -274,13 +276,18 @@ export function Splash({ onDone }: { onDone: () => void }) {
         style={{ top: SETUP_TOP }}
       >
         {shown === "keys" && keys ? (
-          <KeysStep keys={keys} allSet={ready} />
+          <KeysStep
+            keys={keys}
+            allSet={ready}
+            withoutAgent={!agentReady}
+            onSetUpAgent={() => setLater(false)}
+          />
         ) : (
           <FirstAgent
             agents={agents}
             agent={agent}
-            allSet={ready}
             onChoose={setChosen}
+            onLater={() => setLater(true)}
             onPicking={(open) =>
               setPickingFor(open ? (agent?.id ?? null) : null)
             }

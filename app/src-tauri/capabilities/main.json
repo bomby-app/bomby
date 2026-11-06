@@ -37,7 +37,6 @@
     "allow-call-messages",
     "allow-app-log",
     "allow-delete-call",
-    "clipboard-manager:allow-write-text",
     "clipboard-manager:allow-read-text",
     "allow-credentials-info",
     "allow-save-credentials",

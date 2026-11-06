@@ -16,7 +16,7 @@ import { MainPanel } from "./main-panel"
 import { NEW_PROJECT_SHORTCUT } from "./new-project-row"
 
 /**
- * The main window: the first-run splash until an agent is set up, then the project tree on
+ * The main window: the first-run splash until it's finished, then the project tree on
  * the left and the selected item on the right.
  */
 export function MainWindow() {
