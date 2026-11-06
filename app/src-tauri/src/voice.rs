@@ -639,6 +639,10 @@ mod tests {
             set("response_model", "gpt-5"),
             Err(Error::Invalid(_))
         ));
+        // A model saved before it was retired reads as the default, and the effort follows.
+        put(&conn, &openai.option_setting("response_model"), "gpt-5").unwrap();
+        assert_eq!(value("response_model"), text("gpt-6-luna"));
+        assert_eq!(value("reasoning_effort"), text("none"));
         assert!(matches!(
             save_option(&conn, openai, "response_model", &OptionValue::On(true)),
             Err(Error::Invalid(_))

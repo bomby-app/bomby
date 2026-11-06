@@ -16,7 +16,6 @@ import { cn } from "@/lib/utils"
 
 import {
   clearVoiceKey,
-  type OptionValue,
   type ProviderOption,
   type ProviderSettings,
   saveVoiceKey,
@@ -169,7 +168,10 @@ function groups(options: ProviderOption[]): Group[] {
   return grouped
 }
 
-/** Choices on one line under a rule: the first takes the room, the rest 140px each. */
+/**
+ * Choices side by side under a rule: the first takes the room, the rest 140px each (Paper:
+ * model and effort), wrapping onto another line when they don't fit.
+ */
 function ChoicesRow({
   provider,
   options,
@@ -177,12 +179,12 @@ function ChoicesRow({
 }: {
   provider: VoiceProvider
   options: ChoiceOption[]
-  onChange: (option: string, value: OptionValue) => void
+  onChange: (option: string, value: string) => void
 }) {
   return (
     <div className="flex flex-col">
       <Separator />
-      <div className="flex gap-3 pt-3.5">
+      <div className="flex flex-wrap gap-3 pt-3.5">
         {options.map((option, index) => {
           const copy = PROVIDERS[provider].options[option.id]
           if (copy?.kind !== "choice") return null
@@ -192,7 +194,7 @@ function ChoicesRow({
               key={option.id}
               className={cn(
                 "flex min-w-0 flex-col gap-2",
-                index === 0 ? "flex-1" : "w-[140px] shrink-0"
+                index === 0 ? "min-w-48 flex-1" : "w-[140px] shrink-0"
               )}
             >
               <div className="flex h-5 items-center gap-1">

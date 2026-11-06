@@ -38,13 +38,8 @@ BACKENDS: dict[str, str] = {
 SPEAKER_LABEL: dict[Speaker, str] = {"user": "User", "agent": "You"}
 
 
-def remembered_note(style: Style, delegates: bool = False) -> str:
-    # A voice model that delegates can't call the tool itself; it asks its backend.
-    look_up = (
-        "generate <|SpawnThinking|> to look up anything else"
-        if delegates
-        else f"look up anything else with {style.code('recall_about_user')}"
-    )
+def remembered_note(look_up: str) -> str:
+    """`look_up` is the provider's way to the rest (`recall_hint`)."""
     return (
         "From earlier conversations with the user. Each fact says when it held true. Use "
         f"what helps, and {look_up}."
@@ -71,7 +66,7 @@ def voice_instructions(
         PROMPTS[options.provider.id, options.tone],
         the_time(now or datetime.now().astimezone(), local_zone(), style),
         the_user(options.user_name, style),
-        what_you_remember(remembered, style, options.provider.delegates),
+        what_you_remember(remembered, style, options.provider.recall_hint(style)),
         agents_note(agents, style, project.agents_off),
         project_context(project, style),
         previous_conversation(options.history, style),
@@ -123,16 +118,14 @@ def the_user(name: str, style: Style = MARKDOWN) -> str:
     )
 
 
-def what_you_remember(
-    remembered: str, style: Style = MARKDOWN, delegates: bool = False
-) -> str:
+def what_you_remember(remembered: str, style: Style, look_up: str) -> str:
     """What memory across calls knows about the user, if it knows anything yet."""
     if not remembered:
         return ""
     return style.section(
         "What you remember",
         join(
-            remembered_note(style, delegates),
+            remembered_note(look_up),
             remembered,
         ),
     )

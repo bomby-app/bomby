@@ -59,6 +59,19 @@ class Choice:
     """With `follows`: the values there are for each value of that choice; one it doesn't
     list has them all."""
 
+    def __post_init__(self) -> None:
+        # Checked when it's defined, so the app's copy of the rules (`voice.rs`) never
+        # meets a choice with nothing to offer.
+        if not self.values or self.default not in self.values:
+            raise ValueError(f"{self.id}: the default must be one of its values")
+        if self.per and not self.follows:
+            raise ValueError(f"{self.id}: values per leader need a choice to follow")
+        for leader, values in self.per.items():
+            if not values or not set(values) <= set(self.values):
+                raise ValueError(
+                    f"{self.id}: the values for {leader} must be some of its own"
+                )
+
     def offered(self, leader: OptionValue | None) -> tuple[str, ...]:
         """The values there are when the choice this one follows is `leader`."""
         if not self.follows or not isinstance(leader, str):
@@ -71,6 +84,26 @@ class Choice:
 
 
 type Option = Switch | Choice
+
+
+def check_options(provider: str, options: tuple[Option, ...]) -> None:
+    """Each option's id is its own, and a choice follows one listed before it."""
+    seen: dict[str, Option] = {}
+    for option in options:
+        if option.id in seen:
+            raise ValueError(f"{provider}: {option.id} is listed twice")
+        if isinstance(option, Choice) and option.follows:
+            leader = seen.get(option.follows)
+            if not isinstance(leader, Choice):
+                raise ValueError(
+                    f"{provider}: {option.id} follows {option.follows}, which isn't a "
+                    + "choice listed before it"
+                )
+            if not set(option.per) <= set(leader.values):
+                raise ValueError(
+                    f"{provider}: {option.id} lists values for ones {option.follows} lacks"
+                )
+        seen[option.id] = option
 
 
 class VoiceProvider(ABC):
@@ -107,6 +140,15 @@ class VoiceProvider(ABC):
     options: ClassVar[tuple[Option, ...]] = ()
     """What the user can set for this provider, in the order Settings shows them: Gemini's
     Google Search switch. The app sends the ones it has."""
+
+    def __init_subclass__(cls) -> None:
+        super().__init_subclass__()
+        check_options(cls.__name__, cls.options)
+
+    def recall_hint(self, style: Style) -> str:
+        """How the memory note in the prompt says to look up the rest: with the recall tool
+        for a model that calls its tools itself."""
+        return f"look up anything else with {style.code('recall_about_user')}"
 
     @property
     @abstractmethod

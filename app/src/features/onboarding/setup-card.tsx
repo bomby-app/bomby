@@ -1,6 +1,7 @@
-import { LoaderCircle } from "lucide-react"
+import { ClipboardPaste, LoaderCircle } from "lucide-react"
 import type { ReactNode } from "react"
 
+import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 /**
@@ -105,6 +106,26 @@ export function StatusLine({ tone, text }: { tone: Tone; text: string }) {
 /** Paper's card button: ink with highlighter text in light, the reverse in dark. */
 export const CARD_BUTTON =
   "h-auto shrink-0 rounded-[12px] px-[18px] py-[11px] text-sm leading-[18px] font-semibold"
+
+/** A card's paste button, one width so the paste buttons line up; a form's submit. */
+export function PasteButton({
+  disabled,
+  children,
+}: {
+  disabled: boolean
+  children: string
+}) {
+  return (
+    <Button
+      type="submit"
+      disabled={disabled}
+      className={cn(CARD_BUTTON, "w-32")}
+    >
+      <ClipboardPaste />
+      {children}
+    </Button>
+  )
+}
 
 /** The splash step's heading and the line under it. */
 export function StepHeading({ title, body }: { title: string; body: string }) {

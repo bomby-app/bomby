@@ -83,6 +83,12 @@ class OpenAI(VoiceProvider):
         ),
     )
 
+    @override
+    def recall_hint(self, style: Style) -> str:
+        # GPT-Live can't call the recall tool; it asks its backend, in its prompt's terms
+        # (docs/openai-notes.md#prompting).
+        return "generate <|SpawnThinking|> to look up anything else"
+
     @property
     @override
     def model(self) -> str:

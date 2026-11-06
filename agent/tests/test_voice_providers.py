@@ -16,6 +16,7 @@ from voice_providers import (
     PROVIDERS,
     RIME,
     Choice,
+    Switch,
     catalogue,
     provider,
     rime,
@@ -326,3 +327,30 @@ def test_openai_talks_through_gpt_live_with_the_backend_and_the_picks(
 
 def test_only_openai_delegates() -> None:
     assert [p.id for p in PROVIDERS.values() if p.delegates] == ["openai"]
+
+
+def test_an_option_that_cant_resolve_is_refused_when_its_defined() -> None:
+    from voice_providers.provider import check_options
+
+    with pytest.raises(ValueError, match="default"):
+        _ = Choice("c", values=("a",), default="z")
+    with pytest.raises(ValueError, match="default"):
+        _ = Choice("c", values=(), default="")
+    with pytest.raises(ValueError, match="some of its own"):
+        _ = Choice("c", values=("a", "b"), default="a", follows="m", per={"x": ()})
+    with pytest.raises(ValueError, match="some of its own"):
+        _ = Choice("c", values=("a",), default="a", follows="m", per={"x": ("q",)})
+    with pytest.raises(ValueError, match="to follow"):
+        _ = Choice("c", values=("a",), default="a", per={"x": ("a",)})
+
+    model = Choice("m", values=("x", "y"), default="x")
+    effort = Choice("e", values=("a", "b"), default="a", follows="m", per={"x": ("b",)})
+    check_options("p", (model, effort))
+    with pytest.raises(ValueError, match="listed twice"):
+        check_options("p", (model, model))
+    with pytest.raises(ValueError, match="before it"):
+        check_options("p", (effort, model))
+    with pytest.raises(ValueError, match="before it"):
+        check_options("p", (Switch("m", default=True), effort))
+    with pytest.raises(ValueError, match="lacks"):
+        check_options("p", (Choice("m", values=("y",), default="y"), effort))

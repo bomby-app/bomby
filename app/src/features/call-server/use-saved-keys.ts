@@ -48,19 +48,28 @@ export function useSavedKeys(): SavedKeys {
   return useStore(store)
 }
 
+// Reads overlap (a pick's own, and keys-changed from every window), and only the latest
+// may land; a pick still saving shows over what the core has.
+let reads = 0
+let picking: VoiceProvider | null = null
+let picks = 0
+let saving: Promise<void> = Promise.resolve()
+
 /**
  * Reads again which keys are saved. Never rejects: a failure shows as the store's error,
  * with the last answer kept.
  */
 export async function checkKeysAgain(): Promise<void> {
+  const read = ++reads
   try {
     const [server, theirs, voices] = await Promise.all([
       livekitServer(),
       credentialsInfo(),
       voiceSettings(),
     ])
+    if (read !== reads) return
     const theirLiveKit = !!theirs?.hasSecret
-    const voice = voices.provider
+    const voice = picking ?? voices.provider
     const voiceKeys = Object.fromEntries(
       voices.providers.map((p) => [p.provider, p.hasKey])
     ) as Record<VoiceProvider, boolean>
@@ -76,7 +85,7 @@ export async function checkKeysAgain(): Promise<void> {
       error: null,
     })
   } catch (e) {
-    store.set({ ...store.get(), error: String(e) })
+    if (read === reads) store.set({ ...store.get(), error: String(e) })
   }
 }
 
@@ -93,15 +102,32 @@ export async function chooseLiveKitServer(
   await checkKeysAgain()
 }
 
-/** Never rejects, like `checkKeysAgain`. */
+/**
+ * Shows the pick at once, then saves it. Picks are saved one after another, and one a newer
+ * pick replaces before its turn is skipped, so the last one is what the core keeps. Never
+ * rejects, like `checkKeysAgain`.
+ */
 export async function chooseVoiceProvider(
   provider: VoiceProvider
 ): Promise<void> {
-  try {
-    await setVoiceProvider(provider)
-  } catch (e) {
-    store.set({ ...store.get(), error: String(e) })
-    return
-  }
+  const pick = ++picks
+  picking = provider
+  const { keys } = store.get()
+  if (keys)
+    store.set({
+      ...store.get(),
+      keys: { ...keys, voice: provider, voiceKey: keys.voiceKeys[provider] },
+    })
+  saving = saving.then(async () => {
+    if (pick !== picks) return
+    try {
+      await setVoiceProvider(provider)
+    } catch (e) {
+      store.set({ ...store.get(), error: String(e) })
+    }
+  })
+  await saving
+  if (pick !== picks) return
+  picking = null
   await checkKeysAgain()
 }
