@@ -6,7 +6,7 @@ Bomby is a desktop app for talking to coding agents. A call connects Gemini's vo
 
 | Piece | Where | Status |
 | --- | --- | --- |
-| Voice agent | `agent/`: Python, LiveKit Agents, Gemini 3.8 Live | Built |
+| Voice agent | `agent/`: Python, LiveKit Agents, Gemini 3.8 Live or Rime Prism (`voice_providers/`) | Built; Rime not yet tried on a call |
 | Harnesses | `agent/harnesses/`: Claude Code, Codex, OpenCode, omp and goose; shared ACP client and runner in `agent/acp_client/`; one voice tool, `start_task` | Built |
 | Desktop app | `app/`: Tauri v2, React, LiveKit Agents UI; settings, projects, calls and saved transcripts | In progress; runs the agent from source in dev, the packaged agent in release builds |
 | App data | One core-owned SQLite database for projects, calls and messages | Built ([decision](decisions/app-data-in-one-sqlite-db.md)) |
@@ -40,7 +40,7 @@ flowchart LR
 ## A call, start to end
 
 1. **Start.** The core makes sure the call's LiveKit server runs (this Mac's, started on the first call, or the user's own) and starts or restarts the agent worker on it, while it looks for the installed agents side by side (leaving out any the setup probe found not set up; a call with none still opens, and the voice says how to get one), then records the call with `open_call`, then mints a read-only token with `call_token`. The token's room configuration dispatches `bomby` with the project, its folders and instructions, and the agents found when the call opened as job metadata; every token for the call carries the same server, agents and picks. The entrypoint reads `ctx.job.metadata`.
-2. **Talk.** Gemini 3.8 Live handles speech both ways. It can search the web with Gemini's own Google Search, a Gemini option that's on unless the user turns it off. Its instructions are the prompt for the user's tone (`agent/prompts/sharp.md`, `chatty.md` or `playful.md`) plus what the call adds, each part left out when it has nothing to say: the date, time and time zone when the call starts (`## Date and time`, from the Mac's clock), what to call the user (`## The user`), the agents it can use, the project's instructions (`## Project context`) and, on a resumed call, the earlier conversation (`agent/voice_prompt.py`).
+2. **Talk.** The call's voice provider handles speech both ways: Gemini 3.8 Live, or Rime's Prism ([decision](decisions/voice-providers-like-harnesses.md)). Gemini can search the web with its own Google Search, an option that's on unless the user turns it off. The instructions are the provider's prompt for the user's tone (`agent/prompts/<provider>/sharp.md`, `chatty.md` or `playful.md`) plus what the call adds, as Markdown sections for Gemini and plain sentences for Rime, each part left out when it has nothing to say: the date, time and time zone when the call starts (`## Date and time`, from the Mac's clock), what to call the user (`## The user`), the agents it can use, the project's instructions (`## Project context`) and, on a resumed call, the earlier conversation (`agent/voice_prompt.py`).
 3. **Work.** Gemini calls `start_task(task, session, agent)`. Its first `ctx.update()` makes the tool non-blocking, so the conversation continues.
 4. **Agent sessions.** Each selected harness gets one `AcpRunner` and one ACP process per call, started on its first task. A new session name opens a session; a known name continues it. Sessions run in parallel, and supported harnesses accept steering mid-turn.
 5. **Result.** The agent's final message becomes the tool result. Gemini reads it out; no other agent output reaches the voice conversation.
@@ -114,3 +114,4 @@ The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS)
 - [ACP and adapter behavior](acp-notes.md)
 - [LiveKit behavior](livekit-notes.md)
 - [Gemini behavior](gemini-notes.md)
+- [Rime behavior](rime-notes.md)

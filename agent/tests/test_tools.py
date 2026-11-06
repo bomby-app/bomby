@@ -10,6 +10,7 @@ from livekit.agents import RunContext
 from acp_client.runner import Turn
 from call import Call
 from harnesses import CLAUDE_CODE, HARNESSES, OMP, OPENCODE, AgentName, Harness
+from sections import PLAIN
 from task_board import ATTRIBUTE, TaskBoard
 from tools import agents_note
 from tools.start_task import start_task
@@ -24,6 +25,15 @@ def test_the_agents_note_lists_what_is_installed_with_claude_first() -> None:
 
     assert "`claude` (Claude), `opencode` (OpenCode) and `omp` (omp)" in note
     assert "Use `claude` unless" in note
+
+
+def test_a_plain_agents_note_has_no_markdown() -> None:
+    note = agents_note([CLAUDE_CODE, OPENCODE], PLAIN)
+
+    assert note == (
+        "The agents you can use on this call: claude (Claude) and opencode (OpenCode). "
+        "Use claude unless the user asks for another one by name."
+    )
 
 
 def test_without_claude_the_first_installed_agent_is_the_default() -> None:

@@ -11,6 +11,8 @@ from typing import ClassVar
 
 from livekit.agents import llm
 
+from sections import MARKDOWN, Style
+
 type Tools = list[llm.Tool | llm.Toolset]
 
 
@@ -27,6 +29,9 @@ class VoiceProvider(ABC):
     """The voice when none is picked; the app defaults to it too (`settings.rs`)."""
     voice_env: ClassVar[str]
     """The voice for console runs, from `agent/.env` ("GEMINI_VOICE")."""
+    prompt_style: ClassVar[Style] = MARKDOWN
+    """How its prompts are written: its tone prompts in `prompts/<id>/` and the sections
+    each call adds (`voice_prompt.py`)."""
     options: ClassVar[Mapping[str, bool]] = {}
     """The switches the user can flip for this provider, by id, with their defaults:
     Gemini's {"google_search": True}. The app sends the ones it has."""

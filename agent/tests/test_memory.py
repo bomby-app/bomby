@@ -274,7 +274,7 @@ def test_what_is_remembered_follows_the_user_section() -> None:
     )
 
     assert "## What you remember" not in plain
-    assert remembered.startswith(PROMPTS["sharp"])
+    assert remembered.startswith(PROMPTS["gemini", "sharp"])
     assert remembered.index("## The user") < remembered.index("## What you remember")
     assert "Sam ships on Fridays" in remembered
 

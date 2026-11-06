@@ -5,12 +5,17 @@ from call_options import CallOptions
 from harnesses import HARNESSES
 from job import Line
 from project import Project
+from sections import PLAIN
 from tools import agents_note
 from voice_prompt import PROMPTS, local_zone, the_time, voice_instructions
+from voice_providers import PROVIDERS, RIME
 
 NOW = datetime(2026, 11, 6, 0, 2, tzinfo=UTC)
-# The tone prompt, then when and where the call starts.
-VOICE = f"{PROMPTS['sharp']}\n\n{the_time(NOW, local_zone())}"
+# Gemini's tone prompt, then when and where the call starts.
+VOICE = f"{PROMPTS['gemini', 'sharp']}\n\n{the_time(NOW, local_zone())}"
+TONES = ("sharp", "chatty", "playful")
+# Where each provider's shared rules start; everything from there is word for word.
+RULES = {"gemini": "## Non-negotiable rules", "rime": "Whatever happens in the call"}
 
 AGENTS = [HARNESSES["claude"]]
 
@@ -59,25 +64,44 @@ def test_a_resumed_call_ends_with_the_previous_conversation() -> None:
     assert text.endswith("User: fix the login\nYou: Done.")
 
 
-def test_each_tone_gets_its_own_prompt() -> None:
-    for tone in ("sharp", "chatty", "playful"):
-        text = voice_instructions(
-            project(), CallOptions(voice="Kore", tone=tone), AGENTS, now=NOW
-        )
-        assert text.startswith(PROMPTS[tone])
-    assert len(set(PROMPTS.values())) == 3
+def test_each_provider_and_tone_gets_its_own_prompt() -> None:
+    for provider in PROVIDERS.values():
+        for tone in TONES:
+            options = CallOptions(voice="v", provider=provider, tone=tone)
+            text = voice_instructions(project(), options, AGENTS, now=NOW)
+            assert text.startswith(PROMPTS[provider.id, tone])
+    assert len(set(PROMPTS.values())) == len(PROVIDERS) * len(TONES)
 
 
-def test_every_tone_keeps_the_same_rules_and_sections() -> None:
-    def rules(prompt: str) -> str:
-        return prompt[prompt.index("## Non-negotiable rules") :]
+def test_every_tone_keeps_its_providers_rules_and_sections() -> None:
+    def rules(prompt: str, provider: str) -> str:
+        return prompt[prompt.index(RULES[provider]) :]
 
     def headings(prompt: str) -> list[str]:
         return [line for line in prompt.splitlines() if line.startswith("## ")]
 
-    for tone in ("chatty", "playful"):
-        assert rules(PROMPTS[tone]) == rules(PROMPTS["sharp"])
-        assert headings(PROMPTS[tone]) == headings(PROMPTS["sharp"])
+    assert set(RULES) == set(PROVIDERS)
+    for provider in PROVIDERS:
+        sharp = PROMPTS[provider, "sharp"]
+        for tone in ("chatty", "playful"):
+            assert rules(PROMPTS[provider, tone], provider) == rules(sharp, provider)
+            assert headings(PROMPTS[provider, tone]) == headings(sharp)
+
+
+def test_rime_hears_plain_sentences_only() -> None:
+    # Prism speaks in the style its prompt is written in, so nothing in it is Markdown.
+    options = CallOptions(
+        voice="aurora",
+        provider=RIME,
+        user_name="Sam",
+        history=(Line("user", "fix the login"), Line("agent", "Done.")),
+    )
+    text = voice_instructions(project("A music app."), options, AGENTS, "Likes tea.")
+
+    for mark in ("#", "`", "*", "\n- "):
+        assert mark not in text
+    assert f"{agents_note(AGENTS, PLAIN)}\n\nThe user's description" in text
+    assert "claude (Claude)" in text
 
 
 def test_the_call_knows_the_date_time_and_place() -> None:
