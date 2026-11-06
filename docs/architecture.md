@@ -6,7 +6,7 @@ Bomby is a desktop app for talking to coding agents. A call connects a voice mod
 
 | Piece | Where | Status |
 | --- | --- | --- |
-| Voice agent | `agent/`: Python, LiveKit Agents, Gemini 3.8 Live or Rime Prism (`voice_providers/`) | Built; Rime not yet tried on a call |
+| Voice agent | `agent/`: Python, LiveKit Agents, Gemini 3.8 Live or Rime Prism (`voice_providers/`) | Built; Rime is Experimental: tried on the owner's calls with a workaround for its LiveKit plugin ([notes](rime-notes.md)) |
 | Harnesses | `agent/harnesses/`: Claude Code, Codex, OpenCode, omp and goose; shared ACP client and runner in `agent/acp_client/`; one voice tool, `start_task` | Built |
 | Desktop app | `app/`: Tauri v2, React, LiveKit Agents UI; settings, projects, calls and saved transcripts | In progress; runs the agent from source in dev, the packaged agent in release builds |
 | App data | One core-owned SQLite database for projects, calls and messages | Built ([decision](decisions/app-data-in-one-sqlite-db.md)) |

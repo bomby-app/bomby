@@ -160,7 +160,8 @@ pub struct ProviderSettings {
 #[derive(Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "voice.ts"))]
 pub struct VoiceSettings {
-    /// None until the user picks one, on a new install.
+    /// The pick, else the first provider with a saved key, else Gemini; always set in
+    /// practice (`chosen`).
     provider: Option<VoiceProvider>,
     providers: Vec<ProviderSettings>,
 }

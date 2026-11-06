@@ -33,6 +33,7 @@ export type VoiceProvider = "gemini" | "rime";
 
 export type VoiceSettings = { 
 /**
- * None until the user picks one, on a new install.
+ * The pick, else the first provider with a saved key, else Gemini; always set in
+ * practice (`chosen`).
  */
 provider: VoiceProvider | null, providers: Array<ProviderSettings>, };

@@ -12,6 +12,7 @@ from typing import ClassVar, override
 
 from livekit.agents import llm
 from livekit.plugins.rime.realtime import RealtimeModel, RealtimeSession
+from livekit.plugins.rime.realtime import realtime_model as plugin
 from rimelabs_sdk.realtime import PrismFiller
 
 from sections import PLAIN, Style
@@ -91,8 +92,11 @@ class DiagnosedModel(RealtimeModel):
         update = session.update_chat_ctx
 
         async def update_chat_ctx(target: llm.ChatContext) -> None:
+            # Ordinary updates only: an explicit history edit is checked against its own
+            # target, so it passes as is (the plugin's private `_edit` marker, 1.8.11).
+            editing = getattr(plugin, "_edit").get() is not None  # noqa: B009
             # The plugin's record, as its public copy, read just before the update.
-            chat_ctx = in_prism_order(target, session.chat_ctx)
+            chat_ctx = target if editing else in_prism_order(target, session.chat_ctx)
             try:
                 await update(chat_ctx)
             except Exception as error:

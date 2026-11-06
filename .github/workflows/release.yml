@@ -52,6 +52,11 @@ jobs:
       - name: Install the frontend's dependencies
         run: just app install
 
+      # The core embeds this file, so a release must never ship one the agent's
+      # definitions have moved past (docs/architecture.md, Voice providers).
+      - name: Check the voice providers' catalogue is current
+        run: just agent providers-current
+
       # A keychain of its own, deleted at the end; the runner is thrown away after the job.
       - name: Import the signing certificate
         env:

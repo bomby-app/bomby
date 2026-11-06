@@ -77,8 +77,8 @@ async function pasteVoiceKey(
 /**
  * The splash's second step: where calls run and who Bomby talks through, each a row of two
  * cards, with the user's own keys (docs/decisions/users-bring-their-own-keys-and-claude.md).
- * Neither voice is picked at first; picking one eases the other down to its tile and widens
- * it with Paste key, the same move as LiveKit Cloud. A key pastes in one click; typing them
+ * Gemini is picked at first, the default; picking one eases the other down to its tile and
+ * widens it with Paste key, the same move as LiveKit Cloud. A key pastes in one click; typing them
  * is a dialog away. After Set up later there's no agent yet: the heading says a call can
  * still talk, and the footnote offers the way back.
  */

@@ -60,3 +60,26 @@ def test_a_failed_publish_never_stops_the_work() -> None:
 
     assert asyncio.run(scenario()) == "1"
     assert b.tasks[0].status == "failed"
+
+
+def test_a_repeat_is_the_same_request_word_for_word() -> None:
+    b, _ = board()
+    head = "x" * TASK_CHARS
+    _ = b.add(CLAUDE_CODE, "page", head + " then make it blue")
+    # Shortened alike on the board, but a different request.
+    assert b.repeat_of(CLAUDE_CODE, "page", head + " then make it red") is None
+    assert b.repeat_of(CLAUDE_CODE, "page", head + " then make it blue") is not None
+    assert b.repeat_of(GOOSE, "page", head + " then make it blue") is None
+    assert b.repeat_of(CLAUDE_CODE, "other", head + " then make it blue") is None
+
+
+def test_a_finished_request_is_no_longer_a_repeat() -> None:
+    b, _ = board()
+
+    async def scenario() -> None:
+        steered = b.add(CLAUDE_CODE, "page", "fix the header")
+        # A steered request is marked added once the task it joined has ended.
+        await b.finish(steered, "added")
+
+    asyncio.run(scenario())
+    assert b.repeat_of(CLAUDE_CODE, "page", "fix the header") is None

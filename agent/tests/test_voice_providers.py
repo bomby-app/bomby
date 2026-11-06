@@ -175,3 +175,41 @@ def test_an_update_already_in_prisms_order_is_passed_on_as_is() -> None:
     plugin = context(found, "user", "call", "said", "first")
     update = context(found, "user", "call", "said", "first", "final_call", "final")
     assert in_prism_order(update, plugin) is update
+
+
+def test_the_session_reorders_ordinary_updates_and_leaves_explicit_edits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from livekit.plugins.rime.realtime import RealtimeSession
+    from livekit.plugins.rime.realtime import realtime_model as plugin
+
+    found = items()
+    record = context(found, "user", "call", "said", "first")
+    livekit = context(found, "user", "said", "call", "first", "final_call", "final")
+    passed: list[list[str]] = []
+
+    async def plugin_update(_self: object, chat_ctx: llm.ChatContext) -> None:
+        passed.append([i.id for i in chat_ctx.items])
+
+    monkeypatch.setenv("RIME_API_KEY", "a-key")
+    monkeypatch.setattr(RealtimeSession, "update_chat_ctx", plugin_update)
+    monkeypatch.setattr(RealtimeSession, "chat_ctx", property(lambda _self: record))
+
+    async def scenario() -> None:
+        model = cast(PrismModel, RIME.realtime_model("aurora", {}))
+        session: RealtimeSession = model.session()
+        await session.update_chat_ctx(livekit)
+        edit = getattr(plugin, "_edit").set(object())  # noqa: B009
+        try:
+            await session.update_chat_ctx(livekit)
+        finally:
+            getattr(plugin, "_edit").reset(edit)  # noqa: B009
+        await session.aclose()
+        await model.aclose()
+
+    asyncio.run(scenario())
+
+    assert passed == [
+        ["user", "call", "said", "first", "final_call", "final"],
+        ["user", "said", "call", "first", "final_call", "final"],
+    ]
