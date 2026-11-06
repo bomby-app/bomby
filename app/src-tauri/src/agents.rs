@@ -50,6 +50,9 @@ struct Known {
     /// Where installers put it, relative to the home folder or absolute, for when the
     /// login shell can't tell us.
     places: &'static [&'static str],
+    /// Its own page on installing it, which Install opens. Each is also allowed in the
+    /// windows' `opener:allow-open-url` (`capabilities/`).
+    install_page: &'static str,
 }
 
 const KNOWN: &[Known] = &[
@@ -63,6 +66,7 @@ const KNOWN: &[Known] = &[
             "/opt/homebrew/bin/claude",
             "/usr/local/bin/claude",
         ],
+        install_page: "https://code.claude.com/docs/en/quickstart",
     },
     Known {
         id: "codex",
@@ -73,6 +77,7 @@ const KNOWN: &[Known] = &[
             "/opt/homebrew/bin/codex",
             "/usr/local/bin/codex",
         ],
+        install_page: "https://learn.chatgpt.com/docs/codex/cli",
     },
     Known {
         id: "opencode",
@@ -83,6 +88,7 @@ const KNOWN: &[Known] = &[
             "/opt/homebrew/bin/opencode",
             "/usr/local/bin/opencode",
         ],
+        install_page: "https://opencode.ai/docs/",
     },
     Known {
         id: "omp",
@@ -93,6 +99,7 @@ const KNOWN: &[Known] = &[
             "/opt/homebrew/bin/omp",
             "/usr/local/bin/omp",
         ],
+        install_page: "https://omp.sh/docs/quickstart",
     },
     Known {
         id: "goose",
@@ -103,6 +110,7 @@ const KNOWN: &[Known] = &[
             "/opt/homebrew/bin/goose",
             "/usr/local/bin/goose",
         ],
+        install_page: "https://goose-docs.ai/docs/quickstart/",
     },
 ];
 
@@ -118,6 +126,8 @@ pub struct AgentStatus {
     version: Option<String>,
     /// `None` when the probe couldn't run.
     setup: Option<Setup>,
+    /// Where to install it from (`Known::install_page`).
+    install_page: &'static str,
 }
 
 /// Runs `command` and returns its output if it finishes within `timeout`; kills it
@@ -251,6 +261,7 @@ fn status_of(known: &'static Known, path: Option<PathBuf>) -> AgentStatus {
         version: path.as_deref().and_then(version_of),
         path: path.map(|p| p.display().to_string()),
         setup: None,
+        install_page: known.install_page,
     }
 }
 
@@ -670,6 +681,7 @@ mod tests {
         name: "Nowhere",
         binary: "nowhere",
         places: &[],
+        install_page: "https://example.com/nowhere",
     };
 
     #[test]
@@ -699,6 +711,7 @@ mod tests {
             path: path.map(str::to_owned),
             version: None,
             setup: None,
+            install_page: "https://example.com/install",
         }
     }
 
@@ -1081,5 +1094,32 @@ mod tests {
                 PathBuf::from("/Users/me/.local/bin/claude")
             )]
         );
+    }
+
+    /// The windows that show Install may open every agent's page (`capabilities/`).
+    #[test]
+    fn every_install_page_is_allowed_in_the_windows_that_show_install() {
+        for capability in [
+            include_str!("../capabilities/main.json"),
+            include_str!("../capabilities/settings.json"),
+        ] {
+            let capability: serde_json::Value = serde_json::from_str(capability).unwrap();
+            let allowed: Vec<&str> = capability["permissions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|p| p["identifier"] == "opener:allow-open-url")
+                .flat_map(|p| p["allow"].as_array().unwrap())
+                .filter_map(|url| url["url"].as_str())
+                .collect();
+            for known in KNOWN {
+                assert!(
+                    allowed.contains(&known.install_page),
+                    "{} may not open {}",
+                    capability["identifier"],
+                    known.install_page
+                );
+            }
+        }
     }
 }

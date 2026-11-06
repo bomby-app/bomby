@@ -11,7 +11,11 @@ path: string | null, version: string | null,
 /**
  * `None` when the probe couldn't run.
  */
-setup: Setup | null, };
+setup: Setup | null, 
+/**
+ * Where to install it from (`Known::install_page`).
+ */
+installPage: string, };
 
 /**
  * What the model picker shows: an agent's setup, and the settings it lets the user pick
