@@ -25,7 +25,7 @@ livekit-server:
 [group('run')]
 [working-directory: 'app']
 dev: livekit-server
-    bun run tauri dev
+    bun --bun run tauri dev
 
 # The agent is frozen first (`just agent freeze`). With the APPLE_* variables set
 # (docs/releasing.md), the agent is signed before it's bundled and Tauri signs and notarizes
@@ -38,13 +38,13 @@ dev: livekit-server
 build *args: livekit-server
     {{ just_executable() }} --justfile {{ justfile_directory() }}/justfile agent freeze
     if [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then {{ just_executable() }} --justfile {{ justfile_directory() }}/justfile agent sign; fi
-    bun run tauri build {{ args }}
+    bun --bun run tauri build {{ args }}
 
 # Format-check, lint and type-check the frontend (Vite+: Oxfmt, Oxlint, tsgolint) and the Rust core (clippy, rustfmt); warnings fail
 [group('check')]
 [working-directory: 'app']
 lint: livekit-server
-    bun x vp check --deny-warnings
+    bun --bun x vp check --deny-warnings
     cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
     cargo fmt --manifest-path src-tauri/Cargo.toml --check
 
@@ -52,7 +52,7 @@ lint: livekit-server
 [group('check')]
 [working-directory: 'app']
 fmt:
-    bun x vp check --fix
+    bun --bun x vp check --fix
     cargo fmt --manifest-path src-tauri/Cargo.toml
 
 # Rebuild the app icons and the DMG background from the files in src-tauri/icons (see docs/tauri-notes.md#icons)
@@ -66,7 +66,7 @@ icon:
 # Add shadcn or Agents UI components, e.g. `just app add dialog`
 [working-directory: 'app']
 add +components:
-    bun x shadcn add --yes {{components}}
+    bun --bun x shadcn add --yes {{components}}
 
 # Run the Rust core's unit tests, and check the TypeScript types generated from its structs are current
 [group('check')]
