@@ -4,6 +4,7 @@
 # Typical use:
 #     just app install          resolve the frontend dependencies (bun)
 #     just app dev              run the app with hot reload
+#     just app dev --splash --agents=none     try a state without changing this Mac
 #     just app check            format, lint, types and tests for both halves, before every commit
 #     just app build            build the installable app bundle
 
@@ -21,11 +22,18 @@ install:
 livekit-server:
     {{ just_executable() }} --justfile {{ justfile_directory() }}/justfile livekit build
 
+# The flags try a state without changing this Mac (src-tauri/src/dev.rs). --signed-out runs
+# every Claude Code the app starts on a new empty config folder, which Claude Code keys its
+# login to, so it's signed out; your own login and ~/.claude are untouched.
+
 # Run the app with hot reload: Vite serves the frontend, cargo builds and opens the window
 [group('run')]
 [working-directory: 'app']
-dev: livekit-server
-    bun --bun run tauri dev
+[arg("splash", long, value="1", help="Show the first-run splash at every launch")]
+[arg("agents", long, help="Find only these agents (codex,goose), or none")]
+[arg("signed_out", long="signed-out", value="1", help="Run Claude Code signed out")]
+dev splash="" agents="" signed_out="": livekit-server
+    BOMBY_DEV_SPLASH={{ quote(splash) }} BOMBY_DEV_AGENTS={{ quote(agents) }} {{ if signed_out != "" { 'CLAUDE_CONFIG_DIR="$(mktemp -d)"' } else { "" } }} bun --bun run tauri dev
 
 # The agent is frozen first (`just agent freeze`). With the APPLE_* variables set
 # (docs/releasing.md), the agent is signed before it's bundled and Tauri signs and notarizes

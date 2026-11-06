@@ -29,6 +29,7 @@ use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 use crate::agent_picks;
 use crate::db::Db;
+use crate::dev;
 use crate::error::Result;
 use crate::process;
 use crate::setup::{self, Pick, Setup, Step};
@@ -219,14 +220,17 @@ fn expand(place: &str, home: Option<&Path>) -> Option<PathBuf> {
     }
 }
 
-/// Finds each known agent the way a terminal would, then in its usual install places.
+/// Finds each known agent the way a terminal would, then in its usual install places. In
+/// development, `just app dev --agents` can hide some, as if not installed ([`dev`]).
 fn find_all(previous: &HashMap<String, PathBuf>) -> Vec<(&'static Known, Option<PathBuf>)> {
     let from_shell = shell_paths();
     let home = std::env::var_os("HOME").map(PathBuf::from);
     KNOWN
         .iter()
         .map(|known| {
-            let path = pick_path(known, from_shell.as_ref(), previous, home.as_deref());
+            let path = dev::agent_shown(known.id)
+                .then(|| pick_path(known, from_shell.as_ref(), previous, home.as_deref()))
+                .flatten();
             (known, path)
         })
         .collect()
