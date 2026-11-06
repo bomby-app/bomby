@@ -21,6 +21,8 @@ import { cn } from "@/lib/utils"
 
 import { type Entry, folderEntries, folderFile } from "./api"
 import { PIERRE_STYLE, pierreTheme } from "./pierre"
+import { STATUS_COLOR, type TreeStatuses } from "./status"
+import { StatusLetter } from "./status-letter"
 import { useReading } from "./use-folder"
 
 /** Each level of the tree sits this much further in. */
@@ -30,9 +32,13 @@ type Place = { projectId: number; folder: string; version: number }
 
 /**
  * The folder's files as a tree that opens one directory at a time, and the chosen file's
- * text under it. Ignored files (`node_modules`, build output) are dimmed.
+ * text under it. Changed files carry their git status, in its colour, and a folder with
+ * changes inside gets a dot; ignored files (`node_modules`, build output) are dimmed.
  */
-export function FilesView(place: Place) {
+export function FilesView({
+  statuses,
+  ...place
+}: Place & { statuses: TreeStatuses }) {
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set())
   const [selected, setSelected] = useState<string | null>(null)
 
@@ -50,6 +56,7 @@ export function FilesView(place: Place) {
       <div className="py-1.5">
         <Directory
           {...place}
+          statuses={statuses}
           dir=""
           depth={0}
           open={open}
@@ -79,6 +86,7 @@ function Directory({
   projectId,
   folder,
   version,
+  statuses,
   dir,
   depth,
   open,
@@ -86,6 +94,7 @@ function Directory({
   onToggle,
   onSelect,
 }: Place & {
+  statuses: TreeStatuses
   dir: string
   depth: number
   open: ReadonlySet<string>
@@ -129,6 +138,7 @@ function Directory({
             depth={depth}
             expanded={open.has(entry.path)}
             selected={selected === entry.path}
+            statuses={statuses}
             onClick={() =>
               entry.dir ? onToggle(entry.path) : onSelect(entry.path)
             }
@@ -138,6 +148,7 @@ function Directory({
               projectId={projectId}
               folder={folder}
               version={version}
+              statuses={statuses}
               dir={entry.path}
               depth={depth + 1}
               open={open}
@@ -157,15 +168,19 @@ function Row({
   depth,
   expanded,
   selected,
+  statuses,
   onClick,
 }: {
   entry: Entry
   depth: number
   expanded: boolean
   selected: boolean
+  statuses: TreeStatuses
   onClick: () => void
 }) {
   const Icon = entry.dir ? (expanded ? FolderOpen : Folder) : FileIcon
+  const status = entry.dir ? undefined : statuses.files.get(entry.path)
+  const changedInside = entry.dir && statuses.dirs.has(entry.path)
   return (
     <button
       type="button"
@@ -176,7 +191,8 @@ function Row({
       className={cn(
         "mx-1.5 flex h-7 w-[calc(100%-12px)] items-center gap-1.5 rounded-sm pr-2 text-left text-sm outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring",
         selected && "bg-accent font-medium",
-        entry.ignored && "text-muted-foreground"
+        entry.ignored && "text-muted-foreground",
+        status && STATUS_COLOR[status]
       )}
     >
       <ChevronRight
@@ -188,6 +204,13 @@ function Row({
       />
       <Icon className="size-4 shrink-0 text-muted-foreground" />
       <span className="truncate">{entry.name}</span>
+      {status && <StatusLetter status={status} className="ml-auto" />}
+      {changedInside && (
+        <span
+          aria-label="Has changes"
+          className="mr-1 ml-auto size-1.5 shrink-0 rounded-full bg-change-modified"
+        />
+      )}
     </button>
   )
 }
@@ -221,7 +244,7 @@ function Preview({
           <X />
         </Button>
       </div>
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div className="min-h-0 flex-1 [scrollbar-gutter:stable] overflow-auto">
         {reading.loading ? null : text != null ? (
           <CodeFile
             file={{ name: file, contents: text }}

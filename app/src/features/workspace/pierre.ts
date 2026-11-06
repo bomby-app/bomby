@@ -13,12 +13,19 @@ const BACKGROUND_CSS = `:host, [data-diffs-header], pre {
   --diffs-dark-bg: var(--background) !important;
 }`
 
-/** Our type, set on the element that holds the diffs: custom properties inherit inside. */
+/**
+ * Our type and change colours, set on the element that holds the diffs: custom properties
+ * inherit inside. Lines are 20 px, the height Pierre's virtualizer assumes. Added, changed
+ * and removed lines take the same `--change-*` colours as the headers and the file tree.
+ */
 export const PIERRE_STYLE = {
   "--diffs-font-family": "var(--font-mono)",
   "--diffs-header-font-family": "var(--font-sans)",
   "--diffs-font-size": "12px",
-  "--diffs-line-height": "1.6",
+  "--diffs-line-height": "20px",
+  "--diffs-addition-color-override": "var(--change-added)",
+  "--diffs-deletion-color-override": "var(--change-deleted)",
+  "--diffs-modified-color-override": "var(--change-modified)",
 } as CSSProperties
 
 /** Pierre's light and dark themes on our background, following the page's theme. */

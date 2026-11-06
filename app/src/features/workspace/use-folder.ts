@@ -1,4 +1,9 @@
-import { useEffect, useEffectEvent, useState } from "react"
+import {
+  useEffect,
+  useEffectEvent,
+  useState,
+  useSyncExternalStore,
+} from "react"
 
 import { watchFolder } from "./api"
 
@@ -28,7 +33,7 @@ export function useFolderVersion(projectId: number, folder: string): number {
 }
 
 export type Reading<T> = {
-  /** The last answer for this key, kept while a newer one loads. */
+  /** The last answer, kept while a newer one loads. */
   data: T | undefined
   error: string | null
   /** Nothing read for this key yet. */
@@ -36,40 +41,73 @@ export type Reading<T> = {
 }
 
 /**
- * Reads `load()` for `key`, and again whenever `version` changes. A new key starts empty;
- * a new version keeps the last answer until the next one arrives, so nothing flickers.
+ * One reading of the core (a folder's changes, a directory's entries), shared by every
+ * component that shows it and kept after they unmount, so reopening a folder or a tab
+ * shows the last answer at once while a fresh one loads (docs/frontend-notes.md, React
+ * patterns). Only the newest request's answer lands.
+ */
+type Slot = {
+  value: Reading<unknown>
+  latest: number
+  listeners: Set<() => void>
+}
+
+const EMPTY: Reading<never> = { data: undefined, error: null, loading: true }
+const slots = new Map<string, Slot>()
+
+function slot(key: string): Slot {
+  let found = slots.get(key)
+  if (!found) {
+    found = { value: EMPTY, latest: 0, listeners: new Set() }
+    slots.set(key, found)
+  }
+  return found
+}
+
+function publish(found: Slot, value: Reading<unknown>) {
+  found.value = value
+  for (const listener of found.listeners) listener()
+}
+
+function refresh(key: string, load: () => Promise<unknown>) {
+  const found = slot(key)
+  const request = ++found.latest
+  load().then(
+    (data) => {
+      if (request === found.latest)
+        publish(found, { data, error: null, loading: false })
+    },
+    (error: unknown) => {
+      if (request === found.latest)
+        publish(found, {
+          data: undefined,
+          error: String(error),
+          loading: false,
+        })
+    }
+  )
+}
+
+/**
+ * Reads `load()` for `key` from the core when the component mounts and again whenever
+ * `version` changes, showing the last answer meanwhile. `key` names what `load` reads.
  */
 export function useReading<T>(
   key: string,
   version: number,
   load: () => Promise<T>
 ): Reading<T> {
-  const [state, setState] = useState<{
-    key: string
-    data: T | undefined
-    error: string | null
-  } | null>(null)
+  const found = slot(key)
+  const value = useSyncExternalStore(
+    (listener) => {
+      found.listeners.add(listener)
+      return () => found.listeners.delete(listener)
+    },
+    () => found.value
+  )
   const read = useEffectEvent(load)
-
   useEffect(() => {
-    let live = true
-    read().then(
-      (data) => {
-        if (live) setState({ key, data, error: null })
-      },
-      (error: unknown) => {
-        if (live) setState({ key, data: undefined, error: String(error) })
-      }
-    )
-    return () => {
-      live = false
-    }
+    refresh(key, () => read())
   }, [key, version])
-
-  const current = state?.key === key ? state : null
-  return {
-    data: current?.data,
-    error: current?.error ?? null,
-    loading: current === null,
-  }
+  return value as Reading<T>
 }

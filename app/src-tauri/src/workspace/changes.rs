@@ -32,6 +32,9 @@ pub struct FolderInfo {
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "workspace.ts"))]
 pub struct Changes {
+    /// The folder's place in the repository, with `/`: `""` at its root, `app` for a
+    /// folder inside. File paths start with it, so the page can find them in the folder.
+    within: String,
     /// In git's order: by path.
     files: Vec<ChangedFile>,
     /// Some patches were left out for size ([`MAX_PATCH_BYTES`]).
@@ -58,7 +61,10 @@ pub struct ChangedFile {
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "workspace.ts"))]
 pub enum ChangeStatus {
+    /// New and staged.
     Added,
+    /// New and not staged: git doesn't track it yet.
+    Untracked,
     Modified,
     Deleted,
     Renamed,
@@ -121,10 +127,12 @@ pub(crate) fn changes(folder: &Path) -> Result<Option<Changes>> {
         .include_typechange(true)
         .max_size(MAX_FILE_BYTES);
     // Only this folder's part of the repository.
+    let mut within = String::new();
     if let Some(workdir) = repo.workdir()
         && let Ok(under) = folder.canonicalize()?.strip_prefix(workdir.canonicalize()?)
         && !under.as_os_str().is_empty()
     {
+        within = path_string(Some(under));
         options.pathspec(under).disable_pathspec_match(true);
     }
     let mut diff = repo.diff_tree_to_workdir_with_index(head.as_ref(), Some(&mut options))?;
@@ -137,7 +145,8 @@ pub(crate) fn changes(folder: &Path) -> Result<Option<Changes>> {
     let mut truncated = false;
     for (index, delta) in diff.deltas().enumerate() {
         let status = match delta.status() {
-            Delta::Added | Delta::Untracked | Delta::Copied => ChangeStatus::Added,
+            Delta::Added | Delta::Copied => ChangeStatus::Added,
+            Delta::Untracked => ChangeStatus::Untracked,
             Delta::Deleted => ChangeStatus::Deleted,
             Delta::Renamed => ChangeStatus::Renamed,
             Delta::Typechange => ChangeStatus::Typechange,
@@ -172,7 +181,11 @@ pub(crate) fn changes(folder: &Path) -> Result<Option<Changes>> {
         }
         files.push(file);
     }
-    Ok(Some(Changes { files, truncated }))
+    Ok(Some(Changes {
+        within,
+        files,
+        truncated,
+    }))
 }
 
 /// Whether one of a project's folders is in a git repository.
@@ -246,9 +259,24 @@ mod tests {
         assert!(keep.patch.contains("-two\n+three\n"));
         assert_eq!(by_path("gone.txt").status, ChangeStatus::Deleted);
         let new = by_path("src/new.rs");
-        assert_eq!(new.status, ChangeStatus::Added);
+        assert_eq!(new.status, ChangeStatus::Untracked);
         assert!(new.patch.contains("+fn main() {}"));
         assert!(!changes.truncated);
+        assert_eq!(changes.within, "");
+    }
+
+    #[test]
+    fn a_staged_new_file_is_added() {
+        let dir = tempfile_dir("staged");
+        let repo = Repository::init(&dir).unwrap();
+        fs::write(dir.join("a.txt"), "a\n").unwrap();
+        commit_all(&repo, "first");
+        fs::write(dir.join("b.txt"), "b\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("b.txt")).unwrap();
+        index.write().unwrap();
+        let changes = changes(&dir).unwrap().unwrap();
+        assert_eq!(changes.files[0].status, ChangeStatus::Added);
     }
 
     #[test]
@@ -265,6 +293,7 @@ mod tests {
         let changes = changes(&dir.join("app")).unwrap().unwrap();
         let paths: Vec<_> = changes.files.iter().map(|f| f.path.as_str()).collect();
         assert_eq!(paths, ["app/a.txt"]);
+        assert_eq!(changes.within, "app");
         assert_eq!(
             info(&dir.join("app")).branch.as_deref(),
             branch(&repo).as_deref()
@@ -281,7 +310,7 @@ mod tests {
         assert!(info.branch.is_some());
         let changes = changes(&dir).unwrap().unwrap();
         assert_eq!(changes.files.len(), 1);
-        assert_eq!(changes.files[0].status, ChangeStatus::Added);
+        assert_eq!(changes.files[0].status, ChangeStatus::Untracked);
         drop(repo);
     }
 }

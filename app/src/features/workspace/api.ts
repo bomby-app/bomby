@@ -83,10 +83,15 @@ function quietly(command: string, args: Record<string, unknown>) {
 }
 
 export type TerminalSession = {
-  write: (data: string) => void
+  /** Typed or pasted text, or raw bytes (mouse reports past ASCII). */
+  write: (data: string | Uint8Array) => void
+  /** The grid changed; the shell hears of it once resizing settles. */
   resize: (cols: number, rows: number) => void
   close: () => void
 }
+
+/** How long the grid must stay one size before the shell is told (a drag sends dozens). */
+const RESIZE_SETTLE_MS = 60
 
 /**
  * Starts the user's login shell in the folder, on a terminal of `cols` by `rows`. Its
@@ -120,9 +125,29 @@ export async function openTerminal({
     output,
     exit,
   })
+  // Tauri runs each command as its own task, so two can overtake each other: every input
+  // carries its number and the core applies them in that order (terminals.rs, Inbox).
+  let seq = 0
+  let size = { cols, rows }
+  let settling: ReturnType<typeof setTimeout> | undefined
   return {
-    write: (data) => quietly("terminal_write", { id, data }),
-    resize: (cols, rows) => quietly("terminal_resize", { id, cols, rows }),
-    close: () => quietly("terminal_close", { id }),
+    write: (data) =>
+      quietly("terminal_write", {
+        id,
+        seq: seq++,
+        data: typeof data === "string" ? data : Array.from(data),
+      }),
+    resize: (cols, rows) => {
+      clearTimeout(settling)
+      settling = setTimeout(() => {
+        if (cols === size.cols && rows === size.rows) return
+        size = { cols, rows }
+        quietly("terminal_resize", { id, seq: seq++, cols, rows })
+      }, RESIZE_SETTLE_MS)
+    },
+    close: () => {
+      clearTimeout(settling)
+      quietly("terminal_close", { id })
+    },
   }
 }

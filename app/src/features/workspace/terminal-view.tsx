@@ -1,7 +1,7 @@
 import type { WTerm } from "@wterm/dom"
 import { GhosttyCore } from "@wterm/ghostty"
 import { Terminal } from "@wterm/react"
-import { use, useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 import { ErrorCard } from "@/components/error-card"
 
@@ -9,14 +9,6 @@ import { openTerminal, type TerminalSession } from "./api"
 
 /** Lines of history each terminal keeps. */
 const SCROLLBACK_LINES = 5000
-
-/**
- * Ghostty's terminal emulation (`@wterm/ghostty`, libghostty built to WASM) for one
- * terminal. Each terminal needs its own; the WASM module itself loads once and is shared.
- */
-export function loadTerminalCore(): Promise<GhosttyCore> {
-  return GhosttyCore.load({ scrollbackLines: SCROLLBACK_LINES })
-}
 
 /** What the shell is told when it has gone, in the terminal's dim style. */
 const ENDED =
@@ -31,17 +23,15 @@ const ENDED =
 export function TerminalView({
   projectId,
   folder,
-  core,
   active,
   onTitle,
 }: {
   projectId: number
   folder: string
-  core: Promise<GhosttyCore>
   active: boolean
   onTitle: (title: string) => void
 }) {
-  const ghostty = use(core)
+  const ghostty = useGhosttyCore()
   const [error, setError] = useState<string | null>(null)
   const session = useRef<TerminalSession | null>(null)
   const terminal = useRef<WTerm | null>(null)
@@ -56,8 +46,24 @@ export function TerminalView({
     }
   }, [])
 
+  /** Tells the shell the grid's size; a grid under 2 by 2 is a pane mid-layout, not one to fit. */
+  function tell(cols: number, rows: number) {
+    if (cols < 2 || rows < 2) return
+    session.current?.resize(cols, rows)
+  }
+
+  // A tab coming back may have missed a change of size while another one showed (the
+  // window or the zoom changed): fit it to its pane, tell the shell, and type into it.
   useEffect(() => {
-    if (active) terminal.current?.focus()
+    if (!active) return
+    const frame = requestAnimationFrame(() => {
+      const wt = terminal.current
+      if (!wt) return
+      wt.fit()
+      tell(wt.cols, wt.rows)
+      wt.focus()
+    })
+    return () => cancelAnimationFrame(frame)
   }, [active])
 
   function start(wt: WTerm) {
@@ -71,8 +77,13 @@ export function TerminalView({
       onExit: () => wt.write(ENDED),
     }).then(
       (opened) => {
-        if (mounted.current) session.current = opened
-        else opened.close()
+        if (!mounted.current) {
+          opened.close()
+          return
+        }
+        session.current = opened
+        // The grid may have refit while the shell started; it was told the size before.
+        tell(wt.cols, wt.rows)
       },
       (e: unknown) => setError(String(e))
     )
@@ -81,6 +92,7 @@ export function TerminalView({
   if (error) {
     return <ErrorCard message={error} className="m-auto max-w-xs" />
   }
+  if (!ghostty) return null
   return (
     <Terminal
       core={ghostty}
@@ -90,8 +102,37 @@ export function TerminalView({
       className="bomby-terminal h-full w-full"
       onReady={start}
       onData={(data) => session.current?.write(data)}
-      onResize={(cols, rows) => session.current?.resize(cols, rows)}
+      onBinary={(bytes) => session.current?.write(bytes)}
+      onResize={tell}
       onTitle={onTitle}
     />
   )
+}
+
+/**
+ * Ghostty's terminal emulation (`@wterm/ghostty`, libghostty built to WASM) for this
+ * terminal while it's mounted: each terminal needs its own (the WASM module itself loads
+ * once and is shared), and `WTerm.destroy()` leaves one it was given alone, so this
+ * disposes it. The terminal's own cleanup runs first: a ref's cleanup (the wterm
+ * component's) comes in the commit, before effect cleanups.
+ */
+function useGhosttyCore(): GhosttyCore | null {
+  const [core, setCore] = useState<GhosttyCore | null>(null)
+  useEffect(() => {
+    let live = true
+    let loaded: GhosttyCore | null = null
+    void GhosttyCore.load({ scrollbackLines: SCROLLBACK_LINES }).then((c) => {
+      if (live) {
+        loaded = c
+        setCore(c)
+      } else {
+        c.dispose()
+      }
+    })
+    return () => {
+      live = false
+      loaded?.dispose()
+    }
+  }, [])
+  return core
 }

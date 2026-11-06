@@ -1,6 +1,6 @@
-import type { GhosttyCore } from "@wterm/ghostty"
-import { FolderGit2, Plus, X } from "lucide-react"
-import { Suspense, useState } from "react"
+import { Folder, Plus, X } from "lucide-react"
+import { Tabs as TabsPrimitive } from "radix-ui"
+import { useState } from "react"
 
 import { ErrorCard } from "@/components/error-card"
 import { Button } from "@/components/ui/button"
@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tabs, TabsContent } from "@/components/ui/tabs"
 import {
   Tooltip,
   TooltipContent,
@@ -22,7 +22,8 @@ import { cn } from "@/lib/utils"
 import { folderChanges, folderInfo } from "./api"
 import { ChangesView } from "./changes-view"
 import { FilesView } from "./files-view"
-import { loadTerminalCore, TerminalView } from "./terminal-view"
+import { treeStatuses } from "./status"
+import { TerminalView } from "./terminal-view"
 import { useFolderVersion, useReading } from "./use-folder"
 
 type TerminalTab = {
@@ -30,11 +31,7 @@ type TerminalTab = {
   folder: string
   /** What the shell last called itself (OSC 0/2), if anything. */
   title: string | null
-  core: Promise<GhosttyCore>
 }
-
-/** Long enough for a closed terminal to unmount before its emulator goes. */
-const DISPOSE_DELAY_MS = 1000
 
 /** The last part of a path: what a folder is called. */
 function folderName(path: string): string {
@@ -79,10 +76,7 @@ export function WorkspacePanel({
   function addTerminal() {
     const id = nextTerminal
     setNextTerminal(id + 1)
-    setTerminals((current) => [
-      ...current,
-      { id, folder, title: null, core: loadTerminalCore() },
-    ])
+    setTerminals((current) => [...current, { id, folder, title: null }])
     setChosenTab(`terminal-${id}`)
   }
 
@@ -94,11 +88,6 @@ export function WorkspacePanel({
       const neighbour = rest[Math.min(index, rest.length - 1)]
       setChosenTab(neighbour ? `terminal-${neighbour.id}` : null)
     }
-    // The emulator's WASM memory goes once its terminal has unmounted (WTerm.destroy()
-    // leaves a core it was given alone).
-    setTimeout(() => {
-      void closing.core.then((core) => core.dispose())
-    }, DISPOSE_DELAY_MS)
   }
 
   function setTitle(id: number, title: string) {
@@ -114,15 +103,15 @@ export function WorkspacePanel({
     <Tabs
       value={tab}
       onValueChange={setChosenTab}
-      className="flex h-full min-w-0 flex-col gap-0 bg-background"
+      className="relative flex h-full min-w-80 flex-col gap-0 bg-background"
     >
       <div
         data-tauri-drag-region
-        className="flex h-titlebar shrink-0 items-center gap-1 border-b pr-2 pl-2"
+        className="flex h-titlebar shrink-0 items-center gap-2 border-b px-2"
       >
-        <TabsList
-          variant="line"
-          className="no-scrollbar h-full min-w-0 justify-start gap-0.5 overflow-x-auto p-0"
+        <TabsPrimitive.List
+          aria-label="Workspace"
+          className="no-scrollbar flex min-w-0 items-center gap-1 overflow-x-auto"
         >
           {repo && (
             <PanelTab value="changes">
@@ -135,26 +124,30 @@ export function WorkspacePanel({
             </PanelTab>
           )}
           <PanelTab value="files">Files</PanelTab>
+          {terminals.length > 0 && (
+            <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-border" />
+          )}
           {terminals.map((terminal) => (
             <PanelTab
               key={terminal.id}
               value={`terminal-${terminal.id}`}
               onClose={() => closeTerminal(terminal)}
-              closeLabel="Close the terminal"
+              closeLabel={`Close ${terminal.title ?? `Terminal ${terminal.id}`}`}
             >
               <span className="max-w-32 truncate">
                 {terminal.title ?? `Terminal ${terminal.id}`}
               </span>
             </PanelTab>
           ))}
-        </TabsList>
+        </TabsPrimitive.List>
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
               variant="ghost"
-              size="icon-xs"
+              size="icon-sm"
               aria-label="New terminal"
               onClick={addTerminal}
+              className="shrink-0 rounded-md text-muted-foreground hover:text-foreground"
             >
               <Plus />
             </Button>
@@ -166,9 +159,9 @@ export function WorkspacePanel({
             <SelectTrigger
               size="sm"
               aria-label="Folder"
-              className="ml-auto max-w-40 min-w-0 border-transparent font-mono text-xs shadow-none hover:bg-accent dark:bg-transparent"
+              className="ml-auto h-7 max-w-40 min-w-0 rounded-md border-transparent bg-transparent pr-1.5 pl-2 font-mono text-xs text-muted-foreground shadow-none hover:bg-accent hover:text-foreground dark:bg-transparent dark:hover:bg-accent"
             >
-              <FolderGit2 className="text-muted-foreground" />
+              <Folder className="size-3.5" />
               <SelectValue />
             </SelectTrigger>
             <SelectContent position="popper" align="end">
@@ -202,6 +195,7 @@ export function WorkspacePanel({
               projectId={projectId}
               folder={folder}
               version={version}
+              statuses={treeStatuses(changes.data)}
             />
           </TabsContent>
         </>
@@ -211,17 +205,14 @@ export function WorkspacePanel({
           key={terminal.id}
           value={`terminal-${terminal.id}`}
           forceMount
-          className={cn(PANE, "bomby-terminal-pane")}
+          className={TERMINAL_PANE}
         >
-          <Suspense>
-            <TerminalView
-              projectId={projectId}
-              folder={terminal.folder}
-              core={terminal.core}
-              active={tab === `terminal-${terminal.id}`}
-              onTitle={(title) => setTitle(terminal.id, title)}
-            />
-          </Suspense>
+          <TerminalView
+            projectId={projectId}
+            folder={terminal.folder}
+            active={tab === `terminal-${terminal.id}`}
+            onTitle={(title) => setTitle(terminal.id, title)}
+          />
         </TabsContent>
       ))}
     </Tabs>
@@ -231,6 +222,23 @@ export function WorkspacePanel({
 /** Every tab's pane fills the panel; inactive ones stay mounted, hidden. */
 const PANE = "min-h-0 flex-1 data-[state=inactive]:hidden"
 
+/**
+ * A terminal's pane keeps its size while another tab shows: it lies over the panel's body
+ * (the panel lays out the open pane, so its body has a size) and is only made invisible.
+ * Taken out of the layout, it would measure 0 wide and the terminal would refit to one
+ * column, rewrapping everything in it and telling the shell so.
+ */
+const TERMINAL_PANE =
+  "absolute inset-x-0 bottom-0 top-titlebar data-[state=inactive]:pointer-events-none data-[state=inactive]:invisible"
+
+/**
+ * One of the panel's tabs, on the brand's quiet controls (Paper "12 Components"): 28 px
+ * on the 40 px title bar row, 14 px medium in every state so nothing shifts, muted until
+ * hovered or open, the open one on the accent grey like a selected sidebar row. Keyboard
+ * focus shows as that grey too, not a ring: WebKit counts focus that follows typing in a
+ * terminal as keyboard focus, so a ring lit up on plain clicks. A closable tab keeps room
+ * for its × at all times; the × shows on hover and on the open tab.
+ */
 function PanelTab({
   value,
   children,
@@ -243,26 +251,25 @@ function PanelTab({
   closeLabel?: string
 }) {
   return (
-    <div className="group/tab relative flex h-7 shrink-0 items-center">
-      <TabsTrigger
+    <div className="group/tab relative flex shrink-0 items-center">
+      <TabsPrimitive.Trigger
         value={value}
         className={cn(
-          "h-7 flex-none rounded-md px-2.5 text-sm font-normal text-muted-foreground after:hidden hover:bg-accent hover:text-foreground data-active:bg-accent! data-active:font-medium data-active:text-foreground",
+          "flex h-7 items-center gap-1.5 rounded-md px-2.5 text-sm font-medium whitespace-nowrap text-muted-foreground outline-none select-none hover:bg-accent hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground data-[state=active]:bg-accent data-[state=active]:text-foreground",
           onClose && "pr-7"
         )}
       >
         {children}
-      </TabsTrigger>
+      </TabsPrimitive.Trigger>
       {onClose && (
-        <Button
-          variant="ghost"
-          size="icon-xs"
+        <button
+          type="button"
           aria-label={closeLabel}
           onClick={onClose}
-          className="absolute right-1 size-5 text-muted-foreground opacity-0 group-hover/tab:opacity-100 group-has-data-active/tab:opacity-100 hover:bg-transparent hover:text-foreground focus-visible:opacity-100"
+          className="absolute right-1.5 flex size-4 items-center justify-center text-muted-foreground opacity-0 outline-none group-hover/tab:opacity-100 group-has-data-[state=active]/tab:opacity-100 hover:text-foreground focus-visible:text-foreground focus-visible:opacity-100"
         >
-          <X />
-        </Button>
+          <X className="size-3" />
+        </button>
       )}
     </div>
   )

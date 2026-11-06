@@ -115,6 +115,9 @@ export function WorkspaceLayout({
             minSize={MIN_SIZE}
             maxSize="75%"
             groupResizeBehavior="preserve-pixel-size"
+            // Clipped, not squeezed: closing the panel leaves its contents (terminals
+            // above all) at their width, so a closed panel never refits them.
+            style={{ overflow: "hidden" }}
             onResize={(size) => {
               const now = size.inPixels > 0
               setOpen(now)
