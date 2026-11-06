@@ -20,6 +20,13 @@ from .provider import VoiceProvider
 # update already tells the user the work started (`tools/start_task.py`).
 TOOL_FILLERS = {"start_task": PrismFiller(type="none")}
 
+# LiveKit dates the user's line from when they started speaking, so a line said over Bomby
+# lands before its cut-off reply. In the plugin's default "shared" mode, which takes only
+# additions at the end, that refuses every later history update, tool results included, and
+# Prism never hears them. "strict" replaces Prism's history with LiveKit's each time; Bomby
+# has one agent per call, so shared's handoffs give nothing (owner's test call, 2026-11-06).
+CONTEXT_MODE = "strict"
+
 # Prism closes a conversation after 5 minutes without a client event, even while audio
 # streams, and doesn't resume it; a quiet wait on a long task would end the call. Setting
 # the labels later replies carry is a client event that changes nothing else
@@ -49,6 +56,7 @@ class Rime(VoiceProvider):
         # only with its audio output wrapper, which 1.8.11 keeps private.
         return RealtimeModel(
             voice=voice,
+            context_mode=CONTEXT_MODE,
             tool_fillers=TOOL_FILLERS,
             response_metadata=KEEP_ALIVE_LABELS,
         )

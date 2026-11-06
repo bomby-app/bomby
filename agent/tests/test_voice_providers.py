@@ -6,7 +6,7 @@ from livekit.plugins.rime.realtime import RealtimeModel as PrismModel
 from tools import ALL_TOOLS
 from voice_providers import GEMINI, PROVIDERS, RIME, provider, rime
 from voice_providers.gemini import ModelChoice
-from voice_providers.rime import KEEP_ALIVE_LABELS, TOOL_FILLERS
+from voice_providers.rime import CONTEXT_MODE, KEEP_ALIVE_LABELS, TOOL_FILLERS
 
 
 def test_each_provider_has_a_distinct_key_and_voice_variable() -> None:
@@ -25,6 +25,12 @@ def test_rime_talks_through_prism_with_the_users_key(
 
     assert isinstance(model, PrismModel)
     assert model.model == RIME.model == "prism"
+
+
+def test_rime_takes_history_in_any_order() -> None:
+    # A line said over Bomby comes before its cut-off reply; "shared" refuses that, and
+    # every update after it, so results never reached Prism.
+    assert CONTEXT_MODE == "strict"
 
 
 def test_rime_brings_no_tools_of_its_own() -> None:
