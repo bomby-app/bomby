@@ -13,26 +13,21 @@ import { pickFolders } from "./api"
 
 /**
  * A project's folders, in order: the first is the agents' working folder. Add opens the system
- * folder picker; rows can be removed or moved to the top. Used by the New project dialog
- * and the project view.
+ * folder picker; rows can be removed or moved to the top. Folders are optional: with none,
+ * the agents work in the home folder. Used by the New project dialog and Project settings.
  */
 export function FolderList({
   folders,
   onChange,
-  minimum = 1,
 }: {
   folders: string[]
   onChange: (folders: string[]) => void
-  /** Rows can't be removed below this many. */
-  minimum?: number
 }) {
   async function add() {
     const picked = await pickFolders("Add folders the agents can work in")
     const fresh = picked.filter((f) => !folders.includes(f))
     if (fresh.length > 0) onChange([...folders, ...fresh])
   }
-
-  const canRemove = folders.length > minimum
 
   return (
     <div className="flex flex-col gap-3">
@@ -62,12 +57,7 @@ export function FolderList({
                 </IconAction>
               )}
               <IconAction
-                label={
-                  canRemove
-                    ? "Remove from the project"
-                    : "A project needs a folder"
-                }
-                disabled={!canRemove}
+                label="Remove from the project"
                 onClick={() => onChange(folders.filter((_, i) => i !== index))}
               >
                 <X />
@@ -75,6 +65,11 @@ export function FolderList({
             </li>
           ))}
         </ul>
+      )}
+      {folders.length === 0 && (
+        <p className="text-sm text-muted-foreground">
+          None yet, so agents work in your home folder.
+        </p>
       )}
       <div>
         <Button type="button" variant="outline" onClick={() => void add()}>

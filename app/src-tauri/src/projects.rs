@@ -1,4 +1,5 @@
-//! Projects: a name, the folders the agents work in (the first is the working directory),
+//! Projects: a name, the folders the agents work in if any (the first is the working
+//! directory; with none, the home folder),
 //! what the user wrote about the project, and its calls. The sidebar tree is `list_projects`.
 
 use std::collections::HashSet;
@@ -69,9 +70,6 @@ fn validate(input: ProjectInput) -> Result<Valid> {
         )));
     }
 
-    if input.folders.is_empty() {
-        return Err(Error::Invalid("Add at least one folder.".into()));
-    }
     let mut seen = HashSet::new();
     let mut folders = Vec::with_capacity(input.folders.len());
     for folder in input.folders {
@@ -359,7 +357,6 @@ mod tests {
         let (a, _) = folders();
         for bad in [
             input("  ", &[&a]),
-            input("samba", &[]),
             input("samba", &["relative/path"]),
             input("samba", &["/no/such/folder/anywhere"]),
             input("samba", &[&a, &a]),
@@ -368,6 +365,13 @@ mod tests {
         ] {
             assert!(matches!(validate(bad), Err(Error::Invalid(_))));
         }
+    }
+
+    #[test]
+    fn a_project_needs_only_a_name() {
+        // Without folders, its agents work in the home folder (`agent/project.py`).
+        let valid = validate(input("samba", &[])).unwrap();
+        assert!(valid.folders.is_empty());
     }
 
     #[test]

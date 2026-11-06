@@ -25,7 +25,7 @@ import { InstructionsField, submittedInstructions } from "./instructions-field"
 import { folderName, uniqueName } from "./names"
 import { useProjects } from "./projects-provider"
 
-/** New project: a name, the folders the agents can work in, and optional instructions. */
+/** New project: a name, and optionally the folders the agents work in and instructions. */
 export function NewProjectDialog({
   open,
   onOpenChange,
@@ -104,7 +104,7 @@ function NewProjectForm({
       <DialogHeader>
         <DialogTitle>New project</DialogTitle>
         <DialogDescription>
-          A name and the folders your agents can work in.
+          A name, and any folders your agents should work in.
         </DialogDescription>
       </DialogHeader>
 
@@ -121,7 +121,7 @@ function NewProjectForm({
         </Field>
         <FieldSet>
           <FieldLegend variant="label">Folders</FieldLegend>
-          <FolderList folders={folders} onChange={changeFolders} minimum={0} />
+          <FolderList folders={folders} onChange={changeFolders} />
         </FieldSet>
         <InstructionsField
           key={failed?.attempt}
@@ -132,10 +132,7 @@ function NewProjectForm({
       </FieldGroup>
 
       <DialogFooter>
-        <Button
-          type="submit"
-          disabled={creating || !name.trim() || folders.length === 0}
-        >
+        <Button type="submit" disabled={creating || !name.trim()}>
           {creating ? "Creating..." : "Create project"}
         </Button>
       </DialogFooter>

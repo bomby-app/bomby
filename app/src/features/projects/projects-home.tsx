@@ -130,7 +130,7 @@ export function ProjectsHome({
                       <span className="truncate font-mono text-xs leading-[15px] text-muted-foreground">
                         {project.folders[0]
                           ? shortPath(project.folders[0])
-                          : ""}
+                          : "Home folder"}
                       </span>
                     </span>
                     <span className="flex w-32 shrink-0 items-center justify-end gap-2.5">
