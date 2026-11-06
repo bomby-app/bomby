@@ -106,8 +106,8 @@ export function KeysStep({
         }
         body={
           withoutAgent
-            ? "No agent yet, and that's fine. Pick your voice provider and paste your keys, and I'll help you get one."
-            : "Pick your voice provider and paste your keys."
+            ? "No agent yet, and that's fine. Pick your voice provider, and I'll help you get one."
+            : "Pick your voice provider."
         }
       />
 
