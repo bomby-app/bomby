@@ -98,9 +98,10 @@ export function KeysStep({
     null
   )
   const [typing, setTyping] = useState(false)
+  const [linkError, setLinkError] = useState<string | null>(null)
   // A failed choice lands in the store, not in this step's state.
   const { error: keysError } = useSavedKeys()
-  const error = livekitError ?? voiceError ?? keysError
+  const error = livekitError ?? voiceError ?? linkError ?? keysError
   const cloud = keys.server === "theirs"
   const [left, right] = PROVIDER_ORDER
 
@@ -166,7 +167,11 @@ export function KeysStep({
           <p className="text-center text-sm text-destructive">{error}</p>
         )}
         {/* Always there, so a failed paste still leaves the way to type them. */}
-        <Footnote keys={keys} onType={() => setTyping(true)} />
+        <Footnote
+          keys={keys}
+          onType={() => setTyping(true)}
+          onLinkError={setLinkError}
+        />
         {withoutAgent && (
           <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
             Changed your mind?
@@ -332,7 +337,15 @@ function PasteButton({
  * Where the keys still needed come from, and the way to type them in; before a voice is
  * picked, that it can change later.
  */
-function Footnote({ keys, onType }: { keys: Keys; onType: () => void }) {
+function Footnote({
+  keys,
+  onType,
+  onLinkError,
+}: {
+  keys: Keys
+  onType: () => void
+  onLinkError: (message: string) => void
+}) {
   const livekit = keys.server === "theirs" && !keys.theirLiveKit
   const voice = keys.voice && PROVIDERS[keys.voice]
   const type = (text: string) => (
@@ -342,12 +355,17 @@ function Footnote({ keys, onType }: { keys: Keys; onType: () => void }) {
   )
   const livekitPlace = (
     <>
-      <Link href={LIVEKIT_KEYS}>LiveKit Cloud</Link> (Settings, API keys)
+      <Link href={LIVEKIT_KEYS} onError={onLinkError}>
+        LiveKit Cloud
+      </Link>{" "}
+      (Settings, API keys)
     </>
   )
   const voicePlace = voice && (
     <>
-      <Link href={voice.keysUrl}>{voice.keysPlace}</Link>
+      <Link href={voice.keysUrl} onError={onLinkError}>
+        {voice.keysPlace}
+      </Link>
       {voice.keysWhere && ` (${voice.keysWhere})`}
     </>
   )
@@ -377,7 +395,25 @@ function Footnote({ keys, onType }: { keys: Keys; onType: () => void }) {
   )
 }
 
-/** Opens a page in the browser. */
-function Link({ href, children }: { href: string; children: string }) {
-  return <InlineLink onClick={() => void openUrl(href)}>{children}</InlineLink>
+/** Opens a page in the browser, or says it couldn't. */
+function Link({
+  href,
+  onError,
+  children,
+}: {
+  href: string
+  onError: (message: string) => void
+  children: string
+}) {
+  return (
+    <InlineLink
+      onClick={() =>
+        openUrl(href).catch(() =>
+          onError(`Couldn't open ${href}. Open it in your browser.`)
+        )
+      }
+    >
+      {children}
+    </InlineLink>
+  )
 }

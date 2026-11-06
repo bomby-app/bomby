@@ -20,7 +20,9 @@
         { "url": "https://opencode.ai/docs/" },
         { "url": "https://omp.sh/docs/quickstart" },
         { "url": "https://goose-docs.ai/docs/quickstart/" },
-        { "url": "https://app.getzep.com" }
+        { "url": "https://app.getzep.com" },
+        { "url": "https://aistudio.google.com/apikey" },
+        { "url": "https://app.rime.ai/tokens" }
       ]
     },
     "clipboard-manager:allow-read-text",

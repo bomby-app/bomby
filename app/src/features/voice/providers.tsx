@@ -4,6 +4,7 @@ import type { ReactNode } from "react"
 import { GeminiLogo, RimeLogo } from "@/features/setup/provider-logos"
 
 import type { VoiceProvider } from "./api"
+import { KEY_PAGES } from "./key-pages"
 
 /** A provider's switch, as Settings, Voice shows it. */
 type OptionCopy = {
@@ -36,7 +37,7 @@ export const PROVIDERS: Record<VoiceProvider, ProviderCopy> = {
     model: "Gemini Live",
     description: "Gemini Live, with your Google AI Studio key.",
     logo: GeminiLogo,
-    keysUrl: "https://aistudio.google.com/apikey",
+    keysUrl: KEY_PAGES.gemini,
     keysPlace: "Google AI Studio",
     keysHow: "From Google AI Studio, under API keys.",
     options: {
@@ -54,7 +55,7 @@ export const PROVIDERS: Record<VoiceProvider, ProviderCopy> = {
     description: "Prism, Rime's speech-to-speech model.",
     // A wordmark: sized by width in the logo tile.
     logo: ({ className }) => <RimeLogo className={className ?? "h-auto w-6"} />,
-    keysUrl: "https://app.rime.ai/tokens",
+    keysUrl: KEY_PAGES.rime,
     keysPlace: "Rime's dashboard",
     keysWhere: "API tokens",
     keysHow: "From Rime's dashboard, under API tokens.",

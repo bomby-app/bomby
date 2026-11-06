@@ -86,7 +86,14 @@ export function ApiKeyForm({
             <FieldLabel htmlFor={id}>API key</FieldLabel>
             <InlineLink
               className="text-sm"
-              onClick={() => void openUrl(keysUrl)}
+              onClick={() =>
+                openUrl(keysUrl).catch(() =>
+                  setStatus({
+                    kind: "error",
+                    message: `Couldn't open ${keysUrl}. Open it in your browser.`,
+                  })
+                )
+              }
             >
               Get an API key
             </InlineLink>
