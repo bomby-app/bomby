@@ -1,6 +1,11 @@
-"""The voice model's instructions for one call: the prompt for the user's tone
-(`prompts/sharp.md`, `chatty.md` or `playful.md`), then what this call adds. Each added
-section is left out when it has nothing to say."""
+"""The voice model's instructions for one call: the voice provider's prompt for the
+user's tone (`prompts/<provider>/sharp.md`, `chatty.md` or `playful.md`), then what this
+call adds, in the provider's style (`sections.py`). Each added section is left out when
+it has nothing to say.
+
+A provider that `delegates` (GPT-Live) has a backend that reasons and calls the tools, with
+instructions of its own: `prompts/<provider>/backend.md`, then the agents and the project
+(`backend_instructions`). Every other provider's backend instructions are empty."""
 
 import os
 from datetime import datetime
@@ -10,19 +15,37 @@ from call_options import TONES, CallOptions, Tone
 from harnesses.harness import Harness
 from job import Line, Speaker
 from project import Project
-from sections import join, section
+from sections import MARKDOWN, Style, join
 from tools import agents_note
+from voice_providers import PROVIDERS
 
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
-PROMPTS: dict[Tone, str] = {
-    t: (PROMPTS_DIR / f"{t}.md").read_text().rstrip() for t in TONES
+# Each provider's own tone prompts, by provider id and tone: each model is prompted for
+# how it behaves (owner, 2026-11-06).
+PROMPTS: dict[tuple[str, Tone], str] = {
+    (p, t): (PROMPTS_DIR / p / f"{t}.md").read_text().rstrip()
+    for p in PROVIDERS
+    for t in TONES
+}
+
+# The backend's own instructions, for each provider that delegates.
+BACKENDS: dict[str, str] = {
+    p.id: (PROMPTS_DIR / p.id / "backend.md").read_text().rstrip()
+    for p in PROVIDERS.values()
+    if p.delegates
 }
 
 SPEAKER_LABEL: dict[Speaker, str] = {"user": "User", "agent": "You"}
-REMEMBERED_NOTE = (
-    "From earlier conversations with the user. Each fact says when it held true. Use "
-    "what helps, and look up anything else with `recall_about_user`."
-)
+
+
+def remembered_note(look_up: str) -> str:
+    """`look_up` is the provider's way to the rest (`recall_hint`)."""
+    return (
+        "From earlier conversations with the user. Each fact says when it held true. Use "
+        f"what helps, and {look_up}."
+    )
+
+
 RESUME_NOTE = (
     "You're picking up an earlier conversation with the user; its last lines are "
     "below. Carry on as if it never stopped. The agents don't remember it, though "
@@ -38,14 +61,36 @@ def voice_instructions(
     remembered: str = "",
     now: datetime | None = None,
 ) -> str:
+    style = options.provider.prompt_style
     return join(
-        PROMPTS[options.tone],
-        the_time(now or datetime.now().astimezone(), local_zone()),
-        the_user(options.user_name),
-        what_you_remember(remembered),
-        agents_note(agents),
-        project_context(project),
-        previous_conversation(options.history),
+        PROMPTS[options.provider.id, options.tone],
+        the_time(now or datetime.now().astimezone(), local_zone(), style),
+        the_user(options.user_name, style),
+        what_you_remember(remembered, style, options.provider.recall_hint(style)),
+        agents_note(agents, style, project.agents_off),
+        project_context(project, style),
+        previous_conversation(options.history, style),
+    )
+
+
+def backend_instructions(
+    project: Project,
+    options: CallOptions,
+    agents: list[Harness],
+    now: datetime | None = None,
+) -> str:
+    """The backend's instructions for one call, or empty for a provider that doesn't
+    delegate. The backend writes the tasks the coding agents get, so it hears neither the
+    user's name nor what memory knows (docs/decisions/the-users-name-only-for-the-voice.md);
+    it can ask for what it needs with `recall_about_user`."""
+    if not options.provider.delegates:
+        return ""
+    style = options.provider.backend_style
+    return join(
+        BACKENDS[options.provider.id],
+        the_time(now or datetime.now().astimezone(), local_zone(), style),
+        agents_note(agents, style, project.agents_off),
+        project_context(project, style),
     )
 
 
@@ -55,53 +100,68 @@ def local_zone() -> str:
     return zone if found else ""
 
 
-def the_time(now: datetime, zone: str) -> str:
+def the_time(now: datetime, zone: str, style: Style = MARKDOWN) -> str:
     """When the call starts, where the user is."""
     hour = now.strftime("%I").lstrip("0")
     when = f"{now:%A} {now.day} {now:%B %Y}, {hour}:{now:%M %p}"
     where = f" in {zone.rsplit('/', 1)[-1].replace('_', ' ')} ({zone})" if zone else ""
-    return section("Date and time", f"It's {when}{where} as this call starts.")
+    return style.section("Date and time", f"It's {when}{where} as this call starts.")
 
 
-def the_user(name: str) -> str:
+def the_user(name: str, style: Style = MARKDOWN) -> str:
     """Who the user is, if they said what to call them."""
     if not name:
         return ""
-    return section(
+    return style.section(
         "The user",
         f"You're talking to {name}. Address the user by their name when needed.",
     )
 
 
-def what_you_remember(remembered: str) -> str:
+def what_you_remember(remembered: str, style: Style, look_up: str) -> str:
     """What memory across calls knows about the user, if it knows anything yet."""
     if not remembered:
         return ""
-    return section(
+    return style.section(
         "What you remember",
         join(
-            REMEMBERED_NOTE,
+            remembered_note(look_up),
             remembered,
         ),
     )
 
 
-def project_context(project: Project) -> str:
-    """What the user wrote about the project, if anything."""
-    if not project.instructions:
-        return ""
-    return section(
-        "Project context",
+def project_context(project: Project, style: Style = MARKDOWN) -> str:
+    """The project the call works on: its name, its folders by name, and what the user
+    wrote about it, if anything. Always there, so "the project" means this one."""
+    if project.folders == (Path.home(),):
+        where = "in the user's home folder"
+    else:
+        names = [folder.name or str(folder) for folder in project.folders]
+        where = f"in the folder{'s' if len(names) > 1 else ''} {and_list(names)}"
+    about = (
+        join("The user's description of it:", project.instructions)
+        if project.instructions
+        else ""
+    )
+    return style.section(
+        "Project",
         join(
-            "The user's description of the project this call works on:",
-            project.instructions,
+            f"This call works on the project {project.name}, {where}. When the user "
+            + 'says "the project", they mean this one.',
+            about,
         ),
     )
 
 
-def previous_conversation(history: tuple[Line, ...]) -> str:
+def and_list(names: list[str]) -> str:
+    """ "a", "a and b", "a, b and c"."""
+    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
+
+
+def previous_conversation(history: tuple[Line, ...], style: Style = MARKDOWN) -> str:
     """The last lines of the call this one resumes, if it resumes one."""
     if not history:
         return ""
     lines = "\n".join(f"{SPEAKER_LABEL[l.role]}: {l.text}" for l in history)
-    return section("Previous conversation", join(RESUME_NOTE, lines))
+    return style.section("Previous conversation", join(RESUME_NOTE, lines))

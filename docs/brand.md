@@ -60,6 +60,45 @@ Ink on highlighter (16.8:1) and bubblegum (9.7:1) is readable. Highlighter on wh
 - **Bricolage Grotesque Bold**: lowercase wordmark at -0.02em and display headlines.
 - App interface: the OS font (owner, 2026-11-03). Web body: Bricolage Regular or Medium. Paper app previews use Inter only as a stand-in.
 
+The Paper file's tokens carry the same names as `app/src/index.css` (dark values as `--color-dark-*`). Roles (Paper board "09 Type"), size / line height:
+
+| Role | Size | Class | Use |
+| --- | --- | --- | --- |
+| Display | 40 / 44, Bricolage Bold, -0.03em | `text-display` | The projects home's greeting |
+| Title | 34 / 38, Bricolage Bold, -0.03em | `text-title` | Splash step headings |
+| Heading | 16 / 24 semibold (16 / 20 in cards) | `text-base` | Section and card headings |
+| Lead | 15 / 22 | `text-lead` | The line under a display or title |
+| Body | 14 / 20, regular or medium | `text-sm` | Everything else |
+| Small | 12 / 16, mono | `font-mono text-xs` | Paths, counts |
+| Label | 11 / 14, mono, uppercase, 0.08em | `font-mono text-label uppercase` | Section labels, the Beta badge |
+
+The one exception is the 10px count in the agents panel's 16px disc. The splash keeps a few values off the scale until the owner approves snapping them (13 / 18 text, its 12px card buttons, the greeting's -0.035em).
+
+## Spacing and radius
+
+Paper board "10 Spacing and radius". Spacing goes in 4px steps: 4, 8, 12, 16, 20, 24, 28, 32, 40.
+
+| Radius | px | Use |
+| --- | --- | --- |
+| `rounded-sm` | 6 | Sidebar items |
+| `rounded-md` | 8 | Small buttons, tooltips, 32 and 36px tiles |
+| `rounded-lg` | 10 | The base (`--radius`): buttons, inputs, select trigger, popovers, settings cards, project rows |
+| `rounded-xl` | 14 | Dialogs, 56px splash tiles, splash and home buttons |
+| `rounded-2xl` | 18 | Splash cards, the recent projects list |
+| `rounded-full` | - | Discs, dots, badges, the continue arrow |
+
+A nested corner is the outer radius minus the padding.
+
+## Elevation
+
+Paper board "11 Elevation". Three shadows, as `--elevation-*` in `:root` and `.dark` and used as `shadow-card`, `shadow-float` and `shadow-primary`:
+
+- **Card**: the splash cards.
+- **Float**: lists, popovers, select content. A 1px border ring plus a soft drop.
+- **Primary**: the projects home's main button. Ink in light, a highlighter glow in dark.
+
+Settings stays flat, with borders only.
+
 ## Mascot states and motion
 
 Only the eyes change, never the bubble shape or colours. States follow `useAgent()`:
@@ -84,19 +123,19 @@ Motion uses CSS transforms on one SVG. Eyes lead; only sound scales the bubble. 
 
 ## First run
 
-Paper page `splash`, option A (owner, 2026-11-04), in `app/src/features/onboarding/`. A short form of two steps, the agent and then the keys; which one shows follows from what's set up and what the user chose. It shows until a call can talk: LiveKit (on this Mac, or the user's keys) and the Gemini key, with an agent that's set up or left for later (owner, 2026-11-06).
+Paper page `splash`, option A (owner, 2026-11-04), in `app/src/features/onboarding/`. A short form of two steps, the agent and then the keys; which one shows follows from what's set up and what the user chose. It shows until a call can talk: LiveKit (on this Mac, or the user's keys) and a voice provider with its key, with an agent that's set up or left for later (owner, 2026-11-06).
 
 - **Glow.** `components/day-glow.tsx`: a glow rising from the bottom, by the Mac's clock: highlighter in the morning (5 to 12), option B's bubblegum glow around a highlighter core in the afternoon (12 to 17), bubblegum in option A's shape in the evening. Dark mode uses the dark boards. Its `rest` stage is the projects view's glow (page `projects view`), for reuse there.
 - **Sequence.** One GSAP timeline, each move after the last, slow in and slow out (sine), as the owner asked (2026-11-05): the glow comes up from nothing while Dot Dot floats up from below with its eyes closed (3.2 s, slowing as it arrives); as it arrives its eyes open and it settles to full size, then it looks left, right and back at you; "Good morning, I'm bomby." and "Let's set up your first agent." fade in under it, stay 2.4 s and fade out; then Dot Dot moves up, small and listening, and the setup fades in with a slight rise. A new step fades the old one out first. About 11 s in all, with the six-second opening sound (`app/src/assets/splash-music.mp3`) at the start; reduced motion starts at the setup.
 - **Film grain.** `components/film-grain.tsx`: moving grain over the glow, one tiny WebGL shader with no libraries, at 24 frames a second, blended with overlay at 9% (12% in dark); one still frame with reduced motion.
 - **Mascot with depth.** `<Mascot depth />`: Paper's lit bubble (a gradient from above, a rim of light, catchlights in the eyes, a soft shadow), an ink bubble with highlighter eyes in light and the reverse in dark (`--mascot-*` tokens). Its closed eyes are the curved lids of the Done state; waking crossfades them into round eyes that open from a squint (560 ms), with the blink on its own layer. `look` turns the eyes left or right.
 - **The agent step.** Claude Code when it's installed, ready or not, else Codex, else the first ready agent (owner, 2026-11-05), with Set up now (installs its adapter), its model, or what it needs. With none installed, Claude Code's card offers Install, which opens its own install page (Paper "04 Setup · No agent"). Installing and signing in stay the agent's own: the card only says whether it's ready, and under it "Already installed one? Check again" or "Set it up in Claude Code, then check again", then Set up later (owner, 2026-11-06). "Other supported agents" lists the rest, each to Use or Install. Claude's tile keeps Claude's own colours, as the owner's board shows (`--agent-claude`).
-- **Just one more step.** LiveKit as two cards in one row, then Gemini (Paper "05 Keys · LiveKit choice" and "Cloud · A widens", owner, 2026-11-05). Local (white logo) is selected by default; choosing Cloud (blue logo) eases Local down to its tile and widens Cloud, whose Paste all reads LiveKit Cloud's Environment variables box from the clipboard. Paste key takes the Gemini key; the paste buttons share one width, and a saved key says "Saved". "type them in" opens one form with one Save. The heading's line and the footnote never change. With every key in, the step says "You're all set" and the round arrow goes on. After Set up later it says "Let's still talk", with "Changed your mind? Set up an agent" under the footnote (Paper "05 Keys · After Set up later").
+- **Just one more step.** Two labelled rows of two cards (Paper page `voice-provider-feature`, "05 Keys · Voice choice", "Rime picked · widens", "Rime saved · All set", 2026-11-06): Calls run on (LiveKit Local or Cloud) and Bomby talks through (Gemini or Rime). Local (white logo) is selected by default; choosing Cloud (blue logo) eases Local down to its tile and widens Cloud, whose Paste all reads LiveKit Cloud's Environment variables box from the clipboard. Gemini is picked at first, the default (owner, 2026-11-06); the other shows its model with a grey dot ("Prism"), and picking one eases the other down to its tile and widens it with Paste key, the same move as Cloud, and a saved key reads "Saved · Prism". Rime's tile carries a small highlighter circle with an E on its corner, "Experimental" on hover; Settings, Voice marks it with an Experimental badge in highlighter (owner, 2026-11-06). The paste buttons share one width. The footnote says where the keys still needed come from, or "Pick a voice. You can switch any time in Settings."; "type them in" opens one form with one Save. The step sits 32 px higher than the agent step, Bomby with it, to fit both rows. With every key in, the step says "You're all set" and the round arrow goes on. After Set up later it says "Let's still talk", with "Changed your mind? Set up an agent" under the footnote (Paper "05 Keys · After Set up later").
 - **Going on.** Only the user moves the splash on (owner, 2026-11-06): a step that's done shows the round continue arrow, bottom right, and Return does the same. The agent step's arrow comes once its agent is ready and goes to the keys; Set up later goes there without one. With the keys in, the keys step says "You're all set" and its arrow opens the projects home.
 
 ## Projects home
 
-Paper page `projects view`, in `app/src/features/projects/projects-home.tsx`: the main panel with nothing selected. Dot Dot with depth, the day's greeting ("Good evening.") in the day glow's `rest` stage, then the recent projects, the newest call first (three, See all for the rest), or Create your first project. The sidebar's logo brings it back, with no hover state. Each time it opens, Dot Dot drops in and settles like something with weight, a damped spring (`elastic.out(1, 0.45)`, 1.6 s): the one place it overshoots, by the owner's choice (2026-11-05). Call and Resume stay disabled, with a tooltip saying what's missing, until a call has LiveKit and Gemini (`features/call/use-call-readiness.ts`); a call with no agent ready still talks.
+Paper page `projects view`, in `app/src/features/projects/projects-home.tsx`: the main panel with nothing selected. Dot Dot with depth, the day's greeting ("Good evening.") in the day glow's `rest` stage, then the recent projects, the newest call first (three, See all for the rest), or Create your first project. The sidebar's logo brings it back, with no hover state. Each time it opens, Dot Dot drops in and settles like something with weight, a damped spring (`elastic.out(1, 0.45)`, 1.6 s): the one place it overshoots, by the owner's choice (2026-11-05). Call and Resume stay disabled, with a tooltip saying what's missing, until a call has LiveKit and a voice provider with its key (`features/call/use-call-readiness.ts`); a call with no agent ready still talks.
 
 ## Voice
 

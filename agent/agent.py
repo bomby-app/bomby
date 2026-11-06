@@ -3,10 +3,8 @@ import logging
 import os
 from typing import override
 
-from google.genai import types
 from livekit import rtc
-from livekit.agents import NOT_GIVEN, Agent, AgentServer, AgentSession, JobContext, cli
-from livekit.plugins import google
+from livekit.agents import Agent, AgentServer, AgentSession, JobContext, cli
 
 import dev_env
 import lifeline
@@ -19,54 +17,27 @@ from memory import UNAVAILABLE, Memory, MemoryUnavailable
 from memory import notify as notify_memory
 from task_board import TaskBoard
 from tools import ALL_TOOLS, MEMORY_TOOLS
-from voice_prompt import local_zone, voice_instructions
+from voice_prompt import backend_instructions, local_zone, voice_instructions
 
 dev_env.load()
 
 logger = logging.getLogger("bomby")
-
-MODELS = {
-    "fast": "gemini-3.8-live",
-    "thinking": "gemini-3.8-live-extended-thinking",
-}
-MODEL_KEY = os.getenv("MODEL", "fast")
-if MODEL_KEY not in MODELS:
-    raise ValueError(f"MODEL must be one of {sorted(MODELS)}, got {MODEL_KEY!r}")
-MODEL = MODELS[MODEL_KEY]
-
-# Extended Thinking requires a thinking level (low, medium or high); the server closes the
-# session with 1007 without one. gemini-3.8-live rejects one, so send it only for "thinking".
-THINKING_LEVELS = ("low", "medium", "high")
-THINKING_LEVEL = os.getenv("THINKING_LEVEL", "low")
-if THINKING_LEVEL not in THINKING_LEVELS:
-    raise ValueError(
-        f"THINKING_LEVEL must be one of {THINKING_LEVELS}, got {THINKING_LEVEL!r}"
-    )
-THINKING_CONFIG = (
-    types.ThinkingConfig(thinking_level=types.ThinkingLevel(THINKING_LEVEL.upper()))
-    if MODEL_KEY == "thinking"
-    else NOT_GIVEN
-)
-
-# The language the user speaks. Gemini's native-audio models pick their spoken language
-# themselves (no language code), so the prompt holds them to it; the transcription takes a
-# hint, which stops noise being written down as Portuguese or Russian (2026-11-04).
-LANGUAGE_CODES = ["en-US"]
 
 
 class Assistant(Agent):
     def __init__(
         self,
         options: CallOptions,
-        runners: CallRunners,
+        instructions: str,
         remembers: bool = False,
-        remembered: str = "",
     ) -> None:
         self._resumed: bool = options.resumed
-        instructions = voice_instructions(
-            runners.project, options, runners.available, remembered
-        )
-        tools = ALL_TOOLS + MEMORY_TOOLS if remembers else ALL_TOOLS
+        # Bomby's tools, the voice provider's own, then recall for calls that remember.
+        tools = [
+            *ALL_TOOLS,
+            *options.provider.tools(options.options),
+            *(MEMORY_TOOLS if remembers else []),
+        ]
         # LiveKit's own signatures are partially untyped; the ignores below are theirs.
         super().__init__(  # pyright: ignore[reportUnknownMemberType]
             instructions=instructions, tools=tools
@@ -96,16 +67,16 @@ AGENT_NAME = "bomby"
 
 @server.rtc_session(agent_name=AGENT_NAME)
 async def entrypoint(ctx: JobContext) -> None:
-    ctx.log_context_fields = {"room": ctx.room.name, "model": MODEL}
-    logger.info("using model %s", MODEL)
-
     # A call works on one project, set in the dispatch metadata by the app. Each harness
     # the app found gets one ACP process per call, started on its first task, to
     # run its named sessions. Shutting the job down closes every session and process.
     job = read_metadata(ctx.job.metadata)
     runners = CallRunners.for_job(job)
-    # The voice and, on a resumed call, the conversation so far.
+    # The voice model, its voice and, on a resumed call, the conversation so far.
     options = CallOptions.from_job(job, os.environ)
+    model_name = options.provider.model
+    ctx.log_context_fields = {"room": ctx.room.name, "model": model_name}
+    logger.info("using %s, options %s", model_name, options.options)
     logger.info(
         "project %s in %s, agents %s, voice %s, tone %s, %d earlier lines",
         runners.project.name,
@@ -125,7 +96,7 @@ async def entrypoint(ctx: JobContext) -> None:
     async def memory_unavailable() -> None:
         await publish({MEMORY_ATTRIBUTE: UNAVAILABLE})
 
-    # Read while the room connects: Gemini's instructions are final once it does.
+    # Read while the room connects: the voice model's instructions are final once it does.
     connecting = asyncio.create_task(ctx.connect())
     memory: Memory | None = None
     remembered = ""
@@ -139,7 +110,7 @@ async def entrypoint(ctx: JobContext) -> None:
         notify_memory(memory_unavailable)
     if memory:
         memory.on_unavailable(memory_unavailable)
-    call = Call(runners, TaskBoard(publish), memory)
+    call = Call(runners, TaskBoard(publish), memory, options.provider)
     ctx.add_shutdown_callback(call.aclose)
 
     # Which audio the agent gets, from whom: the first thing to check on an audio problem.
@@ -158,25 +129,26 @@ async def entrypoint(ctx: JobContext) -> None:
 
     _ = ctx.room.on("track_subscribed", on_track_subscribed)  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
 
-    # Everything Gemini gets at connect time is final for the session. The plugin reconnects
-    # on a tool change and can only inject later instructions as a conversation turn.
-    session: AgentSession[Call] = AgentSession(
-        userdata=call,
-        llm=google.realtime.RealtimeModel(
-            model=MODEL,
-            voice=options.voice,
-            input_audio_transcription=types.AudioTranscriptionConfig(
-                language_codes=LANGUAGE_CODES
-            ),
-            output_audio_transcription=types.AudioTranscriptionConfig(),
-            thinking_config=THINKING_CONFIG,
-        ),
+    # The voice model's instructions and, for a provider that delegates, its backend's.
+    instructions = voice_instructions(
+        runners.project, options, runners.available, remembered
     )
+    backend = backend_instructions(runners.project, options, runners.available)
+    model = options.provider.realtime_model(options.voice, options.options, backend)
+    session: AgentSession[Call] = AgentSession(userdata=call, llm=model)
 
     if memory:
         memory.attach(session)
-    assistant = Assistant(options, runners, memory is not None, remembered)
+    assistant = Assistant(options, instructions, memory is not None)
     await session.start(agent=assistant, room=ctx.room)  # pyright: ignore[reportUnknownMemberType]
+
+    # Keeps a provider that closes quiet conversations open until the call ends.
+    keeping = asyncio.create_task(options.provider.keep_alive(model))
+
+    async def stop_keeping() -> None:
+        _ = keeping.cancel()
+
+    ctx.add_shutdown_callback(stop_keeping)
 
 
 def main() -> None:

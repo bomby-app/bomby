@@ -37,19 +37,6 @@ export function setLivekitServer(server: LiveKitServer): Promise<void> {
   return invoke("set_livekit_server", { server })
 }
 
-/** Whether a Gemini API key is saved (the key stays in the core). */
-export function hasGeminiKey(): Promise<boolean> {
-  return invoke("has_gemini_key")
-}
-
-export function saveGeminiKey(key: string): Promise<void> {
-  return invoke("save_gemini_key", { key })
-}
-
-export function clearGeminiKey(): Promise<void> {
-  return invoke("clear_gemini_key")
-}
-
 /** Calls `handler` when a key or the LiveKit server changes, in any window. */
 export function onKeysChanged(handler: () => void): Promise<UnlistenFn> {
   return listen("keys-changed", () => handler())

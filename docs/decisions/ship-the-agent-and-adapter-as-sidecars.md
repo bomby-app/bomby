@@ -11,7 +11,7 @@ A call runs two programs next to the app: the Python voice agent (`agent/`) and 
 - Bundle both programs per OS and architecture: the adapter as a Tauri sidecar (`bundle.externalBin`), the agent as a folder in app resources.
 - **Adapter**: compiled into one binary with `bun build --compile`, leaving out the Agent SDK's native `claude` binary (`@anthropic-ai/claude-agent-sdk-<platform>`, 305 MB in 0.100.0 on darwin-arm64). The app sets `CLAUDE_CODE_EXECUTABLE` to the user's own `claude`; adapter 0.100.0 reads it first in `claudeCliPath()` (`dist/acp-agent.js`).
 - **Agent**: frozen with PyInstaller, as a folder (`--onedir`), shipped in the app's resources and started by path (chosen by the prototypes below).
-- The app starts the agent for a call with the LiveKit and Gemini keys from the keychain as environment variables, and the adapter path. Keys never touch disk.
+- The app starts the agent for a call with the LiveKit and voice provider keys from the keychain as environment variables, and the adapter path. Keys never touch disk.
 
 ## Prototype results (2026-11-04, macOS 27, arm64)
 

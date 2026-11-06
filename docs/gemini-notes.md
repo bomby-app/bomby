@@ -40,18 +40,18 @@ Sources:
 
 ## Voices
 
-- Live accepts TTS voice names through `RealtimeModel(voice=...)`. The app offers the 30 prebuilt voices in `app/src-tauri/src/settings.rs`; Leda is default (owner, 2026-11-06).
+- Live accepts TTS voice names through `RealtimeModel(voice=...)`. The app offers the 30 prebuilt voices in `agent/voice_providers/gemini.py`, which reach it through the catalogue; Leda is default (owner, 2026-11-06).
 - `GET /v1beta/voices` also lists custom and catalog voices with pagination. Whether Live accepts those ids is untested; Bomby deliberately uses the 30 defaults.
 
 ## Language
 
-- Native-audio Live selects spoken language automatically; system instructions can restrict it. The tone prompts (`prompts/<tone>.md`) keep English unless the user switches.
+- Native-audio Live selects spoken language automatically; system instructions can restrict it. The tone prompts (`prompts/gemini/<tone>.md`) keep English unless the user switches.
 - `agent.py` passes input transcription hint `AudioTranscriptionConfig(language_codes=["en-US"])` after noisy audio produced incorrect transcripts.
 - Gemini sends user transcription around the start of its answer, so the user's line appears with the agent's turn. LiveKit realtime models provide no interim user transcript; a separate STT would be needed to avoid the delay, and the owner chose not to add one.
 
 ## Prompting
 
-- The tone prompts (`prompts/sharp.md`, `chatty.md`, `playful.md`) have the owner's sections: Role, Tone, How you work, Non-negotiable rules. Plain sentences that describe behaviour, positive phrasing, negative rules only for what models do by default, sentence case (owner, 2026-11-04: no shouting at a modern model).
+- The tone prompts (`prompts/gemini/sharp.md`, `chatty.md`, `playful.md`) have the owner's sections: Role, Tone, How you work, Non-negotiable rules. Plain sentences that describe behaviour, positive phrasing, negative rules only for what models do by default, sentence case (owner, 2026-11-04: no shouting at a modern model).
 - **The prompt's writing style sets the voice.** A tone described in one section of a plainly written prompt barely changes how Live talks; written in that tone throughout, it does (owner's test, 2026-11-05). So each tone prompt is written in its tone, and the guardrails stay plain and identical.
 - **Never give lines to say.** A quoted joke or catchphrase in the prompt gets parroted as is; describe the behaviour and ask for it in the model's own words, fresh each time (owner, 2026-11-05). Quoted examples of what to refer to ("the login page") are fine.
 - Google's best practices: persona first (name, role, character, language), then conversational rules in the order to follow them, tool calls each in their own sentence inside that flow, then guardrails with "if X happens, do Y" examples. Use "unmistakably" where the model must be precise. One prompt per persona, no multi-page prompts.
@@ -59,8 +59,8 @@ Sources:
 
 ## Google Search
 
-- `livekit-plugins-google` 1.8.10 has Gemini's built-in tools as `ProviderTool`s in `tools.py`: `GoogleSearch()` (id `gemini_google_search`), `GoogleMaps`, `URLContext`, `FileSearch`. Passed in the agent's tools beside function tools; `utils.create_tools_config` sends both, which Google allows on the Gemini 3 Developer API only, not Vertex AI. Search runs on Google's side, with nothing for the agent to answer.
-- Every Bomby call has it (`agent/tools/__init__.py`, owner, 2026-11-06); Gemini decides when to search.
+- `livekit-plugins-google` 1.8.10 and 1.8.11 have Gemini's built-in tools as `ProviderTool`s in `tools.py`: `GoogleSearch()` (id `gemini_google_search`), `GoogleMaps`, `URLContext`, `FileSearch`. Passed in the agent's tools beside function tools; `utils.create_tools_config` sends both, which Google allows on the Gemini 3 Developer API only, not Vertex AI. Search runs on Google's side, with nothing for the agent to answer.
+- Gemini's `google_search` option, on by default (`agent/voice_providers/gemini.py`, owner, 2026-11-06); Gemini decides when to search, and the prompt doesn't mention it.
 
 ## Tool schemas
 

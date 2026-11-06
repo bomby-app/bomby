@@ -41,6 +41,12 @@ def test_project_falls_back_to_the_environment(tmp_path: Path) -> None:
     assert project.instructions == "A music app."
 
 
+def test_a_project_with_its_agents_off_says_so() -> None:
+    metadata = json.dumps({"project": "samba", "agents_off": True})
+    assert Project.from_job(read_metadata(metadata), {}).agents_off
+    assert not Project.from_job(read_metadata("{}"), {}).agents_off
+
+
 def test_project_defaults_to_the_home_folder() -> None:
     assert Project.from_job(None, {}) == Project(name="home", folders=(Path.home(),))
 

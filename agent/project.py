@@ -24,6 +24,8 @@ class Project:
     name: str
     folders: tuple[Path, ...]
     instructions: str = ""
+    # The user turned the project's agents off, so its calls hand nothing off.
+    agents_off: bool = False
 
     @property
     def cwd(self) -> Path:
@@ -42,9 +44,11 @@ class Project:
         `BOMBY_FOLDERS` (separated by `os.pathsep`) and `BOMBY_INSTRUCTIONS` stand in.
         Without folders, the project is the home folder.
         """
+        agents_off = False
         if fields is not None:
             name, folders = fields.project, fields.folders
             instructions = fields.instructions
+            agents_off = fields.agents_off
         else:
             name = environ.get("BOMBY_PROJECT", "").strip()
             folders = tuple(
@@ -59,5 +63,8 @@ class Project:
             if not path.is_dir():
                 raise ValueError(f"project folder does not exist: {path}")
         return cls(
-            name=name or DEFAULT_PROJECT, folders=paths, instructions=instructions
+            name=name or DEFAULT_PROJECT,
+            folders=paths,
+            instructions=instructions,
+            agents_off=agents_off,
         )

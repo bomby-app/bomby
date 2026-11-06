@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test"
 
 import type { AgentStatus, Setup } from "@/features/agents/api"
-import type { Keys } from "@/features/credentials/use-saved-keys"
+import type { Keys } from "@/features/call-server/use-saved-keys"
 
 import { type Choices, NO_CHOICES, splashStep } from "./splash-step"
 
@@ -35,9 +35,16 @@ const NO_KEYS: Keys = {
   server: "thisMac",
   livekit: true,
   theirLiveKit: false,
-  gemini: false,
+  voice: null,
+  voiceKeys: { gemini: false, openai: false, rime: false },
+  voiceKey: false,
 }
-const ALL_KEYS: Keys = { ...NO_KEYS, gemini: true }
+const ALL_KEYS: Keys = {
+  ...NO_KEYS,
+  voice: "rime",
+  voiceKeys: { gemini: false, openai: false, rime: true },
+  voiceKey: true,
+}
 
 const none = [agent("claude", "missing"), agent("codex", "missing")]
 
@@ -88,6 +95,20 @@ describe("splashStep", () => {
       canContinue: false,
     })
     expect(step([agent("codex")], ALL_KEYS, onKeys).canContinue).toBe(true)
+  })
+
+  it("needs a voice picked and its key, whichever key is saved", () => {
+    const keys = (keys: Partial<Keys>) =>
+      step([agent("codex")], { ...ALL_KEYS, ...keys }, { onKeys: true })
+    expect(keys({ voice: null, voiceKey: false }).canContinue).toBe(false)
+    // Rime picked, only Gemini's key saved.
+    expect(
+      keys({
+        voiceKeys: { gemini: true, openai: false, rime: false },
+        voiceKey: false,
+      }).canContinue
+    ).toBe(false)
+    expect(keys({ livekit: false }).canContinue).toBe(false)
   })
 
   it("waits for the keys to be known before showing them", () => {

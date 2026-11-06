@@ -1,4 +1,5 @@
-//! Projects: a name, the folders the agents work in (the first is the working directory),
+//! Projects: a name, the folders the agents work in if any (the first is the working
+//! directory; with none, the home folder),
 //! what the user wrote about the project, and its calls. The sidebar tree is `list_projects`.
 
 use std::collections::HashSet;
@@ -25,6 +26,7 @@ pub struct Project {
     folders: Vec<String>,
     /// What the user wrote about the project; empty if nothing.
     instructions: String,
+    agents: ProjectAgents,
     created_at: i64,
     /// Newest first.
     calls: Vec<CallSummary>,
@@ -49,6 +51,36 @@ pub struct ProjectInput {
     instructions: String,
 }
 
+/// Which agents a project's calls can hand work to (Project settings, Agents). Saved as it
+/// changes, apart from the name, folders and instructions (`set_project_agents`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "projects.ts"))]
+pub struct ProjectAgents {
+    /// Off: the project's calls talk, but hand nothing off.
+    pub on: bool,
+    /// Only these, by harness id; empty for every agent that's set up, including ones added
+    /// later. Kept while off, for when it's on again.
+    pub only: Vec<String>,
+}
+
+impl Default for ProjectAgents {
+    fn default() -> Self {
+        Self {
+            on: true,
+            only: Vec::new(),
+        }
+    }
+}
+
+impl ProjectAgents {
+    /// Whether the project's calls can use the agent `id`. The call's own gate, the setup
+    /// probe, still leaves out one that isn't ready (`agents::usable`).
+    pub(crate) fn allows(&self, id: &str) -> bool {
+        self.on && (self.only.is_empty() || self.only.iter().any(|a| a == id))
+    }
+}
+
 /// A project as the page sent it, trimmed and checked.
 struct Valid {
     name: String,
@@ -69,9 +101,6 @@ fn validate(input: ProjectInput) -> Result<Valid> {
         )));
     }
 
-    if input.folders.is_empty() {
-        return Err(Error::Invalid("Add at least one folder.".into()));
-    }
     let mut seen = HashSet::new();
     let mut folders = Vec::with_capacity(input.folders.len());
     for folder in input.folders {
@@ -132,9 +161,10 @@ pub(crate) struct CallProject {
     pub(crate) name: String,
     pub(crate) folders: Vec<String>,
     pub(crate) instructions: String,
+    pub(crate) agents: ProjectAgents,
 }
 
-/// The project's name, folders and instructions, without its calls.
+/// The project's name, folders, instructions and agents, without its calls.
 pub(crate) fn for_call(conn: &Connection, id: i64) -> Result<CallProject> {
     let (name, instructions) = conn
         .query_row(
@@ -148,7 +178,49 @@ pub(crate) fn for_call(conn: &Connection, id: i64) -> Result<CallProject> {
         name,
         folders: folders(conn, id)?,
         instructions,
+        agents: agents(conn, id)?,
     })
+}
+
+fn agents(conn: &Connection, id: i64) -> Result<ProjectAgents> {
+    let on: bool = conn
+        .query_row(
+            "SELECT agents_on FROM projects WHERE id = ?1",
+            [id],
+            |row| row.get(0),
+        )
+        .optional()?
+        .ok_or(Error::NotFound("project"))?;
+    let only = conn
+        .prepare("SELECT agent FROM project_agents WHERE project_id = ?1 ORDER BY agent")?
+        .query_map([id], |row| row.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(ProjectAgents { on, only })
+}
+
+fn save_agents(conn: &mut Connection, id: i64, agents: &ProjectAgents) -> Result<()> {
+    if let Some(unknown) = agents.only.iter().find(|a| !crate::agents::is_known(a)) {
+        return Err(Error::Invalid(format!(
+            "Bomby has no agent called {unknown}."
+        )));
+    }
+    let tx = conn.transaction()?;
+    let changed = tx.execute(
+        "UPDATE projects SET agents_on = ?1 WHERE id = ?2",
+        params![agents.on, id],
+    )?;
+    if changed == 0 {
+        return Err(Error::NotFound("project"));
+    }
+    tx.execute("DELETE FROM project_agents WHERE project_id = ?1", [id])?;
+    let mut insert =
+        tx.prepare("INSERT OR IGNORE INTO project_agents (project_id, agent) VALUES (?1, ?2)")?;
+    for agent in &agents.only {
+        insert.execute(params![id, agent])?;
+    }
+    drop(insert);
+    tx.commit()?;
+    Ok(())
 }
 
 fn folders(conn: &Connection, id: i64) -> Result<Vec<String>> {
@@ -169,6 +241,7 @@ fn load(conn: &Connection, id: i64) -> Result<Project> {
         .ok_or(Error::NotFound("project"))?;
 
     let folders = folders(conn, id)?;
+    let agents = agents(conn, id)?;
 
     let calls = conn
         .prepare(
@@ -189,6 +262,7 @@ fn load(conn: &Connection, id: i64) -> Result<Project> {
         name,
         folders,
         instructions,
+        agents,
         created_at,
         calls,
     })
@@ -251,6 +325,14 @@ pub fn create_project(db: State<'_, Db>, input: ProjectInput) -> Result<Project>
 #[tauri::command(async)]
 pub fn update_project(db: State<'_, Db>, id: i64, input: ProjectInput) -> Result<Project> {
     update(&mut db.conn(), id, input)
+}
+
+/// Applies from the next call; one under way keeps its agents.
+#[tauri::command(async)]
+pub fn set_project_agents(db: State<'_, Db>, id: i64, agents: ProjectAgents) -> Result<Project> {
+    let mut conn = db.conn();
+    save_agents(&mut conn, id, &agents)?;
+    load(&conn, id)
 }
 
 #[tauri::command(async)]
@@ -359,7 +441,6 @@ mod tests {
         let (a, _) = folders();
         for bad in [
             input("  ", &[&a]),
-            input("samba", &[]),
             input("samba", &["relative/path"]),
             input("samba", &["/no/such/folder/anywhere"]),
             input("samba", &[&a, &a]),
@@ -368,6 +449,52 @@ mod tests {
         ] {
             assert!(matches!(validate(bad), Err(Error::Invalid(_))));
         }
+    }
+
+    #[test]
+    fn a_project_hands_work_to_every_agent_until_told_otherwise() {
+        let db = Db::in_memory().unwrap();
+        let mut conn = db.conn();
+        let (a, _) = folders();
+        let id = create(&mut conn, input("samba", &[&a])).unwrap().id;
+        let agents = |conn: &Connection| for_call(conn, id).unwrap().agents;
+        assert_eq!(agents(&conn), ProjectAgents::default());
+        assert!(agents(&conn).allows("goose"));
+
+        let only = ProjectAgents {
+            on: true,
+            only: vec!["codex".into(), "claude".into(), "claude".into()],
+        };
+        save_agents(&mut conn, id, &only).unwrap();
+        let saved = agents(&conn);
+        assert_eq!(saved.only, ["claude", "codex"]);
+        assert!(saved.allows("claude") && !saved.allows("goose"));
+
+        // Off keeps the picks for when it's on again.
+        let off = ProjectAgents { on: false, ..saved };
+        save_agents(&mut conn, id, &off).unwrap();
+        assert_eq!(agents(&conn), off);
+        assert!(!agents(&conn).allows("claude"));
+
+        let unknown = ProjectAgents {
+            on: true,
+            only: vec!["hal".into()],
+        };
+        assert!(matches!(
+            save_agents(&mut conn, id, &unknown),
+            Err(Error::Invalid(_))
+        ));
+        assert!(matches!(
+            save_agents(&mut conn, id + 1, &off),
+            Err(Error::NotFound(_))
+        ));
+    }
+
+    #[test]
+    fn a_project_needs_only_a_name() {
+        // Without folders, its agents work in the home folder (`agent/project.py`).
+        let valid = validate(input("samba", &[])).unwrap();
+        assert!(valid.folders.is_empty());
     }
 
     #[test]

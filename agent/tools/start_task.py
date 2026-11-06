@@ -12,6 +12,7 @@ from livekit.agents.llm import ToolError, ToolFlag, function_tool
 from acp_client import session_name
 from call import Call
 from harnesses import DEFAULT_AGENT, HARNESSES, AgentName, Harness
+from sections import MARKDOWN, Style
 
 
 @function_tool(flags=ToolFlag.CANCELLABLE)
@@ -48,6 +49,15 @@ async def start_task(
     board = context.userdata.board
     name = session_name(session)
     who = harness.short_name
+    if (
+        context.userdata.provider.repeats_tool_calls
+        and board.repeat_of(harness, name, task) is not None
+    ):
+        # Said already: joining it again would only send the agent the same words twice.
+        return (
+            f"Already asked: {who} is on this in session {name}. Its result comes when "
+            + "that task is done."
+        )
     if runner.is_busy(name) and runner.can_steer:
         await context.update(
             f"Sent to {who} mid-task, in session {name}: {task}. It joins the task that's "
@@ -80,25 +90,43 @@ async def start_task(
     return turn.text
 
 
-def agents_note(available: list[Harness]) -> str:
+def agents_note(
+    available: list[Harness], style: Style = MARKDOWN, agents_off: bool = False
+) -> str:
     """The prompt's Agents section for one call: which agents `start_task` can use, and the
     default."""
+    if agents_off:
+        return style.section(
+            "Agents",
+            (
+                "The user turned agents off for this project, so work can't start on "
+                "this call. You can still talk. When the user asks for work, tell them "
+                "briefly they can turn agents on in the project's settings, and the next "
+                "call picks it up. Never pretend a task started."
+            ),
+        )
     if not available:
         supported = ", ".join(h.short_name for h in HARNESSES.values())
-        return (
-            "## Agents\n\nNo coding agent is ready on this computer yet, so work can't "
-            "start on this call. You can still talk. When the user asks for work, or "
-            "early in the call, tell them kindly and briefly: you need one of the agents "
-            f"Bomby supports ({supported}) installed and signed in. Suggest Claude Code "
-            "as a good first one. They install it from its own page, through Settings, "
-            "Agents in Bomby, and the next call picks it up. Never pretend a task started."
+        return style.section(
+            "Agents",
+            (
+                "No coding agent is ready on this computer yet, so work can't "
+                "start on this call. You can still talk. When the user asks for work, or "
+                "early in the call, tell them kindly and briefly: you need one of the agents "
+                f"Bomby supports ({supported}) installed and signed in. Suggest Claude Code "
+                "as a good first one. They install it from its own page, through Settings, "
+                "Agents in Bomby, and the next call picks it up. Never pretend a task started."
+            ),
         )
-    names = [f"`{h.id}` ({h.short_name})" for h in available]
+    names = [f"{style.code(h.id)} ({h.short_name})" for h in available]
     listed = (
         names[0] if len(names) == 1 else ", ".join(names[:-1]) + f" and {names[-1]}"
     )
     default = next((h for h in available if h.id == DEFAULT_AGENT), available[0])
-    return (
-        f"## Agents\n\nThe agents you can use on this call: {listed}. Use `{default.id}` "
-        "unless the user asks for another one by name."
+    return style.section(
+        "Agents",
+        (
+            f"The agents you can use on this call: {listed}. Use {style.code(default.id)} "
+            "unless the user asks for another one by name."
+        ),
     )

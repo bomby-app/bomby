@@ -68,3 +68,9 @@ export function timeAgo(at: number, now = Date.now()): string {
 export function shortPath(path: string): string {
   return path.replace(/^\/Users\/[^/]+(?=\/|$)/, "~")
 }
+
+/** "a", "a and b", "a, b and c". */
+export function andList(names: string[]): string {
+  if (names.length <= 1) return names.join("")
+  return `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`
+}

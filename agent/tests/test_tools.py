@@ -10,9 +10,11 @@ from livekit.agents import RunContext
 from acp_client.runner import Turn
 from call import Call
 from harnesses import CLAUDE_CODE, HARNESSES, OMP, OPENCODE, AgentName, Harness
+from sections import PLAIN
 from task_board import ATTRIBUTE, TaskBoard
 from tools import agents_note
 from tools.start_task import start_task
+from voice_providers import GEMINI, RIME, VoiceProvider
 
 
 def test_start_task_offers_exactly_the_known_harnesses() -> None:
@@ -26,8 +28,25 @@ def test_the_agents_note_lists_what_is_installed_with_claude_first() -> None:
     assert "Use `claude` unless" in note
 
 
+def test_a_plain_agents_note_has_no_markdown() -> None:
+    note = agents_note([CLAUDE_CODE, OPENCODE], PLAIN)
+
+    assert note == (
+        "The agents you can use on this call: claude (Claude) and opencode (OpenCode). "
+        "Use claude unless the user asks for another one by name."
+    )
+
+
 def test_without_claude_the_first_installed_agent_is_the_default() -> None:
     assert "Use `opencode` unless" in agents_note([OPENCODE])
+
+
+def test_with_the_projects_agents_off_the_note_says_where_to_turn_them_on() -> None:
+    note = agents_note([], agents_off=True)
+
+    assert "turned agents off for this project" in note
+    assert "project's settings" in note
+    assert "install" not in note
 
 
 def test_with_no_agents_the_note_says_work_cant_start_and_how_to_get_one() -> None:
@@ -84,8 +103,12 @@ class FakeRunners:
 class FakeContext:
     """The part of `RunContext[Call]` that `start_task` uses."""
 
-    def __init__(self, runner: FakeRunner, board: TaskBoard) -> None:
-        self.userdata = SimpleNamespace(runners=FakeRunners(runner), board=board)
+    def __init__(
+        self, runner: FakeRunner, board: TaskBoard, provider: VoiceProvider = GEMINI
+    ) -> None:
+        self.userdata = SimpleNamespace(
+            runners=FakeRunners(runner), board=board, provider=provider
+        )
         self.updates: list[str] = []
 
     async def update(self, message: str) -> None:
@@ -106,6 +129,43 @@ def board() -> tuple[TaskBoard, list[str]]:
 async def call_start_task(runner: FakeRunner, board: TaskBoard) -> str:
     context = cast(RunContext[Call], cast(object, FakeContext(runner, board)))
     return await start_task(context, "fix the header", "page", "claude")
+
+
+def repeat(provider: VoiceProvider) -> tuple[str, str, int]:
+    """The same request twice, the second while the first still runs."""
+
+    async def scenario() -> tuple[str, str, int]:
+        runner = FakeRunner(Turn("Fixed."), steers=True)
+        b, _ = board()
+        context = cast(RunContext[Call], cast(object, FakeContext(runner, b, provider)))
+        first = asyncio.create_task(
+            start_task(context, "fix the header", "page", "claude")
+        )
+        await asyncio.sleep(0.01)
+        runner.busy = True
+        second = asyncio.create_task(
+            start_task(context, "fix the header", "page", "claude")
+        )
+        await asyncio.sleep(0.01)
+        runner.release.set()
+        return await first, await second, len(b.tasks)
+
+    return asyncio.run(scenario())
+
+
+def test_on_rime_the_same_request_again_at_once_is_not_sent_twice() -> None:
+    # Prism can call start_task twice for one request, a second or so apart.
+    result, again, tasks = repeat(RIME)
+    assert result == "Fixed."
+    assert again.startswith("Already asked: Claude is on this in session page.")
+    assert tasks == 1, "the repeat starts nothing"
+
+
+def test_on_gemini_a_repeat_goes_through_as_before() -> None:
+    # Gemini never gets the check: the second request joins the running task.
+    _, again, tasks = repeat(GEMINI)
+    assert not again.startswith("Already asked")
+    assert tasks == 2
 
 
 def test_a_finished_task_is_done_and_a_steered_one_added() -> None:

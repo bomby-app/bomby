@@ -22,6 +22,7 @@ use crate::error::{Error, Result};
 use crate::local_server::LocalServer;
 use crate::setup::Pick;
 use crate::sync;
+use crate::voice::{self, CallVoice};
 use crate::{agent_picks, agents, call_server, credentials, projects, settings, updates, windows};
 
 /// The agent's name in `agent/agent.py` (`AGENT_NAME`), which the token dispatches.
@@ -89,11 +90,15 @@ struct OpenedWith {
     /// Kept too, so a reconnect never lands on another server.
     server: LiveKitKeys,
     agents: Vec<(String, PathBuf)>,
+    /// The project's agents were off: the voice says so, rather than that none is installed.
+    agents_off: bool,
     picks: HashMap<String, Vec<Pick>>,
     /// The Zep user the call remembers as, or empty when memory across calls is off.
     memory_user: String,
     /// Reads memory but saves nothing.
     memory_incognito: bool,
+    /// The voice provider it talks through, with its voice and options.
+    voice: CallVoice,
 }
 
 /// A call id and what it opened with.
@@ -157,17 +162,25 @@ struct HistoryLine {
 /// The job metadata the agent reads: the project with what the user wrote about it
 /// (`Project.from_job` in `agent/project.py`), the agents found on this computer by id with
 /// their programs and the picks each session gets (`JobMetadata.picks` in `agent/job.py`,
-/// applied by `apply` in `agent/acp_client/settings.py`), the voice, what the user likes to
-/// be called and, on a resumed call, the conversation so far (`CallOptions.from_job` in
-/// `agent/call_options.py`).
+/// applied by `apply` in `agent/acp_client/settings.py`), the voice provider with its voice
+/// and options, what the user likes to be called and, on a resumed call, the conversation so
+/// far (`CallOptions.from_job` in `agent/call_options.py`). What the call opened with comes
+/// from `opened` alone, so every token for the call carries the same.
 fn dispatch_metadata(
     project: &projects::CallProject,
-    agents: &[(String, PathBuf)],
-    picks: &HashMap<String, Vec<Pick>>,
+    opened: &OpenedWith,
     settings: &settings::CallSettings,
-    memory: (&str, bool),
     history: &[HistoryLine],
 ) -> String {
+    let OpenedWith {
+        agents,
+        agents_off,
+        picks,
+        memory_user,
+        memory_incognito,
+        voice,
+        ..
+    } = opened;
     let picks: HashMap<_, _> = agents
         .iter()
         .filter_map(|(id, _)| Some((id, picks.get(id)?)))
@@ -180,16 +193,30 @@ fn dispatch_metadata(
         "project": project.name,
         "folders": project.folders,
         "instructions": project.instructions,
+        "agents_off": agents_off,
         "agents": agents,
         "picks": picks,
-        "voice": settings.voice,
+        "provider": voice.provider.id(),
+        "provider_options": voice.options,
+        "voice": voice.voice,
         "user_name": settings.user_name,
         "tone": settings.tone,
-        "memory_user": memory.0,
-        "memory_incognito": memory.1,
+        "memory_user": memory_user,
+        "memory_incognito": memory_incognito,
         "history": history,
     })
     .to_string()
+}
+
+/// The agents among `found` the project lets its calls hand work to.
+fn for_project(
+    found: Vec<(String, PathBuf)>,
+    agents: &projects::ProjectAgents,
+) -> Vec<(String, PathBuf)> {
+    found
+        .into_iter()
+        .filter(|(id, _)| agents.allows(id))
+        .collect()
 }
 
 /// The last `RESUME_LINES` lines of a call, oldest first.
@@ -283,10 +310,10 @@ pub fn open_call<R: Runtime>(
 ) -> Result<i64> {
     // Holds off an update's restart while the call opens; refused if one is under way.
     let opening = updates::CallOpening::begin(&app)?;
-    folders_are_there(&projects::for_call(&db.conn(), project_id)?)?;
-    let gemini = vault
-        .gemini_key(&app)?
-        .ok_or_else(|| Error::Invalid("Add your Gemini API key in Settings first.".into()))?;
+    let project = projects::for_call(&db.conn(), project_id)?;
+    folders_are_there(&project)?;
+    let provider = voice::for_new_call(&app, &db, &vault)?;
+    let voice_keys = vault.voice_keys(&app)?;
     // Read before the server starts, so this Mac's server starts only for a call that can open.
     let (memory_user, zep_key) = memory_for_call(&app, &db, &vault)?;
     let memory_incognito = settings::incognito(&db.conn())?;
@@ -299,7 +326,7 @@ pub fn open_call<R: Runtime>(
             worker.ensure(
                 WorkerConfig {
                     livekit: server.clone(),
-                    gemini_key: gemini,
+                    voice_keys,
                     zep_key,
                 },
                 &log_dir,
@@ -309,11 +336,14 @@ pub fn open_call<R: Runtime>(
         })();
         (lookup.join().unwrap_or_default(), started)
     });
+    // Only the agents the project lets its calls use (Project settings, Agents).
+    let found = for_project(found, &project.agents);
     let server = started?;
 
     let conn = db.conn();
     // Read before the call is recorded, so a failed read leaves no call without its agents.
     let picks = agent_picks::saved(&conn)?;
+    let call_voice = voice::for_call(&conn, provider)?;
     let call_id = match resume_call_id {
         Some(call_id) => {
             reopen(&conn, project_id, call_id)?;
@@ -332,9 +362,11 @@ pub fn open_call<R: Runtime>(
         OpenedWith {
             server,
             agents: found,
+            agents_off: !project.agents.on,
             picks,
             memory_user,
             memory_incognito,
+            voice: call_voice,
         },
     );
     opening.opened(call_id);
@@ -373,31 +405,24 @@ pub fn call_token<R: Runtime>(
     };
     let room = room_name(call_id);
     // A call opened in this run has its own list; any other gets the last one found.
-    let OpenedWith {
-        server,
-        agents,
-        picks,
-        memory_user,
-        memory_incognito,
-    } = match call_agents.get(call_id) {
+    let opened = match call_agents.get(call_id) {
         Some(opened) => opened,
         None => OpenedWith {
+            voice: voice::for_token(&app, &db, &vault)?,
             server: call_server::current(&app, &db, &vault, &local)?,
-            agents: agents::usable(&found.cached().unwrap_or_default()),
+            agents: for_project(
+                agents::usable(&found.cached().unwrap_or_default()),
+                &project.agents,
+            ),
+            agents_off: !project.agents.on,
             picks: agent_picks::saved(&db.conn())?,
             // The worker that has the Zep key was started with an opened call.
             memory_user: String::new(),
             memory_incognito: false,
         },
     };
-    let metadata = dispatch_metadata(
-        &project,
-        &agents,
-        &picks,
-        &settings,
-        (&memory_user, memory_incognito),
-        &history,
-    );
+    let metadata = dispatch_metadata(&project, &opened, &settings, &history);
+    let server = opened.server;
     Ok(CallToken {
         participant_token: token(&server, &room, metadata)?,
         server_url: server.url,
@@ -469,7 +494,18 @@ pub fn call_messages(db: State<'_, Db>, call_id: i64) -> Result<Vec<Message>> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::*;
+    use crate::voice::VoiceProvider;
+
+    fn rime() -> CallVoice {
+        CallVoice {
+            provider: VoiceProvider::Rime,
+            voice: "aurora".into(),
+            options: BTreeMap::new(),
+        }
+    }
 
     #[test]
     fn the_current_call_keeps_its_server_and_agents_until_the_next_one_opens() {
@@ -492,8 +528,10 @@ mod tests {
                     value: "opus".into(),
                 }],
             )]),
+            agents_off: false,
             memory_user: "bomby-0123456789abcdef".into(),
             memory_incognito: false,
+            voice: rime(),
         };
         agents.set(1, claude.clone());
         assert_eq!(agents.get(1), Some(claude));
@@ -503,8 +541,10 @@ mod tests {
             server,
             agents: vec![],
             picks: HashMap::new(),
+            agents_off: true,
             memory_user: String::new(),
             memory_incognito: false,
+            voice: rime(),
         };
         agents.set(2, none.clone());
         assert_eq!(agents.get(1), None);
@@ -629,14 +669,21 @@ mod tests {
             [],
         )
         .unwrap();
+        // Turned off after the call opened with them on: its tokens keep what it opened with.
+        conn.execute("UPDATE projects SET agents_on = 0 WHERE id = 1", [])
+            .unwrap();
         let project = projects::for_call(&conn, 1).unwrap();
         let history = [HistoryLine {
             role: "agent".into(),
             text: "Hi.".into(),
         }];
         let agents = [("claude".to_owned(), PathBuf::from("/usr/local/bin/claude"))];
-        let settings = settings::CallSettings {
+        let voice = CallVoice {
+            provider: VoiceProvider::Gemini,
             voice: "Kore".into(),
+            options: BTreeMap::from([("google_search", voice::OptionValue::On(false))]),
+        };
+        let settings = settings::CallSettings {
             user_name: "Sam".into(),
             tone: settings::Tone::Chatty,
         };
@@ -650,24 +697,34 @@ mod tests {
             ),
             ("goose".to_owned(), Vec::new()),
         ]);
-        let metadata: serde_json::Value = serde_json::from_str(&dispatch_metadata(
-            &project,
-            &agents,
-            &picks,
-            &settings,
-            ("bomby-0123456789abcdef", true),
-            &history,
-        ))
-        .unwrap();
+        let opened = OpenedWith {
+            server: LiveKitKeys {
+                url: "ws://127.0.0.1:41000".into(),
+                api_key: "bomby".into(),
+                api_secret: "secret".into(),
+            },
+            agents: agents.to_vec(),
+            agents_off: false,
+            picks,
+            memory_user: "bomby-0123456789abcdef".into(),
+            memory_incognito: true,
+            voice,
+        };
+        let metadata: serde_json::Value =
+            serde_json::from_str(&dispatch_metadata(&project, &opened, &settings, &history))
+                .unwrap();
         assert_eq!(
             metadata,
             serde_json::json!({
                 "project": "samba",
                 "folders": ["/tmp"],
                 "instructions": "A music app.",
+                "agents_off": false,
                 "agents": { "claude": "/usr/local/bin/claude" },
                 // Only the call's agents' picks go along.
                 "picks": { "claude": [{ "setting": "model", "value": "opus" }] },
+                "provider": "gemini",
+                "provider_options": { "google_search": false },
                 "voice": "Kore",
                 "user_name": "Sam",
                 "tone": "chatty",
@@ -697,12 +754,40 @@ mod tests {
     }
 
     #[test]
+    fn a_call_gets_only_the_agents_its_project_allows() {
+        let found = || {
+            vec![
+                ("claude".to_owned(), PathBuf::from("/bin/claude")),
+                ("goose".to_owned(), PathBuf::from("/bin/goose")),
+            ]
+        };
+        let ids = |agents: projects::ProjectAgents| -> Vec<String> {
+            for_project(found(), &agents)
+                .into_iter()
+                .map(|(id, _)| id)
+                .collect()
+        };
+        assert_eq!(ids(projects::ProjectAgents::default()), ["claude", "goose"]);
+        let only_claude = projects::ProjectAgents {
+            on: true,
+            only: vec!["claude".into(), "codex".into()],
+        };
+        assert_eq!(ids(only_claude.clone()), ["claude"]);
+        let off = projects::ProjectAgents {
+            on: false,
+            ..only_claude
+        };
+        assert!(ids(off).is_empty());
+    }
+
+    #[test]
     fn a_call_needs_every_folder_to_be_there() {
         let here = env!("CARGO_MANIFEST_DIR").to_owned();
         let project = |folders: Vec<String>| projects::CallProject {
             name: "samba".into(),
             folders,
             instructions: String::new(),
+            agents: projects::ProjectAgents::default(),
         };
         assert!(folders_are_there(&project(vec![here.clone()])).is_ok());
         let gone = folders_are_there(&project(vec![here, "/Users/me/Dev/gone".into()]));

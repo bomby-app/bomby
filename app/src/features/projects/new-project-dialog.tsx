@@ -25,7 +25,7 @@ import { InstructionsField, submittedInstructions } from "./instructions-field"
 import { folderName, uniqueName } from "./names"
 import { useProjects } from "./projects-provider"
 
-/** New project: a name, the folders the agents can work in, and optional instructions. */
+/** New project: a name, and optionally the folders the agents work in and instructions. */
 export function NewProjectDialog({
   open,
   onOpenChange,
@@ -37,7 +37,11 @@ export function NewProjectDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent
+        // Taller than a short window with several folders and instructions: it scrolls,
+        // like the splash's keys dialog.
+        className="max-h-[85vh] [scrollbar-width:none] overflow-y-auto sm:max-w-lg [&::-webkit-scrollbar]:hidden"
+      >
         {/* Mounted only while open, so every opening starts empty. */}
         {open && (
           <NewProjectForm
@@ -104,7 +108,7 @@ function NewProjectForm({
       <DialogHeader>
         <DialogTitle>New project</DialogTitle>
         <DialogDescription>
-          A name and the folders your agents can work in.
+          A name, and any folders your agents should work in.
         </DialogDescription>
       </DialogHeader>
 
@@ -121,7 +125,7 @@ function NewProjectForm({
         </Field>
         <FieldSet>
           <FieldLegend variant="label">Folders</FieldLegend>
-          <FolderList folders={folders} onChange={changeFolders} minimum={0} />
+          <FolderList folders={folders} onChange={changeFolders} />
         </FieldSet>
         <InstructionsField
           key={failed?.attempt}
@@ -132,10 +136,7 @@ function NewProjectForm({
       </FieldGroup>
 
       <DialogFooter>
-        <Button
-          type="submit"
-          disabled={creating || !name.trim() || folders.length === 0}
-        >
+        <Button type="submit" disabled={creating || !name.trim()}>
           {creating ? "Creating..." : "Create project"}
         </Button>
       </DialogFooter>

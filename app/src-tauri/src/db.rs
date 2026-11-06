@@ -74,6 +74,16 @@ const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (agent, position)
     );
     ",
+    // 6: which agents a project's calls can hand work to. Off: none. On, with no rows:
+    // every agent that's set up; with rows: only those.
+    "
+    ALTER TABLE projects ADD COLUMN agents_on INTEGER NOT NULL DEFAULT 1;
+    CREATE TABLE project_agents (
+        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        agent      TEXT    NOT NULL,
+        PRIMARY KEY (project_id, agent)
+    );
+    ",
 ];
 
 /// The open database, shared by every command through Tauri state.

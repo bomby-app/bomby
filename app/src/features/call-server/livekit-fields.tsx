@@ -146,7 +146,7 @@ export function LiveKitFields({
             </Tooltip>
             <Button
               type="button"
-              variant="claude"
+              variant="outline"
               size="sm"
               onClick={() => void pasteAll()}
             >

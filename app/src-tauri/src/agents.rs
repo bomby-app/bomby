@@ -527,6 +527,11 @@ fn keep_what_the_look_missed(
     found
 }
 
+/// Whether Bomby knows an agent by this id.
+pub(crate) fn is_known(id: &str) -> bool {
+    KNOWN.iter().any(|known| known.id == id)
+}
+
 /// The installed ones among `agents` a call can use: all but those the probe found not set
 /// up. One not probed yet stays, so a probe that can't run never hides an agent.
 pub fn usable(agents: &[AgentStatus]) -> Vec<(String, PathBuf)> {

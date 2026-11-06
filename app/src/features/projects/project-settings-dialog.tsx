@@ -32,9 +32,10 @@ import {
   FieldSet,
 } from "@/components/ui/field"
 
-import type { Project, ProjectInput } from "./api"
+import type { Project, ProjectAgents, ProjectInput } from "./api"
 import { FolderList } from "./folder-list"
 import { InstructionsField, submittedInstructions } from "./instructions-field"
+import { ProjectAgentsField } from "./project-agents-field"
 import { useProjects } from "./projects-provider"
 
 /**
@@ -54,7 +55,11 @@ export function ProjectSettingsDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent
+        // Taller than a short window with folders, agents and instructions: it scrolls,
+        // like the splash's keys dialog.
+        className="max-h-[85vh] [scrollbar-width:none] overflow-y-auto sm:max-w-lg [&::-webkit-scrollbar]:hidden"
+      >
         {/* Its content mounts with each opening, so it starts from what's saved. */}
         <ProjectSettings
           project={project}
@@ -83,7 +88,7 @@ function ProjectSettings({
   onClose: () => void
   onDeleted: () => void
 }) {
-  const { update, remove } = useProjects()
+  const { update, setAgents, remove } = useProjects()
   const [error, setError] = useState<string | null>(null)
 
   // Each save sends the whole draft and saves run one after another, so a rename followed
@@ -143,8 +148,7 @@ function ProjectSettings({
       <DialogHeader>
         <DialogTitle>Project settings</DialogTitle>
         <DialogDescription>
-          The name and folders are saved as you change them; the instructions
-          when you save.
+          Changes save as you make them. Instructions save with Save.
         </DialogDescription>
       </DialogHeader>
 
@@ -162,6 +166,13 @@ function ProjectSettings({
             onChange={(folders) => void save({ folders })}
           />
         </FieldSet>
+
+        <AgentsField
+          key={project.id}
+          saved={project.agents}
+          save={(agents) => setAgents(project.id, agents)}
+          onError={setError}
+        />
 
         <form id={INSTRUCTIONS_FORM} action={saveInstructions}>
           <InstructionsField
@@ -198,11 +209,51 @@ function ProjectSettings({
             ? "Saving..."
             : result.status === "saved" && !edited
               ? "Saved"
-              : "Save"}
+              : "Save instructions"}
         </Button>
       </DialogFooter>
     </>
   )
+}
+
+/**
+ * The project's agents, saved as they change, one after another in click order. A failed
+ * save puts back the last one the core took, unless a newer change is on its way.
+ */
+function AgentsField({
+  saved,
+  save,
+  onError,
+}: {
+  saved: ProjectAgents
+  save: (agents: ProjectAgents) => Promise<unknown>
+  onError: (error: string | null) => void
+}) {
+  const [agents, setAgents] = useState(saved)
+  const queue = useRef<Promise<unknown>>(Promise.resolve())
+  // The last agents the core took, and the newest change, so a failure rolls back to the
+  // first and never over the second.
+  const confirmed = useRef(saved)
+  const latest = useRef(0)
+
+  function change(next: ProjectAgents) {
+    onError(null)
+    setAgents(next)
+    const id = ++latest.current
+    queue.current = queue.current.then(() =>
+      save(next).then(
+        () => {
+          confirmed.current = next
+        },
+        (e: unknown) => {
+          if (id === latest.current) setAgents(confirmed.current)
+          onError(String(e))
+        }
+      )
+    )
+  }
+
+  return <ProjectAgentsField agents={agents} onChange={change} />
 }
 
 /** The project's name; saves on Enter or when the field loses focus, Esc puts it back. */

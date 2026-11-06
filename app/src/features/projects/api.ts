@@ -1,12 +1,17 @@
 import { invoke } from "@tauri-apps/api/core"
 import { open } from "@tauri-apps/plugin-dialog"
 
-import type { Project, ProjectInput } from "@/generated/projects"
+import type { Project, ProjectAgents, ProjectInput } from "@/generated/projects"
 
 // The core's project commands (src-tauri/src/projects.rs), backed by the app's SQLite db.
 // The types are generated from the core's structs (`just app types`).
 
-export type { CallSummary, Project, ProjectInput } from "@/generated/projects"
+export type {
+  CallSummary,
+  Project,
+  ProjectAgents,
+  ProjectInput,
+} from "@/generated/projects"
 
 /** The longest instructions the core keeps (`MAX_INSTRUCTIONS_LEN` in projects.rs). */
 export const MAX_INSTRUCTIONS_LENGTH = 5000
@@ -24,6 +29,14 @@ export function updateProject(
   input: ProjectInput
 ): Promise<Project> {
   return invoke("update_project", { id, input })
+}
+
+/** Which agents the project's calls can hand work to; applies from the next call. */
+export function setProjectAgents(
+  id: number,
+  agents: ProjectAgents
+): Promise<Project> {
+  return invoke("set_project_agents", { id, agents })
 }
 
 export function deleteProject(id: number): Promise<void> {

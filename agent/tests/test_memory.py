@@ -4,6 +4,7 @@ from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, final
+from uuid import UUID
 
 import pytest
 from livekit import rtc
@@ -14,7 +15,7 @@ from livekit.agents import (
     llm,
 )
 from livekit.agents.voice.events import CloseReason
-from zep_cloud import ApiError, NotFoundError
+from zep_cloud import ApiError, BadRequestError, NotFoundError
 
 import memory as memory_module
 from call_options import CallOptions
@@ -23,6 +24,7 @@ from job import read_metadata
 from memory import Memory, MemoryUnavailable
 from project import Project
 from voice_prompt import PROMPTS, voice_instructions
+from voice_providers import RIME
 
 AGENTS = [HARNESSES["claude"]]
 ZONE = "Region/Some_City"
@@ -60,6 +62,10 @@ class FakeZep:
 
     async def _request(self, name: str, **fields: Any) -> None:
         self.requests.append((name, fields))
+        # Zep refuses a key that isn't a UUIDv4 in its usual form (400, 2026-11-06).
+        key = fields.get("idempotency_key")
+        if key is not None and str(UUID(key, version=4)) != key:
+            raise BadRequestError(body=ApiError())
         if self._slow:
             await asyncio.sleep(60)
 
@@ -265,6 +271,14 @@ def test_a_summary_counts_once_there_are_facts(monkeypatch: pytest.MonkeyPatch) 
     assert "- Sam ships on Fridays (2026-11-01 to now)" in remembered
 
 
+def test_rime_remembers_in_plain_lines(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Prism speaks in the style of its prompt, so its facts have no bullets.
+    zep = FakeZep(summary="Sam builds a music app.", facts=("Sam ships on Fridays",))
+    _, remembered = opened(zep, monkeypatch, provider=RIME)
+    assert "\nSam ships on Fridays (2026-11-01 to now)" in remembered
+    assert "- " not in remembered
+
+
 def test_what_is_remembered_follows_the_user_section() -> None:
     project = Project(name="samba", folders=(Path.home(),))
     options = CallOptions(voice="Leda", user_name="Sam")
@@ -274,26 +288,25 @@ def test_what_is_remembered_follows_the_user_section() -> None:
     )
 
     assert "## What you remember" not in plain
-    assert remembered.startswith(PROMPTS["sharp"])
+    assert remembered.startswith(PROMPTS["gemini", "sharp"])
     assert remembered.index("## The user") < remembered.index("## What you remember")
     assert "Sam ships on Fridays" in remembered
 
 
 def test_only_a_call_with_memory_can_recall() -> None:
-    from acp_client import CallRunners
     from agent import Assistant
-    from job import JobMetadata
 
-    runners = CallRunners.for_job(JobMetadata(folders=(Path.home(),)))
     options = CallOptions(voice="Leda")
 
     def names(assistant: Assistant) -> list[str]:
         return [getattr(tool, "id", "") for tool in assistant.tools]
 
-    assert "recall_about_user" not in names(Assistant(options, runners))
-    assert "recall_about_user" in names(Assistant(options, runners, remembers=True))
-    # Every call can search the web with Gemini's own Google Search.
-    assert "gemini_google_search" in names(Assistant(options, runners))
+    assert "recall_about_user" not in names(Assistant(options, ""))
+    assert "recall_about_user" in names(Assistant(options, "", remembers=True))
+    # Gemini calls search the web with Google's own search unless the user turned it off.
+    assert "gemini_google_search" in names(Assistant(options, ""))
+    off = CallOptions(voice="Leda", provider_options={"google_search": False})
+    assert "gemini_google_search" not in names(Assistant(off, ""))
 
 
 def test_recall_that_cant_reach_zep_says_so_and_tells_the_app(

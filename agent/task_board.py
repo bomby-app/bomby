@@ -19,6 +19,8 @@ logger = logging.getLogger("bomby.task_board")
 ATTRIBUTE = "bomby.tasks"
 KEEP = 20
 TASK_CHARS = 160
+# How soon the same request again counts as a repeat (`repeat_of`).
+REPEAT_MS = 10_000
 
 Status = Literal["queued", "working", "added", "done", "failed", "stopped"]
 """`queued`: waiting for its session's running task to end before the agent starts on it.
@@ -41,6 +43,10 @@ def _now_ms() -> int:
     return int(time.time() * 1000)
 
 
+def _short(task: str) -> str:
+    return task if len(task) <= TASK_CHARS else task[: TASK_CHARS - 1] + "…"
+
+
 @final
 class TaskBoard:
     """Keeps the call's latest tasks and publishes them whenever one starts or ends."""
@@ -48,6 +54,8 @@ class TaskBoard:
     def __init__(self, publish: Callable[[dict[str, str]], Awaitable[None]]) -> None:
         self._publish = publish
         self._tasks: list[Task] = []
+        # Each kept task's full request, by id: the published text is shortened.
+        self._requests: dict[str, str] = {}
         self._ids = count(1)
 
     @property
@@ -59,18 +67,40 @@ class TaskBoard:
     ) -> str:
         """Records a new task, `working` or `queued`, without publishing it yet (see
         `publish`)."""
-        short = task if len(task) <= TASK_CHARS else task[: TASK_CHARS - 1] + "…"
         entry = Task(
             id=str(next(self._ids)),
             agent=harness.id,
             agentName=harness.short_name,
             session=session,
-            task=short,
+            task=_short(task),
             status=status,
             startedAt=_now_ms(),
         )
         self._tasks = [*self._tasks, entry][-KEEP:]
+        kept = {t.id for t in self._tasks}
+        self._requests = {i: r for i, r in self._requests.items() if i in kept}
+        self._requests[entry.id] = task
         return entry.id
+
+    def repeat_of(self, harness: Harness, session: str, task: str) -> Task | None:
+        """The same request, word for word, to the same agent and session, not yet started
+        or still running, and asked for under `REPEAT_MS` ago, if any. Prism doesn't deduplicate its tool calls, and can
+        call one again before the first has run (docs/rime-notes.md#the-plugin)."""
+        since = _now_ms() - REPEAT_MS
+        return next(
+            (
+                entry
+                for entry in reversed(self._tasks)
+                if entry.agent == harness.id
+                and entry.session == session
+                and self._requests.get(entry.id) == task
+                # `added` is set once the task it joined has ended: that's finished.
+                and entry.status in ("queued", "working")
+                and entry.endedAt is None
+                and entry.startedAt >= since
+            ),
+            None,
+        )
 
     async def start(self, id: str) -> None:
         """A queued task is now being worked on."""

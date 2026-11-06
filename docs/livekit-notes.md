@@ -2,6 +2,16 @@
 
 Checked 2026-11-03/04 against `livekit-agents` 1.8.10, LiveKit CLI 2.18.8 and docs.livekit.io. Installed Python source is under `agent/.venv/lib/python3.13/site-packages/livekit/agents/`.
 
+## 1.8.11
+
+Bumped 2026-11-06 from 1.8.10, with `livekit-plugins-google` 1.8.11 and the `livekit` SDK 1.2.0 ([release notes](https://github.com/livekit/agents/releases/tag/livekit-agents%401.8.11)). What matters to Bomby:
+
+- **Rime**: Prism speech-to-speech through the standard realtime interface (`livekit-plugins-rime[realtime]` 1.8.11, which requires `livekit-agents>=1.8.11`).
+- **GPT-Live**: OpenAI's full-duplex model, a `llm.DuplexModel` that `AgentSession` runs through `DuplexRealtimeAdapter`; the engine is in `livekit-agents` itself (`llm/_realtime/gpt_live.py`), and `livekit-plugins-openai` 1.8.11 adds OpenAI's provider tools ([notes](openai-notes.md)).
+- **Realtime history and reconnection**: the Google plugin starts a fresh session after a config change instead of resuming the old one, and on 3.x models replays tool calls and results into the new session's history (`plugins/google/realtime/realtime_api.py`, diffed against 1.8.10). Nothing Bomby sets changed.
+- **Uninterruptible speech** now keeps the user's transcript without interrupting or replying. Bomby never makes speech uninterruptible.
+- Worker resources close when startup fails before `run()` completes.
+
 ## Async tools
 
 - A `@function_tool` becomes non-blocking on its first `await ctx.update(msg)`. Its final return arrives when the agent is idle through synthetic call id `{call_id}_final` (`voice/tool_executor.py`).
@@ -60,7 +70,7 @@ Checked 2026-11-05 against `livekit/livekit` v1.13.10 and v1.13.11 (source and r
 
 ## The conversation, for memory
 
-Checked 2026-11-06 against `livekit-agents` 1.8.10 (`voice/agent_activity.py`, `voice/agent_session.py`, `ipc/job_proc_lazy_main.py`) and `livekit-plugins-google` 1.8.10 (`realtime/realtime_api.py`). What `agent/memory.py` builds on:
+Checked 2026-11-06 against `livekit-agents` 1.8.10 (`voice/agent_activity.py`, `voice/agent_session.py`, `ipc/job_proc_lazy_main.py`) and `livekit-plugins-google` 1.8.10 (`realtime/realtime_api.py`); Rime's plugin 1.8.11 sends the same ([notes](rime-notes.md#the-plugin)). A new voice provider's plugin must too: running and final `input_audio_transcription_completed` events with the line's `item_id` and `turn_started_at`. What `agent/memory.py` builds on:
 
 - **Every line is a `conversation_item_added`**: the user's spoken ones (`_on_input_audio_transcription_completed`), typed ones (`_realtime_reply_task`, with `user_input`) and Bomby's (`_create_assistant_message`, `interrupted` set when cut off). `on_user_turn_completed` never fires with Gemini's server-side turn detection.
 - **Gemini finalises the user's line late**: the final transcript comes when the reply's generation is done (`_mark_current_generation_done`), so it can arrive after the reply it prompted. LiveKit stamps the user's item with when the turn started (`created_at = turn_started_at`) and Bomby's with when it started speaking, so ordering by `created_at` puts them right.

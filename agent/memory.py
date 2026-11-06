@@ -1,6 +1,6 @@
 """Memory across calls, in the user's own Zep project (docs/decisions/memory-across-calls-with-zep.md).
 
-What Bomby knows is read once, before Gemini connects, into the voice prompt; mid-call it
+What Bomby knows is read once, before the voice model connects, into the voice prompt; mid-call it
 comes through `recall_about_user`; and the conversation is saved to a Zep thread as it
 goes. A call without a `memory_user`, or a worker without `ZEP_API_KEY`, has none of it.
 Zep failing never fails the call: a call that can't reach it at the start has no memory,
@@ -39,6 +39,7 @@ from zep_cloud import (
 )
 
 from call_options import CallOptions
+from sections import MARKDOWN, Style
 
 logger = logging.getLogger("bomby.memory")
 
@@ -113,8 +114,14 @@ def notify(tell: Callable[[], Awaitable[None]]) -> None:
     task.add_done_callback(_notices.discard)
 
 
-def _fact(edge: Edge) -> str:
-    return f"- {edge.fact} ({edge.valid_at or 'date unknown'} to {edge.invalid_at or 'now'})"
+def _idempotency_key() -> str:
+    """Zep takes only a UUIDv4 in its usual form, with dashes; `.hex` gets a 400."""
+    return str(uuid4())
+
+
+def _fact(edge: Edge, style: Style) -> str:
+    when = f"{edge.valid_at or 'date unknown'} to {edge.invalid_at or 'now'}"
+    return style.item(f"{edge.fact} ({when})")
 
 
 def _rfc3339(at: float) -> str:
@@ -135,6 +142,7 @@ class Memory:
         user_uuid: str,
         user_name: str = "",
         saves: bool = True,
+        style: Style = MARKDOWN,
     ) -> None:
         self._client: AsyncZep = client
         self._user_uuid: str = user_uuid
@@ -142,6 +150,8 @@ class Memory:
         self._user_name: str = user_name
         # False on an incognito call: nothing is ever written.
         self._saves: bool = saves
+        # How the voice model reads facts, in its prompt and recall's results.
+        self._style: Style = style
         self._on_unavailable: Callable[[], Awaitable[None]] | None = None
         self._flagged: bool = False
         self._profile_update: asyncio.Task[None] | None = None
@@ -149,7 +159,7 @@ class Memory:
         # Made on the first save, so a call where the user says nothing leaves no thread.
         self._thread_uuid: str | None = None
         # One key for every attempt, so a retry never makes a second thread.
-        self._thread_key: str = uuid4().hex
+        self._thread_key: str = _idempotency_key()
         self._received_ids: set[str] = set()
         self._pending: list[Line] = []
         # What the user is saying that Gemini hasn't finalised yet.
@@ -182,7 +192,13 @@ class Memory:
                     return None, ""
                 if not user.uuid_:
                     raise RuntimeError("zep gave the user no uuid")
-                memory = cls(client, user.uuid_, options.user_name, saves)
+                memory = cls(
+                    client,
+                    user.uuid_,
+                    options.user_name,
+                    saves,
+                    options.provider.prompt_style,
+                )
                 remembered = await memory.remembered()
         except Exception as e:
             logger.warning("zep unavailable, this call has no memory: %r", e)
@@ -211,7 +227,7 @@ class Memory:
             return ""
         parts = [summary] if summary else []
         if facts:
-            parts.append("\n".join(_fact(edge) for edge in facts))
+            parts.append("\n".join(_fact(edge, self._style) for edge in facts))
         logger.info("remembered %d facts, summary %d chars", len(facts), len(summary))
         return "\n\n".join(parts)
 
@@ -226,7 +242,7 @@ class Memory:
             return "You can't remember that right now."
         if not facts:
             return "Nothing remembered about that. Ask the user."
-        return "\n".join(_fact(edge) for edge in facts)
+        return "\n".join(_fact(edge, self._style) for edge in facts)
 
     async def _summary(self) -> str:
         try:
@@ -334,7 +350,7 @@ class Memory:
         """One batch, in Zep-sized chunks. A failed chunk is tried once more with the same
         idempotency key, so one Zep took but didn't confirm isn't saved twice."""
         chunks = [
-            (uuid4().hex, lines[i : i + MAX_MESSAGES])
+            (_idempotency_key(), lines[i : i + MAX_MESSAGES])
             for i in range(0, len(lines), MAX_MESSAGES)
         ]
         for attempt in range(2):

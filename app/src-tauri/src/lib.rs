@@ -22,6 +22,7 @@ mod setup;
 mod sync;
 mod tray;
 mod updates;
+mod voice;
 mod windows;
 
 use tauri::Manager;
@@ -92,9 +93,8 @@ pub fn run() {
             credentials::credentials_info,
             credentials::save_credentials,
             credentials::clear_credentials,
-            credentials::has_gemini_key,
-            credentials::save_gemini_key,
-            credentials::clear_gemini_key,
+            credentials::save_voice_key,
+            credentials::clear_voice_key,
             credentials::has_zep_key,
             credentials::save_zep_key,
             credentials::clear_zep_key,
@@ -115,8 +115,10 @@ pub fn run() {
             calls::save_message,
             calls::call_messages,
             calls::delete_call,
-            settings::voice_settings,
-            settings::set_voice,
+            voice::voice_settings,
+            voice::set_voice_provider,
+            voice::set_voice,
+            voice::set_voice_option,
             settings::user_name,
             settings::set_user_name,
             settings::tone,
@@ -126,6 +128,7 @@ pub fn run() {
             projects::list_projects,
             projects::create_project,
             projects::update_project,
+            projects::set_project_agents,
             projects::delete_project,
         ])
         .build(tauri::generate_context!())

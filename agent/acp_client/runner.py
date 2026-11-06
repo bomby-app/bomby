@@ -39,9 +39,9 @@ logger = logging.getLogger("bomby.acp_client.runner")
 AGENT_ROOT = Path(__file__).resolve().parent.parent
 # What every harness is told about working behind a voice assistant.
 BRIEFING = (AGENT_ROOT / "prompts" / "harness-briefing.md").read_text().rstrip()
-# Never passed to any harness: the desktop app starts this agent with the user's LiveKit
-# and Gemini keys in its environment (not in .env), and GEMINI_API_KEY may come from the
-# user's own shell. Each harness blocks its own on top.
+# Never passed to any harness: the desktop app starts this agent with the user's LiveKit,
+# voice provider and Zep keys in its environment (not in .env), and GEMINI_API_KEY may
+# come from the user's own shell. Each harness blocks its own on top.
 APP_KEYS = frozenset(
     {
         "LIVEKIT_URL",
@@ -49,6 +49,8 @@ APP_KEYS = frozenset(
         "LIVEKIT_API_SECRET",
         "GOOGLE_API_KEY",
         "GEMINI_API_KEY",
+        "OPENAI_API_KEY",
+        "RIME_API_KEY",
         "ZEP_API_KEY",
     }
 )

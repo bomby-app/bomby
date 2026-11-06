@@ -1,0 +1,44 @@
+# OpenAI GPT-Live notes
+
+Checked 2026-11-07 against `livekit-plugins-openai` 1.8.11 and `livekit-agents` 1.8.11 (the engine is LiveKit's own: `agent/.venv/lib/python3.13/site-packages/livekit/agents/llm/_realtime/gpt_live.py`, `llm/duplex_adapter.py`, `voice/tool_executor.py`, `voice/events.py`; the plugin adds only OpenAI's provider tools), `openai` 3.42.1, [LiveKit's GPT-Live page](https://docs.livekit.io/agents/models/realtime/gpt-live.md) and OpenAI's guides: [GPT-Live](https://developers.openai.com/api/docs/guides/live), [prompting](https://developers.openai.com/api/docs/guides/live-prompting), [delegation and tools](https://developers.openai.com/api/docs/guides/live-delegation), [sessions](https://developers.openai.com/api/docs/guides/live-conversations) and the [`gpt-live-1` model page](https://developers.openai.com/api/docs/models/gpt-live-1).
+
+## The model
+
+- `gpt-live-1`, full duplex: it listens while it speaks, decides when turns start and stop, and decides when to stop when the user talks over it. Audio and text in, audio and text out; no images or video. Billed per second, $0.05 a minute, plus the response model's tokens and tools. The Free tier can't use it; paid tiers get 50 or more concurrent sessions.
+- **Two models.** GPT-Live talks; with `delegation="responses"` (the plugin's default, Bomby's) a Responses model, the backend, reasons and calls the tools. GPT-Live never sees the tools. Each has its own instructions: the agent's `instructions` are GPT-Live's (up to 16,384 tokens), `responses_options["instructions"]` the backend's. Neither can change once the session starts: `_update_instructions` raises `RealtimeError`.
+- **The plugin**: `livekit.plugins.openai.realtime.GPTLiveModel`, a `llm.DuplexModel` that `AgentSession` wraps in `DuplexRealtimeAdapter`. It reads `OPENAI_API_KEY` and raises `ValueError` without one, so a call with no key fails at start. `voice` and `delegation` are fixed for the session. Capabilities: user transcription, automatic replies after tool results, an append-only context, immutable instructions, mutable tools.
+- **Context is append-only.** A `chat_ctx` given before the start is the startup history (128 messages, 8,192 tokens, oldest dropped first); after it, the adapter only appends, and logs a warning for an edit. Each append (instructions, thinking or commentary) is capped at 500 tokens, and the engine doesn't trim (`_append`). Past 90% of its 128,000-token window, GPT-Live compacts its history on its own. Bomby puts a resumed call's last lines in the instructions, not the history.
+- **Greeting**: `generate_reply(instructions=...)` becomes a commentary append ("Immediately follow the instruction below", `_generate_reply`). The model may decline; after 10 s the reply counts as refused and its handle ends with `RealtimeError`.
+- **No VAD.** Barge-in is the model's: LiveKit can cut its playback early only with a VAD (the session drops its default one for this model), and the model's context keeps the whole turn either way. Bomby runs without one (owner, 2026-11-07: Silero is a heavy dependency); add it if calls show GPT-Live talking over the user.
+- **Session length**: none found in the docs (a `session.closed` reason `expired` exists). `max_session_duration` recycles the connection and replays the conversation. Untested past a long call.
+
+## Tools and `start_task`
+
+- The backend's tools come from the agent's: function tools as JSON schemas, OpenAI's provider tools as theirs (`_build_delegation_tools`). Web search is `livekit.plugins.openai.tools.WebSearch()` (`{"type": "web_search", "search_context_size": "medium"}`), run on OpenAI's side.
+- The backend holds every open call until it has a result, and continues only when all of them have one (`_maybe_continue_response`). `start_task`'s first `ctx.update` answers its call (`voice/events.py`), so the backend continues at once and GPT-Live says it started, in its own words.
+- **The late result** is a new call and output (`{call_id}_final`) the backend never asked for, so the engine gives it to GPT-Live as silent context (`append_thinking`, "Tool start_task returned ...", with the call's arguments), then LiveKit's tool reply asks it to speak (`_deliver_reply`, a commentary append). Read from the source; not yet tried on a call. Over 500 tokens (the task text and the report together), the append may be refused: the briefing keeps reports under about 100 words.
+- During a tool reply LiveKit sets `tool_choice="none"` on the backend and puts the session's back after it (`_restore_rt_tool_choice` in `voice/agent_activity.py`).
+- Repeated calls: OpenAI's guide says to check whether the same work is already running before starting it again. Bomby leaves the repeat guard off for GPT-Live until calls show it (`repeats_tool_calls`, owner, 2026-11-07).
+
+## Response models and effort
+
+- The user picks the response model and its reasoning effort (`response_model`, `reasoning_effort` in `agent/voice_providers/openai.py`, sent as `responses_options["model"]` and `["reasoning"]["effort"]`). GPT-6 and 6.1 only (owner): `gpt-6-astra`, `gpt-6.1-sol`, `gpt-6.1-terra` and `gpt-6-luna`, the default and OpenAI's suggested start ([delegation](https://developers.openai.com/api/docs/guides/live-delegation)).
+- Efforts, from each model's page under `developers.openai.com/api/docs/models` (2026-11-07): `gpt-6-luna` and `gpt-6.1-terra` take `none`, `low`, `medium` (default), `high`, `xhigh` and `max`; `gpt-6-astra` and `gpt-6.1-sol` the same without `none`. Bomby leaves out `max` (owner) and defaults to `medium`.
+- Live checks the backend's settings after the session starts and sends `responses_validation_failed` for one it refuses; the session stays open.
+
+## Voices
+
+GPT-Live's natural voices, by API name ([sessions](https://developers.openai.com/api/docs/guides/live-conversations#voice-options) and the OpenAI playground): `gleam` (Bomby's default, owner), `ripple`, `vesper`, `willow`, `stone`, `meridian`, `bossa`, `tempo`, `cedar`, `marin` (OpenAI's default), `nuri`, `juni`, `flitz`, `brise`, `sillage`, `nira`, `harema`, `shida`, `noeul`. The generated ones (`quartz`, `beacon`, `delta`, `cinder`) are left out. The plugin's `GPTLiveVoices` lists only six, but it takes any name.
+
+## Memory and keys
+
+- **Transcripts**: the engine sends running and final `input_audio_transcription_completed` events with the line's `item_id` and `turn_started_at` (`_handle_transcript_delta`, `_end_speech`), as Gemini's and Prism's plugins do, so `agent/memory.py` saves GPT-Live calls unchanged.
+- `OPENAI_API_KEY` is in `APP_KEYS` (`agent/acp_client/runner.py`), so the user's voice key never reaches Codex or OpenCode, which can read it too; they keep their own logins.
+- Keys: `https://platform.openai.com/api-keys`.
+- `livekit-plugins-openai` brings `livekit-agents[images]`, so Pillow too, which only LiveKit's image code imports (`agents/utils/images/image.py`); the frozen agent leaves it out and grew from 192 to 202 MB (2026-11-07).
+
+## Prompting
+
+- OpenAI's [prompting guide](https://developers.openai.com/api/docs/guides/live-prompting): the persona and when to delegate go in GPT-Live's instructions, the procedure and the tools in the backend's. Keep the template's `Backchannel policy`, `Interruption policy` and `Delegation policy` labels; inside the last, `Backend tools`, `Generate <|SpawnThinking|> when` and `Do not generate <|SpawnThinking|> when`. Use `Generate <|SpawnThinking|>`, not "delegate to the backend". A spoken "I'm checking" doesn't start any work. Describe the behaviour and let the model choose the words.
+- Bomby's (`agent/prompts/openai/`): each tone's persona in its own style, like Gemini's and Prism's, its backchannels to match (few for sharp, warm and frequent for chatty, lively for playful), then the interruption and delegation policies and the rules, the same in all three (a test checks it). The sections a call adds are plain sentences (`sections.PLAIN`), and the memory note asks the backend instead of naming `recall_about_user`, which GPT-Live can't call (`recall_hint`, overridden in `agent/voice_providers/openai.py`; every other provider keeps the tool's name).
+- The backend's (`backend.md`, then the date, the agents and the project, in Markdown): how to use `start_task` and the other tools, and to return one or two plain sentences for GPT-Live to say. It doesn't get the user's name or what memory knows, since it writes the coding agents' tasks ([decision](decisions/the-users-name-only-for-the-voice.md)).

@@ -33,7 +33,7 @@ livekit-server:
 [arg("splash", long, value="1", help="Show the first-run splash at every launch")]
 [arg("agents", long, help="Find only these agents (codex,goose), or none")]
 [arg("signed_out", long="signed-out", value="1", help="Run Claude Code signed out")]
-[arg("no_keys", long="no-keys", value="1", help="Start with no LiveKit or Gemini keys, kept in memory for the run")]
+[arg("no_keys", long="no-keys", value="1", help="Start with no LiveKit or voice keys, kept in memory for the run")]
 dev splash="" agents="" signed_out="" no_keys="": livekit-server
     BOMBY_DEV_SPLASH={{ quote(splash) }} BOMBY_DEV_AGENTS={{ quote(agents) }} BOMBY_DEV_NO_KEYS={{ quote(no_keys) }} {{ if signed_out != "" { 'CLAUDE_CONFIG_DIR="$(mktemp -d)"' } else { "" } }} bun --bun run tauri dev
 

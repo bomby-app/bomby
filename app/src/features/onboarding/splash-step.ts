@@ -1,6 +1,6 @@
 import type { AgentStatus } from "@/features/agents/api"
 import { isReady } from "@/features/agents/use-agents"
-import type { Keys } from "@/features/credentials/use-saved-keys"
+import type { Keys } from "@/features/call-server/use-saved-keys"
 
 /** Offered first when installed, ready or not (owner, 2026-11-05). */
 const PREFERRED = ["claude", "codex"]
@@ -37,7 +37,7 @@ export function splashStep(
 ): SplashStep {
   const agent = firstAgent(agents, chosen)
   const agentReady = agent !== null && isReady(agent)
-  const keysReady = keys !== null && keys.livekit && keys.gemini
+  const keysReady = keys !== null && keys.livekit && keys.voiceKey
   const step = onKeys && keys !== null ? "keys" : "agent"
   return {
     agent,

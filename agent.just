@@ -1,4 +1,4 @@
-# The voice agent (agent/): LiveKit Agents, Gemini 3.8 Live, Claude Code over ACP.
+# The voice agent (agent/): LiveKit Agents, Gemini 3.8 Live, OpenAI GPT-Live or Rime Prism, coding agents over ACP.
 #
 # Typical use:
 #     just agent install        resolve the Python dependencies (uv)
@@ -103,6 +103,20 @@ dev:
 test *args:
     uv run pytest {{ args }}
 
+# What Settings and the splash need before a call (voice_providers/catalogue.py); the core
+# embeds it, so it's committed and builds never run Python for it.
+
+# Write the voice providers' catalogue the app embeds (app/src-tauri/voice-providers.json) from their definitions
+[working-directory: 'agent']
+providers:
+    uv run python -m voice_providers.catalogue write ../app/src-tauri/voice-providers.json
+
+# Check the app's voice providers' catalogue is current with their definitions
+[group('check')]
+[working-directory: 'agent']
+providers-current:
+    uv run python -m voice_providers.catalogue check ../app/src-tauri/voice-providers.json
+
 # Lint and check formatting
 [group('check')]
 [working-directory: 'agent']
@@ -123,6 +137,6 @@ fmt:
 typecheck:
     uvx basedpyright .
 
-# Everything a change must pass: lint, types, tests
+# Everything a change must pass: lint, types, tests, and the app's catalogue current
 [group('check')]
-check: lint typecheck test
+check: lint typecheck test providers-current

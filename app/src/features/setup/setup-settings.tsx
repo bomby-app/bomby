@@ -1,4 +1,4 @@
-import { SquareTerminal } from "lucide-react"
+import { AudioLines, SquareTerminal } from "lucide-react"
 import { useTransition } from "react"
 
 import { CheckAgainButton } from "@/components/check-again-button"
@@ -13,8 +13,9 @@ import {
   checkKeysAgain,
   type Keys,
   useSavedKeys,
-} from "../credentials/use-saved-keys"
-import { GeminiLogo, LiveKitLogo } from "./provider-logos"
+} from "../call-server/use-saved-keys"
+import { PROVIDERS } from "../voice/providers"
+import { LiveKitLogo } from "./provider-logos"
 
 /**
  * The Setup section of the settings window: what a call needs (the user's keys, and an
@@ -31,30 +32,36 @@ export function SetupSettings() {
   return (
     <div className="flex flex-col gap-6">
       <p className="text-sm text-muted-foreground">
-        A call needs LiveKit and Gemini, and an agent to do the work. Bomby uses
-        your own accounts.
+        A call needs a call server and a voice, and an agent to do the work.
+        Bomby uses your own accounts.
       </p>
       {error && <ErrorCard message={error} />}
       <ul className="flex flex-col divide-y rounded-lg border">
         <StatusRow
-          logo={<LiveKitLogo />}
-          name="LiveKit"
+          logo={
+            <LiveKitLogo
+              className={
+                keys?.server === "theirs" ? "text-livekit-cloud" : undefined
+              }
+            />
+          }
+          name="Call server"
           ready={keys?.livekit}
-          detail={keys ? livekitDetail(keys) : null}
+          detail={keys ? serverDetail(keys) : null}
           action={
-            <GoButton to={{ section: "credentials", field: "livekit" }}>
+            <GoButton to={{ section: "call-server", field: "livekit" }}>
               Add keys
             </GoButton>
           }
         />
         <StatusRow
-          logo={<GeminiLogo />}
-          name="Gemini API key"
-          ready={keys?.gemini}
-          detail={keys?.gemini ? "Saved in your keychain." : "Not added yet."}
+          logo={<VoiceLogo keys={keys} />}
+          name="Voice"
+          ready={keys ? keys.voiceKey : null}
+          detail={keys ? voiceDetail(keys) : null}
           action={
-            <GoButton to={{ section: "credentials", field: "gemini" }}>
-              Add key
+            <GoButton to={{ section: "voice", field: "key" }}>
+              {keys?.voice ? "Add key" : "Pick one"}
             </GoButton>
           }
         />
@@ -101,11 +108,26 @@ function GoButton({
   )
 }
 
-function livekitDetail(keys: Keys): string {
-  if (keys.server === "thisMac") return "Runs on this Mac."
+function serverDetail(keys: Keys): string {
+  if (keys.server === "thisMac") return "LiveKit, on this Mac."
   return keys.theirLiveKit
-    ? "Your keys, saved in your keychain."
-    : "Not added yet."
+    ? "Your LiveKit Cloud, its keys in your keychain."
+    : "LiveKit Cloud needs its keys."
+}
+
+/** The picked provider's logo, or a plain voice mark before there's one. */
+function VoiceLogo({ keys }: { keys: Keys | null }) {
+  if (!keys?.voice) return <AudioLines />
+  const Logo = PROVIDERS[keys.voice].logo
+  return <Logo />
+}
+
+function voiceDetail(keys: Keys): string {
+  if (!keys.voice) return "Pick who Bomby talks through."
+  const name = PROVIDERS[keys.voice].name
+  return keys.voiceKey
+    ? `${name}, its key in your keychain.`
+    : `${name} needs its API key.`
 }
 
 /** "Claude Code and omp are ready.", or what stands in the way. */

@@ -1,12 +1,12 @@
 # Architecture
 
-Bomby is a desktop app for talking to coding agents. A call connects Gemini's voice model to an agent installed on the user's machine. The user brings their Gemini key and their own agent ([decision](decisions/users-bring-their-own-keys-and-claude.md)); calls run through LiveKit on their Mac, or their own LiveKit Cloud project ([decision](decisions/livekit-on-this-mac-or-cloud.md)).
+Bomby is a desktop app for talking to coding agents. A call connects a voice model the user picks, Gemini Live, OpenAI's GPT-Live or Rime's Prism, to an agent installed on the user's machine ([decision](decisions/voice-providers-like-harnesses.md)). The user brings that provider's key and their own agent ([decision](decisions/users-bring-their-own-keys-and-claude.md)); calls run through LiveKit on their Mac, or their own LiveKit Cloud project ([decision](decisions/livekit-on-this-mac-or-cloud.md)).
 
 ## The pieces
 
 | Piece | Where | Status |
 | --- | --- | --- |
-| Voice agent | `agent/`: Python, LiveKit Agents, Gemini 3.8 Live | Built |
+| Voice agent | `agent/`: Python, LiveKit Agents, Gemini 3.8 Live, OpenAI GPT-Live or Rime Prism (`voice_providers/`) | Built; GPT-Live is new and untried on calls ([notes](openai-notes.md)); Rime is Experimental: tried on the owner's calls with a workaround for its LiveKit plugin ([notes](rime-notes.md)) |
 | Harnesses | `agent/harnesses/`: Claude Code, Codex, OpenCode, omp and goose; shared ACP client and runner in `agent/acp_client/`; one voice tool, `start_task` | Built |
 | Desktop app | `app/`: Tauri v2, React, LiveKit Agents UI; settings, projects, calls and saved transcripts | In progress; runs the agent from source in dev, the packaged agent in release builds |
 | App data | One core-owned SQLite database for projects, calls and messages | Built ([decision](decisions/app-data-in-one-sqlite-db.md)) |
@@ -20,7 +20,7 @@ flowchart LR
     Core["Tauri core: keychain, SQLite, tokens, agent worker, LiveKit server"]
   end
   subgraph Agent["Voice agent (agent/)"]
-    Gemini["Gemini 3.8 Live session"]
+    Gemini["Voice model session: Gemini Live or Prism"]
     Tool["start_task tool"]
     Runner["AcpRunner per harness: named sessions"]
   end
@@ -40,10 +40,10 @@ flowchart LR
 ## A call, start to end
 
 1. **Start.** The core makes sure the call's LiveKit server runs (this Mac's, started on the first call, or the user's own) and starts or restarts the agent worker on it, while it looks for the installed agents side by side (leaving out any the setup probe found not set up; a call with none still opens, and the voice says how to get one), then records the call with `open_call`, then mints a read-only token with `call_token`. The token's room configuration dispatches `bomby` with the project, its folders and instructions, and the agents found when the call opened as job metadata; every token for the call carries the same server, agents and picks. The entrypoint reads `ctx.job.metadata`.
-2. **Talk.** Gemini 3.8 Live handles speech both ways. It can search the web with Gemini's own Google Search. Its instructions are the prompt for the user's tone (`agent/prompts/sharp.md`, `chatty.md` or `playful.md`) plus what the call adds, each part left out when it has nothing to say: the date, time and time zone when the call starts (`## Date and time`, from the Mac's clock), what to call the user (`## The user`), the agents it can use, the project's instructions (`## Project context`) and, on a resumed call, the earlier conversation (`agent/voice_prompt.py`).
-3. **Work.** Gemini calls `start_task(task, session, agent)`. Its first `ctx.update()` makes the tool non-blocking, so the conversation continues.
+2. **Talk.** The call's voice provider handles speech both ways: Gemini 3.8 Live, OpenAI's GPT-Live, or Rime's Prism ([decision](decisions/voice-providers-like-harnesses.md)). Gemini can search the web with its own Google Search, and GPT-Live's response model with OpenAI's web search, each an option that's on unless the user turns it off. The instructions are the provider's prompt for the user's tone (`agent/prompts/<provider>/sharp.md`, `chatty.md` or `playful.md`) plus what the call adds, as Markdown sections for Gemini and plain sentences for GPT-Live and Rime, each part left out when it has nothing to say: the date, time and time zone when the call starts (`## Date and time`, from the Mac's clock), what to call the user (`## The user`), the agents it can use, the project, always: its name, its folders by name and, when the user wrote some, its instructions (`## Project`, so "the project" means this one) and, on a resumed call, the earlier conversation (`agent/voice_prompt.py`). GPT-Live delegates: its voice model never sees the tools, and its response model, the backend, reasons and calls them with instructions of its own (`agent/prompts/openai/backend.md`, then the date, the agents and the project; `backend_instructions`), without the user's name or what memory knows ([notes](openai-notes.md)).
+3. **Work.** The voice model (GPT-Live's backend) calls `start_task(task, session, agent)`. Its first `ctx.update()` makes the tool non-blocking, so the conversation continues.
 4. **Agent sessions.** Each selected harness gets one `AcpRunner` and one ACP process per call, started on its first task. A new session name opens a session; a known name continues it. Sessions run in parallel, and supported harnesses accept steering mid-turn.
-5. **Result.** The agent's final message becomes the tool result. Gemini reads it out; no other agent output reaches the voice conversation.
+5. **Result.** The agent's final message becomes the tool result. The voice model reads it out (on GPT-Live, LiveKit gives the late result to the voice model as context and asks it to speak; [notes](openai-notes.md)); no other agent output reaches the voice conversation.
 6. **Saved.** The page sends each transcript line to the core as it arrives. The core upserts it by LiveKit segment id, and saved calls replay through the same transcript component.
 7. **End.** Room disconnect stamps `ended_at`; the agent closes its sessions and ACP processes. The worker stays warm until the app quits.
 
@@ -61,7 +61,10 @@ The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS)
   "folders": ["/Users/me/Dev/samba", "/Users/me/Dev/shared"],
   "instructions": "A music app: the API is in Go, the site in Svelte.",
   "agents": {"claude": "/Users/me/.local/bin/claude", "opencode": "/Users/me/.opencode/bin/opencode"},
+  "agents_off": false,
   "picks": {"claude": [{"setting": "model", "value": "opus"}], "opencode": [{"setting": "model", "value": "provider/model-id"}]},
+  "provider": "gemini",
+  "provider_options": {"google_search": true},
   "voice": "Leda",
   "user_name": "Sam",
   "tone": "chatty",
@@ -71,15 +74,16 @@ The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS)
 }
 ```
 
-- All fields are optional; one sent as null counts as left out, and unknown fields are ignored. `folders` must be absolute, existing paths; the first is the working directory and the rest become ACP `additionalDirectories`. Defaults are the home folder, project `home`, and voice `GEMINI_VOICE` or Leda.
+- All fields are optional; one sent as null counts as left out, and unknown fields are ignored. `folders` must be absolute, existing paths, and a project may have none; the first is the working directory and the rest become ACP `additionalDirectories`. Defaults are the home folder, project `home`, provider `gemini`, and the provider's console voice (`GEMINI_VOICE`) or its default (Leda).
 - `instructions` is what the user wrote about the project in its settings, up to 5,000 characters; empty when they wrote nothing, and then neither the voice model nor the coding agents hear of it.
-- `agents` maps installed harness ids to programs: all but those the setup probe found not ready (one not probed yet stays). The voice model can use only agents in this list; console runs find them on PATH ([decision](decisions/detect-acp-native-agents.md)).
+- `agents` maps installed harness ids to programs: all but those the setup probe found not ready (one not probed yet stays), and only those the project lets its calls use (Project settings, Agents; [decision](decisions/agents-per-project.md)). `agents_off` is true when the user turned the project's agents off: the voice says so, and where to turn them on. The voice model can use only agents in this list; console runs find them on PATH ([decision](decisions/detect-acp-native-agents.md)).
 - `picks` holds the session settings the user picked for each agent, if any (model, effort, goose's provider), which the runner applies to every session it opens with `session/set_config_option`, in the agent's own order (provider before model). One the agent no longer offers, or refuses, is skipped, leaving its default; for an agent whose harness requires a model pick, a session without one fails the task (`no_model_picked`) ([decision](decisions/pick-agent-settings-like-buzz-and-zed.md)).
 - `memory_user` is the install's Zep user when Settings, Memory is on and a Zep key is saved, and empty otherwise; the worker runs with `ZEP_API_KEY` whenever a key is saved, so the switch never restarts it ([decision](decisions/memory-across-calls-with-zep.md)). `memory_incognito` (Settings, Memory, Incognito) reads memory but saves nothing from the call.
+- `provider` is the voice model the call talks through (`agent/voice_providers/`); an unknown one fails the call at start. `provider_options` holds what the user set for it, by option id: a switch's `true` or `false` (Gemini's `google_search`), a choice's value (GPT-Live's `"response_model": "gpt-6-luna"`, `"reasoning_effort": "medium"`); the rest take the provider's defaults, unknown ids and values a choice doesn't have are ignored, and a value of the wrong kind fails the call at start ([decision](decisions/voice-providers-like-harnesses.md)).
 - `tone` is `sharp` (the default), `chatty` or `playful`, from Settings, Bomby; an unknown one is `sharp` ([decision](decisions/tones-as-whole-prompts.md)).
 - `user_name` is what the user asked to be called in Settings, Bomby, up to 50 characters; empty when they'd rather not say, and then the prompt doesn't mention a name. Only the voice model gets it, and the user's own Zep project when memory across calls is on; never the coding agents ([decision](decisions/the-users-name-only-for-the-voice.md)).
 - `history` appears only when resuming a call and contains its last 50 lines ([decision](decisions/resume-a-call-with-its-last-lines.md)).
-- The agent reads and checks it once against one typed contract (`JobMetadata` in `agent/job.py`, pydantic); the project, the installed agents, the picks and the call options each take their fields from that. Console runs use `BOMBY_PROJECT`, `BOMBY_FOLDERS`, `BOMBY_INSTRUCTIONS`, `BOMBY_USER_NAME` and `BOMBY_TONE` from `agent/.env`. Invalid metadata fails the call at start.
+- The agent reads and checks it once against one typed contract (`JobMetadata` in `agent/job.py`, pydantic); the project, the installed agents, the picks and the call options each take their fields from that. Console runs use `VOICE_PROVIDER`, `BOMBY_PROJECT`, `BOMBY_FOLDERS`, `BOMBY_INSTRUCTIONS`, `BOMBY_USER_NAME` and `BOMBY_TONE` from `agent/.env`. Invalid metadata fails the call at start.
 
 **`start_task`** ([decision](decisions/one-tool-for-every-agent.md)):
 
@@ -93,7 +97,9 @@ The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS)
 
 **A crashed job.** When a call's job raises, livekit-agents logs `unhandled exception while running the job task` with the job's `room` (`bomby-<call id>-<ms>`). The core reads it from the worker's output (`job_crash` in `src-tauri/src/agent.rs`) and sends `call-agent-crashed` (`{ room, reason }`) to the main window, which fails the call at once if it's in that room (a resumed call joins a new room, so a late crash from an earlier one is ignored) instead of waiting out the 30 s join timeout (`call-provider.tsx`): the page says "Bomby couldn't start the call. Try again?" and the reason goes to `app.log`. A folder that's gone is caught before the call starts (`open_call`), so it never gets that far.
 
-**The LiveKit server.** Settings, Credentials and the splash choose it with `livekit_server()` and `set_livekit_server(server)` (`thisMac` or `theirs`; until chosen, `theirs` when the user's keys are saved), which also sends `keys-changed` (`src-tauri/src/call_server.rs`). This Mac's runs from the bundled sidecar on 127.0.0.1 with free ports and keys made at each start, given through `LIVEKIT_CONFIG` and `LIVEKIT_KEYS`; it logs to `livekit.log`, stops with the app or when calls move to the user's own, and its pid in `livekit-server.pid` lets the next launch stop one a killed run left (`src-tauri/src/local_server.rs`).
+**The LiveKit server.** Settings, Call server and the splash choose it with `livekit_server()` and `set_livekit_server(server)` (`thisMac` or `theirs`; until chosen, `theirs` when the user's keys are saved), which also sends `keys-changed` (`src-tauri/src/call_server.rs`). This Mac's runs from the bundled sidecar on 127.0.0.1 with free ports and keys made at each start, given through `LIVEKIT_CONFIG` and `LIVEKIT_KEYS`; it logs to `livekit.log`, stops with the app or when calls move to the user's own, and its pid in `livekit-server.pid` lets the next launch stop one a killed run left (`src-tauri/src/local_server.rs`).
+
+**Voice providers.** `voice_settings()` lists each provider with whether its key is saved, its voice and voices, and its options, plus the one picked (`src-tauri/src/voice.rs`). What each provider is (its name, key variable, voices, default voice and options: switches and choices, with their defaults and, for a choice that follows another, its values for each of that one's) comes from the agent's definitions: `just agent providers` writes them to `src-tauri/voice-providers.json`, which the core embeds, and `just agent check` fails when that file is out of date. Until the user picks one, it's the first with a saved key (so an install with a Gemini key stays on Gemini), else Gemini, saved once worked out. `set_voice_provider(provider)` sends `keys-changed`; `set_voice(provider, voice)` and `set_voice_option(provider, option, value)` (a switch's `true` or `false`, or a choice's value, which must be one it has now) keep each provider's own; `save_voice_key(provider, key)` and `clear_voice_key(provider)` keep the keys in the keychain entry. `open_call` refuses a call without a pick or its key, the worker runs with every saved key (`GOOGLE_API_KEY`, `OPENAI_API_KEY`, `RIME_API_KEY`) so a new pick never restarts it, and the call keeps the provider, voice and options it opened with on every token ([decision](decisions/voice-providers-like-harnesses.md)).
 
 **Memory across calls.** With `memory_user` and `ZEP_API_KEY`, the agent reads Zep's summary and facts about the user while the room connects, within 5 s, before Gemini connects (`## What you remember` in the voice prompt), adds `recall_about_user`, and saves every line to a Zep thread in the background, in the order it was said, the rest on hang-up (`agent/memory.py`). The Zep user carries the name from Settings, Bomby and the Mac's time zone. When Zep can't be reached the call goes on without memory and the agent sets `bomby.memory` to `unavailable`, which the call view shows as a card. Settings, Memory turns it on (`memory_setting`, `set_memory_setting`), sets incognito (`memory_incognito`, `set_memory_incognito`) and keeps the key (`has_zep_key`, `save_zep_key`, `clear_zep_key`).
 
@@ -111,3 +117,4 @@ The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS)
 - [ACP and adapter behavior](acp-notes.md)
 - [LiveKit behavior](livekit-notes.md)
 - [Gemini behavior](gemini-notes.md)
+- [Rime behavior](rime-notes.md)

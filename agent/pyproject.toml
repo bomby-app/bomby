@@ -1,7 +1,7 @@
 [project]
 name = "bomby-agent"
 version = "0.1.0"
-description = "Bomby's voice agent: LiveKit + Gemini 3.8 Live, running agents (Claude Code first) over ACP in the background"
+description = "Bomby's voice agent: LiveKit with Gemini 3.8 Live, OpenAI GPT-Live or Rime Prism, running agents (Claude Code first) over ACP in the background"
 authors = [
     { name = "Ahmed Aburady", email = "accounts@aburady.com" }
 ]
@@ -10,8 +10,10 @@ requires-python = ">=3.13"
 dependencies = [
     "agent-client-protocol>=0.12.1",
     "google-genai>=2.34.0",
-    "livekit-agents>=1.8.10",
-    "livekit-plugins-google>=1.8.10",
+    "livekit-agents>=1.8.11",
+    "livekit-plugins-google>=1.8.11",
+    "livekit-plugins-openai>=1.8.11",
+    "livekit-plugins-rime[realtime]>=1.8.11",
     "pydantic>=2.14.2",
     "python-dotenv>=1.2.4",
     "zep-cloud>=4.0.1",
