@@ -22,8 +22,8 @@ const ignorePatterns = [
 ]
 
 // One config for the whole frontend toolchain (Vite+): build and dev server, `vp lint`
-// (Oxlint, with React Compiler's rules), `vp fmt` (Oxfmt) and `vp check` (both, plus
-// TypeScript). See docs/frontend-notes.md.
+// (Oxlint, with React Compiler's rules), `vp fmt` (Oxfmt), `vp check` (both, plus
+// TypeScript) and `vp test` (Vitest). See docs/frontend-notes.md.
 // https://viteplus.dev/guide/ and https://v2.tauri.app/start/frontend/vite/
 export default defineConfig({
   lint: {
@@ -60,6 +60,10 @@ export default defineConfig({
   },
   // React Compiler memoizes components and hooks at build time, through Oxc's Rust port
   // (`oxc-transform-react`; docs/frontend-notes.md).
+  // Unit tests of the page's own logic, beside it (`*.test.ts`), in Node: no DOM.
+  test: {
+    include: ["src/**/*.test.ts"],
+  },
   plugins: [react({ compiler: true }), tailwindcss()],
   resolve: {
     alias: { "@": path.resolve(import.meta.dirname, "./src") },

@@ -19,12 +19,13 @@ import {
 } from "@/components/day-glow"
 import { FilmGrain } from "@/components/film-grain"
 import { Mascot, type MascotState } from "@/components/mascot"
-import { isReady, setupStep, useAgents } from "@/features/agents/use-agents"
+import { useAgents } from "@/features/agents/use-agents"
 import { useSavedKeys } from "@/features/credentials/use-saved-keys"
 
 import { finishFirstRun } from "./api"
-import { FirstAgent, firstAgent } from "./first-agent"
+import { FirstAgent } from "./first-agent"
 import { KeysStep } from "./keys-step"
+import { NO_CHOICES, splashStep } from "./splash-step"
 
 gsap.registerPlugin(useGSAP)
 
@@ -74,25 +75,13 @@ export function Splash({ onDone }: { onDone: () => void }) {
   const [leaving, startLeaving] = useTransition()
   const [saveError, setSaveError] = useState<string | null>(null)
 
-  // What the user chose: another agent, setting the agent up later, a model picker open.
-  const [chosen, setChosen] = useState<string | null>(null)
-  const [later, setLater] = useState(false)
-  const [pickingFor, setPickingFor] = useState<string | null>(null)
-
+  // What the user chose; the step follows from it and what the core reports (`splashStep`).
+  const [choices, setChoices] = useState(NO_CHOICES)
+  const choose = (choice: Partial<typeof choices>) =>
+    setChoices((current) => ({ ...current, ...choice }))
   const { agents } = useAgents()
   const { keys } = useSavedKeys()
-  const agent = firstAgent(agents, chosen)
-  const agentReady = agent !== null && isReady(agent)
-  // Worked out on each render, so a picker that goes away open (another agent, a
-  // sign-out) holds nothing up.
-  const picking =
-    agent !== null &&
-    pickingFor === agent.id &&
-    ["pick", "ready"].includes(setupStep(agent))
-  const agentDone = later || (agentReady && !picking)
-  const keysReady = keys !== null && keys.livekit && keys.gemini
-  const step = agentDone && keys !== null ? "keys" : "agent"
-  const ready = agentDone && keysReady
+  const { agent, agentReady, step, ready } = splashStep(agents, keys, choices)
   // The step on screen: it follows `step`, fading out, then in.
   const [shown, setShown] = useState(step)
   // For the timelines' callbacks, which run after the render that started them.
@@ -280,16 +269,16 @@ export function Splash({ onDone }: { onDone: () => void }) {
             keys={keys}
             allSet={ready}
             withoutAgent={!agentReady}
-            onSetUpAgent={() => setLater(false)}
+            onSetUpAgent={() => choose({ later: false })}
           />
         ) : (
           <FirstAgent
             agents={agents}
             agent={agent}
-            onChoose={setChosen}
-            onLater={() => setLater(true)}
+            onChoose={(chosen) => choose({ chosen })}
+            onLater={() => choose({ later: true })}
             onPicking={(open) =>
-              setPickingFor(open ? (agent?.id ?? null) : null)
+              choose({ pickingFor: open ? (agent?.id ?? null) : null })
             }
           />
         )}

@@ -16,7 +16,6 @@ import { SetUpButton } from "@/features/agents/set-up-button"
 import { useAdapterInstall } from "@/features/agents/use-adapter-install"
 import {
   checkAgentsAgain,
-  isReady,
   type SetupStep,
   setupStep,
 } from "@/features/agents/use-agents"
@@ -30,32 +29,6 @@ import {
   Tile,
   type Tone,
 } from "./setup-card"
-
-/** Offered first when installed, ready or not (owner, 2026-11-05). */
-const PREFERRED = ["claude", "codex"]
-
-/**
- * The agent the splash offers: the one picked, else Claude Code, else Codex, else the first
- * that's ready, else the first installed. With none installed, Claude Code, to install.
- * Null only until the core first answers.
- */
-export function firstAgent(
-  agents: AgentStatus[] | null,
-  chosen: string | null
-): AgentStatus | null {
-  if (agents === null) return null
-  const installed = agents.filter((agent) => agent.path !== null)
-  const byId = (id: string | null) => installed.find((agent) => agent.id === id)
-  return (
-    byId(chosen) ??
-    PREFERRED.map(byId).find(Boolean) ??
-    installed.find(isReady) ??
-    installed[0] ??
-    agents.find((agent) => agent.id === PREFERRED[0]) ??
-    agents[0] ??
-    null
-  )
-}
 
 /** Where the agent is: its setup step, or still looking for one. */
 type Phase = SetupStep | "looking"
