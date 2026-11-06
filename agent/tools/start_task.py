@@ -5,9 +5,11 @@ The agents are defined in `harnesses/`; running them (adapter, sessions, steerin
 """
 
 import asyncio
+import contextlib
 
 from livekit.agents import RunContext
 from livekit.agents.llm import ToolError, ToolFlag, function_tool
+from livekit.agents.voice.agent_activity import ActivityClosedError
 
 from acp_client import session_name
 from call import Call
@@ -76,9 +78,23 @@ async def start_task(
         raise
     except Exception:
         await board.finish(id, "failed")
+        await until_quiet(context)
         raise
     await board.finish(id, "added" if turn.steered else "done")
+    await until_quiet(context)
     return turn.text
+
+
+async def until_quiet(context: RunContext[Call]) -> None:
+    """Waits until neither Bomby nor the user is mid-turn, so the result lands then.
+
+    LiveKit adds a late tool result to the voice model's history as soon as the tool
+    returns. Rime's plugin refuses that while Prism is replying, and the result is lost
+    with no log (`_enqueue_reply` in livekit-agents 1.8.11; owner's test call,
+    2026-11-06). Gemini takes it either way; LiveKit speaks it only once idle anyway.
+    """
+    with contextlib.suppress(ActivityClosedError):
+        _ = await context.session.wait_for_idle()
 
 
 def agents_note(

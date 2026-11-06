@@ -15,6 +15,7 @@ Bumped 2026-11-06 from 1.8.10, with `livekit-plugins-google` 1.8.11 and the `liv
 
 - A `@function_tool` becomes non-blocking on its first `await ctx.update(msg)`. Its final return arrives when the agent is idle through synthetic call id `{call_id}_final` (`voice/tool_executor.py`).
 - `ctx.update(msg, silent=True)` (1.8.9+) records progress without speech.
+- The final return is added to the agent's chat context the moment the tool returns, then spoken once idle (`_enqueue_reply` in `voice/tool_executor.py`, 1.8.11). A failure of that update is raised inside the tool's task and logged nowhere. `start_task` waits for `session.wait_for_idle()` first, since Rime's plugin refuses it mid-reply ([Rime notes](rime-notes.md#the-plugin)).
 - `flags=ToolFlag.CANCELLABLE` exposes `lk_agents_get_running_tasks` and `lk_agents_cancel_task`; cancellation raises `asyncio.CancelledError`. Interrupting speech does not cancel work.
 - `on_duplicate`: `allow` (default), `reject`, `replace`, `confirm`, matched by tool name.
 - `ctx.foreground()` pauses the session for an interactive step, the future hook for voice permission prompts.
