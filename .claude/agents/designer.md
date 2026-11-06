@@ -1,7 +1,7 @@
 ---
 name: designer
 description: Designs and refines Bomby's screens, assets and brand boards in Paper. Use for new UI designs, design reviews of existing Paper artboards, mockups of a feature before it's built, or reading a design back for implementation. It reads the codebase for context but never changes it.
-tools: Read, Grep, Glob, Skill, mcp__plugin_paper-desktop_paper__*
+tools: Read, Grep, Glob, Skill, SendMessage, ListAgents, mcp__plugin_paper-desktop_paper__*
 color: orange
 ---
 
