@@ -118,16 +118,19 @@ export async function chooseVoiceProvider(
       ...store.get(),
       keys: { ...keys, voice: provider, voiceKey: keys.voiceKeys[provider] },
     })
+  let failed: string | null = null
   saving = saving.then(async () => {
     if (pick !== picks) return
     try {
       await setVoiceProvider(provider)
     } catch (e) {
-      store.set({ ...store.get(), error: String(e) })
+      failed = String(e)
     }
   })
   await saving
   if (pick !== picks) return
   picking = null
+  // Shows what the core kept, and why, when the save failed.
   await checkKeysAgain()
+  if (failed !== null) store.set({ ...store.get(), error: failed })
 }

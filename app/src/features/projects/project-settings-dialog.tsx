@@ -217,8 +217,8 @@ function ProjectSettings({
 }
 
 /**
- * The project's agents, saved as they change, one after another in click order; a failed
- * save shows what the core has again.
+ * The project's agents, saved as they change, one after another in click order. A failed
+ * save puts back the last one the core took, unless a newer change is on its way.
  */
 function AgentsField({
   saved,
@@ -231,15 +231,25 @@ function AgentsField({
 }) {
   const [agents, setAgents] = useState(saved)
   const queue = useRef<Promise<unknown>>(Promise.resolve())
+  // The last agents the core took, and the newest change, so a failure rolls back to the
+  // first and never over the second.
+  const confirmed = useRef(saved)
+  const latest = useRef(0)
 
   function change(next: ProjectAgents) {
     onError(null)
     setAgents(next)
+    const id = ++latest.current
     queue.current = queue.current.then(() =>
-      save(next).catch((e: unknown) => {
-        setAgents(saved)
-        onError(String(e))
-      })
+      save(next).then(
+        () => {
+          confirmed.current = next
+        },
+        (e: unknown) => {
+          if (id === latest.current) setAgents(confirmed.current)
+          onError(String(e))
+        }
+      )
     )
   }
 

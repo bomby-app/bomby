@@ -23,21 +23,35 @@ export function useVoiceSettings(): Saved {
   return useStore(store)
 }
 
+// Reads overlap (a change's own, and keys-changed from every window): only the latest lands.
+let reads = 0
+// Changes are saved one after another, in click order, so the last one is what's kept.
+let changes: Promise<void> = Promise.resolve()
+
 /** Never rejects: a failure shows as the store's error, with the last answer kept. */
 export async function readVoiceSettings(): Promise<void> {
+  const read = ++reads
   try {
-    store.set({ settings: await voiceSettings(), error: null })
+    const settings = await voiceSettings()
+    if (read === reads) store.set({ settings, error: null })
   } catch (e) {
-    store.set({ ...store.get(), error: String(e) })
+    if (read === reads) store.set({ ...store.get(), error: String(e) })
   }
 }
 
-/** Runs one change, then reads what the core has; never rejects. */
+/** Runs one change after the ones before it, then reads what the core has; never rejects. */
 export async function changeVoice(write: () => Promise<void>): Promise<void> {
-  try {
-    await write()
-  } catch (e) {
-    store.set({ ...store.get(), error: String(e) })
+  let failed: string | null = null
+  changes = changes.then(async () => {
+    try {
+      await write()
+    } catch (e) {
+      failed = String(e)
+    }
+  })
+  await changes
+  if (failed !== null) {
+    store.set({ ...store.get(), error: failed })
     return
   }
   await readVoiceSettings()
