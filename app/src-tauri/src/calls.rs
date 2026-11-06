@@ -184,6 +184,8 @@ fn dispatch_metadata(
         "project": project.name,
         "folders": project.folders,
         "instructions": project.instructions,
+        // So the voice says the project's agents are off, rather than none installed.
+        "agents_off": !project.agents.on,
         "agents": agents,
         "picks": picks,
         "provider": voice.provider.id(),
@@ -196,6 +198,17 @@ fn dispatch_metadata(
         "history": history,
     })
     .to_string()
+}
+
+/// The agents among `found` the project lets its calls hand work to.
+fn for_project(
+    found: Vec<(String, PathBuf)>,
+    agents: &projects::ProjectAgents,
+) -> Vec<(String, PathBuf)> {
+    found
+        .into_iter()
+        .filter(|(id, _)| agents.allows(id))
+        .collect()
 }
 
 /// The last `RESUME_LINES` lines of a call, oldest first.
@@ -289,7 +302,8 @@ pub fn open_call<R: Runtime>(
 ) -> Result<i64> {
     // Holds off an update's restart while the call opens; refused if one is under way.
     let opening = updates::CallOpening::begin(&app)?;
-    folders_are_there(&projects::for_call(&db.conn(), project_id)?)?;
+    let project = projects::for_call(&db.conn(), project_id)?;
+    folders_are_there(&project)?;
     let provider = voice::for_new_call(&app, &db, &vault)?;
     let voice_keys = vault.voice_keys(&app)?;
     // Read before the server starts, so this Mac's server starts only for a call that can open.
@@ -314,6 +328,8 @@ pub fn open_call<R: Runtime>(
         })();
         (lookup.join().unwrap_or_default(), started)
     });
+    // Only the agents the project lets its calls use (Project settings, Agents).
+    let found = for_project(found, &project.agents);
     let server = started?;
 
     let conn = db.conn();
@@ -392,7 +408,10 @@ pub fn call_token<R: Runtime>(
         None => OpenedWith {
             voice: voice::for_call(&db.conn(), voice::for_new_call(&app, &db, &vault)?)?,
             server: call_server::current(&app, &db, &vault, &local)?,
-            agents: agents::usable(&found.cached().unwrap_or_default()),
+            agents: for_project(
+                agents::usable(&found.cached().unwrap_or_default()),
+                &project.agents,
+            ),
             picks: agent_picks::saved(&db.conn())?,
             // The worker that has the Zep key was started with an opened call.
             memory_user: String::new(),
@@ -693,6 +712,7 @@ mod tests {
                 "project": "samba",
                 "folders": ["/tmp"],
                 "instructions": "A music app.",
+                "agents_off": false,
                 "agents": { "claude": "/usr/local/bin/claude" },
                 // Only the call's agents' picks go along.
                 "picks": { "claude": [{ "setting": "model", "value": "opus" }] },
@@ -727,12 +747,40 @@ mod tests {
     }
 
     #[test]
+    fn a_call_gets_only_the_agents_its_project_allows() {
+        let found = || {
+            vec![
+                ("claude".to_owned(), PathBuf::from("/bin/claude")),
+                ("goose".to_owned(), PathBuf::from("/bin/goose")),
+            ]
+        };
+        let ids = |agents: projects::ProjectAgents| -> Vec<String> {
+            for_project(found(), &agents)
+                .into_iter()
+                .map(|(id, _)| id)
+                .collect()
+        };
+        assert_eq!(ids(projects::ProjectAgents::default()), ["claude", "goose"]);
+        let only_claude = projects::ProjectAgents {
+            on: true,
+            only: vec!["claude".into(), "codex".into()],
+        };
+        assert_eq!(ids(only_claude.clone()), ["claude"]);
+        let off = projects::ProjectAgents {
+            on: false,
+            ..only_claude
+        };
+        assert!(ids(off).is_empty());
+    }
+
+    #[test]
     fn a_call_needs_every_folder_to_be_there() {
         let here = env!("CARGO_MANIFEST_DIR").to_owned();
         let project = |folders: Vec<String>| projects::CallProject {
             name: "samba".into(),
             folders,
             instructions: String::new(),
+            agents: projects::ProjectAgents::default(),
         };
         assert!(folders_are_there(&project(vec![here.clone()])).is_ok());
         let gone = folders_are_there(&project(vec![here, "/Users/me/Dev/gone".into()]));

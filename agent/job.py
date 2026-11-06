@@ -49,8 +49,10 @@ class JobMetadata(BaseModel):
     project: Text = ""
     folders: tuple[Path, ...] = ()
     instructions: Text = ""
-    # Each installed agent's program, by agent id.
+    # Each installed agent's program, by agent id: only those the project lets its calls use.
     agents: dict[str, Path] = {}
+    # The project's agents are off (Project settings): the call talks, but hands nothing off.
+    agents_off: bool = False
     # Each agent's picks, in the order they're applied.
     picks: dict[str, tuple[Pick, ...]] = {}
     # The agents whose settings the probe lists for the model picker.

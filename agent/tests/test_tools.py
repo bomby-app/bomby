@@ -40,6 +40,14 @@ def test_without_claude_the_first_installed_agent_is_the_default() -> None:
     assert "Use `opencode` unless" in agents_note([OPENCODE])
 
 
+def test_with_the_projects_agents_off_the_note_says_where_to_turn_them_on() -> None:
+    note = agents_note([], agents_off=True)
+
+    assert "turned agents off for this project" in note
+    assert "project's settings" in note
+    assert "install" not in note
+
+
 def test_with_no_agents_the_note_says_work_cant_start_and_how_to_get_one() -> None:
     note = agents_note([])
 

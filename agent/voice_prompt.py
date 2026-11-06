@@ -55,7 +55,7 @@ def voice_instructions(
         the_time(now or datetime.now().astimezone(), local_zone(), style),
         the_user(options.user_name, style),
         what_you_remember(remembered, style),
-        agents_note(agents, style),
+        agents_note(agents, style, project.agents_off),
         project_context(project, style),
         previous_conversation(options.history, style),
     )

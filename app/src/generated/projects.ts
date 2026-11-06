@@ -6,10 +6,25 @@ export type Project = { id: number, name: string, folders: Array<string>,
 /**
  * What the user wrote about the project; empty if nothing.
  */
-instructions: string, createdAt: number, 
+instructions: string, agents: ProjectAgents, createdAt: number, 
 /**
  * Newest first.
  */
 calls: Array<CallSummary>, };
+
+/**
+ * Which agents a project's calls can hand work to (Project settings, Agents). Saved as it
+ * changes, apart from the name, folders and instructions (`set_project_agents`).
+ */
+export type ProjectAgents = { 
+/**
+ * Off: the project's calls talk, but hand nothing off.
+ */
+on: boolean, 
+/**
+ * Only these, by harness id; empty for every agent that's set up, including ones added
+ * later. Kept while off, for when it's on again.
+ */
+only: Array<string>, };
 
 export type ProjectInput = { name: string, folders: Array<string>, instructions: string, };

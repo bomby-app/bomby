@@ -81,9 +81,21 @@ async def start_task(
     return turn.text
 
 
-def agents_note(available: list[Harness], style: Style = MARKDOWN) -> str:
+def agents_note(
+    available: list[Harness], style: Style = MARKDOWN, agents_off: bool = False
+) -> str:
     """The prompt's Agents section for one call: which agents `start_task` can use, and the
     default."""
+    if agents_off:
+        return style.section(
+            "Agents",
+            (
+                "The user turned agents off for this project, so work can't start on "
+                "this call. You can still talk. When the user asks for work, tell them "
+                "briefly they can turn agents on in the project's settings, and the next "
+                "call picks it up. Never pretend a task started."
+            ),
+        )
     if not available:
         supported = ", ".join(h.short_name for h in HARNESSES.values())
         return style.section(

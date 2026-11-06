@@ -29,6 +29,7 @@
     "allow-list-projects",
     "allow-create-project",
     "allow-update-project",
+    "allow-set-project-agents",
     "allow-delete-project",
     "allow-open-call",
     "allow-call-token",

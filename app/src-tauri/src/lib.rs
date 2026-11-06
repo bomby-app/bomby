@@ -128,6 +128,7 @@ pub fn run() {
             projects::list_projects,
             projects::create_project,
             projects::update_project,
+            projects::set_project_agents,
             projects::delete_project,
         ])
         .build(tauri::generate_context!())

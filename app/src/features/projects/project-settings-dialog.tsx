@@ -32,9 +32,10 @@ import {
   FieldSet,
 } from "@/components/ui/field"
 
-import type { Project, ProjectInput } from "./api"
+import type { Project, ProjectAgents, ProjectInput } from "./api"
 import { FolderList } from "./folder-list"
 import { InstructionsField, submittedInstructions } from "./instructions-field"
+import { ProjectAgentsField } from "./project-agents-field"
 import { useProjects } from "./projects-provider"
 
 /**
@@ -83,7 +84,7 @@ function ProjectSettings({
   onClose: () => void
   onDeleted: () => void
 }) {
-  const { update, remove } = useProjects()
+  const { update, setAgents, remove } = useProjects()
   const [error, setError] = useState<string | null>(null)
 
   // Each save sends the whole draft and saves run one after another, so a rename followed
@@ -143,8 +144,7 @@ function ProjectSettings({
       <DialogHeader>
         <DialogTitle>Project settings</DialogTitle>
         <DialogDescription>
-          The name and folders are saved as you change them; the instructions
-          when you save.
+          Changes save as you make them. Instructions save with Save.
         </DialogDescription>
       </DialogHeader>
 
@@ -162,6 +162,13 @@ function ProjectSettings({
             onChange={(folders) => void save({ folders })}
           />
         </FieldSet>
+
+        <AgentsField
+          key={project.id}
+          saved={project.agents}
+          save={(agents) => setAgents(project.id, agents)}
+          onError={setError}
+        />
 
         <form id={INSTRUCTIONS_FORM} action={saveInstructions}>
           <InstructionsField
@@ -198,11 +205,41 @@ function ProjectSettings({
             ? "Saving..."
             : result.status === "saved" && !edited
               ? "Saved"
-              : "Save"}
+              : "Save instructions"}
         </Button>
       </DialogFooter>
     </>
   )
+}
+
+/**
+ * The project's agents, saved as they change, one after another in click order; a failed
+ * save shows what the core has again.
+ */
+function AgentsField({
+  saved,
+  save,
+  onError,
+}: {
+  saved: ProjectAgents
+  save: (agents: ProjectAgents) => Promise<unknown>
+  onError: (error: string | null) => void
+}) {
+  const [agents, setAgents] = useState(saved)
+  const queue = useRef<Promise<unknown>>(Promise.resolve())
+
+  function change(next: ProjectAgents) {
+    onError(null)
+    setAgents(next)
+    queue.current = queue.current.then(() =>
+      save(next).catch((e: unknown) => {
+        setAgents(saved)
+        onError(String(e))
+      })
+    )
+  }
+
+  return <ProjectAgentsField agents={agents} onChange={change} />
 }
 
 /** The project's name; saves on Enter or when the field loses focus, Esc puts it back. */

@@ -61,6 +61,7 @@ The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS)
   "folders": ["/Users/me/Dev/samba", "/Users/me/Dev/shared"],
   "instructions": "A music app: the API is in Go, the site in Svelte.",
   "agents": {"claude": "/Users/me/.local/bin/claude", "opencode": "/Users/me/.opencode/bin/opencode"},
+  "agents_off": false,
   "picks": {"claude": [{"setting": "model", "value": "opus"}], "opencode": [{"setting": "model", "value": "provider/model-id"}]},
   "provider": "gemini",
   "provider_options": {"google_search": true},
@@ -73,9 +74,9 @@ The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS)
 }
 ```
 
-- All fields are optional; one sent as null counts as left out, and unknown fields are ignored. `folders` must be absolute, existing paths; the first is the working directory and the rest become ACP `additionalDirectories`. Defaults are the home folder, project `home`, provider `gemini`, and the provider's console voice (`GEMINI_VOICE`) or its default (Leda).
+- All fields are optional; one sent as null counts as left out, and unknown fields are ignored. `folders` must be absolute, existing paths, and a project may have none; the first is the working directory and the rest become ACP `additionalDirectories`. Defaults are the home folder, project `home`, provider `gemini`, and the provider's console voice (`GEMINI_VOICE`) or its default (Leda).
 - `instructions` is what the user wrote about the project in its settings, up to 5,000 characters; empty when they wrote nothing, and then neither the voice model nor the coding agents hear of it.
-- `agents` maps installed harness ids to programs: all but those the setup probe found not ready (one not probed yet stays). The voice model can use only agents in this list; console runs find them on PATH ([decision](decisions/detect-acp-native-agents.md)).
+- `agents` maps installed harness ids to programs: all but those the setup probe found not ready (one not probed yet stays), and only those the project lets its calls use (Project settings, Agents; [decision](decisions/agents-per-project.md)). `agents_off` is true when the user turned the project's agents off: the voice says so, and where to turn them on. The voice model can use only agents in this list; console runs find them on PATH ([decision](decisions/detect-acp-native-agents.md)).
 - `picks` holds the session settings the user picked for each agent, if any (model, effort, goose's provider), which the runner applies to every session it opens with `session/set_config_option`, in the agent's own order (provider before model). One the agent no longer offers, or refuses, is skipped, leaving its default; for an agent whose harness requires a model pick, a session without one fails the task (`no_model_picked`) ([decision](decisions/pick-agent-settings-like-buzz-and-zed.md)).
 - `memory_user` is the install's Zep user when Settings, Memory is on and a Zep key is saved, and empty otherwise; the worker runs with `ZEP_API_KEY` whenever a key is saved, so the switch never restarts it ([decision](decisions/memory-across-calls-with-zep.md)). `memory_incognito` (Settings, Memory, Incognito) reads memory but saves nothing from the call.
 - `provider` is the voice model the call talks through (`agent/voice_providers/`); an unknown one fails the call at start. `provider_options` holds the switches the user set for it, by id (Gemini's `google_search`); the rest take the provider's defaults and unknown ids are ignored ([decision](decisions/voice-providers-like-harnesses.md)).
