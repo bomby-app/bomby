@@ -90,6 +90,8 @@ struct OpenedWith {
     /// Kept too, so a reconnect never lands on another server.
     server: LiveKitKeys,
     agents: Vec<(String, PathBuf)>,
+    /// The project's agents were off: the voice says so, rather than that none is installed.
+    agents_off: bool,
     picks: HashMap<String, Vec<Pick>>,
     /// The Zep user the call remembers as, or empty when memory across calls is off.
     memory_user: String,
@@ -162,16 +164,23 @@ struct HistoryLine {
 /// their programs and the picks each session gets (`JobMetadata.picks` in `agent/job.py`,
 /// applied by `apply` in `agent/acp_client/settings.py`), the voice provider with its voice
 /// and options, what the user likes to be called and, on a resumed call, the conversation so
-/// far (`CallOptions.from_job` in `agent/call_options.py`).
+/// far (`CallOptions.from_job` in `agent/call_options.py`). What the call opened with comes
+/// from `opened` alone, so every token for the call carries the same.
 fn dispatch_metadata(
     project: &projects::CallProject,
-    agents: &[(String, PathBuf)],
-    picks: &HashMap<String, Vec<Pick>>,
-    voice: &CallVoice,
+    opened: &OpenedWith,
     settings: &settings::CallSettings,
-    memory: (&str, bool),
     history: &[HistoryLine],
 ) -> String {
+    let OpenedWith {
+        agents,
+        agents_off,
+        picks,
+        memory_user,
+        memory_incognito,
+        voice,
+        ..
+    } = opened;
     let picks: HashMap<_, _> = agents
         .iter()
         .filter_map(|(id, _)| Some((id, picks.get(id)?)))
@@ -184,8 +193,7 @@ fn dispatch_metadata(
         "project": project.name,
         "folders": project.folders,
         "instructions": project.instructions,
-        // So the voice says the project's agents are off, rather than none installed.
-        "agents_off": !project.agents.on,
+        "agents_off": agents_off,
         "agents": agents,
         "picks": picks,
         "provider": voice.provider.id(),
@@ -193,8 +201,8 @@ fn dispatch_metadata(
         "voice": voice.voice,
         "user_name": settings.user_name,
         "tone": settings.tone,
-        "memory_user": memory.0,
-        "memory_incognito": memory.1,
+        "memory_user": memory_user,
+        "memory_incognito": memory_incognito,
         "history": history,
     })
     .to_string()
@@ -354,6 +362,7 @@ pub fn open_call<R: Runtime>(
         OpenedWith {
             server,
             agents: found,
+            agents_off: !project.agents.on,
             picks,
             memory_user,
             memory_incognito,
@@ -396,14 +405,7 @@ pub fn call_token<R: Runtime>(
     };
     let room = room_name(call_id);
     // A call opened in this run has its own list; any other gets the last one found.
-    let OpenedWith {
-        server,
-        agents,
-        picks,
-        memory_user,
-        memory_incognito,
-        voice,
-    } = match call_agents.get(call_id) {
+    let opened = match call_agents.get(call_id) {
         Some(opened) => opened,
         None => OpenedWith {
             voice: voice::for_token(&app, &db, &vault)?,
@@ -412,21 +414,15 @@ pub fn call_token<R: Runtime>(
                 agents::usable(&found.cached().unwrap_or_default()),
                 &project.agents,
             ),
+            agents_off: !project.agents.on,
             picks: agent_picks::saved(&db.conn())?,
             // The worker that has the Zep key was started with an opened call.
             memory_user: String::new(),
             memory_incognito: false,
         },
     };
-    let metadata = dispatch_metadata(
-        &project,
-        &agents,
-        &picks,
-        &voice,
-        &settings,
-        (&memory_user, memory_incognito),
-        &history,
-    );
+    let metadata = dispatch_metadata(&project, &opened, &settings, &history);
+    let server = opened.server;
     Ok(CallToken {
         participant_token: token(&server, &room, metadata)?,
         server_url: server.url,
@@ -532,6 +528,7 @@ mod tests {
                     value: "opus".into(),
                 }],
             )]),
+            agents_off: false,
             memory_user: "bomby-0123456789abcdef".into(),
             memory_incognito: false,
             voice: rime(),
@@ -544,6 +541,7 @@ mod tests {
             server,
             agents: vec![],
             picks: HashMap::new(),
+            agents_off: true,
             memory_user: String::new(),
             memory_incognito: false,
             voice: rime(),
@@ -671,6 +669,9 @@ mod tests {
             [],
         )
         .unwrap();
+        // Turned off after the call opened with them on: its tokens keep what it opened with.
+        conn.execute("UPDATE projects SET agents_on = 0 WHERE id = 1", [])
+            .unwrap();
         let project = projects::for_call(&conn, 1).unwrap();
         let history = [HistoryLine {
             role: "agent".into(),
@@ -696,16 +697,22 @@ mod tests {
             ),
             ("goose".to_owned(), Vec::new()),
         ]);
-        let metadata: serde_json::Value = serde_json::from_str(&dispatch_metadata(
-            &project,
-            &agents,
-            &picks,
-            &voice,
-            &settings,
-            ("bomby-0123456789abcdef", true),
-            &history,
-        ))
-        .unwrap();
+        let opened = OpenedWith {
+            server: LiveKitKeys {
+                url: "ws://127.0.0.1:41000".into(),
+                api_key: "bomby".into(),
+                api_secret: "secret".into(),
+            },
+            agents: agents.to_vec(),
+            agents_off: false,
+            picks,
+            memory_user: "bomby-0123456789abcdef".into(),
+            memory_incognito: true,
+            voice,
+        };
+        let metadata: serde_json::Value =
+            serde_json::from_str(&dispatch_metadata(&project, &opened, &settings, &history))
+                .unwrap();
         assert_eq!(
             metadata,
             serde_json::json!({
