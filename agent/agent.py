@@ -114,7 +114,7 @@ async def entrypoint(ctx: JobContext) -> None:
         notify_memory(memory_unavailable)
     if memory:
         memory.on_unavailable(memory_unavailable)
-    call = Call(runners, TaskBoard(publish), memory)
+    call = Call(runners, TaskBoard(publish), memory, options.provider)
     ctx.add_shutdown_callback(call.aclose)
 
     # Which audio the agent gets, from whom: the first thing to check on an audio problem.

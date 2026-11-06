@@ -7,6 +7,7 @@ of its instructions, so its prompts (`prompts/rime/`) are plain sentences.
 import asyncio
 import logging
 from collections.abc import Mapping
+from itertools import pairwise
 from typing import ClassVar, override
 
 from livekit.agents import llm
@@ -47,18 +48,51 @@ def _describe(item: llm.ChatItem) -> tuple[str, str, str, float]:
     return (item.id[-8:], kind, words, round(item.created_at, 2))
 
 
+def in_prism_order(target: llm.ChatContext, record: llm.ChatContext) -> llm.ChatContext:
+    """LiveKit's update with the items Prism already has in Prism's own order, then the
+    new ones in LiveKit's; `target` itself when the two orders already agree.
+
+    The plugin (1.8.11) records a reply's text when the reply ends, after its tool call,
+    while LiveKit dates the text from when speech started, before the call. Shared mode
+    then refuses every later update, though it keeps its own order for the items it has
+    anyway (`_shared_target` in `realtime/_history.py`). Workaround until the plugin
+    fixes it (docs/rime-notes.md#the-plugin)."""
+    positions = {item.id: index for index, item in enumerate(record.items)}
+    # Configuration records never reach Prism, so they don't count either way.
+    items = [
+        i
+        for i in target.items
+        if i.type in ("message", "function_call", "function_call_output")
+    ]
+    known = [i for i in items if i.id in positions]
+    in_order = all(positions[a.id] < positions[b.id] for a, b in pairwise(known))
+    first_new = next(
+        (n for n, i in enumerate(items) if i.id not in positions), len(items)
+    )
+    if in_order and all(i.id not in positions for i in items[first_new:]):
+        return target
+    ordered = sorted(
+        (i for i in target.items if i.id in positions), key=lambda i: positions[i.id]
+    )
+    return llm.ChatContext(
+        [*ordered, *(i for i in target.items if i.id not in positions)]
+    )
+
+
 class DiagnosedModel(RealtimeModel):
-    """Prism, logging why it refuses a history update. The plugin logs only
-    `Prism history update failed` with a status, and a refused tool result's error is
-    lost inside the tool's task (docs/rime-notes.md#the-plugin). Temporary, until the
-    cause is known (2026-11-06)."""
+    """Prism, with LiveKit's history updates put in Prism's order (`in_prism_order`) and
+    logging why it still refuses one. The plugin logs only `Prism history update
+    failed` with a status, and a refused tool result's error is lost inside the tool's
+    task (docs/rime-notes.md#the-plugin). Until the plugin is fixed (2026-11-06)."""
 
     @override
     def session(self, *, turn_detection_disabled: bool = False) -> RealtimeSession:
         session = super().session(turn_detection_disabled=turn_detection_disabled)
         update = session.update_chat_ctx
 
-        async def update_chat_ctx(chat_ctx: llm.ChatContext) -> None:
+        async def update_chat_ctx(target: llm.ChatContext) -> None:
+            # The plugin's record, as its public copy, read just before the update.
+            chat_ctx = in_prism_order(target, session.chat_ctx)
             try:
                 await update(chat_ctx)
             except Exception as error:
@@ -95,6 +129,8 @@ class Rime(VoiceProvider):
     default_voice: ClassVar[str] = "aurora"
     voice_env: ClassVar[str] = "RIME_VOICE"
     prompt_style: ClassVar[Style] = PLAIN
+    # Prism doesn't deduplicate tool calls (docs/rime-notes.md#the-plugin).
+    repeats_tool_calls: ClassVar[bool] = True
 
     @property
     @override

@@ -32,6 +32,10 @@ class VoiceProvider(ABC):
     prompt_style: ClassVar[Style] = MARKDOWN
     """How its prompts are written: its tone prompts in `prompts/<id>/` and the sections
     each call adds (`voice_prompt.py`)."""
+    repeats_tool_calls: ClassVar[bool] = False
+    """Whether the model can call a tool twice for one request, so `start_task` answers a
+    repeat instead of sending it again. Prism can; Gemini doesn't, and never gets the
+    check."""
     options: ClassVar[Mapping[str, bool]] = {}
     """The switches the user can flip for this provider, by id, with their defaults:
     Gemini's {"google_search": True}. The app sends the ones it has."""

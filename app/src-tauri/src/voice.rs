@@ -15,6 +15,8 @@ use crate::error::{Error, Result};
 use crate::settings::{get, put};
 
 const PROVIDER_KEY: &str = "voice_provider";
+/// Picked until the user picks another, unless only another's key is saved.
+const DEFAULT_PROVIDER: VoiceProvider = VoiceProvider::Gemini;
 
 /// A speech-to-speech model a call talks through, with the user's own key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -203,8 +205,7 @@ pub(crate) struct CallVoice {
 }
 
 /// The picked provider. Until one is: the first with a saved key, so an install that had a
-/// Gemini key stays on Gemini; saved once worked out, like the LiveKit server. None when
-/// there's neither a pick nor a key.
+/// Gemini key stays on Gemini, else Gemini; saved once worked out, like the LiveKit server.
 pub(crate) fn chosen(
     conn: &Connection,
     has_key: impl Fn(VoiceProvider) -> bool,
@@ -229,10 +230,10 @@ fn picked(
     {
         return Ok(Some((provider, true)));
     }
-    Ok(VoiceProvider::ALL
-        .into_iter()
-        .find(|&p| has_key(p))
-        .map(|p| (p, false)))
+    // With no key either, Gemini: the splash and Settings start with it picked (owner,
+    // 2026-11-06).
+    let first_with_key = VoiceProvider::ALL.into_iter().find(|&p| has_key(p));
+    Ok(Some((first_with_key.unwrap_or(DEFAULT_PROVIDER), false)))
 }
 
 /// What a token for a call this run didn't open talks through: the pick as it stands,
@@ -408,23 +409,29 @@ mod tests {
     }
 
     #[test]
-    fn until_picked_the_first_provider_with_a_key_and_then_the_pick() {
+    fn until_picked_the_first_provider_with_a_key_else_gemini_then_the_pick() {
         let db = Db::in_memory().unwrap();
         let conn = db.conn();
-        assert_eq!(chosen(&conn, |_| false).unwrap(), None, "nothing to go on");
         assert_eq!(
-            chosen(&conn, |p| p == VoiceProvider::Gemini).unwrap(),
-            Some(VoiceProvider::Gemini),
-            "an install with a Gemini key stays on Gemini"
+            chosen(&conn, |p| p == VoiceProvider::Rime).unwrap(),
+            Some(VoiceProvider::Rime),
+            "an install with only a Rime key starts on Rime"
         );
-        // Saved once worked out: a Rime key added later doesn't switch it.
+        // Saved once worked out: a key added later doesn't switch it.
+        assert_eq!(chosen(&conn, |_| true).unwrap(), Some(VoiceProvider::Rime));
+
+        save_provider(&conn, VoiceProvider::Gemini).unwrap();
         assert_eq!(
-            chosen(&conn, |_| true).unwrap(),
+            chosen(&conn, |_| false).unwrap(),
             Some(VoiceProvider::Gemini)
         );
 
-        save_provider(&conn, VoiceProvider::Rime).unwrap();
-        assert_eq!(chosen(&conn, |_| false).unwrap(), Some(VoiceProvider::Rime));
+        let fresh = Db::in_memory().unwrap();
+        assert_eq!(
+            chosen(&fresh.conn(), |_| false).unwrap(),
+            Some(VoiceProvider::Gemini),
+            "a new install starts on Gemini"
+        );
     }
 
     #[test]

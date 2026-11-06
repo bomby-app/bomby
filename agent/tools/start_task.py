@@ -49,6 +49,15 @@ async def start_task(
     board = context.userdata.board
     name = session_name(session)
     who = harness.short_name
+    if (
+        context.userdata.provider.repeats_tool_calls
+        and board.repeat_of(harness, name, task) is not None
+    ):
+        # Said already: joining it again would only send the agent the same words twice.
+        return (
+            f"Already asked: {who} is on this in session {name}. Its result comes when "
+            + "that task is done."
+        )
     if runner.is_busy(name) and runner.can_steer:
         await context.update(
             f"Sent to {who} mid-task, in session {name}: {task}. It joins the task that's "

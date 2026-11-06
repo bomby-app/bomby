@@ -1,12 +1,16 @@
 import asyncio
+from collections.abc import Callable
+from typing import cast
 
 import pytest
+from livekit.agents import llm
+from livekit.plugins.rime.realtime import PrismHistoryUpdateError
 from livekit.plugins.rime.realtime import RealtimeModel as PrismModel
 
 from tools import ALL_TOOLS
 from voice_providers import GEMINI, PROVIDERS, RIME, provider, rime
 from voice_providers.gemini import ModelChoice
-from voice_providers.rime import KEEP_ALIVE_LABELS, TOOL_FILLERS
+from voice_providers.rime import KEEP_ALIVE_LABELS, TOOL_FILLERS, in_prism_order
 
 
 def test_each_provider_has_a_distinct_key_and_voice_variable() -> None:
@@ -76,3 +80,70 @@ def test_rime_keeps_a_quiet_call_open(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_gemini_needs_no_keep_alive() -> None:
     model = GEMINI.realtime_model("Leda", {})
     asyncio.run(asyncio.wait_for(GEMINI.keep_alive(model), 1))
+
+
+def items() -> dict[str, llm.ChatItem]:
+    """A reply that spoke, then called start_task; its first result; the final one."""
+    return {
+        "user": llm.ChatMessage(id="user", role="user", content=["add a readme"]),
+        "said": llm.ChatMessage(id="said", role="assistant", content=["On it."]),
+        "call": llm.FunctionCall(
+            id="call", call_id="c1", name="start_task", arguments="{}"
+        ),
+        "first": llm.FunctionCallOutput(
+            id="first",
+            call_id="c1",
+            name="start_task",
+            output="started",
+            is_error=False,
+        ),
+        "final_call": llm.FunctionCall(
+            id="final_call", call_id="c1_final", name="start_task", arguments="{}"
+        ),
+        "final": llm.FunctionCallOutput(
+            id="final",
+            call_id="c1_final",
+            name="start_task",
+            output="done",
+            is_error=False,
+        ),
+    }
+
+
+def context(found: dict[str, llm.ChatItem], *ids: str) -> llm.ChatContext:
+    return llm.ChatContext([found[i] for i in ids])
+
+
+def test_prisms_own_order_passes_the_plugins_check() -> None:
+    from livekit.plugins.rime.realtime._history import PrismHistory
+
+    found = items()
+    # The plugin records the call when it arrives and the text when the reply ends;
+    # LiveKit dates the text from when speech started, before the call.
+    plugin = context(found, "user", "call", "said", "first")
+    livekit = context(found, "user", "said", "call", "first", "final_call", "final")
+    history = PrismHistory(cast(object, None))  # pyright: ignore[reportArgumentType]
+    history._chat = plugin  # pyright: ignore[reportPrivateUsage]
+    check = cast(
+        Callable[[llm.ChatContext], llm.ChatContext],
+        history._shared_target,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    with pytest.raises(PrismHistoryUpdateError, match="append order"):
+        _ = check(livekit)
+    accepted = check(in_prism_order(livekit, plugin))
+    assert [i.id for i in accepted.items] == [
+        "user",
+        "call",
+        "said",
+        "first",
+        "final_call",
+        "final",
+    ]
+
+
+def test_an_update_already_in_prisms_order_is_passed_on_as_is() -> None:
+    found = items()
+    plugin = context(found, "user", "call", "said", "first")
+    update = context(found, "user", "call", "said", "first", "final_call", "final")
+    assert in_prism_order(update, plugin) is update
