@@ -262,13 +262,9 @@ pub fn open_call<R: Runtime>(
         .gemini_key(&app)?
         .ok_or_else(|| Error::Invalid("Add your Gemini API key in Settings first.".into()))?;
     // Looks again, so an agent installed since launch is picked up; only where the programs
-    // are, not their versions or setup.
+    // are, not their versions or setup. A call with none still opens: Bomby talks, and
+    // helps the user get one (`agents_note` in agent/tools/start_task.py).
     let found = agents::usable_now(&app);
-    if found.is_empty() {
-        return Err(Error::Invalid(
-            "Bomby can't find an agent that's ready to work. See Settings, Agents.".into(),
-        ));
-    }
     // Last, so this Mac's server starts only for a call that can open.
     let server = call_server::for_new_call(&app, &db, &vault, &local)?;
     let log_dir = app.path().app_log_dir()?;

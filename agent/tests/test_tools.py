@@ -30,8 +30,12 @@ def test_without_claude_the_first_installed_agent_is_the_default() -> None:
     assert "Use `opencode` unless" in agents_note([OPENCODE])
 
 
-def test_with_no_agents_the_note_says_work_cant_start() -> None:
-    assert "can't start" in agents_note([])
+def test_with_no_agents_the_note_says_work_cant_start_and_how_to_get_one() -> None:
+    note = agents_note([])
+
+    assert "can't start" in note
+    assert "(Claude, Codex, OpenCode, omp, goose)" in note
+    assert "Settings, Agents" in note
 
 
 @final

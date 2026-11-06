@@ -23,4 +23,4 @@ People use more than Claude Code, and many agents speak ACP. Bomby should work w
 ## Consequences
 
 - Every agent uses the user's own setup. Claude, Codex and omp support steering; OpenCode and goose queue mid-task requests behind the running turn. OpenCode permissions are approved once, omp does not prompt, Claude uses `bypassPermissions`, Codex `agent-full-access` and goose `auto`.
-- A call needs at least one agent; with none, starting one says so and points at Settings, Agents.
+- A call opens with no agent ready (owner, 2026-11-06): the voice says, kindly, that work needs one of the supported agents installed and signed in, suggests Claude Code, and points at Settings, Agents (`agents_note` in `agent/tools/start_task.py`). Bomby links to each agent's own install page and reports whether it's ready; installing and signing in stay the agent's own.
