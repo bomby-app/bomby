@@ -114,6 +114,11 @@ def notify(tell: Callable[[], Awaitable[None]]) -> None:
     task.add_done_callback(_notices.discard)
 
 
+def _idempotency_key() -> str:
+    """Zep takes only a UUIDv4 in its usual form, with dashes; `.hex` gets a 400."""
+    return str(uuid4())
+
+
 def _fact(edge: Edge, style: Style) -> str:
     when = f"{edge.valid_at or 'date unknown'} to {edge.invalid_at or 'now'}"
     return style.item(f"{edge.fact} ({when})")
@@ -154,7 +159,7 @@ class Memory:
         # Made on the first save, so a call where the user says nothing leaves no thread.
         self._thread_uuid: str | None = None
         # One key for every attempt, so a retry never makes a second thread.
-        self._thread_key: str = uuid4().hex
+        self._thread_key: str = _idempotency_key()
         self._received_ids: set[str] = set()
         self._pending: list[Line] = []
         # What the user is saying that Gemini hasn't finalised yet.
@@ -345,7 +350,7 @@ class Memory:
         """One batch, in Zep-sized chunks. A failed chunk is tried once more with the same
         idempotency key, so one Zep took but didn't confirm isn't saved twice."""
         chunks = [
-            (uuid4().hex, lines[i : i + MAX_MESSAGES])
+            (_idempotency_key(), lines[i : i + MAX_MESSAGES])
             for i in range(0, len(lines), MAX_MESSAGES)
         ]
         for attempt in range(2):

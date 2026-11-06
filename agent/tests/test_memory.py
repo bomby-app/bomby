@@ -4,6 +4,7 @@ from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, final
+from uuid import UUID
 
 import pytest
 from livekit import rtc
@@ -14,7 +15,7 @@ from livekit.agents import (
     llm,
 )
 from livekit.agents.voice.events import CloseReason
-from zep_cloud import ApiError, NotFoundError
+from zep_cloud import ApiError, BadRequestError, NotFoundError
 
 import memory as memory_module
 from call_options import CallOptions
@@ -61,6 +62,10 @@ class FakeZep:
 
     async def _request(self, name: str, **fields: Any) -> None:
         self.requests.append((name, fields))
+        # Zep refuses a key that isn't a UUIDv4 in its usual form (400, 2026-11-06).
+        key = fields.get("idempotency_key")
+        if key is not None and str(UUID(key, version=4)) != key:
+            raise BadRequestError(body=ApiError())
         if self._slow:
             await asyncio.sleep(60)
 
