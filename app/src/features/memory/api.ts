@@ -2,8 +2,7 @@ import { invoke } from "@tauri-apps/api/core"
 
 import type { Memory } from "@/generated/memory"
 
-// The core's memory setting and Zep key (src-tauri/src/settings.rs, credentials.rs). The key
-// goes in, never comes back out.
+// The core's memory settings and Zep key; the key goes in, never comes back out.
 
 export type { Memory } from "@/generated/memory"
 
