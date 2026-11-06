@@ -7,8 +7,11 @@ metadata); console runs use `VOICE_PROVIDER`
 To add one: write its definition next to these, with the `prompt_style` it reads best
 (`sections.py`), list it in `PROVIDERS`, write its tone prompts in `prompts/<id>/`, keep
 its key from the coding agents (`APP_KEYS` in `acp_client/runner.py`), check its plugin
-sends the user's transcripts as `memory.py` expects (docs/livekit-notes.md), and give the
-app its key, voices and options (`app/src-tauri/src/voice.rs`).
+sends the user's transcripts as `memory.py` expects (docs/livekit-notes.md), and run
+`just agent providers` so the app gets its name, key, voices and options
+(`app/src-tauri/voice-providers.json`, `catalogue.py`). The app then needs a
+`VoiceProvider` variant with its keychain field (`app/src-tauri/src/voice.rs`,
+`credentials.rs`) and its copy and key page (`app/src/features/voice/`).
 """
 
 from .gemini import GEMINI

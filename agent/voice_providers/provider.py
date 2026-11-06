@@ -7,6 +7,7 @@ the same for every provider.
 
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import ClassVar
 
 from livekit.agents import llm
@@ -16,17 +17,32 @@ from sections import MARKDOWN, Style
 type Tools = list[llm.Tool | llm.Toolset]
 
 
+@dataclass(frozen=True)
+class Voice:
+    """One of a provider's voices, as Settings, Voice lists it."""
+
+    id: str
+    """What its plugin takes, and the app saves and sends as `voice`: "Kore", "aurora"."""
+    name: str
+    description: str
+    """How it sounds: "Firm, middle pitch"."""
+
+
 class VoiceProvider(ABC):
     """A speech-to-speech model reached through a LiveKit plugin."""
 
     id: ClassVar[str]
     """The provider's id in the job's metadata and the app's settings: "gemini". Short,
     lowercase, stable."""
+    name: ClassVar[str]
+    """How the app talks about it: "Gemini"."""
     key_env: ClassVar[str]
     """The variable its plugin reads the user's API key from ("GOOGLE_API_KEY"). The app
     sets it on the worker; it never reaches a coding agent (`acp_client/runner.py`)."""
+    voices: ClassVar[tuple[Voice, ...]]
+    """The voices the user can pick from in the app, in the order it lists them."""
     default_voice: ClassVar[str]
-    """The voice when none is picked; the app defaults to it too (`settings.rs`)."""
+    """The voice when none is picked, one of `voices`; the app defaults to it too."""
     voice_env: ClassVar[str]
     """The voice for console runs, from `agent/.env` ("GEMINI_VOICE")."""
     prompt_style: ClassVar[Style] = MARKDOWN

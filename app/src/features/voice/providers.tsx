@@ -14,7 +14,10 @@ type OptionCopy = {
   info: string
 }
 
-/** How the app shows each voice provider; what it can do comes from the core (voice.rs). */
+/**
+ * How the app shows each voice provider; what it can do comes from the core (voice.rs),
+ * which has it from the agent's catalogue (a test checks this covers it).
+ */
 type ProviderCopy = {
   name: string
   /** What it runs, for the splash: "Gemini Live", "Prism". */

@@ -15,7 +15,7 @@ from livekit.agents.types import NotGiven
 from livekit.plugins import google
 from livekit.plugins.google.tools import GoogleSearch
 
-from .provider import Tools, VoiceProvider
+from .provider import Tools, Voice, VoiceProvider
 
 MODELS = {
     "fast": "gemini-3.8-live",
@@ -57,6 +57,43 @@ class ModelChoice:
 # hint, which stops noise being written down as Portuguese or Russian (2026-11-04).
 LANGUAGE_CODES = ["en-US"]
 
+# Gemini's 30 prebuilt voices: name, style and pitch, as Google lists them for Gemini 3.8
+# (ai.google.dev/gemini-api/docs/speech-generation#voices, and AI Studio for the pitch,
+# 2026-11-04). Live supports all of them. The larger voice library and custom voices
+# (`GET /v1beta/voices`) are left out on purpose.
+PREBUILT_VOICES = (
+    ("Zephyr", "Bright", "Higher"),
+    ("Puck", "Upbeat", "Middle"),
+    ("Charon", "Informative", "Lower"),
+    ("Kore", "Firm", "Middle"),
+    ("Fenrir", "Excitable", "Lower middle"),
+    ("Leda", "Youthful", "Higher"),
+    ("Orus", "Firm", "Lower middle"),
+    ("Aoede", "Breezy", "Middle"),
+    ("Callirrhoe", "Easy-going", "Middle"),
+    ("Autonoe", "Bright", "Middle"),
+    ("Enceladus", "Breathy", "Lower"),
+    ("Iapetus", "Clear", "Lower middle"),
+    ("Umbriel", "Easy-going", "Lower middle"),
+    ("Algieba", "Smooth", "Lower"),
+    ("Despina", "Smooth", "Middle"),
+    ("Erinome", "Clear", "Middle"),
+    ("Algenib", "Gravelly", "Lower"),
+    ("Rasalgethi", "Informative", "Middle"),
+    ("Laomedeia", "Upbeat", "Higher"),
+    ("Achernar", "Soft", "Higher"),
+    ("Alnilam", "Firm", "Lower middle"),
+    ("Schedar", "Even", "Lower middle"),
+    ("Gacrux", "Mature", "Middle"),
+    ("Pulcherrima", "Forward", "Middle"),
+    ("Achird", "Friendly", "Lower middle"),
+    ("Zubenelgenubi", "Casual", "Lower middle"),
+    ("Vindemiatrix", "Gentle", "Middle"),
+    ("Sadachbia", "Lively", "Lower"),
+    ("Sadaltager", "Knowledgeable", "Middle"),
+    ("Sulafat", "Warm", "Middle"),
+)
+
 # Gemini's own Google Search: it runs on Google's side, so the prompt needn't mention it
 # and there's nothing for Bomby to answer (owner, 2026-11-06).
 GOOGLE_SEARCH = "google_search"
@@ -64,7 +101,13 @@ GOOGLE_SEARCH = "google_search"
 
 class Gemini(VoiceProvider):
     id: ClassVar[str] = "gemini"
+    name: ClassVar[str] = "Gemini"
     key_env: ClassVar[str] = "GOOGLE_API_KEY"
+    # A voice's id is its name, the way the plugin takes it.
+    voices: ClassVar[tuple[Voice, ...]] = tuple(
+        Voice(name, name, f"{style}, {pitch.lower()} pitch")
+        for name, style, pitch in PREBUILT_VOICES
+    )
     default_voice: ClassVar[str] = "Leda"
     voice_env: ClassVar[str] = "GEMINI_VOICE"
     options: ClassVar[Mapping[str, bool]] = {GOOGLE_SEARCH: True}

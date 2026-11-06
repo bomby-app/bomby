@@ -1,5 +1,7 @@
 import asyncio
+import json
 from collections.abc import Callable
+from pathlib import Path
 from typing import cast
 
 import pytest
@@ -8,7 +10,7 @@ from livekit.plugins.rime.realtime import PrismHistoryUpdateError
 from livekit.plugins.rime.realtime import RealtimeModel as PrismModel
 
 from tools import ALL_TOOLS
-from voice_providers import GEMINI, PROVIDERS, RIME, provider, rime
+from voice_providers import GEMINI, PROVIDERS, RIME, catalogue, provider, rime
 from voice_providers.gemini import ModelChoice
 from voice_providers.rime import KEEP_ALIVE_LABELS, TOOL_FILLERS, in_prism_order
 
@@ -18,6 +20,32 @@ def test_each_provider_has_a_distinct_key_and_voice_variable() -> None:
     assert len({p.voice_env for p in PROVIDERS.values()}) == len(PROVIDERS)
     assert provider("") is GEMINI
     assert provider("rime") is RIME
+
+
+def test_each_provider_defaults_to_one_of_its_own_voices() -> None:
+    for p in PROVIDERS.values():
+        ids = [v.id for v in p.voices]
+        assert len(set(ids)) == len(ids)
+        assert p.default_voice in ids
+    assert len(GEMINI.voices) == 30
+    kore = next(v for v in GEMINI.voices if v.id == "Kore")
+    assert (kore.name, kore.description) == ("Kore", "Firm, middle pitch")
+    assert [v.id for v in RIME.voices] == ["aurora", "wawona", "brando", "astra"]
+
+
+def test_the_apps_catalogue_lists_every_provider_in_order(tmp_path: Path) -> None:
+    written = cast(dict[str, list[dict[str, object]]], json.loads(catalogue.render()))
+    gemini, rime_entry = written["providers"]
+    assert [gemini["id"], rime_entry["id"]] == list(PROVIDERS)
+    assert gemini["key_env"] == "GOOGLE_API_KEY"
+    assert gemini["default_voice"] == "Leda"
+    assert gemini["options"] == [{"id": "google_search", "default": True}]
+    assert rime_entry["options"] == []
+
+    path = str(tmp_path / "voice-providers.json")
+    assert catalogue.main(["check", path]) == 1
+    assert catalogue.main(["write", path]) == 0
+    assert catalogue.main(["check", path]) == 0
 
 
 def test_rime_talks_through_prism_with_the_users_key(

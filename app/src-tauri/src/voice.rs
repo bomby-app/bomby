@@ -4,6 +4,7 @@
 //! provider's key is in the keychain (`credentials`). A pick applies from the next call.
 
 use std::collections::BTreeMap;
+use std::sync::LazyLock;
 
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
@@ -29,51 +30,37 @@ pub enum VoiceProvider {
     Rime,
 }
 
-/// Gemini's 30 prebuilt voices: name, style and pitch, as Google lists them for Gemini 3.8
-/// (ai.google.dev/gemini-api/docs/speech-generation#voices, and AI Studio for the pitch,
-/// 2026-11-04). Live supports all of them. The larger voice library and custom voices
-/// (`GET /v1beta/voices`) are left out on purpose.
-const GEMINI_VOICES: [(&str, &str, &str); 30] = [
-    ("Zephyr", "Bright", "Higher"),
-    ("Puck", "Upbeat", "Middle"),
-    ("Charon", "Informative", "Lower"),
-    ("Kore", "Firm", "Middle"),
-    ("Fenrir", "Excitable", "Lower middle"),
-    ("Leda", "Youthful", "Higher"),
-    ("Orus", "Firm", "Lower middle"),
-    ("Aoede", "Breezy", "Middle"),
-    ("Callirrhoe", "Easy-going", "Middle"),
-    ("Autonoe", "Bright", "Middle"),
-    ("Enceladus", "Breathy", "Lower"),
-    ("Iapetus", "Clear", "Lower middle"),
-    ("Umbriel", "Easy-going", "Lower middle"),
-    ("Algieba", "Smooth", "Lower"),
-    ("Despina", "Smooth", "Middle"),
-    ("Erinome", "Clear", "Middle"),
-    ("Algenib", "Gravelly", "Lower"),
-    ("Rasalgethi", "Informative", "Middle"),
-    ("Laomedeia", "Upbeat", "Higher"),
-    ("Achernar", "Soft", "Higher"),
-    ("Alnilam", "Firm", "Lower middle"),
-    ("Schedar", "Even", "Lower middle"),
-    ("Gacrux", "Mature", "Middle"),
-    ("Pulcherrima", "Forward", "Middle"),
-    ("Achird", "Friendly", "Lower middle"),
-    ("Zubenelgenubi", "Casual", "Lower middle"),
-    ("Vindemiatrix", "Gentle", "Middle"),
-    ("Sadachbia", "Lively", "Lower"),
-    ("Sadaltager", "Knowledgeable", "Middle"),
-    ("Sulafat", "Warm", "Middle"),
-];
+/// What Settings and the splash need of each provider before any call: its name, key
+/// variable, voices and options. The agent's definitions (`agent/voice_providers/`) are
+/// the one source: `just agent providers` writes them here, and `just agent check` fails
+/// when this is out of date.
+const CATALOGUE_JSON: &str = include_str!("../voice-providers.json");
 
-/// Prism's four voices, its own rather than Rime's TTS voices: id, name and how it sounds,
-/// shortened from docs.rime.ai/docs/prism/sessions#choose-a-voice (2026-11-06).
-const RIME_VOICES: [(&str, &str, &str); 4] = [
-    ("aurora", "Aurora", "Calm and casual, lower pitch"),
-    ("wawona", "Wawona", "Bright and polished, higher pitch"),
-    ("brando", "Brando", "Low and steady, confident"),
-    ("astra", "Astra", "Clear and youthful, energetic"),
-];
+static CATALOGUE: LazyLock<Catalogue> = LazyLock::new(|| {
+    serde_json::from_str(CATALOGUE_JSON).expect("voice-providers.json is the agent's catalogue")
+});
+
+#[derive(Deserialize)]
+struct Catalogue {
+    providers: Vec<CatalogueEntry>,
+}
+
+/// One provider in the catalogue (`catalogue.py` in `agent/voice_providers/`).
+#[derive(Deserialize)]
+struct CatalogueEntry {
+    id: String,
+    name: String,
+    key_env: String,
+    default_voice: String,
+    voices: Vec<Voice>,
+    options: Vec<OptionDefault>,
+}
+
+#[derive(Deserialize)]
+struct OptionDefault {
+    id: String,
+    default: bool,
+}
 
 impl VoiceProvider {
     pub const ALL: [Self; 2] = [Self::Gemini, Self::Rime];
@@ -90,58 +77,40 @@ impl VoiceProvider {
         Self::ALL.into_iter().find(|p| p.id() == id)
     }
 
+    /// Its entry in the agent's catalogue; a test checks every provider has one.
+    fn entry(self) -> &'static CatalogueEntry {
+        CATALOGUE
+            .providers
+            .iter()
+            .find(|entry| entry.id == self.id())
+            .expect("every provider is in the agent's catalogue")
+    }
+
     /// How the app talks about it.
     pub fn name(self) -> &'static str {
-        match self {
-            Self::Gemini => "Gemini",
-            Self::Rime => "Rime",
-        }
+        &self.entry().name
     }
 
     /// Where the agent's plugin reads the key (`key_env` in `agent/voice_providers/`).
     pub fn key_env(self) -> &'static str {
-        match self {
-            Self::Gemini => "GOOGLE_API_KEY",
-            Self::Rime => "RIME_API_KEY",
-        }
+        &self.entry().key_env
     }
 
-    /// The agent defaults to the same (`default_voice`); Aurora is the owner's pick.
+    /// The agent defaults to the same (`default_voice`).
     fn default_voice(self) -> &'static str {
-        match self {
-            Self::Gemini => "Leda",
-            Self::Rime => "aurora",
-        }
+        &self.entry().default_voice
     }
 
-    fn voices(self) -> Vec<Voice> {
-        match self {
-            Self::Gemini => GEMINI_VOICES
-                .iter()
-                .map(|&(name, style, pitch)| Voice {
-                    id: name,
-                    name,
-                    description: format!("{style}, {} pitch", pitch.to_lowercase()),
-                })
-                .collect(),
-            Self::Rime => RIME_VOICES
-                .iter()
-                .map(|&(id, name, description)| Voice {
-                    id,
-                    name,
-                    description: description.to_owned(),
-                })
-                .collect(),
-        }
+    fn voices(self) -> &'static [Voice] {
+        &self.entry().voices
     }
 
     /// Its switches and their defaults, as the agent has them (`options`).
-    fn options(self) -> &'static [(&'static str, bool)] {
-        match self {
-            // Gemini's own Google Search, on Google's side.
-            Self::Gemini => &[("google_search", true)],
-            Self::Rime => &[],
-        }
+    fn options(self) -> impl Iterator<Item = (&'static str, bool)> {
+        self.entry()
+            .options
+            .iter()
+            .map(|option| (option.id.as_str(), option.default))
     }
 
     /// Where its voice is saved; Gemini keeps the key every install had before.
@@ -157,12 +126,12 @@ impl VoiceProvider {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "voice.ts"))]
 pub struct Voice {
     /// What the agent gets: "Kore", "aurora".
-    id: &'static str,
-    name: &'static str,
+    id: String,
+    name: String,
     description: String,
 }
 
@@ -273,8 +242,7 @@ fn save_voice(conn: &Connection, provider: VoiceProvider, id: &str) -> Result<()
 fn options(conn: &Connection, provider: VoiceProvider) -> Result<BTreeMap<&'static str, bool>> {
     provider
         .options()
-        .iter()
-        .map(|&(id, default)| {
+        .map(|(id, default)| {
             let on = match get(conn, &provider.option_setting(id))?.as_deref() {
                 Some("1") => true,
                 Some("0") => false,
@@ -286,7 +254,7 @@ fn options(conn: &Connection, provider: VoiceProvider) -> Result<BTreeMap<&'stat
 }
 
 fn save_option(conn: &Connection, provider: VoiceProvider, option: &str, on: bool) -> Result<()> {
-    if !provider.options().iter().any(|&(id, _)| id == option) {
+    if !provider.options().any(|(id, _)| id == option) {
         return Err(Error::Invalid(format!(
             "{} has no option {option}.",
             provider.name()
@@ -343,7 +311,7 @@ pub fn voice_settings<R: Runtime>(
                 has_key: keys.contains_key(&provider),
                 voice: voice(&conn, provider)?,
                 default_voice: provider.default_voice(),
-                voices: provider.voices(),
+                voices: provider.voices().to_vec(),
                 options: options(&conn, provider)?
                     .into_iter()
                     .map(|(id, on)| ProviderOption { id, on })
@@ -391,11 +359,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ids_match_the_agents_providers() {
-        assert_eq!(
-            VoiceProvider::ALL.map(VoiceProvider::id),
-            ["gemini", "rime"]
-        );
+    fn providers_are_the_agents_catalogue_in_its_order() {
+        let ids: Vec<&str> = CATALOGUE.providers.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!(VoiceProvider::ALL.map(VoiceProvider::id).to_vec(), ids);
         for provider in VoiceProvider::ALL {
             assert_eq!(VoiceProvider::from_id(provider.id()), Some(provider));
             assert!(
@@ -497,7 +463,7 @@ mod tests {
     fn gemini_voices_read_as_style_and_pitch() {
         let kore = VoiceProvider::Gemini
             .voices()
-            .into_iter()
+            .iter()
             .find(|v| v.id == "Kore")
             .unwrap();
         assert_eq!(kore.description, "Firm, middle pitch");

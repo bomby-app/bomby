@@ -16,7 +16,7 @@ from rimelabs_sdk.realtime import PrismFiller
 
 from sections import PLAIN, Style
 
-from .provider import VoiceProvider
+from .provider import Voice, VoiceProvider
 
 logger = logging.getLogger("bomby.rime")
 
@@ -124,8 +124,17 @@ class DiagnosedModel(RealtimeModel):
 
 class Rime(VoiceProvider):
     id: ClassVar[str] = "rime"
+    name: ClassVar[str] = "Rime"
     key_env: ClassVar[str] = "RIME_API_KEY"
-    # The owner's pick of Prism's four (aurora, wawona, brando, astra).
+    # Prism's four voices, its own rather than Rime's TTS voices: how each sounds,
+    # shortened from docs.rime.ai/docs/prism/sessions#choose-a-voice (2026-11-06).
+    voices: ClassVar[tuple[Voice, ...]] = (
+        Voice("aurora", "Aurora", "Calm and casual, lower pitch"),
+        Voice("wawona", "Wawona", "Bright and polished, higher pitch"),
+        Voice("brando", "Brando", "Low and steady, confident"),
+        Voice("astra", "Astra", "Clear and youthful, energetic"),
+    )
+    # The owner's pick of the four.
     default_voice: ClassVar[str] = "aurora"
     voice_env: ClassVar[str] = "RIME_VOICE"
     prompt_style: ClassVar[Style] = PLAIN

@@ -1,0 +1,198 @@
+{
+  "generated": "Generated from agent/voice_providers/ by `just agent providers`; don't edit.",
+  "providers": [
+    {
+      "id": "gemini",
+      "name": "Gemini",
+      "key_env": "GOOGLE_API_KEY",
+      "default_voice": "Leda",
+      "voices": [
+        {
+          "id": "Zephyr",
+          "name": "Zephyr",
+          "description": "Bright, higher pitch"
+        },
+        {
+          "id": "Puck",
+          "name": "Puck",
+          "description": "Upbeat, middle pitch"
+        },
+        {
+          "id": "Charon",
+          "name": "Charon",
+          "description": "Informative, lower pitch"
+        },
+        {
+          "id": "Kore",
+          "name": "Kore",
+          "description": "Firm, middle pitch"
+        },
+        {
+          "id": "Fenrir",
+          "name": "Fenrir",
+          "description": "Excitable, lower middle pitch"
+        },
+        {
+          "id": "Leda",
+          "name": "Leda",
+          "description": "Youthful, higher pitch"
+        },
+        {
+          "id": "Orus",
+          "name": "Orus",
+          "description": "Firm, lower middle pitch"
+        },
+        {
+          "id": "Aoede",
+          "name": "Aoede",
+          "description": "Breezy, middle pitch"
+        },
+        {
+          "id": "Callirrhoe",
+          "name": "Callirrhoe",
+          "description": "Easy-going, middle pitch"
+        },
+        {
+          "id": "Autonoe",
+          "name": "Autonoe",
+          "description": "Bright, middle pitch"
+        },
+        {
+          "id": "Enceladus",
+          "name": "Enceladus",
+          "description": "Breathy, lower pitch"
+        },
+        {
+          "id": "Iapetus",
+          "name": "Iapetus",
+          "description": "Clear, lower middle pitch"
+        },
+        {
+          "id": "Umbriel",
+          "name": "Umbriel",
+          "description": "Easy-going, lower middle pitch"
+        },
+        {
+          "id": "Algieba",
+          "name": "Algieba",
+          "description": "Smooth, lower pitch"
+        },
+        {
+          "id": "Despina",
+          "name": "Despina",
+          "description": "Smooth, middle pitch"
+        },
+        {
+          "id": "Erinome",
+          "name": "Erinome",
+          "description": "Clear, middle pitch"
+        },
+        {
+          "id": "Algenib",
+          "name": "Algenib",
+          "description": "Gravelly, lower pitch"
+        },
+        {
+          "id": "Rasalgethi",
+          "name": "Rasalgethi",
+          "description": "Informative, middle pitch"
+        },
+        {
+          "id": "Laomedeia",
+          "name": "Laomedeia",
+          "description": "Upbeat, higher pitch"
+        },
+        {
+          "id": "Achernar",
+          "name": "Achernar",
+          "description": "Soft, higher pitch"
+        },
+        {
+          "id": "Alnilam",
+          "name": "Alnilam",
+          "description": "Firm, lower middle pitch"
+        },
+        {
+          "id": "Schedar",
+          "name": "Schedar",
+          "description": "Even, lower middle pitch"
+        },
+        {
+          "id": "Gacrux",
+          "name": "Gacrux",
+          "description": "Mature, middle pitch"
+        },
+        {
+          "id": "Pulcherrima",
+          "name": "Pulcherrima",
+          "description": "Forward, middle pitch"
+        },
+        {
+          "id": "Achird",
+          "name": "Achird",
+          "description": "Friendly, lower middle pitch"
+        },
+        {
+          "id": "Zubenelgenubi",
+          "name": "Zubenelgenubi",
+          "description": "Casual, lower middle pitch"
+        },
+        {
+          "id": "Vindemiatrix",
+          "name": "Vindemiatrix",
+          "description": "Gentle, middle pitch"
+        },
+        {
+          "id": "Sadachbia",
+          "name": "Sadachbia",
+          "description": "Lively, lower pitch"
+        },
+        {
+          "id": "Sadaltager",
+          "name": "Sadaltager",
+          "description": "Knowledgeable, middle pitch"
+        },
+        {
+          "id": "Sulafat",
+          "name": "Sulafat",
+          "description": "Warm, middle pitch"
+        }
+      ],
+      "options": [
+        {
+          "id": "google_search",
+          "default": true
+        }
+      ]
+    },
+    {
+      "id": "rime",
+      "name": "Rime",
+      "key_env": "RIME_API_KEY",
+      "default_voice": "aurora",
+      "voices": [
+        {
+          "id": "aurora",
+          "name": "Aurora",
+          "description": "Calm and casual, lower pitch"
+        },
+        {
+          "id": "wawona",
+          "name": "Wawona",
+          "description": "Bright and polished, higher pitch"
+        },
+        {
+          "id": "brando",
+          "name": "Brando",
+          "description": "Low and steady, confident"
+        },
+        {
+          "id": "astra",
+          "name": "Astra",
+          "description": "Clear and youthful, energetic"
+        }
+      ],
+      "options": []
+    }
+  ]
+}
