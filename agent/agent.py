@@ -78,9 +78,9 @@ async def entrypoint(ctx: JobContext) -> None:
     runners = CallRunners.for_job(job)
     # The voice model, its voice and, on a resumed call, the conversation so far.
     options = CallOptions.from_job(job, os.environ)
-    model = options.provider.model
-    ctx.log_context_fields = {"room": ctx.room.name, "model": model}
-    logger.info("using %s, options %s", model, options.options)
+    model_name = options.provider.model
+    ctx.log_context_fields = {"room": ctx.room.name, "model": model_name}
+    logger.info("using %s, options %s", model_name, options.options)
     logger.info(
         "project %s in %s, agents %s, voice %s, tone %s, %d earlier lines",
         runners.project.name,
@@ -133,15 +133,21 @@ async def entrypoint(ctx: JobContext) -> None:
 
     _ = ctx.room.on("track_subscribed", on_track_subscribed)  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
 
-    session: AgentSession[Call] = AgentSession(
-        userdata=call,
-        llm=options.provider.realtime_model(options.voice, options.options),
-    )
+    model = options.provider.realtime_model(options.voice, options.options)
+    session: AgentSession[Call] = AgentSession(userdata=call, llm=model)
 
     if memory:
         memory.attach(session)
     assistant = Assistant(options, runners, memory is not None, remembered)
     await session.start(agent=assistant, room=ctx.room)  # pyright: ignore[reportUnknownMemberType]
+
+    # Keeps a provider that closes quiet conversations open until the call ends.
+    keeping = asyncio.create_task(options.provider.keep_alive(model))
+
+    async def stop_keeping() -> None:
+        _ = keeping.cancel()
+
+    ctx.add_shutdown_callback(stop_keeping)
 
 
 def main() -> None:

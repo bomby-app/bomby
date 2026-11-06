@@ -26,7 +26,7 @@ Checked 2026-11-06 against `livekit-plugins-rime` 1.8.11 and `rimelabs-sdk` 0.1.
   | `astra` | Clear and youthful, with an energetic delivery |
 
 - **Limits** ([errors](https://docs.rime.ai/docs/prism/errors.md#limits)): the conversation closes after 5 minutes idle (`session.idle_timeout`, then close code 1000 `idle`), even while audio streams; any other client event, such as a nudge, resets it. A dropped connection doesn't resume. A turn ends after 55 s of speech. Context is 65,536 tokens, oldest turns left out past it.
-- **Open for Bomby**: a quiet wait on a long task can pass 5 minutes before its result arrives. To try on a call before choosing a keep-alive or a reconnect.
+- **Bomby's keep-alive**: a quiet wait on a long task can pass 5 minutes, so every 4 minutes a Rime call sets the labels later replies carry (`model.update_options(response_metadata=...)`, a `session.update` that changes nothing else; `keep_alive` in `agent/voice_providers/rime.py`). Not yet tried past 5 minutes on a call.
 
 ## Prompting
 

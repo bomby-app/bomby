@@ -47,6 +47,11 @@ class VoiceProvider(ABC):
     ) -> llm.RealtimeModel:
         """A new model for one call's session, speaking in `voice`."""
 
+    async def keep_alive(self, model: llm.RealtimeModel) -> None:
+        """Runs for the whole call beside the session, for a provider that closes a quiet
+        conversation on its own. Gemini's needs nothing."""
+        del model
+
     def tools(self, options: Mapping[str, bool]) -> Tools:
         """The provider's own tools for a call, beside Bomby's (`tools/`)."""
         del options
