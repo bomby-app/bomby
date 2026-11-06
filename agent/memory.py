@@ -8,7 +8,7 @@ and the app shows the user a card (the `bomby.memory` attribute).
 
 zep-cloud 4.0.1 addresses users and threads by Zep's own UUIDs, so the install's user is
 looked up by its id (or made once), and a call gets a new thread when it has something to
-save. Facts: docs/zep-notes.md.
+save. Facts: docs/zep-notes.md; LiveKit's side: docs/livekit-notes.md.
 """
 
 import asyncio
@@ -17,6 +17,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal
+from uuid import uuid4
 
 from livekit import rtc
 from livekit.agents import (
@@ -36,33 +37,28 @@ from zep_cloud import (
     NotFoundError,
     User,
 )
-from zep_cloud.core.request_options import RequestOptions
 
 from call_options import CallOptions
 
 logger = logging.getLogger("bomby.memory")
 
-# What the agent sets on its participant when this call has no memory (app: call-view.tsx).
+# Set on the agent's participant when the call has no memory (app: memory-unavailable.tsx).
 ATTRIBUTE = "bomby.memory"
 UNAVAILABLE = "unavailable"
 ASSISTANT_NAME = "Bomby"
 
-# Seconds. Zep answers in well under one; a slow connection gets the rest. Each request
-# gets the same, without retries, so one slow request can't outlast the budget.
+# Seconds; the owner's 5, for a slow connection. Each request gets it too.
 START_BUDGET = 5.0
 RECALL_BUDGET = 5.0
+NOTICE_BUDGET = 2.0
 # Inside LiveKit's 10 s job shutdown (`shutdown_process_timeout`).
 CLOSE_BUDGET = 8.0
-# How long hanging up waits for the session to close, so its last lines are in.
-CLOSE_WAIT = 3.0
+CLOSE_WAIT = 6.0
 SAVE_RETRY_DELAY = 1.0
-NO_RETRIES: RequestOptions = {"max_retries": 0}
 
-# A stable description of the durable profile: at a call's start there's nothing else to
-# search with.
+# At a call's start there's nothing else to search with.
 PROFILE_QUERY = "who the user is, their name, their projects, how they like to work"
-# Until Zep has a summary, the first facts tend to describe the talk, not the person, and
-# greeting a stranger as someone remembered is worse than not remembering.
+# Without a summary, a few facts describe the talk, not the person.
 MIN_FACTS_WITHOUT_SUMMARY = 4
 FACT_LIMIT = 20
 RECALL_LIMIT = 6
@@ -81,8 +77,10 @@ MAX_CHARS = 4096
 MIN_INTERRUPTED_WORDS = 3
 
 Role = Literal["user", "assistant"]
-# An interim transcript without LiveKit's item id: its final line replaces it all the same.
+# For an interim transcript without an item id.
 UNKNOWN_ITEM = "unknown"
+
+_notices: set[asyncio.Task[None]] = set()
 
 
 class MemoryUnavailable(Exception):
@@ -99,6 +97,22 @@ class Line:
     at: float
 
 
+def notify(tell: Callable[[], Awaitable[None]]) -> None:
+    """Runs `tell` in the background, within `NOTICE_BUDGET`: telling the app that memory
+    is unavailable never holds up the call."""
+
+    async def run() -> None:
+        try:
+            async with asyncio.timeout(NOTICE_BUDGET):
+                await tell()
+        except Exception:
+            logger.exception("couldn't tell the app memory is unavailable")
+
+    task = asyncio.create_task(run())
+    _notices.add(task)
+    task.add_done_callback(_notices.discard)
+
+
 def _fact(edge: Edge) -> str:
     return f"- {edge.fact} ({edge.valid_at or 'date unknown'} to {edge.invalid_at or 'now'})"
 
@@ -108,7 +122,12 @@ def _rfc3339(at: float) -> str:
 
 
 class Memory:
-    """One call's memory: the install's Zep user, and the thread this call saves to."""
+    """One call's memory: the install's Zep user, and the thread this call saves to.
+
+    Saving follows LiveKit's conversation items, sorted by when each line was said.
+    Gemini finalises the user's spoken line after its reply, so Bomby's lines wait for
+    the user's next one, and every line waits behind a spoken one not finalised yet.
+    """
 
     def __init__(
         self,
@@ -119,26 +138,27 @@ class Memory:
     ) -> None:
         self._client: AsyncZep = client
         self._user_uuid: str = user_uuid
-        # Zep maps a message to the user node by its name (help.getzep.com/adding-messages).
+        # Zep maps a message to the user node by its name.
         self._user_name: str = user_name
         # False on an incognito call: nothing is ever written.
         self._saves: bool = saves
         self._on_unavailable: Callable[[], Awaitable[None]] | None = None
         self._flagged: bool = False
+        self._profile_update: asyncio.Task[None] | None = None
 
         # Made on the first save, so a call where the user says nothing leaves no thread.
         self._thread_uuid: str | None = None
-        self._seen: set[str] = set()
-        # Lines not sent yet. Bomby's wait for the user's next one: Gemini sends the
-        # user's final transcript only after its reply, which then must not go first.
+        # One key for every attempt, so a retry never makes a second thread.
+        self._thread_key: str = uuid4().hex
+        self._received_ids: set[str] = set()
         self._pending: list[Line] = []
-        # What the user is saying that Gemini hasn't finalised yet, saved on hang-up.
+        # What the user is saying that Gemini hasn't finalised yet.
         self._unfinished: Line | None = None
-        # One writer, so batches reach Zep one at a time, in order.
         self._queue: asyncio.Queue[list[Line] | None] = asyncio.Queue()
         self._writer: asyncio.Task[None] | None = None
-        self._background: set[asyncio.Task[None]] = set()
         self._session_closed: asyncio.Event = asyncio.Event()
+        # Set on hang-up, once the last lines are queued.
+        self._finished: bool = False
 
     @classmethod
     async def open(
@@ -152,9 +172,10 @@ class Memory:
         if not user_id or not key:
             return None, ""
         saves = not options.memory_incognito
-        client = AsyncZep(api_key=key, timeout=START_BUDGET)
         try:
             async with asyncio.timeout(START_BUDGET):
+                # Retries are `_write`'s own, so no request outlasts its budget.
+                client = AsyncZep(api_key=key, timeout=START_BUDGET, max_retries=0)
                 user = await _find_user(client, user_id, options.user_name, zone, saves)
                 if user is None:
                     logger.info("incognito, and nothing remembered yet")
@@ -172,8 +193,7 @@ class Memory:
         return memory, remembered
 
     def on_unavailable(self, callback: Callable[[], Awaitable[None]]) -> None:
-        """Told once when Zep stops answering mid-call, so the app can show it. Must not
-        raise."""
+        """Told once, in the background, when Zep stops answering mid-call."""
         self._on_unavailable = callback
 
     # Reading
@@ -183,8 +203,7 @@ class Memory:
         summary, facts = await asyncio.gather(
             self._summary(), self._facts(PROFILE_QUERY, FACT_LIMIT)
         )
-        # A new user's summary is a stub Zep writes from their id and name, before any
-        # facts; a real one comes from facts.
+        # Before any facts, the summary is a stub Zep writes from the id and name.
         if not facts:
             summary = ""
         if not summary and len(facts) < MIN_FACTS_WITHOUT_SUMMARY:
@@ -203,7 +222,7 @@ class Memory:
                 facts = await self._facts(query, RECALL_LIMIT)
         except Exception:
             logger.exception("couldn't recall %r", query)
-            await self._unavailable()
+            self._unavailable()
             return "You can't remember that right now."
         if not facts:
             return "Nothing remembered about that. Ask the user."
@@ -211,9 +230,7 @@ class Memory:
 
     async def _summary(self) -> str:
         try:
-            node = await self._client.user.get_node(
-                self._user_uuid, request_options=NO_RETRIES
-            )
+            node = await self._client.user.get_node(self._user_uuid)
         except NotFoundError:
             return ""
         return (node.summary or "").strip()
@@ -225,16 +242,14 @@ class Memory:
             page_size=limit,
             reranker="cross_encoder",
             filters=CURRENT,
-            request_options=NO_RETRIES,
         )
         return [edge for edge in page.items or [] if edge.fact]
 
     # Saving
 
     def attach(self, session: rtc.EventEmitter[Any]) -> None:
-        """Saves the conversation as it goes, without making anyone wait: every line,
-        spoken or typed, from `conversation_item_added`, in the order it was said.
-        Nothing to do on a call that saves nothing."""
+        """Saves the conversation as it goes, spoken and typed lines alike, without making
+        anyone wait. Nothing to do on a call that saves nothing."""
         if not self._saves:
             return
         # LiveKit's emitter is untyped; the ignores are its.
@@ -244,7 +259,7 @@ class Memory:
 
     def _on_item(self, event: ConversationItemAddedEvent) -> None:
         item = event.item
-        if not isinstance(item, llm.ChatMessage) or item.id in self._seen:
+        if not isinstance(item, llm.ChatMessage) or item.id in self._received_ids:
             return
         if item.role != "user" and item.role != "assistant":
             return
@@ -257,8 +272,13 @@ class Memory:
             and len(text.split()) < MIN_INTERRUPTED_WORDS
         ):
             return
-        self._seen.add(item.id)
-        self._pending.append(Line(item.id, item.role, text, item.created_at))
+        if self._finished:
+            logger.warning("a line came after the call was saved, left out")
+            return
+        self._received_ids.add(item.id)
+        self._pending.append(
+            Line(item.id, item.role, text[:MAX_CHARS], item.created_at)
+        )
         if item.role == "user":
             if self._unfinished and self._unfinished.id in (item.id, UNKNOWN_ITEM):
                 self._unfinished = None
@@ -267,61 +287,74 @@ class Memory:
     def _on_transcript(self, event: UserInputTranscribedEvent) -> None:
         text = event.transcript.strip()
         # The final one arrives as a conversation item; an empty one marks speech stopping.
-        if event.is_final or not text:
+        if event.is_final or not text or self._finished:
             return
         item_id = event.item_id or UNKNOWN_ITEM
-        if item_id in self._seen:
+        if item_id in self._received_ids:
             return
+        unfinished = self._unfinished
         started = (
-            self._unfinished.at
-            if self._unfinished and self._unfinished.id == item_id
+            unfinished.at
+            if unfinished and unfinished.id == item_id
             else event.created_at
         )
-        self._unfinished = Line(item_id, "user", text, started)
+        self._unfinished = Line(item_id, "user", text[:MAX_CHARS], started)
 
     def _on_close(self, _: CloseEvent) -> None:
         self._session_closed.set()
 
     def _flush(self, last: bool = False) -> None:
-        """Sends what's pending, in the order it was said. Bomby's lines alone wait for
-        the user's next one, unless this is the end of the call; and until the user has
-        said something, nothing is sent at all."""
+        """Queues what's settled, in the order it was said. Mid-call, Bomby's lines wait
+        for the user's next one, and everything waits behind a line the user is still
+        saying. Until the user has said something, nothing is queued at all."""
         lines = sorted(self._pending, key=lambda line: line.at)
-        self._pending = []
-        if not lines:
+        settled = len(lines)
+        if not last:
+            while settled and lines[settled - 1].role == "assistant":
+                settled -= 1
+            if self._unfinished:
+                before = self._unfinished.at
+                settled = min(settled, sum(1 for line in lines if line.at < before))
+        ready, self._pending = lines[:settled], lines[settled:]
+        if not ready:
             return
-        if self._thread_uuid is None and self._writer is None:
-            if not any(line.role == "user" for line in lines):
+        if self._writer is None:
+            if not any(line.role == "user" for line in ready):
                 if not last:
                     self._pending = lines
                 return
             self._writer = asyncio.create_task(self._write_all())
-        self._queue.put_nowait(lines)
+        self._queue.put_nowait(ready)
 
     async def _write_all(self) -> None:
         while (lines := await self._queue.get()) is not None:
             await self._write(lines)
 
     async def _write(self, lines: list[Line]) -> None:
-        """One batch, in Zep-sized chunks; a chunk that fails is tried once more, and the
-        retry resends only what didn't land."""
+        """One batch, in Zep-sized chunks. A failed chunk is tried once more with the same
+        idempotency key, so one Zep took but didn't confirm isn't saved twice."""
         chunks = [
-            lines[i : i + MAX_MESSAGES] for i in range(0, len(lines), MAX_MESSAGES)
+            (uuid4().hex, lines[i : i + MAX_MESSAGES])
+            for i in range(0, len(lines), MAX_MESSAGES)
         ]
         for attempt in range(2):
             try:
                 if self._thread_uuid is None:
-                    thread = await self._client.thread.create(user_uuid=self._user_uuid)
+                    thread = await self._client.thread.create(
+                        user_uuid=self._user_uuid, idempotency_key=self._thread_key
+                    )
                     if not thread.uuid_:
                         raise RuntimeError("zep made a thread without a uuid")
                     self._thread_uuid = thread.uuid_
                     logger.info("saving this call to zep thread %s", thread.uuid_)
                 while chunks:
-                    # Bomby's own lines give context but aren't facts about the user.
+                    key, chunk = chunks[0]
+                    # Bomby's lines give context but aren't facts about the user.
                     _ = await self._client.thread.add_messages(
                         self._thread_uuid,
-                        messages=[self._message(line) for line in chunks[0]],
+                        messages=[self._message(line) for line in chunk],
                         ignore_roles=["assistant"],
+                        idempotency_key=key,
                     )
                     _ = chunks.pop(0)
                 return
@@ -330,22 +363,22 @@ class Memory:
                     logger.warning("couldn't save to memory, trying again: %r", e)
                     await asyncio.sleep(SAVE_RETRY_DELAY)
                 else:
-                    lost = sum(len(chunk) for chunk in chunks)
+                    lost = sum(len(chunk) for _, chunk in chunks)
                     logger.exception("couldn't save %d lines to memory", lost)
-                    await self._unavailable()
+                    self._unavailable()
 
     def _message(self, line: Line) -> AddMessage:
         name = ASSISTANT_NAME if line.role == "assistant" else self._user_name or None
         return AddMessage(
-            content=line.text[:MAX_CHARS],
+            content=line.text,
             role=line.role,
             name=name,
             reference_time=_rfc3339(line.at),
         )
 
     def _sync_profile(self, user: User, name: str, zone: str) -> None:
-        """Keeps the Zep user's name and time zone as Settings and the Mac have them, in
-        the background. An empty name stays empty."""
+        """Brings the Zep user's name and time zone in line with Settings and the Mac, in
+        the background; a failure is only logged. An empty name stays empty."""
         if (user.first_name or "") == name and (not zone or user.time_zone == zone):
             return
 
@@ -357,20 +390,19 @@ class Memory:
             except Exception:
                 logger.exception("couldn't update the zep user")
 
-        task = asyncio.create_task(update())
-        self._background.add(task)
-        task.add_done_callback(self._background.discard)
+        self._profile_update = asyncio.create_task(update())
 
-    async def _unavailable(self) -> None:
+    def _unavailable(self) -> None:
         if self._flagged or self._on_unavailable is None:
             return
         self._flagged = True
-        await self._on_unavailable()
+        notify(self._on_unavailable)
 
     async def aclose(self) -> None:
-        """Saves the rest of the call on hang-up: waits for the session to close (it
-        closes alongside this), then sends what's left, the user's unfinished line too.
-        Never raises, and gives up after `CLOSE_BUDGET`."""
+        """Saves the rest of the call on hang-up. The session closes alongside this and
+        its last lines land before it does, so this waits for that (or `CLOSE_WAIT`),
+        then queues what's left, a line the user never finished too. Never raises, and
+        gives up after `CLOSE_BUDGET`."""
         try:
             async with asyncio.timeout(CLOSE_BUDGET):
                 if self._saves:
@@ -378,20 +410,32 @@ class Memory:
                         async with asyncio.timeout(CLOSE_WAIT):
                             _ = await self._session_closed.wait()
                     except TimeoutError:
-                        logger.debug("the session didn't close, saving what's in")
-                    if self._unfinished:
-                        self._pending.append(self._unfinished)
-                        self._unfinished = None
-                    self._flush(last=True)
+                        logger.warning(
+                            "the session didn't close in time, saving what's in"
+                        )
+                    self._finish()
                     if self._writer:
-                        self._queue.put_nowait(None)
                         await self._writer
-                if self._background:
-                    _ = await asyncio.gather(*self._background, return_exceptions=True)
+                if self._profile_update:
+                    await self._profile_update
         except TimeoutError:
             logger.warning("gave up saving the end of the call to memory")
         except Exception:
             logger.exception("couldn't save the end of the call to memory")
+        finally:
+            for task in (self._writer, self._profile_update):
+                if task and not task.done():
+                    _ = task.cancel()
+
+    def _finish(self) -> None:
+        """Queues the last lines and stops taking new ones."""
+        self._finished = True
+        if self._unfinished:
+            self._pending.append(self._unfinished)
+            self._unfinished = None
+        self._flush(last=True)
+        if self._writer:
+            self._queue.put_nowait(None)
 
 
 async def _find_user(
@@ -400,13 +444,10 @@ async def _find_user(
     """The install's Zep user, made with the user's name and time zone the first time.
     None on an incognito call when there's none yet."""
     try:
-        return await client.user.lookup(user_id=user_id, request_options=NO_RETRIES)
+        return await client.user.lookup(user_id=user_id)
     except NotFoundError:
         if not saves:
             return None
     return await client.user.create(
-        user_id=user_id,
-        first_name=name or None,
-        time_zone=zone or None,
-        request_options=NO_RETRIES,
+        user_id=user_id, first_name=name or None, time_zone=zone or None
     )

@@ -25,7 +25,7 @@ from project import Project
 from voice_prompt import PROMPTS, voice_instructions
 
 AGENTS = [HARNESSES["claude"]]
-ZONE = "Europe/Lisbon"
+ZONE = "Region/Some_City"
 ENV = {"ZEP_API_KEY": "key"}
 
 
@@ -40,6 +40,7 @@ class FakeZep:
         summary: str = "",
         facts: tuple[str, ...] = (),
         failing_adds: int = 0,
+        lost_replies: int = 0,
         slow: bool = False,
     ) -> None:
         self.requests: list[tuple[str, dict[str, Any]]] = []
@@ -47,6 +48,9 @@ class FakeZep:
         self._known, self._first_name = known, first_name
         self._summary, self._facts = summary, facts
         self._failing_adds, self._slow = failing_adds, slow
+        # Saved, but the reply never arrives: the client sees an error.
+        self._lost_replies = lost_replies
+        self._keys: set[str] = set()
         self.user = SimpleNamespace(
             lookup=self._lookup, create=self._create, update=self._update,
             get_node=self._get_node,
@@ -100,7 +104,14 @@ class FakeZep:
             raise ConnectionError("zep is down")
         # Lets a later batch try to overtake this one, as a slow request would.
         await asyncio.sleep(0.01)
-        self.saved += [(m.role, m.name, m.content) for m in messages]
+        # Zep's idempotency: a key it has seen saves nothing again.
+        key = fields["idempotency_key"]
+        if key not in self._keys:
+            self._keys.add(key)
+            self.saved += [(m.role, m.name, m.content) for m in messages]
+        if self._lost_replies:
+            self._lost_replies -= 1
+            raise ConnectionError("the reply got lost")
 
 
 def client(zep: FakeZep) -> Callable[..., FakeZep]:
@@ -298,7 +309,9 @@ def test_recall_that_cant_reach_zep_says_so_and_tells_the_app(
             flagged.append(True)
 
         memory.on_unavailable(unavailable)
-        return await memory.recall("their son")
+        answer = await memory.recall("their son")
+        await asyncio.sleep(0)
+        return answer
 
     assert asyncio.run(scenario()) == "You can't remember that right now."
     assert flagged == [True]
@@ -488,6 +501,7 @@ def test_zep_down_mid_call_tells_the_app_once(monkeypatch: pytest.MonkeyPatch) -
         session.emit("conversation_item_added", said("user", "Hello", 1, "u1"))
         session.emit("conversation_item_added", said("user", "Still there?", 2, "u2"))
         await hang_up(memory, session)
+        await asyncio.sleep(0)
 
     asyncio.run(scenario())
     assert zep.saved == []
@@ -507,3 +521,111 @@ def test_hanging_up_saves_without_waiting_for_a_session_that_never_closes(
 
     asyncio.run(scenario())
     assert zep.saved == [("user", "Sam", "Hello")]
+
+
+def test_a_typed_line_waits_behind_a_spoken_one_not_finalised_yet() -> None:
+    zep = FakeZep()
+
+    async def scenario() -> None:
+        memory, session = call_with(zep)
+        session.emit(
+            "user_input_transcribed",
+            UserInputTranscribedEvent(
+                transcript="My son likes chocolate",
+                is_final=False,
+                item_id="u1",
+                created_at=1,
+            ),
+        )
+        session.emit(
+            "conversation_item_added", said("user", "Actually, strawberry", 2, "t1")
+        )
+        await asyncio.sleep(0.05)
+        assert zep.saved == []
+        session.emit(
+            "conversation_item_added", said("user", "My son likes chocolate", 1, "u1")
+        )
+        await hang_up(memory, session)
+
+    asyncio.run(scenario())
+    assert [text for _, _, text in zep.saved] == [
+        "My son likes chocolate",
+        "Actually, strawberry",
+    ]
+
+
+def test_lines_until_the_session_closes_are_saved_and_later_ones_left_out() -> None:
+    zep = FakeZep()
+
+    async def scenario() -> None:
+        memory, session = call_with(zep)
+        session.emit("conversation_item_added", said("user", "Hello", 1, "u1"))
+        closing = asyncio.create_task(memory.aclose())
+        await asyncio.sleep(0.05)
+        # The session's teardown interrupts Bomby before it closes.
+        session.emit(
+            "conversation_item_added",
+            said(
+                "assistant", "Sure, I'll keep that in mind", 2, "a1", interrupted=True
+            ),
+        )
+        session.emit("close", CloseEvent(reason=CloseReason.USER_INITIATED))
+        await closing
+        session.emit("conversation_item_added", said("user", "Too late", 3, "u2"))
+
+    asyncio.run(scenario())
+    assert [text for _, _, text in zep.saved] == [
+        "Hello",
+        "Sure, I'll keep that in mind",
+    ]
+
+
+def test_a_retry_after_a_lost_reply_saves_nothing_twice(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(memory_module, "SAVE_RETRY_DELAY", 0)
+    zep = FakeZep(lost_replies=1)
+
+    async def scenario() -> None:
+        memory, session = call_with(zep)
+        session.emit("conversation_item_added", said("user", "Hello", 1, "u1"))
+        await hang_up(memory, session)
+
+    asyncio.run(scenario())
+    assert zep.saved == [("user", "Sam", "Hello")]
+    keys = [
+        f["idempotency_key"]
+        for name, f in zep.requests
+        if name == "thread.add_messages"
+    ]
+    assert len(keys) == 2 and keys[0] == keys[1]
+
+
+def test_telling_the_app_never_holds_up_a_recall(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(memory_module, "RECALL_BUDGET", 0.05)
+
+    async def scenario() -> str:
+        memory = Memory(FakeZep(slow=True), "user-uuid")  # pyright: ignore[reportArgumentType]
+
+        async def stuck() -> None:
+            await asyncio.sleep(60)
+
+        memory.on_unavailable(stuck)
+        async with asyncio.timeout(1):
+            return await memory.recall("their son")
+
+    assert asyncio.run(scenario()) == "You can't remember that right now."
+
+
+def test_a_client_that_cant_be_made_leaves_the_call_without_memory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def broken(**_: object) -> FakeZep:
+        raise OSError("bad proxy settings")
+
+    monkeypatch.setattr(memory_module, "AsyncZep", broken)
+    options = CallOptions(voice="Leda", memory_user="bomby-1")
+    with pytest.raises(MemoryUnavailable):
+        _ = asyncio.run(Memory.open(options, ZONE, ENV))

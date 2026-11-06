@@ -16,6 +16,7 @@ from call_options import CallOptions
 from job import read_metadata
 from memory import ATTRIBUTE as MEMORY_ATTRIBUTE
 from memory import UNAVAILABLE, Memory, MemoryUnavailable
+from memory import notify as notify_memory
 from task_board import TaskBoard
 from tools import ALL_TOOLS, MEMORY_TOOLS
 from voice_prompt import local_zone, voice_instructions
@@ -122,13 +123,9 @@ async def entrypoint(ctx: JobContext) -> None:
 
     # The app shows the user a card; the call goes on either way.
     async def memory_unavailable() -> None:
-        try:
-            await publish({MEMORY_ATTRIBUTE: UNAVAILABLE})
-        except (RuntimeError, ConnectionError, OSError) as e:
-            logger.warning("couldn't tell the app memory is unavailable: %s", e)
+        await publish({MEMORY_ATTRIBUTE: UNAVAILABLE})
 
-    # Memory is read before Gemini connects, since its instructions are final once it
-    # does, while the room connects; a Zep that can't answer leaves the call without it.
+    # Read while the room connects: Gemini's instructions are final once it does.
     connecting = asyncio.create_task(ctx.connect())
     memory: Memory | None = None
     remembered = ""
@@ -139,7 +136,7 @@ async def entrypoint(ctx: JobContext) -> None:
         unavailable = True
     await connecting
     if unavailable:
-        await memory_unavailable()
+        notify_memory(memory_unavailable)
     if memory:
         memory.on_unavailable(memory_unavailable)
     call = Call(runners, TaskBoard(publish), memory)

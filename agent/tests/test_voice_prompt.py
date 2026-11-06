@@ -82,11 +82,11 @@ def test_every_tone_keeps_the_same_rules_and_sections() -> None:
 
 def test_the_call_knows_the_date_time_and_place() -> None:
     now = datetime(2026, 11, 6, 0, 2, tzinfo=UTC)
-    assert the_time(now, "Europe/Lisbon") == (
-        "## Date and time\n\nIt's Friday 6 November 2026, 12:02 AM in Lisbon "
-        "(Europe/Lisbon) as this call starts."
+    assert the_time(now, "Region/Some_City") == (
+        "## Date and time\n\nIt's Friday 6 November 2026, 12:02 AM in Some City "
+        "(Region/Some_City) as this call starts."
     )
-    assert the_time(now, "America/New_York").endswith(
-        "in New York (America/New_York) as this call starts."
+    assert the_time(now, "Region/Sub/Other").endswith(
+        "in Other (Region/Sub/Other) as this call starts."
     )
     assert the_time(now, "").endswith("12:02 AM as this call starts.")

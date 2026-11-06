@@ -9,7 +9,7 @@ from memory import Memory
 from task_board import TaskBoard
 
 
-@dataclass
+@dataclass(frozen=True)
 class Call:
     runners: CallRunners
     board: TaskBoard
