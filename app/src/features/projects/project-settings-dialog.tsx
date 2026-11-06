@@ -55,7 +55,11 @@ export function ProjectSettingsDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent
+        // Taller than a short window with folders, agents and instructions: it scrolls,
+        // like the splash's keys dialog.
+        className="max-h-[85vh] [scrollbar-width:none] overflow-y-auto sm:max-w-lg [&::-webkit-scrollbar]:hidden"
+      >
         {/* Its content mounts with each opening, so it starts from what's saved. */}
         <ProjectSettings
           project={project}

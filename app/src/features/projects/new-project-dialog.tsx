@@ -37,7 +37,11 @@ export function NewProjectDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent
+        // Taller than a short window with folders, agents and instructions: it scrolls,
+        // like the splash's keys dialog.
+        className="max-h-[85vh] [scrollbar-width:none] overflow-y-auto sm:max-w-lg [&::-webkit-scrollbar]:hidden"
+      >
         {/* Mounted only while open, so every opening starts empty. */}
         {open && (
           <NewProjectForm
