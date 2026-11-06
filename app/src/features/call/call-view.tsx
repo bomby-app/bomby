@@ -13,6 +13,7 @@ import { AgentAudioVisualizerBar } from "@/components/agents-ui/agent-audio-visu
 import { AgentChatTranscript } from "@/components/agents-ui/agent-chat-transcript"
 import { AgentControlBar } from "@/components/agents-ui/agent-control-bar"
 import { Mascot, mascotState } from "@/components/mascot"
+import { MemoryUnavailable } from "@/features/memory/memory-unavailable"
 import { cn } from "@/lib/utils"
 
 import { agentStatus } from "./agent-status"
@@ -75,6 +76,10 @@ export function CallView({ call }: { call: ActiveCall }) {
       <AgentPresence compact={chatOpen} />
 
       <div className="absolute inset-x-6 bottom-0 z-20">
+        <MemoryUnavailable
+          key={call.startedAt}
+          className="mx-auto mb-3 w-full max-w-sm"
+        />
         <AnimatePresence mode="wait">
           <motion.output
             key={agent.state}
