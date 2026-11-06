@@ -1,4 +1,8 @@
-import { type VoiceProvider, voiceSettings } from "@/features/voice/api"
+import {
+  setVoiceProvider,
+  type VoiceProvider,
+  voiceSettings,
+} from "@/features/voice/api"
 import { createStore, useStore } from "@/lib/store"
 
 import {
@@ -82,6 +86,19 @@ export async function chooseLiveKitServer(
 ): Promise<void> {
   try {
     await setLivekitServer(server)
+  } catch (e) {
+    store.set({ ...store.get(), error: String(e) })
+    return
+  }
+  await checkKeysAgain()
+}
+
+/** Never rejects, like `checkKeysAgain`. */
+export async function chooseVoiceProvider(
+  provider: VoiceProvider
+): Promise<void> {
+  try {
+    await setVoiceProvider(provider)
   } catch (e) {
     store.set({ ...store.get(), error: String(e) })
     return

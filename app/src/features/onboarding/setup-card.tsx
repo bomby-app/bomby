@@ -61,7 +61,7 @@ export function Tile({
         "flex shrink-0 items-center justify-center bg-muted text-foreground",
         small
           ? "size-8 rounded-[9px] [&_svg]:size-[18px]"
-          : "size-14 rounded-xl [&_svg]:size-[30px]",
+          : "size-14 rounded-xl [&_svg:not([class*='w-'])]:size-[30px]",
         className
       )}
     >
@@ -70,7 +70,7 @@ export function Tile({
   )
 }
 
-export type Tone = "looking" | "todo" | "done" | "cloud"
+export type Tone = "looking" | "todo" | "done" | "cloud" | "off"
 
 /** The card's status: a dot (bubblegum while something's missing) and a mono line. */
 export function StatusLine({ tone, text }: { tone: Tone; text: string }) {
@@ -86,7 +86,9 @@ export function StatusLine({ tone, text }: { tone: Tone; text: string }) {
               ? "bg-claude"
               : tone === "cloud"
                 ? "bg-livekit-cloud"
-                : "bg-primary"
+                : tone === "off"
+                  ? "bg-muted-foreground"
+                  : "bg-primary"
           )}
         />
       )}

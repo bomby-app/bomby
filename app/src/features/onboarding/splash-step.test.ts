@@ -97,6 +97,18 @@ describe("splashStep", () => {
     expect(step([agent("codex")], ALL_KEYS, onKeys).canContinue).toBe(true)
   })
 
+  it("needs a voice picked and its key, whichever key is saved", () => {
+    const keys = (keys: Partial<Keys>) =>
+      step([agent("codex")], { ...ALL_KEYS, ...keys }, { onKeys: true })
+    expect(keys({ voice: null, voiceKey: false }).canContinue).toBe(false)
+    // Rime picked, only Gemini's key saved.
+    expect(
+      keys({ voiceKeys: { gemini: true, rime: false }, voiceKey: false })
+        .canContinue
+    ).toBe(false)
+    expect(keys({ livekit: false }).canContinue).toBe(false)
+  })
+
   it("waits for the keys to be known before showing them", () => {
     expect(step([agent("codex")], null, { onKeys: true }).step).toBe("agent")
   })

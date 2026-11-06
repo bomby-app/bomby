@@ -22,8 +22,11 @@ type ProviderCopy = {
   logo: (props: { className?: string }) => ReactNode
   /** Where the user gets a key. */
   keysUrl: string
-  /** Where the key is, in the user's account, for the splash. */
+  /** Where the key is, for the splash's footnote: a page, and where on it. */
   keysPlace: string
+  keysWhere?: string
+  /** The same, as a sentence, for typing a key in. */
+  keysHow: string
   options: Record<string, OptionCopy>
 }
 
@@ -35,6 +38,7 @@ export const PROVIDERS: Record<VoiceProvider, ProviderCopy> = {
     logo: GeminiLogo,
     keysUrl: "https://aistudio.google.com/apikey",
     keysPlace: "Google AI Studio",
+    keysHow: "From Google AI Studio, under API keys.",
     options: {
       google_search: {
         icon: Globe,
@@ -52,6 +56,8 @@ export const PROVIDERS: Record<VoiceProvider, ProviderCopy> = {
     logo: ({ className }) => <RimeLogo className={className ?? "h-auto w-6"} />,
     keysUrl: "https://app.rime.ai/tokens",
     keysPlace: "Rime's dashboard",
+    keysWhere: "API tokens",
+    keysHow: "From Rime's dashboard, under API tokens.",
     options: {},
   },
 }

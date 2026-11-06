@@ -38,8 +38,8 @@ gsap.registerPlugin(useGSAP)
  * the glow comes up while Bomby rises with its eyes closed, opens them as it arrives and
  * looks around, says hello, lets the hello go, then moves up for the setup to fade in
  * under it.
- * Setup is a short form of two steps: the agent, then the LiveKit and Gemini keys
- * (`splashStep`). Only the user moves it on: a step that's done shows the round arrow (or
+ * Setup is a short form of two steps: the agent, then where calls run and who Bomby talks
+ * through, with their keys (`splashStep`). Only the user moves it on: a step that's done shows the round arrow (or
  * Return), and Set up later goes on without an agent. The keys' arrow opens the app: a call
  * needs the keys to talk, and an agent to work.
  */
@@ -54,7 +54,14 @@ const GREETING: Record<Daypart, string> = {
 // enough for the hello under it, then small above the setup (scale 0.5, 10 px over it).
 const HELLO_Y = -124
 const SETUP_Y = -220
-const SETUP_TOP = "calc(50% - 120px)"
+const SETUP_TOP = 120
+/** The keys step is two rows of cards, so it and Bomby over it sit this much higher (px,
+ * Paper "05 Keys · Voice choice"). */
+const KEYS_LIFT = 32
+
+function lift(step: string): number {
+  return step === "keys" ? KEYS_LIFT : 0
+}
 
 /** How long the glow takes to reach each stage (day-glow.css eases it). */
 const GLOW_TAKES: Partial<Record<GlowStage, number>> = {
@@ -193,6 +200,12 @@ export function Splash({ onDone }: { onDone: () => void }) {
   useGSAP(
     () => {
       if (!introDone) return
+      // Bomby moves with the step, to sit over it.
+      gsap.to(mascotBox.current, {
+        y: SETUP_Y - lift(shown),
+        duration: 1,
+        ease: EASE,
+      })
       // Already in after the intro, so it arrives at once.
       const alreadyIn = gsap.getProperty(content.current, "autoAlpha") === 1
       gsap.to(content.current, {
@@ -295,7 +308,8 @@ export function Splash({ onDone }: { onDone: () => void }) {
       <div
         ref={content}
         className="invisible absolute inset-x-0 flex justify-center"
-        style={{ top: SETUP_TOP }}
+        // Changes only while the step is out of sight, between its fade out and in.
+        style={{ top: `calc(50% - ${SETUP_TOP + lift(shown)}px)` }}
       >
         {shown === "keys" && keys ? (
           <KeysStep

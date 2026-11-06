@@ -30,6 +30,7 @@ import {
   type Keys,
 } from "@/features/call-server/use-saved-keys"
 import { saveVoiceKey } from "@/features/voice/api"
+import { PROVIDERS } from "@/features/voice/providers"
 
 /** The splash's "type them in": every key it needs, saved together. */
 export function KeysDialog({
@@ -59,11 +60,13 @@ export function KeysDialog({
 function KeysForm({ keys, onSaved }: { keys: Keys; onSaved: () => void }) {
   const cloud = keys.server === "theirs"
   const livekit = useLiveKitFields()
-  const [gemini, setGemini] = useState("")
+  const [voiceKey, setVoiceKey] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [saving, startSaving] = useTransition()
   const typedLiveKit = cloud && changed(livekit.fields, livekit.saved)
-  const typedGemini = gemini.trim() !== ""
+  // Only the picked provider's: the splash picks one before offering to type its key.
+  const voice = keys.voice
+  const typedVoice = voice !== null && voiceKey.trim() !== ""
 
   function save(event: FormEvent) {
     event.preventDefault()
@@ -75,7 +78,7 @@ function KeysForm({ keys, onSaved }: { keys: Keys; onSaved: () => void }) {
             apiKey: livekit.fields.apiKey,
             apiSecret: livekit.fields.apiSecret || undefined,
           })
-        if (typedGemini) await saveVoiceKey("gemini", gemini)
+        if (typedVoice) await saveVoiceKey(voice, voiceKey)
       } catch (e) {
         setError(String(e))
         return
@@ -111,37 +114,37 @@ function KeysForm({ keys, onSaved }: { keys: Keys; onSaved: () => void }) {
             <FieldSeparator />
           </>
         )}
-        <FieldSet>
-          <FieldLegend>Gemini</FieldLegend>
-          <FieldDescription>
-            From Google AI Studio, under API keys.
-          </FieldDescription>
-          <Field>
-            <FieldLabel htmlFor="keys-gemini-api-key">API key</FieldLabel>
-            <Input
-              id="keys-gemini-api-key"
-              type="password"
-              placeholder={
-                keys.voiceKeys.gemini
-                  ? "Saved. Type a new one to replace it."
-                  : ""
-              }
-              value={gemini}
-              autoComplete="off"
-              spellCheck={false}
-              onChange={(event) => {
-                setGemini(event.target.value)
-                setError(null)
-              }}
-            />
-          </Field>
-        </FieldSet>
+        {voice && (
+          <FieldSet>
+            <FieldLegend>{PROVIDERS[voice].name}</FieldLegend>
+            <FieldDescription>{PROVIDERS[voice].keysHow}</FieldDescription>
+            <Field>
+              <FieldLabel htmlFor="keys-voice-api-key">API key</FieldLabel>
+              <Input
+                id="keys-voice-api-key"
+                type="password"
+                placeholder={
+                  keys.voiceKeys[voice]
+                    ? "Saved. Type a new one to replace it."
+                    : ""
+                }
+                value={voiceKey}
+                autoComplete="off"
+                spellCheck={false}
+                onChange={(event) => {
+                  setVoiceKey(event.target.value)
+                  setError(null)
+                }}
+              />
+            </Field>
+          </FieldSet>
+        )}
         {shownError && <FieldError>{shownError}</FieldError>}
         <div>
           <Button
             type="submit"
             variant="highlighter"
-            disabled={saving || !(typedLiveKit || typedGemini)}
+            disabled={saving || !(typedLiveKit || typedVoice)}
           >
             {saving ? "Saving..." : "Save"}
           </Button>
