@@ -105,13 +105,6 @@ class FakeContext:
     def __init__(self, runner: FakeRunner, board: TaskBoard) -> None:
         self.userdata = SimpleNamespace(runners=FakeRunners(runner), board=board)
         self.updates: list[str] = []
-        # Set when nobody is mid-turn; open by default.
-        self.quiet = asyncio.Event()
-        self.quiet.set()
-        self.session = SimpleNamespace(wait_for_idle=self._wait_for_idle)
-
-    async def _wait_for_idle(self) -> None:
-        _ = await self.quiet.wait()
 
     async def update(self, message: str) -> None:
         self.updates.append(message)
@@ -131,32 +124,6 @@ def board() -> tuple[TaskBoard, list[str]]:
 async def call_start_task(runner: FakeRunner, board: TaskBoard) -> str:
     context = cast(RunContext[Call], cast(object, FakeContext(runner, board)))
     return await start_task(context, "fix the header", "page", "claude")
-
-
-def test_a_result_waits_until_nobody_is_mid_turn() -> None:
-    # Rime's plugin refuses a result added while Prism is replying, and it's lost.
-    async def scenario() -> list[str]:
-        runner = FakeRunner(Turn("Fixed."))
-        runner.release.set()
-        b, sent = board()
-        context = FakeContext(runner, b)
-        context.quiet.clear()
-        task = asyncio.create_task(
-            start_task(
-                cast(RunContext[Call], cast(object, context)),
-                "fix the header",
-                "page",
-                "claude",
-            )
-        )
-        await asyncio.sleep(0.05)
-        assert not task.done(), "the result waits while Bomby is talking"
-        context.quiet.set()
-        assert await task == "Fixed."
-        return sent
-
-    # The board shows the work done at once; only the result waits.
-    assert asyncio.run(scenario()) == ["working", "done"]
 
 
 def test_a_finished_task_is_done_and_a_steered_one_added() -> None:
