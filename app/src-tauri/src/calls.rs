@@ -222,21 +222,22 @@ fn reopen(conn: &Connection, project_id: i64, call_id: i64) -> Result<()> {
     Ok(())
 }
 
-/// The Zep user and key a new call remembers with, or none: memory across calls needs both
-/// the setting and a saved key.
+/// The Zep user a new call remembers as, or empty, and the saved Zep key. The worker gets
+/// the key whenever one is saved, so the switch never restarts it: the call's metadata
+/// turns memory on, and needs both the setting and the key.
 fn memory_for_call<R: Runtime>(
     app: &AppHandle<R>,
     db: &Db,
     vault: &credentials::Vault,
 ) -> Result<(String, Option<String>)> {
+    let key = vault.zep_key(app)?;
     let conn = db.conn();
-    if settings::memory(&conn)? != settings::Memory::Zep {
-        return Ok((String::new(), None));
-    }
-    match vault.zep_key(app)? {
-        Some(key) => Ok((settings::memory_user(&conn)?, Some(key))),
-        None => Ok((String::new(), None)),
-    }
+    let user = if key.is_some() && settings::memory(&conn)? == settings::Memory::Zep {
+        settings::memory_user(&conn)?
+    } else {
+        String::new()
+    };
+    Ok((user, key))
 }
 
 fn token(keys: &LiveKitKeys, room: &str, metadata: String) -> Result<String> {

@@ -55,7 +55,7 @@ pub type OnCrash = Arc<dyn Fn(JobCrash) + Send + Sync>;
 pub struct WorkerConfig {
     pub livekit: LiveKitKeys,
     pub gemini_key: String,
-    /// Only when calls remember across conversations.
+    /// Whenever one is saved; each call's metadata says whether it remembers.
     pub zep_key: Option<String>,
 }
 

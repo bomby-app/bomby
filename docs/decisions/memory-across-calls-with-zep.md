@@ -15,7 +15,7 @@ Bomby forgot the user between calls: resuming a call replays its last 50 lines (
 - **Mid-call**, the `recall_about_user` tool searches the facts; it's registered only for calls with memory.
 - **Writes in the background**, one exchange per final user transcript (Bomby's line before it gives context but isn't stored as a fact about the user), and the last unfinalised line on hang-up.
 - **Incognito**, a second switch in Settings, Memory, as in the owner's other agent: calls still read memory but save nothing. The agent opens no Zep thread and never attaches the write listener, so nothing can be saved by accident. Like every setting, it applies from the next call.
-- **Coding agents never see the key**: the worker gets `ZEP_API_KEY` only when memory is on, and the runner strips it from every harness.
+- **The key rides with the worker, the switches with each call**: the worker gets `ZEP_API_KEY` whenever a key is saved, since a change to its environment means a restart; the call's metadata (`memory_user`, `memory_incognito`) turns memory on. The key can't go in the metadata: it travels in the LiveKit token, which the server reads. Coding agents never see it: the runner strips it from every harness.
 
 ## Consequences
 
