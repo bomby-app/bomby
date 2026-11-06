@@ -6,6 +6,7 @@ import { InlineLink } from "@/components/inline-link"
 import { Button } from "@/components/ui/button"
 import {
   Field,
+  FieldDescription,
   FieldError,
   FieldGroup,
   FieldLabel,
@@ -129,11 +130,10 @@ export function MemorySettings() {
                   Zep
                   <InfoTip>
                     Memory lives in your own Zep project; the free plan is
-                    enough. Until a key is saved, calls don't remember across
-                    conversations.
+                    enough.
                   </InfoTip>
                 </FieldLegend>
-                <ZepKeyForm saved={keySaved === true} onChange={setKeySaved} />
+                <ZepKeyForm saved={keySaved} onChange={setKeySaved} />
               </FieldSet>
             </div>
           </>
@@ -155,7 +155,8 @@ function ZepKeyForm({
   saved,
   onChange,
 }: {
-  saved: boolean
+  /** Null until the core has said. */
+  saved: boolean | null
   onChange: (saved: boolean) => void
 }) {
   const [key, setKey] = useState("")
@@ -200,7 +201,9 @@ function ZepKeyForm({
           <Input
             id="zep-api-key"
             type="password"
-            placeholder={saved ? "Saved. Type a new one to replace it." : ""}
+            placeholder={
+              saved === true ? "Saved. Type a new one to replace it." : ""
+            }
             value={key}
             autoComplete="off"
             spellCheck={false}
@@ -209,6 +212,9 @@ function ZepKeyForm({
               if (status.kind !== "saving") setStatus({ kind: "idle" })
             }}
           />
+          {saved === false && (
+            <FieldDescription>Add a key to start remembering.</FieldDescription>
+          )}
         </Field>
         {status.kind === "error" && <FieldError>{status.message}</FieldError>}
         <div className="flex items-center gap-2">
@@ -218,7 +224,7 @@ function ZepKeyForm({
           >
             {status.kind === "saving" ? "Saving..." : "Save"}
           </Button>
-          {saved && (
+          {saved === true && (
             <Button type="button" variant="ghost" onClick={remove}>
               Remove
             </Button>
