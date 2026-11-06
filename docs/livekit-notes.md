@@ -69,7 +69,7 @@ Checked 2026-11-05 against `livekit/livekit` v1.13.10 and v1.13.11 (source and r
 
 ## The conversation, for memory
 
-Checked 2026-11-06 against `livekit-agents` 1.8.10 (`voice/agent_activity.py`, `voice/agent_session.py`, `ipc/job_proc_lazy_main.py`) and `livekit-plugins-google` 1.8.10 (`realtime/realtime_api.py`). What `agent/memory.py` builds on:
+Checked 2026-11-06 against `livekit-agents` 1.8.10 (`voice/agent_activity.py`, `voice/agent_session.py`, `ipc/job_proc_lazy_main.py`) and `livekit-plugins-google` 1.8.10 (`realtime/realtime_api.py`); Rime's plugin 1.8.11 sends the same ([notes](rime-notes.md#the-plugin)). A new voice provider's plugin must too: running and final `input_audio_transcription_completed` events with the line's `item_id` and `turn_started_at`. What `agent/memory.py` builds on:
 
 - **Every line is a `conversation_item_added`**: the user's spoken ones (`_on_input_audio_transcription_completed`), typed ones (`_realtime_reply_task`, with `user_input`) and Bomby's (`_create_assistant_message`, `interrupted` set when cut off). `on_user_turn_completed` never fires with Gemini's server-side turn detection.
 - **Gemini finalises the user's line late**: the final transcript comes when the reply's generation is done (`_mark_current_generation_done`), so it can arrive after the reply it prompted. LiveKit stamps the user's item with when the turn started (`created_at = turn_started_at`) and Bomby's with when it started speaking, so ordering by `created_at` puts them right.

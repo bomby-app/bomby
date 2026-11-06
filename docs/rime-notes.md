@@ -11,6 +11,7 @@ Checked 2026-11-06 against `livekit-plugins-rime` 1.8.11 and `rimelabs-sdk` 0.1.
 - **Fillers**: Prism says a short line of its own before a tool runs ([tools](https://docs.rime.ai/docs/prism/tools.md)); `tool_fillers={name: PrismFiller(type="none" | "text" | "auto")}` sets it per tool. Bomby gives `start_task` none (`agent/voice_providers/rime.py`).
 - **Playback**: with `playback="auto"` the plugin measures what the user heard only through its audio output wrapper. LiveKit's page says to call `model.wrap_audio_output()` in `on_enter`; 1.8.11 has only the private `_wrap_audio_output(output)`, so Bomby uses Prism's estimates.
 - `generate_reply(instructions=...)` sends a nudge, so `on_enter` greets as with Gemini.
+- **Transcripts, for memory**: `TranscriptDelta` becomes a running `input_audio_transcription_completed` (`is_final=False`) and `TranscriptFinal` the final one, both with the line's `item_id` and `turn_started_at` (`_on_event`), as Gemini's plugin sends them, so `agent/memory.py` saves Rime calls unchanged. Prism finalises the user's line at the end of their turn, before its reply. A `TranscriptFailed` line never gets a final; the user's next one takes its place.
 - **Dependencies**: `rimelabs-sdk` is an alpha and caps `websockets` below 17, so uv resolved 16.1.1 (`google-genai` allows up to 18). It brings `grpcio` and `rime-api`. All are in the frozen agent's `PYZ.pyz` (checked 2026-11-06).
 
 ## Prism

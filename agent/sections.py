@@ -2,7 +2,9 @@
 (`voice_prompt.py`) and the coding agents' briefing (`acp_client/runner.py`).
 
 The briefing and Gemini's instructions are Markdown. Rime's are plain sentences, since
-Prism speaks in the style its prompt is written in (`voice_providers/rime.py`).
+Prism speaks in the style its prompt is written in (`voice_providers/rime.py`). Anything
+that reaches the voice model, in its prompt or a tool's result, is written with the call's
+`Style`, never with Markdown of its own.
 """
 
 from dataclasses import dataclass
@@ -21,6 +23,10 @@ class Style:
     def code(self, name: str) -> str:
         """A name the model must pass on exactly, like an agent's id."""
         return f"`{name}`" if self.markdown else name
+
+    def item(self, text: str) -> str:
+        """One line of a list, like a remembered fact: a bullet, or the line alone."""
+        return f"- {text}" if self.markdown else text
 
 
 MARKDOWN = Style()

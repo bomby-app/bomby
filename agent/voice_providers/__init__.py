@@ -4,10 +4,11 @@ call, with its voice and options (`provider`, `voice` and `provider_options` in 
 metadata); console runs use `VOICE_PROVIDER`
 ([decision](../../docs/decisions/voice-providers-like-harnesses.md)).
 
-To add one: write its definition next to these, list it in `PROVIDERS`, write its tone
-prompts in `prompts/<id>/` for how it reads them, keep its key from the coding agents
-(`APP_KEYS` in `acp_client/runner.py`), and give the app its key, voices and options
-(`app/src-tauri/src/settings.rs`).
+To add one: write its definition next to these, with the `prompt_style` it reads best
+(`sections.py`), list it in `PROVIDERS`, write its tone prompts in `prompts/<id>/`, keep
+its key from the coding agents (`APP_KEYS` in `acp_client/runner.py`), check its plugin
+sends the user's transcripts as `memory.py` expects (docs/livekit-notes.md), and give the
+app its key, voices and options (`app/src-tauri/src/voice.rs`).
 """
 
 from .gemini import GEMINI

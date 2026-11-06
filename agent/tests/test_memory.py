@@ -23,6 +23,7 @@ from job import read_metadata
 from memory import Memory, MemoryUnavailable
 from project import Project
 from voice_prompt import PROMPTS, voice_instructions
+from voice_providers import RIME
 
 AGENTS = [HARNESSES["claude"]]
 ZONE = "Region/Some_City"
@@ -263,6 +264,14 @@ def test_a_summary_counts_once_there_are_facts(monkeypatch: pytest.MonkeyPatch) 
     )
     assert remembered.startswith(summary)
     assert "- Sam ships on Fridays (2026-11-01 to now)" in remembered
+
+
+def test_rime_remembers_in_plain_lines(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Prism speaks in the style of its prompt, so its facts have no bullets.
+    zep = FakeZep(summary="Sam builds a music app.", facts=("Sam ships on Fridays",))
+    _, remembered = opened(zep, monkeypatch, provider=RIME)
+    assert "\nSam ships on Fridays (2026-11-01 to now)" in remembered
+    assert "- " not in remembered
 
 
 def test_what_is_remembered_follows_the_user_section() -> None:

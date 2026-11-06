@@ -39,6 +39,7 @@ from zep_cloud import (
 )
 
 from call_options import CallOptions
+from sections import MARKDOWN, Style
 
 logger = logging.getLogger("bomby.memory")
 
@@ -113,8 +114,9 @@ def notify(tell: Callable[[], Awaitable[None]]) -> None:
     task.add_done_callback(_notices.discard)
 
 
-def _fact(edge: Edge) -> str:
-    return f"- {edge.fact} ({edge.valid_at or 'date unknown'} to {edge.invalid_at or 'now'})"
+def _fact(edge: Edge, style: Style) -> str:
+    when = f"{edge.valid_at or 'date unknown'} to {edge.invalid_at or 'now'}"
+    return style.item(f"{edge.fact} ({when})")
 
 
 def _rfc3339(at: float) -> str:
@@ -135,6 +137,7 @@ class Memory:
         user_uuid: str,
         user_name: str = "",
         saves: bool = True,
+        style: Style = MARKDOWN,
     ) -> None:
         self._client: AsyncZep = client
         self._user_uuid: str = user_uuid
@@ -142,6 +145,8 @@ class Memory:
         self._user_name: str = user_name
         # False on an incognito call: nothing is ever written.
         self._saves: bool = saves
+        # How the voice model reads facts, in its prompt and recall's results.
+        self._style: Style = style
         self._on_unavailable: Callable[[], Awaitable[None]] | None = None
         self._flagged: bool = False
         self._profile_update: asyncio.Task[None] | None = None
@@ -182,7 +187,13 @@ class Memory:
                     return None, ""
                 if not user.uuid_:
                     raise RuntimeError("zep gave the user no uuid")
-                memory = cls(client, user.uuid_, options.user_name, saves)
+                memory = cls(
+                    client,
+                    user.uuid_,
+                    options.user_name,
+                    saves,
+                    options.provider.prompt_style,
+                )
                 remembered = await memory.remembered()
         except Exception as e:
             logger.warning("zep unavailable, this call has no memory: %r", e)
@@ -211,7 +222,7 @@ class Memory:
             return ""
         parts = [summary] if summary else []
         if facts:
-            parts.append("\n".join(_fact(edge) for edge in facts))
+            parts.append("\n".join(_fact(edge, self._style) for edge in facts))
         logger.info("remembered %d facts, summary %d chars", len(facts), len(summary))
         return "\n\n".join(parts)
 
@@ -226,7 +237,7 @@ class Memory:
             return "You can't remember that right now."
         if not facts:
             return "Nothing remembered about that. Ask the user."
-        return "\n".join(_fact(edge) for edge in facts)
+        return "\n".join(_fact(edge, self._style) for edge in facts)
 
     async def _summary(self) -> str:
         try:
