@@ -1,86 +1,159 @@
-import { useEffect, useState } from "react"
+import { ApiKeyForm } from "@/components/api-key-form"
+import { ChoiceList, ChoiceRow } from "@/components/choice-list"
+import { InfoTip } from "@/components/info-tip"
+import { Field, FieldError, FieldLabel } from "@/components/ui/field"
+import { Separator } from "@/components/ui/separator"
+import { Switch } from "@/components/ui/switch"
+import { useSettingsNavigation } from "@/lib/settings-navigation"
 
 import {
-  Field,
-  FieldDescription,
-  FieldError,
-  FieldLabel,
-} from "@/components/ui/field"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+  clearVoiceKey,
+  type ProviderOption,
+  type ProviderSettings,
+  saveVoiceKey,
+  setVoice,
+  setVoiceOption,
+  setVoiceProvider,
+  type VoiceProvider,
+} from "./api"
+import { PROVIDERS } from "./providers"
+import { changeVoice as change, useVoiceSettings } from "./use-voice-settings"
+import { VoiceSelect } from "./voice-select"
 
-import { setVoice, type VoiceSettings as Options, voiceSettings } from "./api"
-
-/** The Voice section of the settings window: which Gemini voice Bomby speaks in. */
+/**
+ * The Voice section of the settings window: who Bomby talks through, with that provider's
+ * key and switches, then its voice (docs/decisions/voice-providers-like-harnesses.md).
+ * Sent here for the key (field "key", from Setup), it focuses the picked provider's.
+ */
 export function VoiceSettings() {
-  const [settings, setSettings] = useState<Options | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [saved, setSaved] = useState(false)
+  const { place } = useSettingsNavigation()
+  const { settings: saved, error } = useVoiceSettings()
 
-  useEffect(() => {
-    voiceSettings().then(setSettings, (e: unknown) => setError(String(e)))
-  }, [])
-
-  const provider =
-    settings?.providers.find((p) => p.provider === settings.provider) ??
-    settings?.providers[0]
-
-  async function choose(name: string | null) {
-    if (!settings || !provider || !name || name === provider.voice) return
-    setError(null)
-    setSaved(false)
-    try {
-      await setVoice(provider.provider, name)
-      setSettings({
-        ...settings,
-        providers: settings.providers.map((p) =>
-          p.provider === provider.provider ? { ...p, voice: name } : p
-        ),
-      })
-      setSaved(true)
-    } catch (e) {
-      setError(String(e))
-    }
-  }
-
-  const current = provider?.voices.find((v) => v.id === provider.voice)
+  if (!saved) return error ? <FieldError>{error}</FieldError> : null
+  const picked = saved.providers.find((p) => p.provider === saved.provider)
 
   return (
-    <Field>
-      <FieldLabel htmlFor="voice">Voice</FieldLabel>
-      <Select
-        value={provider?.voice}
-        onValueChange={(name) => void choose(name)}
-        disabled={!settings}
-      >
-        <SelectTrigger id="voice" className="w-64">
-          <SelectValue placeholder="Loading voices..." />
-        </SelectTrigger>
-        <SelectContent position="popper" className="max-h-80">
-          {provider?.voices.map((voice) => (
-            <SelectItem key={voice.id} value={voice.id}>
-              <span className="font-medium">{voice.name}</span>
-              <span className="text-muted-foreground">{voice.description}</span>
-            </SelectItem>
+    <div className="flex flex-col gap-6">
+      <p className="text-sm text-muted-foreground">
+        Who Bomby talks through, and how it sounds. Your next call uses what you
+        pick.
+      </p>
+      <div className="flex flex-col gap-3">
+        <h2 className="text-sm font-medium">Provider</h2>
+        <ChoiceList<VoiceProvider>
+          label="Provider"
+          value={saved.provider}
+          onValueChange={(provider) =>
+            void change(() => setVoiceProvider(provider))
+          }
+        >
+          {saved.providers.map((provider) => (
+            <ProviderRow
+              key={provider.provider}
+              provider={provider}
+              chosen={provider.provider === saved.provider}
+              focusKey={place?.section === "voice" && place.field === "key"}
+            />
           ))}
-        </SelectContent>
-      </Select>
-      <FieldDescription>
-        {current
-          ? `${current.description}. Your next call uses it.`
-          : "Gemini's voices. Your next call uses the one you pick."}
-      </FieldDescription>
-      {saved && (
-        <p className="text-sm text-muted-foreground">
-          Saved. Your next call speaks as {current?.name}.
-        </p>
+        </ChoiceList>
+      </div>
+      {picked && (
+        <Field>
+          <FieldLabel htmlFor="voice">Voice</FieldLabel>
+          <VoiceSelect
+            id="voice"
+            provider={picked}
+            onChange={(voice) =>
+              void change(() => setVoice(picked.provider, voice))
+            }
+          />
+          <p className="text-sm text-muted-foreground">
+            {PROVIDERS[picked.provider].name}&apos;s voices. Your next call
+            speaks as {picked.voices.find((v) => v.id === picked.voice)?.name}.
+          </p>
+        </Field>
       )}
       {error && <FieldError>{error}</FieldError>}
-    </Field>
+    </div>
+  )
+}
+
+function ProviderRow({
+  provider,
+  chosen,
+  focusKey,
+}: {
+  provider: ProviderSettings
+  chosen: boolean
+  focusKey: boolean
+}) {
+  const copy = PROVIDERS[provider.provider]
+  const Logo = copy.logo
+  const id = provider.provider
+
+  return (
+    <ChoiceRow
+      id={`provider-${id}`}
+      value={id}
+      chosen={chosen}
+      logo={<Logo />}
+      title={copy.name}
+      description={copy.description}
+    >
+      <ApiKeyForm
+        id={`${id}-api-key`}
+        saved={provider.hasKey}
+        keysUrl={copy.keysUrl}
+        hint={`Add a key to talk through ${copy.name}.`}
+        focus={focusKey}
+        save={(key) => saveVoiceKey(id, key)}
+        remove={() => clearVoiceKey(id)}
+      />
+      {provider.options.map((option) => (
+        <OptionRow
+          key={option.id}
+          provider={id}
+          option={option}
+          onChange={(on) =>
+            void change(() => setVoiceOption(id, option.id, on))
+          }
+        />
+      ))}
+    </ChoiceRow>
+  )
+}
+
+/** One of the provider's switches, under its key. */
+function OptionRow({
+  provider,
+  option,
+  onChange,
+}: {
+  provider: VoiceProvider
+  option: ProviderOption
+  onChange: (on: boolean) => void
+}) {
+  const copy = PROVIDERS[provider].options[option.id]
+  if (!copy) return null
+  const Icon = copy.icon
+  const id = `${provider}-${option.id}`
+
+  return (
+    <div className="flex flex-col">
+      <Separator />
+      <div className="flex items-center gap-3 pt-3.5">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-foreground">
+          <Icon className="size-4" />
+        </span>
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5 text-sm">
+          <div className="flex items-center gap-1">
+            <FieldLabel htmlFor={id}>{copy.title}</FieldLabel>
+            <InfoTip>{copy.info}</InfoTip>
+          </div>
+          <span className="text-muted-foreground">{copy.line}</span>
+        </div>
+        <Switch id={id} checked={option.on} onCheckedChange={onChange} />
+      </div>
+    </div>
   )
 }

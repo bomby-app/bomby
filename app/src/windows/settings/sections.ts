@@ -3,17 +3,17 @@ import {
   Info,
   Bot,
   Brain,
-  KeyRound,
   ListChecks,
   type LucideIcon,
   Palette,
+  Server,
 } from "lucide-react"
 import type { ComponentType } from "react"
 
 import { MascotIcon } from "@/components/app-logo"
 import { AboutBadge, AboutSettings } from "@/features/about/about-settings"
 import { AgentsSettings } from "@/features/agents/agents-settings"
-import { CredentialsSettings } from "@/features/credentials/credentials-settings"
+import { CallServerSettings } from "@/features/call-server/call-server-settings"
 import { IntroSettings } from "@/features/intro/intro-settings"
 import { MemorySettings } from "@/features/memory/memory-settings"
 import { SetupSettings } from "@/features/setup/setup-settings"
@@ -57,16 +57,16 @@ export const SECTIONS = [
     component: MemorySettings,
   },
   {
+    id: "call-server",
+    label: "Call server",
+    icon: Server,
+    component: CallServerSettings,
+  },
+  {
     id: "appearance",
     label: "Appearance",
     icon: Palette,
     component: AppearanceSettings,
-  },
-  {
-    id: "credentials",
-    label: "Credentials",
-    icon: KeyRound,
-    component: CredentialsSettings,
   },
   {
     id: "about",

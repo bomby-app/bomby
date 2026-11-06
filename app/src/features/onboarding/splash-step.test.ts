@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test"
 
 import type { AgentStatus, Setup } from "@/features/agents/api"
-import type { Keys } from "@/features/credentials/use-saved-keys"
+import type { Keys } from "@/features/call-server/use-saved-keys"
 
 import { type Choices, NO_CHOICES, splashStep } from "./splash-step"
 

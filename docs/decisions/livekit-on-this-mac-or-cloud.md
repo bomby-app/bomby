@@ -8,7 +8,7 @@ A call needs a LiveKit server between the page and the voice agent. Until now th
 
 ## Decision
 
-- **Two ways to run a call's server**, chosen on the first-run splash and in Settings, Credentials (owner, 2026-11-05):
+- **Two ways to run a call's server**, chosen on the first-run splash and in Settings, Call server (owner, 2026-11-05; Credentials until 2026-11-06):
   - **This Mac**: Bomby's own `livekit-server`, bundled in the app and run by the core.
   - **LiveKit Cloud or your own server**: the URL and keys the user brings, as before.
 - **The bundled server is built from LiveKit's source**, pinned by version and hash, because no macOS binary is published ([notes](../livekit-notes.md#the-bundled-server)). It ships as a Tauri sidecar, which Tauri signs.

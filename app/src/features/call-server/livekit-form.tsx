@@ -69,7 +69,7 @@ export function LiveKitForm({ focus = false }: { focus?: boolean }) {
 
   return (
     <form onSubmit={save}>
-      <FieldGroup>
+      <FieldGroup className="gap-3.5">
         <LiveKitFields
           idPrefix="livekit"
           fields={fields}

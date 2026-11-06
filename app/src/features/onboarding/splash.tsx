@@ -24,7 +24,7 @@ import { useAgents } from "@/features/agents/use-agents"
 import {
   checkKeysAgain,
   useSavedKeys,
-} from "@/features/credentials/use-saved-keys"
+} from "@/features/call-server/use-saved-keys"
 
 import { finishFirstRun } from "./api"
 import { FirstAgent } from "./first-agent"

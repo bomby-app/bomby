@@ -9,7 +9,11 @@ export type ProviderSettings = { provider: VoiceProvider, hasKey: boolean,
 /**
  * The voice picked for it, or its default.
  */
-voice: string, voices: Array<Voice>, options: Array<ProviderOption>, };
+voice: string, 
+/**
+ * What a new install starts on.
+ */
+defaultVoice: string, voices: Array<Voice>, options: Array<ProviderOption>, };
 
 /**
  * How Bomby talks: each picks its own voice prompt (`agent/prompts/<provider>/<tone>.md`).

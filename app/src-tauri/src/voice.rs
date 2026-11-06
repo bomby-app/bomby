@@ -180,6 +180,8 @@ pub struct ProviderSettings {
     has_key: bool,
     /// The voice picked for it, or its default.
     voice: String,
+    /// What a new install starts on.
+    default_voice: &'static str,
     voices: Vec<Voice>,
     options: Vec<ProviderOption>,
 }
@@ -310,6 +312,7 @@ pub fn voice_settings<R: Runtime>(
                 provider,
                 has_key: keys.contains_key(&provider),
                 voice: voice(&conn, provider)?,
+                default_voice: provider.default_voice(),
                 voices: provider.voices(),
                 options: options(&conn, provider)?
                     .into_iter()

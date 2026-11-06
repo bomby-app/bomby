@@ -2,7 +2,7 @@ import { createContext, useContext } from "react"
 
 /**
  * A place in the settings window: a section by id (`windows/settings/sections.ts`) and,
- * optionally, a field there to bring into view and focus, like "gemini" in Credentials.
+ * optionally, a field there to bring into view and focus, like "key" in Voice.
  */
 export type SettingsPlace = { section: string; field?: string }
 

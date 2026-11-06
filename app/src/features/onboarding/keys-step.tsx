@@ -6,14 +6,14 @@ import { useActionState, useState } from "react"
 
 import { InlineLink } from "@/components/inline-link"
 import { Button } from "@/components/ui/button"
-import { saveCredentials } from "@/features/credentials/api"
-import { parseLiveKitEnv } from "@/features/credentials/livekit-env"
+import { saveCredentials } from "@/features/call-server/api"
+import { parseLiveKitEnv } from "@/features/call-server/livekit-env"
 import {
   checkKeysAgain,
   chooseLiveKitServer,
   useSavedKeys,
   type Keys,
-} from "@/features/credentials/use-saved-keys"
+} from "@/features/call-server/use-saved-keys"
 import { GeminiLogo, LiveKitLogo } from "@/features/setup/provider-logos"
 import { saveVoiceKey } from "@/features/voice/api"
 import { cn } from "@/lib/utils"

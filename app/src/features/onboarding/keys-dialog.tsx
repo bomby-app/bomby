@@ -19,16 +19,16 @@ import {
   FieldSet,
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import { saveCredentials } from "@/features/credentials/api"
+import { saveCredentials } from "@/features/call-server/api"
 import {
   changed,
   LiveKitFields,
   useLiveKitFields,
-} from "@/features/credentials/livekit-fields"
+} from "@/features/call-server/livekit-fields"
 import {
   checkKeysAgain,
   type Keys,
-} from "@/features/credentials/use-saved-keys"
+} from "@/features/call-server/use-saved-keys"
 import { saveVoiceKey } from "@/features/voice/api"
 
 /** The splash's "type them in": every key it needs, saved together. */

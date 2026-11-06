@@ -15,6 +15,7 @@ Checked 2026-11-06 against `livekit-plugins-rime` 1.8.11 and `rimelabs-sdk` 0.1.
 
 ## Prism
 
+- **Keys**: under API Tokens in the Rime dashboard, `https://app.rime.ai/tokens` ([authentication](https://docs.rime.ai/docs/api-authentication.md)); Prism takes the same key ([LiveKit](https://docs.livekit.io/agents/models/realtime/rime.md)).
 - English only. Audio is PCM16, 16 kHz in and 24 kHz out; the plugin converts.
 - **Voices** ([sessions](https://docs.rime.ai/docs/prism/sessions.md#choose-a-voice)), Prism's own, not Rime's TTS voices; `astra` without one. Bomby defaults to `aurora` (owner).
 

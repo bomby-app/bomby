@@ -1,5 +1,5 @@
-import { useSavedKeys } from "@/features/credentials/use-saved-keys"
-import { VOICE_NAMES } from "@/features/voice/providers"
+import { useSavedKeys } from "@/features/call-server/use-saved-keys"
+import { PROVIDERS } from "@/features/voice/providers"
 
 /**
  * Whether a call can start: the LiveKit keys, a voice provider and its key. An agent isn't needed to
@@ -19,7 +19,7 @@ export function useCallReadiness(): { ready: boolean; missing: string | null } {
   if (!keys.voiceKey)
     return {
       ready: false,
-      missing: `Add your ${VOICE_NAMES[keys.voice]} key in Settings first.`,
+      missing: `Add your ${PROVIDERS[keys.voice].name} key in Settings first.`,
     }
   return { ready: true, missing: null }
 }

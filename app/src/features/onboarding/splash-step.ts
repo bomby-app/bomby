@@ -1,6 +1,6 @@
 import type { AgentStatus } from "@/features/agents/api"
 import { isReady } from "@/features/agents/use-agents"
-import type { Keys } from "@/features/credentials/use-saved-keys"
+import type { Keys } from "@/features/call-server/use-saved-keys"
 
 /** Offered first when installed, ready or not (owner, 2026-11-05). */
 const PREFERRED = ["claude", "codex"]
