@@ -6,6 +6,11 @@ import { type ReactNode, useActionState, useState } from "react"
 
 import { InlineLink } from "@/components/inline-link"
 import { Button } from "@/components/ui/button"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { saveCredentials } from "@/features/call-server/api"
 import { parseLiveKitEnv } from "@/features/call-server/livekit-env"
 import {
@@ -204,6 +209,7 @@ function voiceCard(
   const saved = keys.voiceKeys[provider]
   return {
     tile: <Logo className={provider === "rime" ? "h-auto w-9" : undefined} />,
+    mark: copy.experimental && <ExperimentalMark />,
     name: copy.name,
     status: !picked ? (
       <StatusLine tone="off" text={copy.model} />
@@ -223,6 +229,8 @@ function voiceCard(
 
 type Card = {
   tile: ReactNode
+  /** A small mark on the tile's corner, like Experimental. */
+  mark?: ReactNode
   name: string
   status?: ReactNode
   action?: ReactNode
@@ -272,7 +280,12 @@ function CardPair({
                 selected === at && "border-primary"
               )}
               collapsed={collapsed}
-              tile={<Tile>{card.tile}</Tile>}
+              tile={
+                <Tile className="relative">
+                  {card.tile}
+                  {card.mark}
+                </Tile>
+              }
               name={card.name}
               status={card.status}
               action={
@@ -303,6 +316,20 @@ function CardPair({
         )
       })}
     </div>
+  )
+}
+
+/** An E on the tile's corner, Experimental on hover; above the card's pick button. */
+function ExperimentalMark() {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="absolute -top-1 -right-1 z-10 flex size-4 items-center justify-center rounded-full bg-highlighter text-[10px] leading-none font-bold text-highlighter-foreground">
+          E
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>Experimental</TooltipContent>
+    </Tooltip>
   )
 }
 

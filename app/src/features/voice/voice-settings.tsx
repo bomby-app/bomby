@@ -99,6 +99,13 @@ function ProviderRow({
       logo={<Logo />}
       title={copy.name}
       description={copy.description}
+      badge={
+        copy.experimental && (
+          <span className="rounded-full bg-highlighter px-1.5 py-px text-label font-medium text-highlighter-foreground">
+            Experimental
+          </span>
+        )
+      }
     >
       <ApiKeyForm
         id={`${id}-api-key`}

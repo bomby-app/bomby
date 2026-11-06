@@ -29,6 +29,8 @@ type ProviderCopy = {
   /** The same, as a sentence, for typing a key in. */
   keysHow: string
   options: Record<string, OptionCopy>
+  /** Still settling in Bomby: marked Experimental in Settings and on the splash. */
+  experimental?: boolean
 }
 
 export const PROVIDERS: Record<VoiceProvider, ProviderCopy> = {
@@ -60,6 +62,9 @@ export const PROVIDERS: Record<VoiceProvider, ProviderCopy> = {
     keysWhere: "API tokens",
     keysHow: "From Rime's dashboard, under API tokens.",
     options: {},
+    // Results of tasks can fail to reach Prism with LiveKit's Rime plugin 1.8.11
+    // (docs/rime-notes.md#the-plugin); experimental until the plugin handles them.
+    experimental: true,
   },
 }
 

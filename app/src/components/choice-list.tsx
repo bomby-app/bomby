@@ -39,6 +39,7 @@ export function ChoiceRow({
   logo,
   title,
   description,
+  badge,
   children,
 }: {
   /** The radio's id, for its label. */
@@ -49,6 +50,8 @@ export function ChoiceRow({
   logo: ReactNode
   title: string
   description: string
+  /** Shown after the title, like an Experimental mark. */
+  badge?: ReactNode
   /** Shown under the row while it's chosen. */
   children?: ReactNode
 }) {
@@ -62,7 +65,10 @@ export function ChoiceRow({
           {logo}
         </span>
         <span className="flex min-w-0 flex-1 flex-col gap-0.5 text-sm">
-          <span className="font-medium">{title}</span>
+          <span className="flex items-center gap-2 font-medium">
+            {title}
+            {badge}
+          </span>
           <span className="text-muted-foreground">{description}</span>
         </span>
         <RadioGroupItem value={value} id={id} />
