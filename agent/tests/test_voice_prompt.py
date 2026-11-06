@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from call_options import CallOptions
@@ -8,7 +8,7 @@ from project import Project
 from tools import agents_note
 from voice_prompt import PROMPTS, local_zone, the_time, voice_instructions
 
-NOW = datetime(2026, 11, 6, 0, 2, tzinfo=timezone(timedelta(hours=4)))
+NOW = datetime(2026, 11, 6, 0, 2, tzinfo=UTC)
 # The tone prompt, then when and where the call starts.
 VOICE = f"{PROMPTS['sharp']}\n\n{the_time(NOW, local_zone())}"
 
@@ -81,10 +81,10 @@ def test_every_tone_keeps_the_same_rules_and_sections() -> None:
 
 
 def test_the_call_knows_the_date_time_and_place() -> None:
-    now = datetime(2026, 11, 6, 0, 2, tzinfo=timezone(timedelta(hours=4)))
-    assert the_time(now, "Asia/Dubai") == (
-        "## Date and time\n\nIt's Friday 6 November 2026, 12:02 AM in Dubai "
-        "(Asia/Dubai) as this call starts."
+    now = datetime(2026, 11, 6, 0, 2, tzinfo=UTC)
+    assert the_time(now, "Europe/Lisbon") == (
+        "## Date and time\n\nIt's Friday 6 November 2026, 12:02 AM in Lisbon "
+        "(Europe/Lisbon) as this call starts."
     )
     assert the_time(now, "America/New_York").endswith(
         "in New York (America/New_York) as this call starts."

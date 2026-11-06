@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from typing import override
@@ -13,10 +14,11 @@ from acp_client import CallRunners
 from call import Call
 from call_options import CallOptions
 from job import read_metadata
-from memory import Memory
+from memory import ATTRIBUTE as MEMORY_ATTRIBUTE
+from memory import UNAVAILABLE, Memory, MemoryUnavailable
 from task_board import TaskBoard
 from tools import ALL_TOOLS, MEMORY_TOOLS
-from voice_prompt import voice_instructions
+from voice_prompt import local_zone, voice_instructions
 
 dev_env.load()
 
@@ -118,11 +120,28 @@ async def entrypoint(ctx: JobContext) -> None:
     async def publish(attributes: dict[str, str]) -> None:
         await ctx.room.local_participant.set_attributes(attributes)
 
-    # Read before Gemini connects: its instructions are final once it does.
-    memory = await Memory.open(
-        options.memory_user, os.environ, saves=not options.memory_incognito
-    )
-    remembered = await memory.remembered() if memory else ""
+    # The app shows the user a card; the call goes on either way.
+    async def memory_unavailable() -> None:
+        try:
+            await publish({MEMORY_ATTRIBUTE: UNAVAILABLE})
+        except (RuntimeError, ConnectionError, OSError) as e:
+            logger.warning("couldn't tell the app memory is unavailable: %s", e)
+
+    # Memory is read before Gemini connects, since its instructions are final once it
+    # does, while the room connects; a Zep that can't answer leaves the call without it.
+    connecting = asyncio.create_task(ctx.connect())
+    memory: Memory | None = None
+    remembered = ""
+    unavailable = False
+    try:
+        memory, remembered = await Memory.open(options, local_zone(), os.environ)
+    except MemoryUnavailable:
+        unavailable = True
+    await connecting
+    if unavailable:
+        await memory_unavailable()
+    if memory:
+        memory.on_unavailable(memory_unavailable)
     call = Call(runners, TaskBoard(publish), memory)
     ctx.add_shutdown_callback(call.aclose)
 

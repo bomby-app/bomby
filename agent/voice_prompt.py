@@ -50,7 +50,7 @@ def voice_instructions(
 
 
 def local_zone() -> str:
-    """The Mac's time zone, like "Asia/Dubai", from /etc/localtime; "" if it can't tell."""
+    """The Mac's IANA time zone ("Region/City"), from /etc/localtime; "" if it can't tell."""
     _, found, zone = os.path.realpath("/etc/localtime").partition("zoneinfo/")
     return zone if found else ""
 

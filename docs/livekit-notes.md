@@ -58,7 +58,17 @@ Checked 2026-11-05 against `livekit/livekit` v1.13.10 and v1.13.11 (source and r
 - **Stopping.** SIGTERM logs `exit requested, shutting down` and exits in about 40 ms, also after a request. Sent within about 10 ms of `starting LiveKit server`, it never exits (waited 15 s; 1.13.10). The core sends SIGKILL after 1 s; the server keeps nothing on disk.
 - **Token dispatch works** on the open-source server: `RoomConfiguration.agents` from the token is handled in `pkg/service/roomallocator.go`, tested in `test/agent_test.go`.
 
+## The conversation, for memory
+
+Checked 2026-11-06 against `livekit-agents` 1.8.10 (`voice/agent_activity.py`, `voice/agent_session.py`, `ipc/job_proc_lazy_main.py`) and `livekit-plugins-google` 1.8.10 (`realtime/realtime_api.py`). What `agent/memory.py` builds on:
+
+- **Every line is a `conversation_item_added`**: the user's spoken ones (`_on_input_audio_transcription_completed`), typed ones (`_realtime_reply_task`, with `user_input`) and Bomby's (`_create_assistant_message`, `interrupted` set when cut off). `on_user_turn_completed` never fires with Gemini's server-side turn detection.
+- **Gemini finalises the user's line late**: the final transcript comes when the reply's generation is done (`_mark_current_generation_done`), so it can arrive after the reply it prompted. LiveKit stamps the user's item with when the turn started (`created_at = turn_started_at`) and Bomby's with when it started speaking, so ordering by `created_at` puts them right.
+- **Interim transcripts** (`user_input_transcribed`, `is_final=False`) grow with the turn and carry the item's id (`input_id`); an empty one marks speech stopping, right before the final.
+- **Hang-up**: the job's shutdown callbacks run side by side (`asyncio.gather`), the session's own close among them, within `shutdown_process_timeout` (10 s). The session interrupts Bomby (an `interrupted` item), then emits `close`; a line the user hadn't finished never gets a final transcript.
+- **`ctx.connect()` returns at once once connected**, so the entrypoint can connect while it reads memory, and `session.start` doesn't connect again.
+
 ## Data to the frontend
 
-- Participant attributes carry current state. `bomby.tasks` is set with `local_participant.set_attributes` and read through `useAgent().attributes`, which re-renders on changes. Total attribute limit: 64 KiB ([docs](https://docs.livekit.io/transport/data/state/participant-attributes)).
+- Participant attributes carry current state. `bomby.tasks` (the call's tasks) and `bomby.memory` (`unavailable` when the call has no memory because Zep can't be reached) are set with `local_participant.set_attributes` and read through `useAgent().attributes`, which re-renders on changes. Total attribute limit: 64 KiB ([docs](https://docs.livekit.io/transport/data/state/participant-attributes)).
 - Text streams suit event messages, RPC request-response, and attributes or room metadata shared state ([docs](https://docs.livekit.io/transport/data/)).
