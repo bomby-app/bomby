@@ -1,3 +1,5 @@
+import type { ReactNode } from "react"
+
 import { AgentsPanel } from "@/features/call/agents-panel"
 import { useCall } from "@/features/call/call-provider"
 import { CallView } from "@/features/call/call-view"
@@ -12,10 +14,31 @@ import {
 import { ProjectsHome } from "@/features/projects/projects-home"
 import { useProjects } from "@/features/projects/projects-provider"
 import type { Selection } from "@/features/projects/selection"
+import { WorkspaceLayout } from "@/features/workspace/workspace-layout"
 
 import { AppHeader } from "./app-header"
 
-/** The right side: whatever the sidebar has selected, under the header. */
+/** The header's actions, then the workspace panel's toggle when the project has one. */
+function Actions({
+  children,
+  toggle,
+}: {
+  children: ReactNode
+  toggle: ReactNode
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      {children}
+      {toggle}
+    </div>
+  )
+}
+
+/**
+ * The right side: whatever the sidebar has selected, under the header. A project, its
+ * live call and its past calls share one workspace layout, so moving between them keeps
+ * the workspace panel and its terminals.
+ */
 export function MainPanel({
   selection,
   onSelect,
@@ -56,48 +79,72 @@ export function MainPanel({
       (selection?.kind === "call" && selection.callId === active.callId))
   if (live) {
     return (
-      <>
-        <AppHeader
-          title={`${project.name} · On a call`}
-          actions={<AgentsPanel />}
-        />
+      <WorkspaceLayout
+        key={project.id}
+        project={project}
+        header={(toggle) => (
+          <AppHeader
+            title={`${project.name} · On a call`}
+            actions={
+              <Actions toggle={toggle}>
+                <AgentsPanel />
+              </Actions>
+            }
+          />
+        )}
+      >
         <div className="min-h-0 flex-1">
           <CallView call={active} />
         </div>
-      </>
+      </WorkspaceLayout>
     )
   }
 
   if (call) {
     return (
-      <>
-        <AppHeader
-          title={`${project.name} · ${callLabel(call.startedAt)}`}
-          actions={
-            <div className="flex items-center gap-1.5">
-              <DeleteCallButton
-                call={call}
-                onDeleted={() =>
-                  onSelect({ kind: "project", projectId: project.id })
-                }
-              />
-              <ResumeButton projectId={project.id} callId={call.id} />
-            </div>
-          }
-        />
+      <WorkspaceLayout
+        key={project.id}
+        project={project}
+        header={(toggle) => (
+          <AppHeader
+            title={`${project.name} · ${callLabel(call.startedAt)}`}
+            actions={
+              <Actions toggle={toggle}>
+                <DeleteCallButton
+                  call={call}
+                  onDeleted={() =>
+                    onSelect({ kind: "project", projectId: project.id })
+                  }
+                />
+                <ResumeButton projectId={project.id} callId={call.id} />
+              </Actions>
+            }
+          />
+        )}
+      >
         <SavedCallView key={call.id} callId={call.id} />
-      </>
+      </WorkspaceLayout>
     )
   }
 
   return (
-    <>
-      <AppHeader
-        title={project.name}
-        actions={
-          <ProjectActions project={project} onDeleted={() => onSelect(null)} />
-        }
-      />
+    <WorkspaceLayout
+      key={project.id}
+      project={project}
+      header={(toggle) => (
+        <AppHeader
+          title={project.name}
+          actions={
+            <Actions toggle={toggle}>
+              <ProjectActions
+                project={project}
+                onDeleted={() => onSelect(null)}
+              />
+            </Actions>
+          }
+        />
+      )}
+    >
       <div className="min-h-0 flex-1 overflow-auto">
         <ProjectCalls
           project={project}
@@ -106,6 +153,6 @@ export function MainPanel({
           }
         />
       </div>
-    </>
+    </WorkspaceLayout>
   )
 }

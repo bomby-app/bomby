@@ -176,3 +176,13 @@ The page's types for what the core sends come from the core's structs, generated
 - ts-rs follows `rename_all`, `flatten` (fields inlined), `Option<T>` (`T | null`) and lowercase enums, but ignores serde's split `rename_all(serialize = ..., deserialize = ...)` without a warning: such a struct also needs `ts(rename_all = "camelCase")`.
 - The generated files are left out of formatting and linting (`ignorePatterns` in `vite.config.ts`); types still check against them.
 - What the voice agent's probe sends the core is pinned on both sides by one fixture, `agent/tests/fixtures/probe-answer.json`: written from a real answer by `agent/tests/test_probe_contract.py`, read by `reads_the_probes_answer` in `setup.rs`, which checks every field the probe sends is read, nested ones included, and comes out under the page's name.
+
+## Streaming bytes and terminals
+
+Checked 2026-11-07 against tauri 2.12.5 (`src/ipc/channel.rs`), `@tauri-apps/api` 2.12.4, portable-pty 0.9.0, git2 0.21.0 (libgit2 1.9.7) and notify 8.2.1 with notify-debouncer-mini 0.7.0, in `~/.cargo/registry`.
+
+- A `Channel<InvokeResponseBody>` sending `InvokeResponseBody::Raw(bytes)` arrives in JS as an `ArrayBuffer`. A `Channel<Vec<u8>>` doesn't: `Vec<u8>` is `Serialize`, so it goes as a JSON array of numbers.
+- portable-pty's `native_pty_system().openpty(size)` gives a master and a slave; `slave.spawn_command` runs the child with `setsid` and the slave as its controlling terminal, so the shell leads its own process group. Drop the slave after spawning, or reads never end. On macOS a read on the master fails with EIO once every holder of the slave is gone. `CommandBuilder::new` starts from the app's own environment; an app opened from Finder has no `LANG`, so the core sets one.
+- `Child::kill` sends SIGKILL to the shell alone; the core sends SIGHUP to its group instead, as a closing terminal window does, and only while the child is unreaped, so a reused pid is never signalled.
+- git2 with `default-features = false, features = ["vendored-libgit2"]` builds libgit2 from source with no OpenSSL or SSH (only local repositories are read). `diff_tree_to_workdir_with_index` with `include_untracked`, `recurse_untracked_dirs` and `show_untracked_content` matches `git diff HEAD` plus new files; `Patch::from_diff(...).to_buf()` prints one file's patch with its `diff --git` header. `is_path_ignored` takes a path relative to the working directory.
+- notify's `RecommendedWatcher` is FSEvents on macOS, recursive and cheap on big trees; dropping the debouncer stops it.

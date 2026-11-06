@@ -1,0 +1,128 @@
+import { Channel, invoke } from "@tauri-apps/api/core"
+
+import type {
+  Changes,
+  Entry,
+  FilePreview,
+  FolderInfo,
+} from "@/generated/workspace"
+
+// The core's workspace commands (src-tauri/src/workspace/): a project's folder, its git
+// changes and files, a watch that says when they change, and terminals. Every call names
+// the project and one of its folders; the core checks the folder is the project's.
+
+export type {
+  ChangedFile,
+  Changes,
+  ChangeStatus,
+  Entry,
+  FilePreview,
+  FolderInfo,
+} from "@/generated/workspace"
+
+export function folderInfo(
+  projectId: number,
+  folder: string
+): Promise<FolderInfo> {
+  return invoke("folder_info", { projectId, folder })
+}
+
+/** What changed since the last commit; null when the folder isn't in a git repository. */
+export function folderChanges(
+  projectId: number,
+  folder: string
+): Promise<Changes | null> {
+  return invoke("folder_changes", { projectId, folder })
+}
+
+/** One directory of the folder, `""` for the folder itself: folders first, then files. */
+export function folderEntries(
+  projectId: number,
+  folder: string,
+  dir: string
+): Promise<Entry[]> {
+  return invoke("folder_entries", { projectId, folder, dir })
+}
+
+export function folderFile(
+  projectId: number,
+  folder: string,
+  file: string
+): Promise<FilePreview> {
+  return invoke("folder_file", { projectId, folder, file })
+}
+
+/**
+ * Calls `onChange` after each burst of changes in the folder (debounced in the core).
+ * Resolves to the function that stops watching.
+ */
+export async function watchFolder(
+  projectId: number,
+  folder: string,
+  onChange: () => void
+): Promise<() => void> {
+  const changed = new Channel<null>()
+  changed.onmessage = onChange
+  const id = await invoke<number>("watch_folder", {
+    projectId,
+    folder,
+    changed,
+  })
+  return () => quietly("unwatch_folder", { id })
+}
+
+/** A failure the user can't act on goes to the app's log (`app_log`), not the screen. */
+function log(line: string) {
+  void invoke("app_log", { line }).catch(() => {})
+}
+
+function quietly(command: string, args: Record<string, unknown>) {
+  void invoke(command, args).catch((e: unknown) =>
+    log(`${command}: ${String(e)}`)
+  )
+}
+
+export type TerminalSession = {
+  write: (data: string) => void
+  resize: (cols: number, rows: number) => void
+  close: () => void
+}
+
+/**
+ * Starts the user's login shell in the folder, on a terminal of `cols` by `rows`. Its
+ * output arrives as bytes on `onOutput`; `onExit` gets the exit code once it has gone.
+ */
+export async function openTerminal({
+  projectId,
+  folder,
+  cols,
+  rows,
+  onOutput,
+  onExit,
+}: {
+  projectId: number
+  folder: string
+  cols: number
+  rows: number
+  onOutput: (bytes: Uint8Array) => void
+  onExit: (code: number | null) => void
+}): Promise<TerminalSession> {
+  // The core sends raw bytes, which arrive as an ArrayBuffer.
+  const output = new Channel<ArrayBuffer>()
+  output.onmessage = (buffer) => onOutput(new Uint8Array(buffer))
+  const exit = new Channel<number | null>()
+  exit.onmessage = onExit
+  const id = await invoke<number>("terminal_open", {
+    projectId,
+    folder,
+    cols,
+    rows,
+    output,
+    exit,
+  })
+  return {
+    write: (data) => quietly("terminal_write", { id, data }),
+    resize: (cols, rows) => quietly("terminal_resize", { id, cols, rows }),
+    close: () => quietly("terminal_close", { id }),
+  }
+}
