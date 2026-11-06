@@ -20,8 +20,8 @@ A call needs a LiveKit server between the page and the voice agent. Until now th
 
 ## Why
 
-- One account fewer to set up: a call needs only a Gemini key and an agent.
-- Call audio stays on the Mac except what goes to Gemini, and the hop to a Cloud edge and back is gone.
+- One account fewer to set up: a call needs only a voice provider's key and an agent.
+- Call audio stays on the Mac except what goes to the voice model, and the hop to a Cloud edge and back is gone.
 - Cloud stays for those who already have a LiveKit project, its dashboard and observability, and calls from other devices later.
 
 ## Consequences

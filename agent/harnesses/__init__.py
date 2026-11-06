@@ -22,7 +22,7 @@ HARNESSES: dict[str, Harness] = {
 }
 
 # The `agent` choices `start_task` offers the voice model. A literal, so the tool's schema
-# is fixed before the session starts (Gemini Live gets its tools once, at connect time).
+# is fixed before the session starts (the voice model gets its tools once, at connect time).
 # tests/test_tools.py checks it matches `HARNESSES`.
 AgentName = Literal["claude", "codex", "opencode", "omp", "goose"]
 

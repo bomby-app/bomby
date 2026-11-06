@@ -76,7 +76,7 @@ pub struct TrayStatus {
     pub starting: bool,
     /// Projects to start a call on, the newest call first.
     pub recent: Vec<RecentProject>,
-    /// Why a call can't start yet ("Add your Gemini key in Settings first."), if it can't.
+    /// Why a call can't start yet ("Add your Rime key in Settings first."), if it can't.
     pub blocked: Option<String>,
 }
 

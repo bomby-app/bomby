@@ -1,6 +1,6 @@
 # Architecture
 
-Bomby is a desktop app for talking to coding agents. A call connects Gemini's voice model to an agent installed on the user's machine. The user brings their Gemini key and their own agent ([decision](decisions/users-bring-their-own-keys-and-claude.md)); calls run through LiveKit on their Mac, or their own LiveKit Cloud project ([decision](decisions/livekit-on-this-mac-or-cloud.md)).
+Bomby is a desktop app for talking to coding agents. A call connects a voice model the user picks, Gemini Live or Rime's Prism, to an agent installed on the user's machine ([decision](decisions/voice-providers-like-harnesses.md)). The user brings that provider's key and their own agent ([decision](decisions/users-bring-their-own-keys-and-claude.md)); calls run through LiveKit on their Mac, or their own LiveKit Cloud project ([decision](decisions/livekit-on-this-mac-or-cloud.md)).
 
 ## The pieces
 
@@ -20,7 +20,7 @@ flowchart LR
     Core["Tauri core: keychain, SQLite, tokens, agent worker, LiveKit server"]
   end
   subgraph Agent["Voice agent (agent/)"]
-    Gemini["Gemini 3.8 Live session"]
+    Gemini["Voice model session: Gemini Live or Prism"]
     Tool["start_task tool"]
     Runner["AcpRunner per harness: named sessions"]
   end

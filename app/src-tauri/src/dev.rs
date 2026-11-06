@@ -4,7 +4,7 @@
 //! - `BOMBY_DEV_SPLASH=1` (`--splash`): the first-run splash shows at every launch.
 //! - `BOMBY_DEV_AGENTS` (`--agents=none`, `--agents=codex,goose`): only the agents listed
 //!   are found, the rest look not installed. `none` hides them all.
-//! - `BOMBY_DEV_NO_KEYS=1` (`--no-keys`): the LiveKit and Gemini keys start empty and live
+//! - `BOMBY_DEV_NO_KEYS=1` (`--no-keys`): the LiveKit, voice and Zep keys start empty and live
 //!   in memory for the run; the keychain is never read or written, so saved keys stay.
 //!
 //! `--signed-out` needs nothing here: it points `CLAUDE_CONFIG_DIR` at an empty folder,

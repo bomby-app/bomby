@@ -1,4 +1,4 @@
-# The voice agent (agent/): LiveKit Agents, Gemini 3.8 Live, Claude Code over ACP.
+# The voice agent (agent/): LiveKit Agents, Gemini 3.8 Live or Rime Prism, coding agents over ACP.
 #
 # Typical use:
 #     just agent install        resolve the Python dependencies (uv)

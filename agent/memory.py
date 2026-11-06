@@ -1,6 +1,6 @@
 """Memory across calls, in the user's own Zep project (docs/decisions/memory-across-calls-with-zep.md).
 
-What Bomby knows is read once, before Gemini connects, into the voice prompt; mid-call it
+What Bomby knows is read once, before the voice model connects, into the voice prompt; mid-call it
 comes through `recall_about_user`; and the conversation is saved to a Zep thread as it
 goes. A call without a `memory_user`, or a worker without `ZEP_API_KEY`, has none of it.
 Zep failing never fails the call: a call that can't reach it at the start has no memory,

@@ -70,7 +70,7 @@ Researched 2026-11-05 for a floating mascot window (not built). Sources: `tauri`
 
 - `src-tauri/src/agent.rs` keeps one worker per app run. The first `open_call` starts it; credential or `claude` path changes, or its death, restart it; app exit stops it.
 - Both builds run the same entry, `agent/bundle.py`, with `start` (the worker) or `probe` and the metadata (setup). Debug runs it from source, `uv run python bundle.py` in `agent/`, found at build time from `CARGO_MANIFEST_DIR`. Release runs the packaged agent, `Contents/Resources/agent/bomby-agent`, found from `current_exe()` (`Contents/MacOS`), with its own folder as the working directory.
-- The environment passes LiveKit/Gemini keys and `CLAUDE_CODE_EXECUTABLE`; `child_environment` removes secrets before launching Claude.
+- The environment passes the LiveKit and voice provider keys (`GOOGLE_API_KEY`, `RIME_API_KEY`) and `CLAUDE_CODE_EXECUTABLE`; `child_environment` removes secrets before launching Claude.
 - The worker has its own process group. Normal shutdown uses SIGTERM, five seconds, then SIGKILL.
 - `BOMBY_EXIT_WITH_APP=1` plus a core-held stdin pipe ensures the worker cannot outlive the app. `agent/lifeline.py` stops the group on EOF (SIGTERM, three seconds, SIGKILL), covering crashes and Ctrl-C.
 - Logs go to `agent.log` in `app.path().app_log_dir()`, rewritten per start. The page's `app_log` command writes webview audio facts to `app.log` there. Startup errors surface the worker's last JSON error. A job that crashes logs `unhandled exception while running the job task` with `room` and `exc_info` (livekit-agents 1.8.10, `ipc/job_proc_lazy_main.py`, `_on_entry_done`; seen in agent.log 2026-11-05); the core reports it as `call-agent-crashed`.
