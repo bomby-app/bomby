@@ -262,7 +262,7 @@ pub fn open_call<R: Runtime>(
     let gemini = vault
         .gemini_key(&app)?
         .ok_or_else(|| Error::Invalid("Add your Gemini API key in Settings first.".into()))?;
-    // The agent lookup (a login shell) runs while the server and worker start. No agent is fine.
+    // Finds the agents (a login shell) while the server and worker start.
     let (found, started) = thread::scope(|scope| {
         let lookup = scope.spawn(|| agents::usable_now(&app));
         let started = (|| -> Result<LiveKitKeys> {
