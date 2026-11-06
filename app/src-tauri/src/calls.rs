@@ -406,7 +406,7 @@ pub fn call_token<R: Runtime>(
     } = match call_agents.get(call_id) {
         Some(opened) => opened,
         None => OpenedWith {
-            voice: voice::for_call(&db.conn(), voice::for_new_call(&app, &db, &vault)?)?,
+            voice: voice::for_token(&app, &db, &vault)?,
             server: call_server::current(&app, &db, &vault, &local)?,
             agents: for_project(
                 agents::usable(&found.cached().unwrap_or_default()),

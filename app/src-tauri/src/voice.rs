@@ -209,17 +209,46 @@ pub(crate) fn chosen(
     conn: &Connection,
     has_key: impl Fn(VoiceProvider) -> bool,
 ) -> Result<Option<VoiceProvider>> {
+    let Some((provider, saved)) = picked(conn, has_key)? else {
+        return Ok(None);
+    };
+    if !saved {
+        save_provider(conn, provider)?;
+    }
+    Ok(Some(provider))
+}
+
+/// What `chosen` finds, without saving it, and whether it was saved already.
+fn picked(
+    conn: &Connection,
+    has_key: impl Fn(VoiceProvider) -> bool,
+) -> Result<Option<(VoiceProvider, bool)>> {
     if let Some(provider) = get(conn, PROVIDER_KEY)?
         .as_deref()
         .and_then(VoiceProvider::from_id)
     {
-        return Ok(Some(provider));
+        return Ok(Some((provider, true)));
     }
-    let Some(provider) = VoiceProvider::ALL.into_iter().find(|&p| has_key(p)) else {
-        return Ok(None);
-    };
-    save_provider(conn, provider)?;
-    Ok(Some(provider))
+    Ok(VoiceProvider::ALL
+        .into_iter()
+        .find(|&p| has_key(p))
+        .map(|p| (p, false)))
+}
+
+/// What a token for a call this run didn't open talks through: the pick as it stands,
+/// read only, since fetching a token must change nothing (`calls::call_token`). The keys
+/// are read before the database, which it locks once.
+pub(crate) fn for_token<R: Runtime>(
+    app: &AppHandle<R>,
+    db: &Db,
+    vault: &Vault,
+) -> Result<CallVoice> {
+    let keys = vault.voice_keys(app)?;
+    let conn = db.conn();
+    let (provider, _) = picked(&conn, |p| keys.contains_key(&p))?.ok_or_else(|| {
+        Error::Invalid("Pick who Bomby talks through in Settings, Voice first.".into())
+    })?;
+    for_call(&conn, provider)
 }
 
 fn save_provider(conn: &Connection, provider: VoiceProvider) -> Result<()> {
@@ -396,6 +425,18 @@ mod tests {
 
         save_provider(&conn, VoiceProvider::Rime).unwrap();
         assert_eq!(chosen(&conn, |_| false).unwrap(), Some(VoiceProvider::Rime));
+    }
+
+    #[test]
+    fn looking_without_choosing_saves_nothing() {
+        let db = Db::in_memory().unwrap();
+        let conn = db.conn();
+        let gemini = |p| p == VoiceProvider::Gemini;
+        assert_eq!(
+            picked(&conn, gemini).unwrap(),
+            Some((VoiceProvider::Gemini, false))
+        );
+        assert_eq!(get(&conn, PROVIDER_KEY).unwrap(), None);
     }
 
     #[test]
