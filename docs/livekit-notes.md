@@ -2,6 +2,15 @@
 
 Checked 2026-11-03/04 against `livekit-agents` 1.8.10, LiveKit CLI 2.18.8 and docs.livekit.io. Installed Python source is under `agent/.venv/lib/python3.13/site-packages/livekit/agents/`.
 
+## 1.8.11
+
+Bumped 2026-11-06 from 1.8.10, with `livekit-plugins-google` 1.8.11 and the `livekit` SDK 1.2.0 ([release notes](https://github.com/livekit/agents/releases/tag/livekit-agents%401.8.11)). What matters to Bomby:
+
+- **Rime**: Prism speech-to-speech through the standard realtime interface (`livekit-plugins-rime[realtime]` 1.8.11, which requires `livekit-agents>=1.8.11`).
+- **Realtime history and reconnection**: the Google plugin starts a fresh session after a config change instead of resuming the old one, and on 3.x models replays tool calls and results into the new session's history (`plugins/google/realtime/realtime_api.py`, diffed against 1.8.10). Nothing Bomby sets changed.
+- **Uninterruptible speech** now keeps the user's transcript without interrupting or replying. Bomby never makes speech uninterruptible.
+- Worker resources close when startup fails before `run()` completes.
+
 ## Async tools
 
 - A `@function_tool` becomes non-blocking on its first `await ctx.update(msg)`. Its final return arrives when the agent is idle through synthetic call id `{call_id}_final` (`voice/tool_executor.py`).

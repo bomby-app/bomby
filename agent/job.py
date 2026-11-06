@@ -3,7 +3,7 @@
 `JobMetadata` is its contract: it's read and checked once, here, and each part takes the
 fields it needs: the project (`project.py`), the installed agents
 (`harnesses/installed.py`), each agent's picks (`acp_client/settings.py`), who the probe
-lists (`probe.py`), and the voice and history (`call_options.py`). Console runs have no
+lists (`probe.py`), and the voice provider, voice and history (`call_options.py`). Console runs have no
 metadata, and each part falls back to the environment.
 
 `Pick` and `Line` are pydantic dataclasses rather than models: they're checked inside
@@ -57,6 +57,11 @@ class JobMetadata(BaseModel):
     listing: frozenset[str] = frozenset()
     # The agents the probe opens a session in even if they can't delete it (once per launch).
     sessions: frozenset[str] = frozenset()
+    # The voice model the call talks through, by id (`voice_providers/`); empty for the
+    # default.
+    provider: Text = ""
+    # The provider's switches the user set, by option id; the rest take their defaults.
+    provider_options: dict[str, bool] = {}
     voice: (
         Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)] | None
     ) = None

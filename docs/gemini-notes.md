@@ -59,8 +59,8 @@ Sources:
 
 ## Google Search
 
-- `livekit-plugins-google` 1.8.10 has Gemini's built-in tools as `ProviderTool`s in `tools.py`: `GoogleSearch()` (id `gemini_google_search`), `GoogleMaps`, `URLContext`, `FileSearch`. Passed in the agent's tools beside function tools; `utils.create_tools_config` sends both, which Google allows on the Gemini 3 Developer API only, not Vertex AI. Search runs on Google's side, with nothing for the agent to answer.
-- Every Bomby call has it (`agent/tools/__init__.py`, owner, 2026-11-06); Gemini decides when to search.
+- `livekit-plugins-google` 1.8.10 and 1.8.11 have Gemini's built-in tools as `ProviderTool`s in `tools.py`: `GoogleSearch()` (id `gemini_google_search`), `GoogleMaps`, `URLContext`, `FileSearch`. Passed in the agent's tools beside function tools; `utils.create_tools_config` sends both, which Google allows on the Gemini 3 Developer API only, not Vertex AI. Search runs on Google's side, with nothing for the agent to answer.
+- Gemini's `google_search` option, on by default (`agent/voice_providers/gemini.py`, owner, 2026-11-06); Gemini decides when to search, and the prompt doesn't mention it.
 
 ## Tool schemas
 

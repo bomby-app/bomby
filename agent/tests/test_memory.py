@@ -292,8 +292,10 @@ def test_only_a_call_with_memory_can_recall() -> None:
 
     assert "recall_about_user" not in names(Assistant(options, runners))
     assert "recall_about_user" in names(Assistant(options, runners, remembers=True))
-    # Every call can search the web with Gemini's own Google Search.
+    # Gemini calls search the web with Google's own search unless the user turned it off.
     assert "gemini_google_search" in names(Assistant(options, runners))
+    off = CallOptions(voice="Leda", provider_options={"google_search": False})
+    assert "gemini_google_search" not in names(Assistant(off, runners))
 
 
 def test_recall_that_cant_reach_zep_says_so_and_tells_the_app(
