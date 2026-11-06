@@ -2,6 +2,7 @@ import {
   AudioLines,
   Info,
   Bot,
+  Brain,
   KeyRound,
   ListChecks,
   type LucideIcon,
@@ -14,6 +15,7 @@ import { AboutBadge, AboutSettings } from "@/features/about/about-settings"
 import { AgentsSettings } from "@/features/agents/agents-settings"
 import { CredentialsSettings } from "@/features/credentials/credentials-settings"
 import { IntroSettings } from "@/features/intro/intro-settings"
+import { MemorySettings } from "@/features/memory/memory-settings"
 import { SetupSettings } from "@/features/setup/setup-settings"
 import { AppearanceSettings } from "@/features/theme/appearance-settings"
 import { VoiceSettings } from "@/features/voice/voice-settings"
@@ -47,6 +49,12 @@ export const SECTIONS = [
     label: "Voice",
     icon: AudioLines,
     component: VoiceSettings,
+  },
+  {
+    id: "memory",
+    label: "Memory",
+    icon: Brain,
+    component: MemorySettings,
   },
   {
     id: "appearance",

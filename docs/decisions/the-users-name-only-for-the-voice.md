@@ -20,3 +20,4 @@ Bomby greeted everyone the same way. Some users like to be called by name; other
 ## Consequences
 
 - A change reaches the next call, like the voice.
+- With memory across calls on, the name is also the Zep user's first name in the user's own Zep project, so its facts name them ([decision](memory-across-calls-with-zep.md)). Still never the coding agents.

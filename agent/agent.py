@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from typing import override
@@ -13,9 +14,12 @@ from acp_client import CallRunners
 from call import Call
 from call_options import CallOptions
 from job import read_metadata
+from memory import ATTRIBUTE as MEMORY_ATTRIBUTE
+from memory import UNAVAILABLE, Memory, MemoryUnavailable
+from memory import notify as notify_memory
 from task_board import TaskBoard
-from tools import ALL_TOOLS
-from voice_prompt import voice_instructions
+from tools import ALL_TOOLS, MEMORY_TOOLS
+from voice_prompt import local_zone, voice_instructions
 
 dev_env.load()
 
@@ -51,12 +55,21 @@ LANGUAGE_CODES = ["en-US"]
 
 
 class Assistant(Agent):
-    def __init__(self, options: CallOptions, runners: CallRunners) -> None:
+    def __init__(
+        self,
+        options: CallOptions,
+        runners: CallRunners,
+        remembers: bool = False,
+        remembered: str = "",
+    ) -> None:
         self._resumed: bool = options.resumed
-        instructions = voice_instructions(runners.project, options, runners.available)
+        instructions = voice_instructions(
+            runners.project, options, runners.available, remembered
+        )
+        tools = ALL_TOOLS + MEMORY_TOOLS if remembers else ALL_TOOLS
         # LiveKit's own signatures are partially untyped; the ignores below are theirs.
         super().__init__(  # pyright: ignore[reportUnknownMemberType]
-            instructions=instructions, tools=ALL_TOOLS
+            instructions=instructions, tools=tools
         )
 
     @override
@@ -108,7 +121,25 @@ async def entrypoint(ctx: JobContext) -> None:
     async def publish(attributes: dict[str, str]) -> None:
         await ctx.room.local_participant.set_attributes(attributes)
 
-    call = Call(runners, TaskBoard(publish))
+    # The app shows the user a card; the call goes on either way.
+    async def memory_unavailable() -> None:
+        await publish({MEMORY_ATTRIBUTE: UNAVAILABLE})
+
+    # Read while the room connects: Gemini's instructions are final once it does.
+    connecting = asyncio.create_task(ctx.connect())
+    memory: Memory | None = None
+    remembered = ""
+    unavailable = False
+    try:
+        memory, remembered = await Memory.open(options, local_zone(), os.environ)
+    except MemoryUnavailable:
+        unavailable = True
+    await connecting
+    if unavailable:
+        notify_memory(memory_unavailable)
+    if memory:
+        memory.on_unavailable(memory_unavailable)
+    call = Call(runners, TaskBoard(publish), memory)
     ctx.add_shutdown_callback(call.aclose)
 
     # Which audio the agent gets, from whom: the first thing to check on an audio problem.
@@ -142,7 +173,10 @@ async def entrypoint(ctx: JobContext) -> None:
         ),
     )
 
-    await session.start(agent=Assistant(options, runners), room=ctx.room)  # pyright: ignore[reportUnknownMemberType]
+    if memory:
+        memory.attach(session)
+    assistant = Assistant(options, runners, memory is not None, remembered)
+    await session.start(agent=assistant, room=ctx.room)  # pyright: ignore[reportUnknownMemberType]
 
 
 def main() -> None:

@@ -55,6 +55,8 @@ pub type OnCrash = Arc<dyn Fn(JobCrash) + Send + Sync>;
 pub struct WorkerConfig {
     pub livekit: LiveKitKeys,
     pub gemini_key: String,
+    /// Whenever one is saved; each call's metadata says whether it remembers.
+    pub zep_key: Option<String>,
 }
 
 struct Running {
@@ -161,6 +163,10 @@ fn start(config: &WorkerConfig, log_dir: &Path, on_crash: OnCrash) -> Result<(Ch
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    match &config.zep_key {
+        Some(key) => command.env("ZEP_API_KEY", key),
+        None => command.env_remove("ZEP_API_KEY"),
+    };
     // Its own process group, so stopping it also stops uv's python and the job processes.
     #[cfg(unix)]
     std::os::unix::process::CommandExt::process_group(&mut command, 0);

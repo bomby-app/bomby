@@ -90,6 +90,10 @@ struct OpenedWith {
     server: LiveKitKeys,
     agents: Vec<(String, PathBuf)>,
     picks: HashMap<String, Vec<Pick>>,
+    /// The Zep user the call remembers as, or empty when memory across calls is off.
+    memory_user: String,
+    /// Reads memory but saves nothing.
+    memory_incognito: bool,
 }
 
 /// A call id and what it opened with.
@@ -161,6 +165,7 @@ fn dispatch_metadata(
     agents: &[(String, PathBuf)],
     picks: &HashMap<String, Vec<Pick>>,
     settings: &settings::CallSettings,
+    memory: (&str, bool),
     history: &[HistoryLine],
 ) -> String {
     let picks: HashMap<_, _> = agents
@@ -180,6 +185,8 @@ fn dispatch_metadata(
         "voice": settings.voice,
         "user_name": settings.user_name,
         "tone": settings.tone,
+        "memory_user": memory.0,
+        "memory_incognito": memory.1,
         "history": history,
     })
     .to_string()
@@ -213,6 +220,24 @@ fn reopen(conn: &Connection, project_id: i64, call_id: i64) -> Result<()> {
         return Err(Error::NotFound("call"));
     }
     Ok(())
+}
+
+/// The Zep user a new call remembers as, or empty, and the saved Zep key. The worker gets
+/// the key whenever one is saved, so the switch never restarts it: the call's metadata
+/// turns memory on, and needs both the setting and the key.
+fn memory_for_call<R: Runtime>(
+    app: &AppHandle<R>,
+    db: &Db,
+    vault: &credentials::Vault,
+) -> Result<(String, Option<String>)> {
+    let key = vault.zep_key(app)?;
+    let conn = db.conn();
+    let user = if key.is_some() && settings::memory(&conn)? == settings::Memory::Zep {
+        settings::memory_user(&conn)?
+    } else {
+        String::new()
+    };
+    Ok((user, key))
 }
 
 fn token(keys: &LiveKitKeys, room: &str, metadata: String) -> Result<String> {
@@ -262,6 +287,9 @@ pub fn open_call<R: Runtime>(
     let gemini = vault
         .gemini_key(&app)?
         .ok_or_else(|| Error::Invalid("Add your Gemini API key in Settings first.".into()))?;
+    // Read before the server starts, so this Mac's server starts only for a call that can open.
+    let (memory_user, zep_key) = memory_for_call(&app, &db, &vault)?;
+    let memory_incognito = settings::incognito(&db.conn())?;
     // Finds the agents (a login shell) while the server and worker start.
     let (found, started) = thread::scope(|scope| {
         let lookup = scope.spawn(|| agents::usable_now(&app));
@@ -272,6 +300,7 @@ pub fn open_call<R: Runtime>(
                 WorkerConfig {
                     livekit: server.clone(),
                     gemini_key: gemini,
+                    zep_key,
                 },
                 &log_dir,
                 report_crashes(&app),
@@ -304,6 +333,8 @@ pub fn open_call<R: Runtime>(
             server,
             agents: found,
             picks,
+            memory_user,
+            memory_incognito,
         },
     );
     opening.opened(call_id);
@@ -346,15 +377,27 @@ pub fn call_token<R: Runtime>(
         server,
         agents,
         picks,
+        memory_user,
+        memory_incognito,
     } = match call_agents.get(call_id) {
         Some(opened) => opened,
         None => OpenedWith {
             server: call_server::current(&app, &db, &vault, &local)?,
             agents: agents::usable(&found.cached().unwrap_or_default()),
             picks: agent_picks::saved(&db.conn())?,
+            // The worker that has the Zep key was started with an opened call.
+            memory_user: String::new(),
+            memory_incognito: false,
         },
     };
-    let metadata = dispatch_metadata(&project, &agents, &picks, &settings, &history);
+    let metadata = dispatch_metadata(
+        &project,
+        &agents,
+        &picks,
+        &settings,
+        (&memory_user, memory_incognito),
+        &history,
+    );
     Ok(CallToken {
         participant_token: token(&server, &room, metadata)?,
         server_url: server.url,
@@ -449,6 +492,8 @@ mod tests {
                     value: "opus".into(),
                 }],
             )]),
+            memory_user: "bomby-0123456789abcdef".into(),
+            memory_incognito: false,
         };
         agents.set(1, claude.clone());
         assert_eq!(agents.get(1), Some(claude));
@@ -458,6 +503,8 @@ mod tests {
             server,
             agents: vec![],
             picks: HashMap::new(),
+            memory_user: String::new(),
+            memory_incognito: false,
         };
         agents.set(2, none.clone());
         assert_eq!(agents.get(1), None);
@@ -604,7 +651,12 @@ mod tests {
             ("goose".to_owned(), Vec::new()),
         ]);
         let metadata: serde_json::Value = serde_json::from_str(&dispatch_metadata(
-            &project, &agents, &picks, &settings, &history,
+            &project,
+            &agents,
+            &picks,
+            &settings,
+            ("bomby-0123456789abcdef", true),
+            &history,
         ))
         .unwrap();
         assert_eq!(
@@ -619,6 +671,8 @@ mod tests {
                 "voice": "Kore",
                 "user_name": "Sam",
                 "tone": "chatty",
+                "memory_user": "bomby-0123456789abcdef",
+                "memory_incognito": true,
                 "history": [{ "role": "agent", "text": "Hi." }],
             })
         );

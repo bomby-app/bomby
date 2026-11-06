@@ -50,6 +50,9 @@ impl std::fmt::Debug for LiveKitKeys {
 struct Keys {
     livekit: Option<LiveKitKeys>,
     gemini_key: Option<String>,
+    /// For memory across conversations (`settings::Memory::Zep`).
+    #[serde(default)]
+    zep_key: Option<String>,
 }
 
 /// What the page may see.
@@ -99,7 +102,7 @@ fn write<R: Runtime>(app: &AppHandle<R>, keys: &Keys) -> Result<()> {
         return Ok(());
     }
     let entry = entry(app, ACCOUNT)?;
-    if keys.livekit.is_none() && keys.gemini_key.is_none() {
+    if keys.livekit.is_none() && keys.gemini_key.is_none() && keys.zep_key.is_none() {
         return remove(&entry);
     }
     entry.set_password(&serde_json::to_string(keys).map_err(Error::Corrupt)?)?;
@@ -162,6 +165,10 @@ impl Vault {
 
     pub fn gemini_key<R: Runtime>(&self, app: &AppHandle<R>) -> Result<Option<String>> {
         Ok(self.keys(app)?.gemini_key)
+    }
+
+    pub fn zep_key<R: Runtime>(&self, app: &AppHandle<R>) -> Result<Option<String>> {
+        Ok(self.keys(app)?.zep_key)
     }
 }
 
@@ -256,6 +263,36 @@ pub fn save_gemini_key<R: Runtime>(
 pub fn clear_gemini_key<R: Runtime>(app: AppHandle<R>, vault: State<'_, Vault>) -> Result<()> {
     vault.update(&app, |keys| {
         keys.gemini_key = None;
+        Ok(())
+    })
+}
+
+/// Whether a Zep key is saved. The key itself stays in the core.
+#[tauri::command(async)]
+pub fn has_zep_key<R: Runtime>(app: AppHandle<R>, vault: State<'_, Vault>) -> Result<bool> {
+    Ok(vault.zep_key(&app)?.is_some())
+}
+
+#[tauri::command(async)]
+pub fn save_zep_key<R: Runtime>(
+    app: AppHandle<R>,
+    vault: State<'_, Vault>,
+    key: String,
+) -> Result<()> {
+    let key = key.trim();
+    if key.is_empty() || key.contains(char::is_whitespace) {
+        return Err(Error::Invalid("Paste the whole Zep API key.".into()));
+    }
+    vault.update(&app, |keys| {
+        keys.zep_key = Some(key.to_owned());
+        Ok(())
+    })
+}
+
+#[tauri::command(async)]
+pub fn clear_zep_key<R: Runtime>(app: AppHandle<R>, vault: State<'_, Vault>) -> Result<()> {
+    vault.update(&app, |keys| {
+        keys.zep_key = None;
         Ok(())
     })
 }

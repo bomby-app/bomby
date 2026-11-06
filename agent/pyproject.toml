@@ -14,6 +14,7 @@ dependencies = [
     "livekit-plugins-google>=1.8.10",
     "pydantic>=2.14.2",
     "python-dotenv>=1.2.4",
+    "zep-cloud>=4.0.1",
 ]
 
 [dependency-groups]

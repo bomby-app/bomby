@@ -49,6 +49,7 @@ APP_KEYS = frozenset(
         "LIVEKIT_API_SECRET",
         "GOOGLE_API_KEY",
         "GEMINI_API_KEY",
+        "ZEP_API_KEY",
     }
 )
 DEFAULT_SESSION = "main"
