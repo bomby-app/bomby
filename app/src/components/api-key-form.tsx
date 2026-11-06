@@ -46,6 +46,8 @@ export function ApiKeyForm({
 }) {
   const [key, setKey] = useState("")
   const [status, setStatus] = useState<Status>({ kind: "idle" })
+  // Apart from `status`, so a link that can't open never ends a save or removal early.
+  const [linkError, setLinkError] = useState<string | null>(null)
   // Save and Remove never overlap.
   const busy = status.kind === "saving" || status.kind === "removing"
 
@@ -86,14 +88,14 @@ export function ApiKeyForm({
             <FieldLabel htmlFor={id}>API key</FieldLabel>
             <InlineLink
               className="text-sm"
-              onClick={() =>
+              onClick={() => {
+                setLinkError(null)
                 openUrl(keysUrl).catch(() =>
-                  setStatus({
-                    kind: "error",
-                    message: `Couldn't open ${keysUrl}. Open it in your browser.`,
-                  })
+                  setLinkError(
+                    `Couldn't open ${keysUrl}. Open it in your browser.`
+                  )
                 )
-              }
+              }}
             >
               Get an API key
             </InlineLink>
@@ -113,6 +115,7 @@ export function ApiKeyForm({
           {!saved && hint && <FieldDescription>{hint}</FieldDescription>}
         </Field>
         {status.kind === "error" && <FieldError>{status.message}</FieldError>}
+        {linkError && <FieldError>{linkError}</FieldError>}
         <div className="flex items-center gap-2">
           <Button type="submit" disabled={busy || !key.trim()}>
             {status.kind === "saving" ? "Saving..." : "Save"}
