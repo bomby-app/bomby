@@ -9,9 +9,9 @@ The voice agent and the coding agents knew a project only by its name and folder
 ## Decision
 
 - Each project has optional instructions, written in the New project dialog or Project settings, up to 5,000 characters (`projects.instructions`, `MAX_INSTRUCTIONS_LEN` in `projects.rs`).
-- They go with every call in the job metadata. Gemini gets them as a `## Project context` section of its instructions (`agent/voice_prompt.py`); each coding agent session gets them under `## This project` in its briefing, framed as the user's description of the project (`briefing` in `agent/acp_client/runner.py`).
+- They go with every call in the job metadata. The voice model gets them in the `## Project` section of its instructions, which always names the project and its folders, so "the project" means the call's (`project_context` in `agent/voice_prompt.py`, owner, 2026-11-06); each coding agent session gets them under `## This project` in its briefing, framed as the user's description of the project (`briefing` in `agent/acp_client/runner.py`).
 - They're told once: in the voice model's instructions at connect time, and in a session's briefing when it opens. Follow-ups, steering and queued tasks don't repeat them.
-- Empty instructions leave no trace: no header, no note.
+- Empty instructions leave no trace: no note in the briefing, and only the name and folders in the voice model's `## Project`.
 
 ## Why
 

@@ -99,16 +99,31 @@ def what_you_remember(remembered: str, style: Style = MARKDOWN) -> str:
 
 
 def project_context(project: Project, style: Style = MARKDOWN) -> str:
-    """What the user wrote about the project, if anything."""
-    if not project.instructions:
-        return ""
+    """The project the call works on: its name, its folders by name, and what the user
+    wrote about it, if anything. Always there, so "the project" means this one."""
+    if project.folders == (Path.home(),):
+        where = "in the user's home folder"
+    else:
+        names = [folder.name or str(folder) for folder in project.folders]
+        where = f"in the folder{'s' if len(names) > 1 else ''} {and_list(names)}"
+    about = (
+        join("The user's description of it:", project.instructions)
+        if project.instructions
+        else ""
+    )
     return style.section(
-        "Project context",
+        "Project",
         join(
-            "The user's description of the project this call works on:",
-            project.instructions,
+            f"This call works on the project {project.name}, {where}. When the user "
+            + 'says "the project", they mean this one.',
+            about,
         ),
     )
+
+
+def and_list(names: list[str]) -> str:
+    """ "a", "a and b", "a, b and c"."""
+    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
 
 
 def previous_conversation(history: tuple[Line, ...], style: Style = MARKDOWN) -> str:

@@ -24,10 +24,16 @@ def project(instructions: str = "") -> Project:
     return Project(name="samba", folders=(Path.home(),), instructions=instructions)
 
 
-def test_a_plain_call_gets_the_prompt_and_its_agents() -> None:
+PROJECT = (
+    "## Project\n\nThis call works on the project samba, in the user's home folder. "
+    'When the user says "the project", they mean this one.'
+)
+
+
+def test_a_plain_call_gets_the_prompt_its_agents_and_the_project() -> None:
     text = voice_instructions(project(), CallOptions(voice="Kore"), AGENTS, now=NOW)
 
-    assert text == f"{VOICE}\n\n{agents_note(AGENTS)}"
+    assert text == f"{VOICE}\n\n{agents_note(AGENTS)}\n\n{PROJECT}"
 
 
 def test_a_named_user_comes_before_the_agents() -> None:
@@ -37,19 +43,29 @@ def test_a_named_user_comes_before_the_agents() -> None:
 
     assert text == (
         f"{VOICE}\n\n## The user\n\nYou're talking to Sam. Address the user by their "
-        f"name when needed.\n\n{agents_note(AGENTS)}"
+        f"name when needed.\n\n{agents_note(AGENTS)}\n\n{PROJECT}"
     )
 
 
-def test_the_project_context_follows_the_agents() -> None:
-    text = voice_instructions(
-        project("A music app."), CallOptions(voice="Kore"), AGENTS, now=NOW
+def test_the_project_names_its_folders_and_carries_its_description(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "api").mkdir()
+    (tmp_path / "site").mkdir()
+    samba = Project(
+        name="samba",
+        folders=(tmp_path / "api", tmp_path / "site"),
+        instructions="A music app.",
     )
 
-    assert text == (
-        f"{VOICE}\n\n{agents_note(AGENTS)}\n\n## Project context\n\n"
-        "The user's description of the project this call works on:\n\nA music app."
+    text = voice_instructions(samba, CallOptions(voice="Kore"), AGENTS, now=NOW)
+
+    expected = (
+        "## Project\n\nThis call works on the project samba, in the folders api and "
+        + 'site. When the user says "the project", they mean this one.\n\n'
+        + "The user's description of it:\n\nA music app."
     )
+    assert text.endswith(expected)
 
 
 def test_a_resumed_call_ends_with_the_previous_conversation() -> None:
@@ -60,7 +76,7 @@ def test_a_resumed_call_ends_with_the_previous_conversation() -> None:
 
     text = voice_instructions(project("A music app."), options, AGENTS)
 
-    assert text.index("## Project context") < text.index("## Previous conversation")
+    assert text.index("## Project") < text.index("## Previous conversation")
     assert text.endswith("User: fix the login\nYou: Done.")
 
 
@@ -100,7 +116,7 @@ def test_rime_hears_plain_sentences_only() -> None:
 
     for mark in ("#", "`", "*", "\n- "):
         assert mark not in text
-    assert f"{agents_note(AGENTS, PLAIN)}\n\nThe user's description" in text
+    assert f"{agents_note(AGENTS, PLAIN)}\n\nThis call works on the project" in text
     assert "claude (Claude)" in text
 
 
