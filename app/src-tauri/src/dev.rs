@@ -4,12 +4,15 @@
 //! - `BOMBY_DEV_SPLASH=1` (`--splash`): the first-run splash shows at every launch.
 //! - `BOMBY_DEV_AGENTS` (`--agents=none`, `--agents=codex,goose`): only the agents listed
 //!   are found, the rest look not installed. `none` hides them all.
+//! - `BOMBY_DEV_NO_KEYS=1` (`--no-keys`): the LiveKit and Gemini keys start empty and live
+//!   in memory for the run; the keychain is never read or written, so saved keys stay.
 //!
 //! `--signed-out` needs nothing here: it points `CLAUDE_CONFIG_DIR` at an empty folder,
 //! which every Claude Code the app starts inherits, so it really is signed out.
 
 const SPLASH: &str = "BOMBY_DEV_SPLASH";
 const AGENTS: &str = "BOMBY_DEV_AGENTS";
+const NO_KEYS: &str = "BOMBY_DEV_NO_KEYS";
 
 fn var(name: &str) -> Option<String> {
     if !cfg!(debug_assertions) {
@@ -21,6 +24,11 @@ fn var(name: &str) -> Option<String> {
 /// Whether the splash shows at every launch.
 pub fn always_splash() -> bool {
     var(SPLASH).is_some()
+}
+
+/// Whether the keys live in memory for the run, with the keychain left alone.
+pub fn no_keys() -> bool {
+    var(NO_KEYS).is_some()
 }
 
 /// Whether agent `id` may be found, or looks not installed.

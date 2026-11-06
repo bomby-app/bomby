@@ -24,7 +24,8 @@ livekit-server:
 
 # The flags try a state without changing this Mac (src-tauri/src/dev.rs). --signed-out runs
 # every Claude Code the app starts on a new empty config folder, which Claude Code keys its
-# login to, so it's signed out; your own login and ~/.claude are untouched.
+# login to, so it's signed out; your own login and ~/.claude are untouched. --no-keys keeps
+# the keys in memory for the run, so the keychain's saved keys stay as they are.
 
 # Run the app with hot reload: Vite serves the frontend, cargo builds and opens the window
 [group('run')]
@@ -32,8 +33,9 @@ livekit-server:
 [arg("splash", long, value="1", help="Show the first-run splash at every launch")]
 [arg("agents", long, help="Find only these agents (codex,goose), or none")]
 [arg("signed_out", long="signed-out", value="1", help="Run Claude Code signed out")]
-dev splash="" agents="" signed_out="": livekit-server
-    BOMBY_DEV_SPLASH={{ quote(splash) }} BOMBY_DEV_AGENTS={{ quote(agents) }} {{ if signed_out != "" { 'CLAUDE_CONFIG_DIR="$(mktemp -d)"' } else { "" } }} bun --bun run tauri dev
+[arg("no_keys", long="no-keys", value="1", help="Start with no LiveKit or Gemini keys, kept in memory for the run")]
+dev splash="" agents="" signed_out="" no_keys="": livekit-server
+    BOMBY_DEV_SPLASH={{ quote(splash) }} BOMBY_DEV_AGENTS={{ quote(agents) }} BOMBY_DEV_NO_KEYS={{ quote(no_keys) }} {{ if signed_out != "" { 'CLAUDE_CONFIG_DIR="$(mktemp -d)"' } else { "" } }} bun --bun run tauri dev
 
 # The agent is frozen first (`just agent freeze`). With the APPLE_* variables set
 # (docs/releasing.md), the agent is signed before it's bundled and Tauri signs and notarizes

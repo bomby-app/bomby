@@ -64,6 +64,7 @@ To see a state your Mac isn't in, without installing or signing out of anything 
 just app dev --splash                 # the first-run splash at every launch
 just app dev --agents=none            # as if no agent were installed (or --agents=codex,goose)
 just app dev --signed-out             # Claude Code signed out, on an empty config folder
+just app dev --no-keys                # no LiveKit or Gemini keys; any you add last for the run
 ```
 
 ### Without the app
