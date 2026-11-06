@@ -18,9 +18,13 @@ import {
   useDaypart,
 } from "@/components/day-glow"
 import { FilmGrain } from "@/components/film-grain"
+import { InlineLink } from "@/components/inline-link"
 import { Mascot, type MascotState } from "@/components/mascot"
 import { useAgents } from "@/features/agents/use-agents"
-import { useSavedKeys } from "@/features/credentials/use-saved-keys"
+import {
+  checkKeysAgain,
+  useSavedKeys,
+} from "@/features/credentials/use-saved-keys"
 
 import { finishFirstRun } from "./api"
 import { FirstAgent } from "./first-agent"
@@ -79,7 +83,7 @@ export function Splash({ onDone }: { onDone: () => void }) {
   const choose = (choice: Partial<typeof choices>) =>
     setChoices((current) => ({ ...current, ...choice }))
   const { agents } = useAgents()
-  const { keys } = useSavedKeys()
+  const { keys, error: keysError } = useSavedKeys()
   const { agent, agentReady, step, canContinue } = splashStep(
     agents,
     keys,
@@ -92,6 +96,9 @@ export function Splash({ onDone }: { onDone: () => void }) {
   useEffect(() => {
     latestStep.current = step
   })
+  // The arrow and Return go on only once the step on screen is the one that's done, so
+  // nothing skips a step while they fade.
+  const canGoOn = introDone && step === shown && canContinue
 
   const root = useRef<HTMLDivElement>(null)
   const mascotBox = useRef<HTMLDivElement>(null)
@@ -193,14 +200,14 @@ export function Splash({ onDone }: { onDone: () => void }) {
   // The arrow, each time a step is done.
   useGSAP(
     () => {
-      if (!introDone || !canContinue) return
+      if (!canGoOn) return
       gsap.fromTo(
         arrow.current,
         { autoAlpha: 0, scale: 0.85 },
         { autoAlpha: 1, scale: 1, duration: 0.8, ease: "sine.out", delay: 0.4 }
       )
     },
-    { dependencies: [introDone, canContinue, step], scope: root }
+    { dependencies: [canGoOn, shown], scope: root }
   )
 
   useEffect(() => {
@@ -231,9 +238,18 @@ export function Splash({ onDone }: { onDone: () => void }) {
     else finish()
   }
 
-  // Return goes on once the arrow is there.
+  // Return goes on once the arrow is there, unless it's meant for something else: a focused
+  // button or field, a menu or dialog, a held key, or text being composed.
   const onKey = useEffectEvent((event: KeyboardEvent) => {
-    if (event.key === "Enter" && introDone && canContinue && !leaving) next()
+    if (
+      event.key !== "Enter" ||
+      event.repeat ||
+      event.isComposing ||
+      event.defaultPrevented ||
+      forAControl(event.target)
+    )
+      return
+    if (canGoOn && !leaving) next()
   })
   useEffect(() => {
     window.addEventListener("keydown", onKey)
@@ -295,12 +311,21 @@ export function Splash({ onDone }: { onDone: () => void }) {
           {saveError}
         </p>
       )}
+      {/* The keys couldn't be read at all, so the keys step can't show: say so, and retry. */}
+      {keys === null && keysError && (
+        <p className="absolute inset-x-0 bottom-7 flex justify-center gap-1.5 text-[13px] leading-[18px] text-destructive">
+          {keysError}
+          <InlineLink onClick={() => void checkKeysAgain()}>
+            Try again
+          </InlineLink>
+        </p>
+      )}
 
       <span className="absolute bottom-[22px] left-6 rounded-full bg-claude px-2.5 py-1 font-mono text-[11px] leading-[14px] font-semibold tracking-[0.08em] text-claude-foreground uppercase">
         Beta
       </span>
 
-      {introDone && canContinue && (
+      {canGoOn && (
         <button
           ref={arrow}
           type="button"
@@ -316,5 +341,15 @@ export function Splash({ onDone }: { onDone: () => void }) {
         </button>
       )}
     </div>
+  )
+}
+
+/** Whether a key press belongs to a control (a button, a field, a menu, a dialog). */
+function forAControl(target: EventTarget | null): boolean {
+  return (
+    target instanceof Element &&
+    target.closest(
+      "button, a, input, textarea, select, [contenteditable], [role=dialog], [role=menu], [role=listbox]"
+    ) !== null
   )
 }
