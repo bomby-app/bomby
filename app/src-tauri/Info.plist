@@ -5,6 +5,19 @@
   <!-- Merged into the app's Info.plist by the Tauri CLI. macOS shows this text when it asks for the mic. -->
   <key>NSMicrophoneUsageDescription</key>
   <string>Bomby needs your mic so you can talk to it.</string>
+  <!-- What macOS says when Bomby first reads a project kept in one of these places and the
+       folder wasn't picked in Bomby's folder picker (which grants access by itself): the
+       workspace panel lists its files, follows its git changes and runs terminals in it. -->
+  <key>NSDesktopFolderUsageDescription</key>
+  <string>Bomby shows the files, changes and terminals of projects you keep on your Desktop.</string>
+  <key>NSDocumentsFolderUsageDescription</key>
+  <string>Bomby shows the files, changes and terminals of projects you keep in Documents.</string>
+  <key>NSDownloadsFolderUsageDescription</key>
+  <string>Bomby shows the files, changes and terminals of projects you keep in Downloads.</string>
+  <key>NSNetworkVolumesUsageDescription</key>
+  <string>Bomby shows the files, changes and terminals of projects you keep on a network drive.</string>
+  <key>NSRemovableVolumesUsageDescription</key>
+  <string>Bomby shows the files, changes and terminals of projects you keep on an external drive.</string>
   <!-- macOS 26+ takes the app icon (light, dark, clear, tinted) from Resources/Assets.car,
        compiled from icons/Bomby.icon by `just app icon`. Older macOS keeps using
        CFBundleIconFile (icon.icns), which Tauri sets. -->

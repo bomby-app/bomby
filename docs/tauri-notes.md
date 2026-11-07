@@ -12,6 +12,7 @@ Checked 2026-11-03/04 against Tauri 2.12.5, `tauri-codegen` 2.7.4, `wry` 0.57.1,
 ## Microphone
 
 - macOS requires `NSMicrophoneUsageDescription` in `src-tauri/Info.plist`. The CLI merges it into bundles and embeds it in macOS debug binaries (`tauri-codegen` `context.rs`).
+- Files and folders (checked 2026-11-07, [developer.apple.com](https://developer.apple.com/documentation/bundleresources/information-property-list/nsdocumentsfolderusagedescription), macOS 10.15+): the app's first read of Desktop, Documents, Downloads, a network volume or a removable one asks the user, with the matching `NS*UsageDescription` as its text; a folder picked in an Open panel (our folder picker) counts as granted, now and later. The workspace panel reads project folders from the app itself, so `Info.plist` carries all five; `tccutil reset SystemPolicyDocumentsFolder app.bomby.desktop` resets one.
 - WKWebView asks the app for capture permission, then macOS TCC asks the user. `Builder::on_permission_request` (Tauri 2.12) allows the webview request in `lib.rs`, leaving only the OS prompt.
 - A dev process launched from a terminal may use the terminal's mic permission and show no prompt. The built `.app` has its own TCC identity and prompt.
 - Linux WebKitGTK generally lacks usable WebRTC ([decision](decisions/desktop-app-on-tauri-v2.md)).
