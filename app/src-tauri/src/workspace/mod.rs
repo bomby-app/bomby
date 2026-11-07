@@ -33,8 +33,8 @@ pub(crate) fn project_folder(conn: &Connection, id: i64, folder: &str) -> Result
 }
 
 /// `relative` (a `/`-separated path the page sent, `""` for the folder itself) under
-/// `folder`, refusing anything that would leave it: absolute paths, `..`, and symlinks
-/// that point outside.
+/// `folder`, as its real path, refusing anything that would leave it: absolute paths,
+/// `..`, and symlinks that point outside.
 pub(crate) fn inside(folder: &Path, relative: &str) -> Result<PathBuf> {
     let outside = || Error::Invalid(format!("{relative} isn't in this folder."));
     let relative = Path::new(relative);
@@ -44,12 +44,15 @@ pub(crate) fn inside(folder: &Path, relative: &str) -> Result<PathBuf> {
     {
         return Err(outside());
     }
-    let path = folder.join(relative);
-    let real = path.canonicalize()?;
+    let real = folder.join(relative).canonicalize()?;
     if !real.starts_with(folder.canonicalize()?) {
         return Err(outside());
     }
-    Ok(path)
+    // The path that was checked, links resolved, so a read can't follow a link swapped in
+    // after the check. A program swapping a folder above it in that instant could still
+    // win; such a program runs as the user and can read the file anyway, and the preview
+    // only shows the user their own files.
+    Ok(real)
 }
 
 #[cfg(test)]
@@ -70,6 +73,9 @@ mod tests {
         {
             std::os::unix::fs::symlink("/", dir.join("root")).unwrap();
             assert!(inside(&dir, "root").is_err());
+            // A link inside resolves to what it points at, the path that was checked.
+            std::os::unix::fs::symlink(dir.join("src"), dir.join("alias")).unwrap();
+            assert_eq!(inside(&dir, "alias").unwrap(), dir.join("src"));
         }
     }
 

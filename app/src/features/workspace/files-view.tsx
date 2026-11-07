@@ -11,6 +11,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
   useEffect,
+  useEffectEvent,
   useRef,
   useState,
 } from "react"
@@ -144,6 +145,11 @@ export function FilesView({
           onToggle={toggle}
           onSelect={setSelected}
           onFocusRow={setFocused}
+          // The focused row is gone (deleted, renamed, its folder closed): Tab lands on
+          // the tree again rather than nowhere.
+          onLoseRow={(path) =>
+            setFocused((current) => (current === path ? null : current))
+          }
         />
       </div>
     </ScrollArea>
@@ -185,6 +191,7 @@ function Directory({
   onToggle,
   onSelect,
   onFocusRow,
+  onLoseRow,
 }: Place & {
   statuses: TreeStatuses
   dir: string
@@ -195,8 +202,9 @@ function Directory({
   onToggle: (dir: string) => void
   onSelect: (file: string) => void
   onFocusRow: (path: string) => void
+  onLoseRow: (path: string) => void
 }) {
-  const reading = useReading(`${folder}\n${dir}`, version, () =>
+  const reading = useReading(`entries\n${folder}\n${dir}`, version, () =>
     folderEntries(projectId, folder, dir)
   )
   const padding = { paddingLeft: 8 + depth * INDENT_PX + 16 }
@@ -235,6 +243,7 @@ function Directory({
             tabStop={focused === entry.path}
             statuses={statuses}
             onFocus={() => onFocusRow(entry.path)}
+            onLose={() => onLoseRow(entry.path)}
             onClick={() =>
               entry.dir ? onToggle(entry.path) : onSelect(entry.path)
             }
@@ -251,6 +260,7 @@ function Directory({
               selected={selected}
               focused={focused}
               onFocusRow={onFocusRow}
+              onLoseRow={onLoseRow}
               onToggle={onToggle}
               onSelect={onSelect}
             />
@@ -270,6 +280,7 @@ function Row({
   statuses,
   onClick,
   onFocus,
+  onLose,
 }: {
   entry: Entry
   depth: number
@@ -280,7 +291,14 @@ function Row({
   statuses: TreeStatuses
   onClick: () => void
   onFocus: () => void
+  /** This row was the tab stop and isn't any more, or is gone. */
+  onLose: () => void
 }) {
+  const lose = useEffectEvent(onLose)
+  useEffect(() => {
+    if (!tabStop) return
+    return () => lose()
+  }, [tabStop])
   const Icon = entry.dir ? (expanded ? FolderOpen : Folder) : FileIcon
   const status = entry.dir ? undefined : statuses.files.get(entry.path)
   const changedInside = entry.dir && statuses.dirs.has(entry.path)
@@ -337,7 +355,7 @@ function Preview({
   onClose,
 }: Place & { file: string; onClose: () => void }) {
   const dark = useDarkMode()
-  const reading = useReading(`${folder}\n${file}`, version, () =>
+  const reading = useReading(`file\n${folder}\n${file}`, version, () =>
     folderFile(projectId, folder, file)
   )
   // The last file shown stays up while the next one is read, so moving between files
@@ -373,6 +391,8 @@ function Preview({
           <Note>Couldn't open this file.</Note>
         ) : !view ? null : view.preview.image ? (
           <ImagePreview
+            // Each image starts fresh: no error or size left from the last one.
+            key={view.file}
             {...{ projectId, folder, version }}
             file={view.file}
             type={view.preview.image}
@@ -429,7 +449,10 @@ function ImagePreview({
     let live = true
     folderImage(projectId, folder, file).then(
       (bytes) => {
-        if (live) setUrl(URL.createObjectURL(new Blob([bytes], { type })))
+        if (!live) return
+        setUrl(URL.createObjectURL(new Blob([bytes], { type })))
+        // A read that failed while the file was being rewritten is over.
+        setFailed(false)
       },
       () => {
         if (live) setFailed(true)

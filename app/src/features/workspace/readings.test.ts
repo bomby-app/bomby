@@ -56,6 +56,19 @@ describe("readings", () => {
     expect(heard).toBe(2)
   })
 
+  it("a queued read runs the loader it was queued with, under its own key", async () => {
+    const cache = createReadings()
+    const first = deferred<string>()
+    cache.refresh("a", () => first.promise)
+    cache.refresh("a", () => Promise.resolve("a, again"))
+    cache.refresh("b", () => Promise.resolve("b"))
+    first.resolve("a")
+    await tick()
+    await tick()
+    expect(cache.snapshot("a").data).toBe("a, again")
+    expect(cache.snapshot("b").data).toBe("b")
+  })
+
   it("says what failed", async () => {
     const cache = createReadings()
     cache.refresh("a", () => Promise.reject(new Error("gone")))

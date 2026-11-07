@@ -49,9 +49,11 @@ export function useReading<T>(
     (listener) => readings.subscribe(key, listener),
     () => readings.snapshot(key)
   )
-  const read = useEffectEvent(load)
+  // The loader of the render that asks, so a read queued behind a running one still reads
+  // what `key` names, even once the component has moved on to another key.
+  const loaderNow = useEffectEvent(() => load)
   useEffect(() => {
-    readings.refresh(key, () => read())
+    readings.refresh(key, loaderNow())
   }, [key, version])
   return value as Reading<T>
 }

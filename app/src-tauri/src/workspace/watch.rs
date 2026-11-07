@@ -58,8 +58,12 @@ fn matters(path: &Path, git_dirs: &[PathBuf]) -> bool {
             _ => false,
         };
     }
-    !path
-        .components()
+    !in_git_folder(path)
+}
+
+/// Inside some repository's `.git`.
+fn in_git_folder(path: &Path) -> bool {
+    path.components()
         .any(|c| c == Component::Normal(".git".as_ref()))
 }
 
@@ -84,7 +88,8 @@ pub fn watch_folder(
 
 /// Calls `changed` after each burst of changes that [`matters`] in `folder`, and in its
 /// repository's git folders when those are elsewhere: a project pointing at a folder inside
-/// a repository, or a linked worktree, whose `.git` is only a file pointing at them.
+/// a repository, or a linked worktree, whose `.git` is only a file pointing at them. A
+/// folder that becomes a repository while it's watched gets its git folders then.
 fn watch(
     folder: &Path,
     changed: impl Fn() + Send + 'static,
@@ -99,10 +104,21 @@ fn watch(
                 .collect()
         },
     );
+    let shown = folder.to_path_buf();
+    let git = Mutex::new(git);
     let mut debouncer = new_debouncer(DEBOUNCE, move |result: DebounceEventResult| {
-        if let Ok(events) = result
-            && events.iter().any(|e| matters(&e.path, &git))
-        {
+        let Ok(events) = result else { return };
+        let mut git = sync::lock(&git);
+        // A plain folder that became a repository (`git init`): find its git folders, so
+        // its index and branches count from now on.
+        if git.is_empty() && events.iter().any(|e| in_git_folder(&e.path)) {
+            *git = git_dirs(&shown);
+            if !git.is_empty() {
+                changed();
+                return;
+            }
+        }
+        if events.iter().any(|e| matters(&e.path, &git)) {
             changed();
         }
     })
@@ -191,5 +207,31 @@ mod tests {
         repo.commit(Some("HEAD"), &me, &me, "first", &tree, &[])
             .unwrap();
         assert!(nudged(&nudges), "git commit didn't nudge");
+    }
+
+    /// A plain folder that becomes a repository while it's shown (`git init`): staging
+    /// in it must still refresh the panel.
+    #[test]
+    fn a_folder_that_becomes_a_repository_keeps_refreshing() {
+        use git2::Repository;
+        let dir = crate::workspace::tests::tempfile_dir("watch-init");
+        std::fs::write(dir.join("a.txt"), "a\n").unwrap();
+        let (tx, nudges) = std::sync::mpsc::channel();
+        let _watch = watch(&dir, move || {
+            let _ = tx.send(());
+        })
+        .unwrap();
+        settle(&nudges);
+
+        let repo = Repository::init(&dir).unwrap();
+        assert!(nudged(&nudges), "git init didn't nudge");
+        settle(&nudges);
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("a.txt")).unwrap();
+        index.write().unwrap();
+        assert!(
+            nudged(&nudges),
+            "git add in the new repository didn't nudge"
+        );
     }
 }
