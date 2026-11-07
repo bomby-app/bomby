@@ -1,5 +1,6 @@
 import {
   AudioLines,
+  Blocks,
   Info,
   Bot,
   Brain,
@@ -14,6 +15,7 @@ import { MascotIcon } from "@/components/app-logo"
 import { AboutBadge, AboutSettings } from "@/features/about/about-settings"
 import { AgentsSettings } from "@/features/agents/agents-settings"
 import { CallServerSettings } from "@/features/call-server/call-server-settings"
+import { ExtensionsSettings } from "@/features/extensions/extensions-settings"
 import { IntroSettings } from "@/features/intro/intro-settings"
 import { MemorySettings } from "@/features/memory/memory-settings"
 import { SetupSettings } from "@/features/setup/setup-settings"
@@ -55,6 +57,12 @@ export const SECTIONS = [
     label: "Memory",
     icon: Brain,
     component: MemorySettings,
+  },
+  {
+    id: "extensions",
+    label: "Extensions",
+    icon: Blocks,
+    component: ExtensionsSettings,
   },
   {
     id: "call-server",

@@ -6,8 +6,10 @@ import {
   listProjects,
   type Project,
   type ProjectAgents,
+  type ProjectExtensions,
   type ProjectInput,
   setProjectAgents,
+  setProjectExtensions,
   updateProject,
 } from "./api"
 
@@ -17,6 +19,7 @@ type ProjectsState = {
   create: (input: ProjectInput) => Promise<Project>
   update: (id: number, input: ProjectInput) => Promise<Project>
   setAgents: (id: number, agents: ProjectAgents) => Promise<Project>
+  setExtensions: (id: number, extensions: ProjectExtensions) => Promise<Project>
   remove: (id: number) => Promise<void>
   /** Reloads the tree, after something outside this provider changed it (a call). */
   refresh: () => Promise<void>
@@ -54,6 +57,11 @@ export function ProjectsProvider({ children }: { children: ReactNode }) {
     },
     setAgents: async (id, agents) => {
       const project = await setProjectAgents(id, agents)
+      await reload()
+      return project
+    },
+    setExtensions: async (id, extensions) => {
+      const project = await setProjectExtensions(id, extensions)
       await reload()
       return project
     },
