@@ -7,7 +7,10 @@ import { SavedCallView } from "@/features/call/saved-call-view"
 import { isOn, useExtensions } from "@/features/extensions/use-extensions"
 import type { CallSummary, Project } from "@/features/projects/api"
 import { callLabel } from "@/features/projects/names"
-import { ProjectActions } from "@/features/projects/project-actions"
+import {
+  CallButton,
+  ProjectSettingsButton,
+} from "@/features/projects/project-actions"
 import {
   DeleteCallButton,
   ProjectCalls,
@@ -90,13 +93,16 @@ function ProjectLayout({
     <WorkspaceLayout
       project={project}
       tabs={tabs}
-      header={(controls) => (
+      header={(toggles) => (
         <AppHeader
           title={view.title}
           actions={
+            // The page's own actions, its panels' toggles, then its main action on its
+            // own at the right end (owner, 2026-11-08).
             <div className="flex items-center gap-1.5">
-              {view.actions}
-              {controls}
+              {view.secondary}
+              {toggles}
+              {view.primary && <div className="ml-1.5">{view.primary}</div>}
             </div>
           }
         />
@@ -107,7 +113,14 @@ function ProjectLayout({
   )
 }
 
-type ProjectView = { title: string; actions: ReactNode; body: ReactNode }
+type ProjectView = {
+  title: string
+  /** Before the panels' toggles: settings, delete. */
+  secondary?: ReactNode
+  /** The page's main action, at the header's right end: Call, Resume, the call's agents. */
+  primary?: ReactNode
+  body: ReactNode
+}
 
 /** What a project's page shows: its running call, one of its past calls, or its calls. */
 function projectView(
@@ -125,7 +138,7 @@ function projectView(
   if (live) {
     return {
       title: `${project.name} · On a call`,
-      actions: <AgentsPanel />,
+      primary: <AgentsPanel />,
       body: (
         <div className="min-h-0 flex-1">
           <CallView call={active} />
@@ -136,25 +149,25 @@ function projectView(
   if (call) {
     return {
       title: `${project.name} · ${callLabel(call.startedAt)}`,
-      actions: (
-        <>
-          <DeleteCallButton
-            call={call}
-            onDeleted={() =>
-              onSelect({ kind: "project", projectId: project.id })
-            }
-          />
-          <ResumeButton projectId={project.id} callId={call.id} />
-        </>
+      secondary: (
+        <DeleteCallButton
+          call={call}
+          onDeleted={() => onSelect({ kind: "project", projectId: project.id })}
+        />
       ),
+      primary: <ResumeButton projectId={project.id} callId={call.id} />,
       body: <SavedCallView key={call.id} callId={call.id} />,
     }
   }
   return {
     title: project.name,
-    actions: (
-      <ProjectActions project={project} onDeleted={() => onSelect(null)} />
+    secondary: (
+      <ProjectSettingsButton
+        project={project}
+        onDeleted={() => onSelect(null)}
+      />
     ),
+    primary: <CallButton project={project} />,
     body: (
       <div className="min-h-0 flex-1 overflow-auto">
         <ProjectCalls

@@ -6,7 +6,7 @@ import {
   ChevronsUpDown,
   GitBranch,
 } from "lucide-react"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -18,7 +18,7 @@ import { useDarkMode } from "@/hooks/use-dark-mode"
 import { cn } from "@/lib/utils"
 
 import type { ChangedFile, Changes } from "./api"
-import { PIERRE_STYLE, pierreTheme } from "./pierre"
+import { PIERRE_STYLE, pierreTheme, preloadHighlighting } from "./pierre"
 import { splitPath } from "./status"
 import { StatusLetter } from "./status-letter"
 
@@ -70,6 +70,7 @@ export function ChangesView({
   changes: Changes
   branch: string | null
 }) {
+  useEffect(preloadHighlighting, [])
   const dark = useDarkMode()
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(
     () => new Set()
