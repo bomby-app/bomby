@@ -1,6 +1,6 @@
 //! Projects: a name, the folders the agents work in if any (the first is the working
 //! directory; with none, the home folder),
-//! what the user wrote about the project, and its calls. The sidebar tree is `list_projects`.
+//! what the user wrote about the project, its agents and extensions, and its calls. The sidebar tree is `list_projects`.
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -11,6 +11,7 @@ use tauri::State;
 
 use crate::db::{Db, now_ms};
 use crate::error::{Error, Result};
+use crate::extensions::{self, ProjectExtensions};
 
 const MAX_NAME_LEN: usize = 80;
 /// Room for a good description of a project, about 1,250 tokens of English, without
@@ -27,6 +28,7 @@ pub struct Project {
     /// What the user wrote about the project; empty if nothing.
     instructions: String,
     agents: ProjectAgents,
+    extensions: ProjectExtensions,
     created_at: i64,
     /// Newest first.
     calls: Vec<CallSummary>,
@@ -162,9 +164,10 @@ pub(crate) struct CallProject {
     pub(crate) folders: Vec<String>,
     pub(crate) instructions: String,
     pub(crate) agents: ProjectAgents,
+    pub(crate) extensions: ProjectExtensions,
 }
 
-/// The project's name, folders, instructions and agents, without its calls.
+/// The project's name, folders, instructions, agents and extensions, without its calls.
 pub(crate) fn for_call(conn: &Connection, id: i64) -> Result<CallProject> {
     let (name, instructions) = conn
         .query_row(
@@ -179,6 +182,7 @@ pub(crate) fn for_call(conn: &Connection, id: i64) -> Result<CallProject> {
         folders: folders(conn, id)?,
         instructions,
         agents: agents(conn, id)?,
+        extensions: project_extensions(conn, id)?,
     })
 }
 
@@ -223,6 +227,50 @@ fn save_agents(conn: &mut Connection, id: i64, agents: &ProjectAgents) -> Result
     Ok(())
 }
 
+fn project_extensions(conn: &Connection, id: i64) -> Result<ProjectExtensions> {
+    let own: bool = conn
+        .query_row(
+            "SELECT extensions_own FROM projects WHERE id = ?1",
+            [id],
+            |row| row.get(0),
+        )
+        .optional()?
+        .ok_or(Error::NotFound("project"))?;
+    let on = conn
+        .prepare(
+            "SELECT extension FROM project_extensions WHERE project_id = ?1 ORDER BY extension",
+        )?
+        .query_map([id], |row| row.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(ProjectExtensions { own, on })
+}
+
+fn save_extensions(conn: &mut Connection, id: i64, chosen: &ProjectExtensions) -> Result<()> {
+    if let Some(unknown) = chosen.on.iter().find(|e| !extensions::is_known(e)) {
+        return Err(Error::Invalid(format!(
+            "Bomby has no extension called {unknown}."
+        )));
+    }
+    let tx = conn.transaction()?;
+    let changed = tx.execute(
+        "UPDATE projects SET extensions_own = ?1 WHERE id = ?2",
+        params![chosen.own, id],
+    )?;
+    if changed == 0 {
+        return Err(Error::NotFound("project"));
+    }
+    tx.execute("DELETE FROM project_extensions WHERE project_id = ?1", [id])?;
+    let mut insert = tx.prepare(
+        "INSERT OR IGNORE INTO project_extensions (project_id, extension) VALUES (?1, ?2)",
+    )?;
+    for extension in &chosen.on {
+        insert.execute(params![id, extension])?;
+    }
+    drop(insert);
+    tx.commit()?;
+    Ok(())
+}
+
 pub(crate) fn folders(conn: &Connection, id: i64) -> Result<Vec<String>> {
     Ok(conn
         .prepare("SELECT path FROM project_folders WHERE project_id = ?1 ORDER BY position")?
@@ -242,6 +290,7 @@ fn load(conn: &Connection, id: i64) -> Result<Project> {
 
     let folders = folders(conn, id)?;
     let agents = agents(conn, id)?;
+    let extensions = project_extensions(conn, id)?;
 
     let calls = conn
         .prepare(
@@ -263,6 +312,7 @@ fn load(conn: &Connection, id: i64) -> Result<Project> {
         folders,
         instructions,
         agents,
+        extensions,
         created_at,
         calls,
     })
@@ -332,6 +382,18 @@ pub fn update_project(db: State<'_, Db>, id: i64, input: ProjectInput) -> Result
 pub fn set_project_agents(db: State<'_, Db>, id: i64, agents: ProjectAgents) -> Result<Project> {
     let mut conn = db.conn();
     save_agents(&mut conn, id, &agents)?;
+    load(&conn, id)
+}
+
+/// Applies from the next call; one under way keeps its extensions.
+#[tauri::command(async)]
+pub fn set_project_extensions(
+    db: State<'_, Db>,
+    id: i64,
+    extensions: ProjectExtensions,
+) -> Result<Project> {
+    let mut conn = db.conn();
+    save_extensions(&mut conn, id, &extensions)?;
     load(&conn, id)
 }
 
@@ -486,6 +548,47 @@ mod tests {
         ));
         assert!(matches!(
             save_agents(&mut conn, id + 1, &off),
+            Err(Error::NotFound(_))
+        ));
+    }
+
+    #[test]
+    fn a_project_follows_settings_for_extensions_until_it_picks_its_own() {
+        let db = Db::in_memory().unwrap();
+        let mut conn = db.conn();
+        let (a, _) = folders();
+        let id = create(&mut conn, input("samba", &[&a])).unwrap().id;
+        let chosen = |conn: &Connection| for_call(conn, id).unwrap().extensions;
+        assert_eq!(chosen(&conn), ProjectExtensions::default());
+
+        let none = ProjectExtensions {
+            own: true,
+            on: Vec::new(),
+        };
+        save_extensions(&mut conn, id, &none).unwrap();
+        assert_eq!(chosen(&conn), none);
+
+        let todos = ProjectExtensions {
+            own: false,
+            on: vec!["todos".into()],
+        };
+        save_extensions(&mut conn, id, &todos).unwrap();
+        assert_eq!(
+            chosen(&conn),
+            todos,
+            "its picks are kept while it follows Settings"
+        );
+
+        let unknown = ProjectExtensions {
+            own: true,
+            on: vec!["hal".into()],
+        };
+        assert!(matches!(
+            save_extensions(&mut conn, id, &unknown),
+            Err(Error::Invalid(_))
+        ));
+        assert!(matches!(
+            save_extensions(&mut conn, id + 1, &todos),
             Err(Error::NotFound(_))
         ));
     }

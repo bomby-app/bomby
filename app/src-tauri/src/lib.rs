@@ -1,5 +1,5 @@
 //! The Tauri core of the desktop app: windows, the menu bar icon, notifications, updates, the permission prompt for the mic, the app's
-//! database, the workspace panel's terminals, git changes and files, and the commands the page calls. Each command's module documents it;
+//! database, extensions and their data, the workspace panel's terminals, git changes and files, and the commands the page calls. Each command's module documents it;
 //! capabilities/ grants them.
 
 mod adapters;
@@ -13,6 +13,7 @@ mod credentials;
 mod db;
 mod dev;
 mod error;
+mod extensions;
 mod local_server;
 mod notifications;
 mod process;
@@ -132,6 +133,13 @@ pub fn run() {
             projects::create_project,
             projects::update_project,
             projects::set_project_agents,
+            projects::set_project_extensions,
+            extensions::extensions_settings,
+            extensions::set_extension,
+            extensions::todos::list_todos,
+            extensions::todos::add_todos,
+            extensions::todos::update_todo,
+            extensions::todos::remove_todo,
             projects::delete_project,
             workspace::changes::folder_info,
             workspace::changes::folder_changes,
