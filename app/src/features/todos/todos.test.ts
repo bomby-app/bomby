@@ -4,6 +4,7 @@ import { MAX_ANSWER_BYTES } from "@/features/extensions/rpc"
 
 import type { Todo } from "./api"
 import { found, matches } from "./filters"
+import { bombyLine, ordered } from "./labels"
 import { fit } from "./rpc"
 
 function todo(number: number, changes: Partial<Todo> = {}): Todo {
@@ -55,5 +56,42 @@ describe("to-dos for Bomby", () => {
     expect(
       new TextEncoder().encode(JSON.stringify(kept)).length
     ).toBeLessThanOrEqual(MAX_ANSWER_BYTES)
+  })
+})
+
+describe("to-do labels", () => {
+  const now = new Date(2026, 10, 8, 12, 0).getTime()
+
+  it("say when Bomby changed a to-do last, and nothing for the user's own", () => {
+    const added = todo(1, {
+      updatedBy: "bomby",
+      createdAt: now,
+      updatedAt: now,
+    })
+    expect(bombyLine(added, now)).toBe("Bomby added it · just now")
+    const ticked = todo(2, {
+      updatedBy: "bomby",
+      status: "done",
+      updatedAt: now - 5 * 60_000,
+      doneAt: now - 5 * 60_000,
+    })
+    expect(bombyLine(ticked, now)).toBe("Bomby ticked it off · 5 min ago")
+    const changed = todo(3, {
+      updatedBy: "bomby",
+      updatedAt: now - 3 * 3_600_000,
+    })
+    expect(bombyLine(changed, now)).toBe("Bomby changed it · 3 hr ago")
+    expect(bombyLine(todo(4), now)).toBeNull()
+  })
+
+  it("list open ones as added and closed ones the latest first", () => {
+    const todos = [
+      todo(1, { status: "done", doneAt: 10 }),
+      todo(2),
+      todo(3, { status: "done", doneAt: 30 }),
+      todo(4),
+    ]
+    expect(ordered(todos, "todo").map((t) => t.number)).toEqual([2, 4])
+    expect(ordered(todos, "done").map((t) => t.number)).toEqual([3, 1])
   })
 })

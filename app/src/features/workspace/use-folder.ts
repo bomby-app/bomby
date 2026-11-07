@@ -12,11 +12,15 @@ export type { Reading } from "./readings"
 
 /**
  * A number that goes up each time something in the folder changes, so readings keyed on
- * it read again. Watches while the component is mounted.
+ * it read again. Watches while the component is mounted, and a folder is given.
  */
-export function useFolderVersion(projectId: number, folder: string): number {
+export function useFolderVersion(
+  projectId: number,
+  folder: string | undefined
+): number {
   const [version, setVersion] = useState(0)
   useEffect(() => {
+    if (folder === undefined) return
     let live = true
     let stop: (() => void) | null = null
     watchFolder(projectId, folder, () => setVersion((v) => v + 1)).then(

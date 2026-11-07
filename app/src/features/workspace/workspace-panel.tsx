@@ -20,6 +20,7 @@ import {
 import { cn } from "@/lib/utils"
 
 import { folderChanges, folderInfo } from "./api"
+import type { ExtraTab } from "./extra-tab"
 import { treeStatuses } from "./status"
 import { useFolderVersion, useReading } from "./use-folder"
 
@@ -49,26 +50,39 @@ function folderName(path: string): string {
 
 /**
  * The workspace panel's contents for one project: tabs for the folder's git changes (in a
- * repository only), its files and any terminals, and a picker for which of the project's
- * folders they show. Terminals keep the folder they started in.
+ * repository only), its files, the extensions' tabs (`tabs`, such as To-dos) and any
+ * terminals, and a picker for which of the project's folders they show. Terminals keep the
+ * folder they started in. A project without folders has only the extensions' tabs. Which
+ * tab is chosen is the layout's, so its header can open the panel on one.
  */
 export function WorkspacePanel({
   projectId,
   folders,
+  tabs: extraTabs,
   open,
+  chosenTab,
+  onChooseTab,
 }: {
   projectId: number
   folders: string[]
+  tabs: ExtraTab[]
   /** The panel shows: a terminal counts as active only then. */
   open: boolean
+  chosenTab: string | null
+  onChooseTab: (tab: string | null) => void
 }) {
   const [picked, setPicked] = useState(folders[0])
-  // A folder removed in Project settings falls back to the first.
-  const folder = folders.includes(picked) ? picked : folders[0]
+  // A folder removed in Project settings falls back to the first; none without folders.
+  const folder: string | undefined = folders.includes(picked)
+    ? picked
+    : folders[0]
   const version = useFolderVersion(projectId, folder)
   // Cheap: whether the folder is in a repository, and its branch.
-  const info = useReading(`info ${folder}`, version, () =>
-    folderInfo(projectId, folder)
+  const info = useReading(
+    `info ${folder}`,
+    version,
+    () => folderInfo(projectId, folder ?? ""),
+    folder !== undefined
   )
   const repo = info.data?.repo ?? false
   // The tabs that have shown: each mounts the first time it does and stays, hidden.
@@ -78,30 +92,33 @@ export function WorkspacePanel({
   const changes = useReading(
     `changes ${folder}`,
     version,
-    () => folderChanges(projectId, folder),
-    shown.has("changes") || shown.has("files")
+    () => folderChanges(projectId, folder ?? ""),
+    folder !== undefined && (shown.has("changes") || shown.has("files"))
   )
 
   const [terminals, setTerminals] = useState<TerminalTab[]>([])
   const [nextTerminal, setNextTerminal] = useState(1)
-  const [chosenTab, setChosenTab] = useState<string | null>(null)
   const tabs = [
     ...(repo ? ["changes"] : []),
-    "files",
+    ...(folder === undefined ? [] : ["files"]),
+    ...extraTabs.map((t) => t.id),
     ...terminals.map((t) => `terminal-${t.id}`),
   ]
   const tab =
     chosenTab && tabs.includes(chosenTab) ? chosenTab : (tabs[0] ?? "files")
   // Counted once the panel shows and knows its tabs (Changes only in a repository), so the
   // tab it opens on before that never loads.
-  const settled = open && (info.data !== undefined || info.error !== null)
+  const settled =
+    open &&
+    (folder === undefined || info.data !== undefined || info.error !== null)
   if (settled && !shown.has(tab)) setShown(new Set(shown).add(tab))
 
   function addTerminal() {
+    if (folder === undefined) return
     const id = nextTerminal
     setNextTerminal(id + 1)
     setTerminals((current) => [...current, { id, folder, title: null }])
-    setChosenTab(`terminal-${id}`)
+    onChooseTab(`terminal-${id}`)
   }
 
   function closeTerminal(closing: TerminalTab) {
@@ -110,7 +127,7 @@ export function WorkspacePanel({
     setTerminals(rest)
     if (tab === `terminal-${closing.id}`) {
       const neighbour = rest[Math.min(index, rest.length - 1)]
-      setChosenTab(neighbour ? `terminal-${neighbour.id}` : null)
+      onChooseTab(neighbour ? `terminal-${neighbour.id}` : null)
     }
   }
 
@@ -121,12 +138,14 @@ export function WorkspacePanel({
   }
 
   const fileCount = changes.data?.files.length ?? 0
+  // A folder that can't be read fails its own tabs, not the extensions'.
   const failed = info.error ?? changes.error
+  const folderTab = tab === "changes" || tab === "files"
 
   return (
     <Tabs
       value={tab}
-      onValueChange={setChosenTab}
+      onValueChange={onChooseTab}
       className="relative flex h-full min-w-80 flex-col gap-0 bg-background"
     >
       <div
@@ -147,7 +166,17 @@ export function WorkspacePanel({
               )}
             </PanelTab>
           )}
-          <PanelTab value="files">Files</PanelTab>
+          {folder !== undefined && <PanelTab value="files">Files</PanelTab>}
+          {extraTabs.map((extra) => (
+            <PanelTab key={extra.id} value={extra.id}>
+              {extra.label}
+              {extra.count !== undefined && extra.count > 0 && (
+                <span className="font-mono text-xs text-muted-foreground tabular-nums">
+                  {extra.count}
+                </span>
+              )}
+            </PanelTab>
+          ))}
           {terminals.length > 0 && (
             <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-border" />
           )}
@@ -164,20 +193,22 @@ export function WorkspacePanel({
             </PanelTab>
           ))}
         </TabsPrimitive.List>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="New terminal"
-              onClick={addTerminal}
-              className="shrink-0 rounded-md text-muted-foreground hover:text-foreground"
-            >
-              <Plus />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>New terminal</TooltipContent>
-        </Tooltip>
+        {folder !== undefined && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="New terminal"
+                onClick={addTerminal}
+                className="shrink-0 rounded-md text-muted-foreground hover:text-foreground"
+              >
+                <Plus />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>New terminal</TooltipContent>
+          </Tooltip>
+        )}
         {folders.length > 1 && (
           <Select value={folder} onValueChange={setPicked}>
             <SelectTrigger
@@ -199,36 +230,51 @@ export function WorkspacePanel({
         )}
       </div>
 
-      {failed ? (
-        <ErrorCard message={failed} className="m-auto max-w-xs" />
-      ) : (
-        <>
-          {repo && shown.has("changes") && (
-            <TabsContent value="changes" forceMount className={PANE}>
-              {changes.data && (
-                <Suspense>
-                  <ChangesView
-                    changes={changes.data}
-                    branch={info.data?.branch ?? null}
-                  />
-                </Suspense>
+      {failed
+        ? folderTab && (
+            <ErrorCard message={failed} className="m-auto max-w-xs" />
+          )
+        : folder !== undefined && (
+            <>
+              {repo && shown.has("changes") && (
+                <TabsContent value="changes" forceMount className={PANE}>
+                  {changes.data && (
+                    <Suspense>
+                      <ChangesView
+                        changes={changes.data}
+                        branch={info.data?.branch ?? null}
+                      />
+                    </Suspense>
+                  )}
+                </TabsContent>
               )}
-            </TabsContent>
+              {shown.has("files") && (
+                <TabsContent value="files" forceMount className={PANE}>
+                  <Suspense>
+                    <FilesView
+                      key={folder}
+                      projectId={projectId}
+                      folder={folder}
+                      version={version}
+                      statuses={treeStatuses(changes.data)}
+                    />
+                  </Suspense>
+                </TabsContent>
+              )}
+            </>
           )}
-          {shown.has("files") && (
-            <TabsContent value="files" forceMount className={PANE}>
-              <Suspense>
-                <FilesView
-                  key={folder}
-                  projectId={projectId}
-                  folder={folder}
-                  version={version}
-                  statuses={treeStatuses(changes.data)}
-                />
-              </Suspense>
+      {extraTabs.map(
+        (extra) =>
+          shown.has(extra.id) && (
+            <TabsContent
+              key={extra.id}
+              value={extra.id}
+              forceMount
+              className={PANE}
+            >
+              {extra.content}
             </TabsContent>
-          )}
-        </>
+          )
       )}
       {terminals.map((terminal) => (
         <TabsContent

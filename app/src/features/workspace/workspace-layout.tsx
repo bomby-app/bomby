@@ -26,6 +26,8 @@ import {
 import { commandShortcut } from "@/lib/shortcuts"
 import { cn } from "@/lib/utils"
 
+import type { ExtraTab } from "./extra-tab"
+
 // The panel loads the first time it opens, not with the window; each of its tabs loads its
 // own libraries the first time it shows (workspace-panel.tsx).
 const WorkspacePanel = lazy(() =>
@@ -40,18 +42,22 @@ const MIN_SIZE = 320
 
 /**
  * A project's page with the workspace panel on its right, as in other desktop agents:
- * dragged wider or narrower at its edge, opened and closed from the header (⌘J). Only a
- * project with folders has one. The panel's contents mount the first time it opens and
- * stay while it's closed, so terminals keep running, at their width and out of the
- * keyboard's reach; the width (or closed) is kept on this Mac. `header` gets the toggle button to put in the page's header.
+ * dragged wider or narrower at its edge, opened and closed from the header (⌘J). A project
+ * has one when it has folders or an extension's tab (`tabs`, such as To-dos); each of those
+ * gets a header button that opens the panel on it. The panel's contents mount the first
+ * time it opens and stay while it's closed, so terminals keep running, at their width and
+ * out of the keyboard's reach; the width (or closed) is kept on this Mac. `header` gets
+ * the buttons to put in the page's header.
  */
 export function WorkspaceLayout({
   project,
+  tabs = [],
   header,
   children,
 }: {
   project: { id: number; folders: string[] }
-  header: (toggle: ReactNode) => ReactNode
+  tabs?: ExtraTab[]
+  header: (controls: ReactNode) => ReactNode
   children: ReactNode
 }) {
   const panel = usePanelRef()
@@ -61,7 +67,10 @@ export function WorkspaceLayout({
   const [opened, setOpened] = useState(false)
   // The panel's width when it was last open, which its contents keep while it's closed.
   const [width, setWidth] = useState(0)
-  const available = project.folders.length > 0
+  // The tab chosen in the panel, kept here so a header button can open the panel on one.
+  const [chosenTab, setChosenTab] = useState<string | null>(null)
+  const hasFolders = project.folders.length > 0
+  const available = hasFolders || tabs.length > 0
   // One saved layout with the panel and one without, as the library needs when a panel
   // comes and goes.
   const layout = useDefaultLayout({
@@ -70,16 +79,29 @@ export function WorkspaceLayout({
     storage: localStorage,
   })
 
-  function toggle() {
+  function expand() {
     const handle = panel.current
     if (!handle) return
-    if (!handle.isCollapsed()) {
-      handle.collapse()
-      return
-    }
     handle.expand()
     // Never opened on this Mac: expand() knows no earlier width.
     if (handle.getSize().inPixels < MIN_SIZE) handle.resize(OPEN_SIZE)
+  }
+
+  function toggle() {
+    const handle = panel.current
+    if (!handle) return
+    if (handle.isCollapsed()) expand()
+    else handle.collapse()
+  }
+
+  /** Opens the panel on `tab`, or closes it when it already shows that tab. */
+  function toggleTab(tab: string) {
+    if (open && chosenTab === tab) {
+      panel.current?.collapse()
+      return
+    }
+    setChosenTab(tab)
+    expand()
   }
 
   const onShortcut = useEffectEvent(toggle)
@@ -104,7 +126,23 @@ export function WorkspaceLayout({
       <ResizablePanel id="page" minSize={360} className="flex flex-col">
         {header(
           available && (
-            <WorkspaceToggle ref={toggleButton} open={open} onClick={toggle} />
+            <>
+              {tabs.map((tab) => (
+                <TabButton
+                  key={tab.id}
+                  tab={tab}
+                  showing={open && chosenTab === tab.id}
+                  onClick={() => toggleTab(tab.id)}
+                />
+              ))}
+              {hasFolders && (
+                <WorkspaceToggle
+                  ref={toggleButton}
+                  open={open}
+                  onClick={toggle}
+                />
+              )}
+            </>
           )
         )}
         <div className="flex min-h-0 flex-1 flex-col">{children}</div>
@@ -135,8 +173,10 @@ export function WorkspaceLayout({
                 setOpened(true)
               } else if (contents.current?.contains(document.activeElement)) {
                 // Closed from inside (⌘J while typing in a terminal): typing must not
-                // go on into what can't be seen.
-                toggleButton.current?.focus()
+                // go on into what can't be seen. Without folders there's no toggle.
+                if (toggleButton.current) toggleButton.current.focus()
+                else if (document.activeElement instanceof HTMLElement)
+                  document.activeElement.blur()
               }
               setOpen(now)
             }}
@@ -154,7 +194,10 @@ export function WorkspaceLayout({
                   <WorkspacePanel
                     projectId={project.id}
                     folders={project.folders}
+                    tabs={tabs}
                     open={open}
+                    chosenTab={chosenTab}
+                    onChooseTab={setChosenTab}
                   />
                 </Suspense>
               )}
@@ -163,6 +206,39 @@ export function WorkspaceLayout({
         </>
       )}
     </ResizablePanelGroup>
+  )
+}
+
+/** An extension's header button: its icon and count; pressed while the panel shows its tab. */
+function TabButton({
+  tab,
+  showing,
+  onClick,
+}: {
+  tab: ExtraTab
+  showing: boolean
+  onClick: () => void
+}) {
+  const label = showing ? `Hide ${tab.label.toLowerCase()}` : tab.label
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label={label}
+          aria-pressed={showing}
+          onClick={onClick}
+          className={cn("gap-1.5 px-2", showing && "bg-accent")}
+        >
+          {tab.icon}
+          {tab.count !== undefined && tab.count > 0 && (
+            <span className="font-mono text-xs tabular-nums">{tab.count}</span>
+          )}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
   )
 }
 

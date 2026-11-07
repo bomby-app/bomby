@@ -4,6 +4,7 @@ import { AgentsPanel } from "@/features/call/agents-panel"
 import { type ActiveCall, useCall } from "@/features/call/call-provider"
 import { CallView } from "@/features/call/call-view"
 import { SavedCallView } from "@/features/call/saved-call-view"
+import { isOn, useExtensions } from "@/features/extensions/use-extensions"
 import type { CallSummary, Project } from "@/features/projects/api"
 import { callLabel } from "@/features/projects/names"
 import { ProjectActions } from "@/features/projects/project-actions"
@@ -15,6 +16,8 @@ import {
 import { ProjectsHome } from "@/features/projects/projects-home"
 import { useProjects } from "@/features/projects/projects-provider"
 import type { Selection } from "@/features/projects/selection"
+import { TODOS_TAB, TodosView, useOpenCount } from "@/features/todos/todos-view"
+import type { ExtraTab } from "@/features/workspace/extra-tab"
 import { WorkspaceLayout } from "@/features/workspace/workspace-layout"
 
 import { AppHeader } from "./app-header"
@@ -22,7 +25,7 @@ import { AppHeader } from "./app-header"
 /**
  * The right side: whatever the sidebar has selected, under the header. A project, its
  * live call and its past calls are one workspace layout (same component, same key), so
- * moving between them keeps the workspace panel and its terminals.
+ * moving between them keeps the workspace panel, its terminals and its to-dos.
  */
 export function MainPanel({
   selection,
@@ -58,17 +61,42 @@ export function MainPanel({
   }
 
   const view = projectView(project, selection, active, call, onSelect)
+  return <ProjectLayout key={project.id} project={project} view={view} />
+}
+
+/**
+ * A project's page in the workspace layout, with the tabs its extensions add to the panel
+ * (To-dos, when the project's calls have it).
+ */
+function ProjectLayout({
+  project,
+  view,
+}: {
+  project: Project
+  view: ProjectView
+}) {
+  const extensions = useExtensions()
+  const openTodos = useOpenCount(project.id)
+  const tabs: ExtraTab[] = isOn("todos", project.extensions, extensions)
+    ? [
+        {
+          ...TODOS_TAB,
+          count: openTodos,
+          content: <TodosView projectId={project.id} />,
+        },
+      ]
+    : []
   return (
     <WorkspaceLayout
-      key={project.id}
       project={project}
-      header={(toggle) => (
+      tabs={tabs}
+      header={(controls) => (
         <AppHeader
           title={view.title}
           actions={
             <div className="flex items-center gap-1.5">
               {view.actions}
-              {toggle}
+              {controls}
             </div>
           }
         />
