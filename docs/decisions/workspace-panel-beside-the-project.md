@@ -27,7 +27,7 @@ While an agent works, the user wants to see what it's doing to their folder with
 
 ## Consequences
 
-- Each tab loads the first time it shows, not with the window or the panel: Changes and Files bring Pierre with Shiki's grammars and read the folder's diff, a terminal brings wterm and its 600 KB WASM. Until then the panel only watches the folder and asks whether it's in a repository. A tab that has shown stays mounted, hidden, so terminals keep running (owner, 2026-11-08: opening the panel for another tab shouldn't pay for these).
+- The panel's code (Pierre with Shiki's grammars, wterm and its 600 KB WASM) loads the first time it opens, not with the window.
 - Closing the panel keeps its terminals running; leaving the project, or closing a terminal's tab, hangs up its shell (SIGHUP to its process group, SIGKILL a second later). Quitting the app closes them all.
 - Changes are against the last commit; untracked files are told apart from added ones and conflicts show as such, but staged and unstaged edits aren't yet. Files fold one by one or all at once. Files bigger than 1 MB show as changed without their lines, and patches stop at 4 MB in all.
 - Pierre's themes paint their own background; `unsafeCSS` puts ours back ([frontend notes](../frontend-notes.md#workspace-panel)), and Pierre doesn't promise that hook across versions.

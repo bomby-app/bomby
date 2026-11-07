@@ -33,7 +33,7 @@ import {
   folderFile,
   folderImage,
 } from "./api"
-import { PIERRE_STYLE, pierreTheme, preloadHighlighting } from "./pierre"
+import { PIERRE_STYLE, pierreTheme } from "./pierre"
 import { STATUS_COLOR, type TreeStatuses } from "./status"
 import { StatusLetter } from "./status-letter"
 import { useReading } from "./use-folder"
@@ -52,7 +52,6 @@ export function FilesView({
   statuses,
   ...place
 }: Place & { statuses: TreeStatuses }) {
-  useEffect(preloadHighlighting, [])
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set())
   const [selected, setSelected] = useState<string | null>(null)
   // The one row Tab lands on (a roving tab stop): the last one focused.
