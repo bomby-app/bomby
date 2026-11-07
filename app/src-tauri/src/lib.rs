@@ -137,6 +137,7 @@ pub fn run() {
             workspace::changes::folder_changes,
             workspace::files::folder_entries,
             workspace::files::folder_file,
+            workspace::files::folder_image,
             workspace::watch::watch_folder,
             workspace::watch::unwatch_folder,
             workspace::terminals::terminal_open,

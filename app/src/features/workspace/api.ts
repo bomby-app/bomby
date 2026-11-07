@@ -52,6 +52,15 @@ export function folderFile(
   return invoke("folder_file", { projectId, folder, file })
 }
 
+/** An image's bytes, for a blob URL (`FilePreview.image` says it is one, and its type). */
+export function folderImage(
+  projectId: number,
+  folder: string,
+  file: string
+): Promise<ArrayBuffer> {
+  return invoke("folder_image", { projectId, folder, file })
+}
+
 /**
  * Calls `onChange` after each burst of changes in the folder (debounced in the core).
  * Resolves to the function that stops watching.

@@ -53,6 +53,7 @@ const COMMANDS: &[&str] = &[
     "folder_changes",
     "folder_entries",
     "folder_file",
+    "folder_image",
     "watch_folder",
     "unwatch_folder",
     "terminal_open",

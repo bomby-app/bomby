@@ -44,9 +44,13 @@ ignored: boolean, };
 
 export type FilePreview = { 
 /**
- * `None` when the file isn't shown: binary, or too large.
+ * `None` when the file isn't shown as text: an image, binary, or too large.
  */
-text: string | null, size: number, };
+text: string | null, 
+/**
+ * The media type of an image the preview can show (`folder_image` has its bytes).
+ */
+image: string | null, size: number, };
 
 /**
  * Whether a folder is in a git repository, and on which branch.

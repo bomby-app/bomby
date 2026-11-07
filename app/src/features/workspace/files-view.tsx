@@ -7,7 +7,13 @@ import {
   LoaderCircle,
   X,
 } from "lucide-react"
-import { type KeyboardEvent, useRef, useState } from "react"
+import {
+  type KeyboardEvent,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from "react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -19,7 +25,13 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { useDarkMode } from "@/hooks/use-dark-mode"
 import { cn } from "@/lib/utils"
 
-import { type Entry, folderEntries, folderFile } from "./api"
+import {
+  type Entry,
+  type FilePreview,
+  folderEntries,
+  folderFile,
+  folderImage,
+} from "./api"
 import { PIERRE_STYLE, pierreTheme } from "./pierre"
 import { STATUS_COLOR, type TreeStatuses } from "./status"
 import { StatusLetter } from "./status-letter"
@@ -137,16 +149,25 @@ export function FilesView({
     </ScrollArea>
   )
 
-  if (!selected) return tree
+  // One layout throughout, the preview panel added beside the tree when a file is picked:
+  // the tree stays mounted (its scroll, its open folders) instead of being rebuilt.
   return (
     <ResizablePanelGroup orientation="vertical">
       <ResizablePanel id="tree" defaultSize="45%" minSize={80}>
         {tree}
       </ResizablePanel>
-      <ResizableHandle />
-      <ResizablePanel id="preview" minSize={120}>
-        <Preview {...place} file={selected} onClose={() => setSelected(null)} />
-      </ResizablePanel>
+      {selected && (
+        <>
+          <ResizableHandle />
+          <ResizablePanel id="preview" defaultSize="55%" minSize={120}>
+            <Preview
+              {...place}
+              file={selected}
+              onClose={() => setSelected(null)}
+            />
+          </ResizablePanel>
+        </>
+      )}
     </ResizablePanelGroup>
   )
 }
@@ -274,7 +295,11 @@ function Row({
       data-tree-row
       data-path={entry.path}
       data-dir={entry.dir}
-      onClick={onClick}
+      onClick={(event) => {
+        // WebKit doesn't focus a button it clicks, and the tree's keys follow focus.
+        event.currentTarget.focus()
+        onClick()
+      }}
       onFocus={onFocus}
       style={{ paddingLeft: 8 + depth * INDENT_PX }}
       className={cn(
@@ -315,7 +340,17 @@ function Preview({
   const reading = useReading(`${folder}\n${file}`, version, () =>
     folderFile(projectId, folder, file)
   )
-  const text = reading.data?.text
+  // The last file shown stays up while the next one is read, so moving between files
+  // never flashes an empty preview (react.dev, "storing information from previous
+  // renders").
+  const [shown, setShown] = useState<Shown | null>(null)
+  if (
+    reading.data &&
+    (shown?.file !== file || shown.preview !== reading.data)
+  ) {
+    setShown({ file, preview: reading.data })
+  }
+  const view = reading.data ? { file, preview: reading.data } : shown
 
   return (
     <div className="flex h-full flex-col">
@@ -334,9 +369,18 @@ function Preview({
         </Button>
       </div>
       <div className="min-h-0 flex-1 [scrollbar-gutter:stable] overflow-auto">
-        {reading.loading ? null : text != null ? (
+        {reading.error ? (
+          <Note>Couldn't open this file.</Note>
+        ) : !view ? null : view.preview.image ? (
+          <ImagePreview
+            {...{ projectId, folder, version }}
+            file={view.file}
+            type={view.preview.image}
+            size={view.preview.size}
+          />
+        ) : view.preview.text != null ? (
           <CodeFile
-            file={{ name: file, contents: text }}
+            file={{ name: view.file, contents: view.preview.text }}
             style={PIERRE_STYLE}
             options={{
               ...pierreTheme(dark),
@@ -345,13 +389,82 @@ function Preview({
             }}
           />
         ) : (
-          <p className="px-3 py-4 text-sm text-muted-foreground">
-            {reading.error
-              ? "Couldn't open this file."
-              : "This file is binary or too big to show here."}
-          </p>
+          <Note>This file is binary or too big to show here.</Note>
         )}
       </div>
     </div>
+  )
+}
+
+type Shown = { file: string; preview: FilePreview }
+
+function Note({ children }: { children: ReactNode }) {
+  return <p className="px-3 py-4 text-sm text-muted-foreground">{children}</p>
+}
+
+/** A file's size as people read it: "820 B", "14 KB", "1.2 MB". */
+function readableSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+/**
+ * An image, drawn from its bytes (the core reads them; the page makes a blob URL, freed
+ * when the image changes or closes), fitted to the preview, with its size under it.
+ */
+function ImagePreview({
+  projectId,
+  folder,
+  version,
+  file,
+  type,
+  size,
+}: Place & { file: string; type: string; size: number }) {
+  const [url, setUrl] = useState<string | null>(null)
+  const [pixels, setPixels] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    let live = true
+    folderImage(projectId, folder, file).then(
+      (bytes) => {
+        if (live) setUrl(URL.createObjectURL(new Blob([bytes], { type })))
+      },
+      () => {
+        if (live) setFailed(true)
+      }
+    )
+    return () => {
+      live = false
+    }
+  }, [projectId, folder, file, type, version])
+
+  // A URL is freed once the next one replaces it (or the preview closes), so the image on
+  // screen never points at a freed one.
+  useEffect(() => {
+    if (!url) return
+    return () => URL.revokeObjectURL(url)
+  }, [url])
+
+  if (failed) return <Note>Couldn't open this image.</Note>
+  return (
+    <figure className="flex min-h-full flex-col items-center justify-center gap-3 p-4">
+      {url && (
+        <img
+          src={url}
+          alt={file}
+          onLoad={(event) =>
+            setPixels(
+              `${event.currentTarget.naturalWidth} × ${event.currentTarget.naturalHeight}`
+            )
+          }
+          className="max-h-[70vh] max-w-full rounded-md object-contain"
+        />
+      )}
+      <figcaption className="font-mono text-xs text-muted-foreground tabular-nums">
+        {[pixels, readableSize(size)].filter(Boolean).join(" · ")}
+      </figcaption>
+    </figure>
   )
 }

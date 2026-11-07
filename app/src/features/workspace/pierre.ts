@@ -1,3 +1,4 @@
+import { preloadHighlighter, type SupportedLanguages } from "@pierre/diffs"
 import type { CSSProperties } from "react"
 
 // Pierre's diffs (`@pierre/diffs`) in our look, for the changes and the file preview.
@@ -35,4 +36,37 @@ export function pierreTheme(dark: boolean) {
     themeType: dark ? "dark" : "light",
     unsafeCSS: BACKGROUND_CSS,
   } as const
+}
+
+/** What most projects' files are written in: loaded ahead, the rest on demand. */
+const COMMON_LANGUAGES: SupportedLanguages[] = [
+  "typescript",
+  "tsx",
+  "javascript",
+  "jsx",
+  "json",
+  "css",
+  "html",
+  "markdown",
+  "rust",
+  "python",
+  "shellscript",
+  "toml",
+  "yaml",
+]
+
+let preloading: Promise<void> | null = null
+
+/**
+ * Loads the highlighter with our themes and the common languages, once, so the first
+ * diff or preview of each shows highlighted at once instead of after loading them.
+ * Without it Pierre loads each on first use (`preloadHighlighter`, diffs.com/docs).
+ */
+export function preloadHighlighting() {
+  preloading ??= preloadHighlighter({
+    themes: ["pierre-dark", "pierre-light"],
+    langs: COMMON_LANGUAGES,
+  }).catch(() => {
+    // Pierre still loads what it needs on first use.
+  })
 }

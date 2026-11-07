@@ -9,13 +9,37 @@ use std::path::Path;
 use git2::Repository;
 use serde::Serialize;
 use tauri::State;
+use tauri::ipc::Response;
 
 use super::{inside, project_folder};
 use crate::db::Db;
-use crate::error::Result;
+use crate::error::{Error, Result};
 
 /// The most of a file the preview reads.
 const MAX_PREVIEW_BYTES: u64 = 512 * 1024;
+/// The biggest image the preview shows.
+const MAX_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
+
+/// Images the webview draws, by extension, with their media type.
+const IMAGE_TYPES: &[(&str, &str)] = &[
+    ("png", "image/png"),
+    ("jpg", "image/jpeg"),
+    ("jpeg", "image/jpeg"),
+    ("gif", "image/gif"),
+    ("webp", "image/webp"),
+    ("avif", "image/avif"),
+    ("bmp", "image/bmp"),
+    ("ico", "image/x-icon"),
+    ("svg", "image/svg+xml"),
+];
+
+fn image_type(path: &Path) -> Option<&'static str> {
+    let extension = path.extension()?.to_str()?.to_ascii_lowercase();
+    IMAGE_TYPES
+        .iter()
+        .find(|(ext, _)| *ext == extension)
+        .map(|(_, mime)| *mime)
+}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -33,8 +57,10 @@ pub struct Entry {
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "workspace.ts"))]
 pub struct FilePreview {
-    /// `None` when the file isn't shown: binary, or too large.
+    /// `None` when the file isn't shown as text: an image, binary, or too large.
     text: Option<String>,
+    /// The media type of an image the preview can show (`folder_image` has its bytes).
+    image: Option<String>,
     size: u64,
 }
 
@@ -87,8 +113,19 @@ pub(crate) fn entries(folder: &Path, dir: &str) -> Result<Vec<Entry>> {
 pub(crate) fn preview(folder: &Path, file: &str) -> Result<FilePreview> {
     let path = inside(folder, file)?;
     let size = fs::metadata(&path)?.len();
+    if let Some(mime) = image_type(&path).filter(|_| size <= MAX_IMAGE_BYTES) {
+        return Ok(FilePreview {
+            text: None,
+            image: Some(mime.to_owned()),
+            size,
+        });
+    }
     if size > MAX_PREVIEW_BYTES {
-        return Ok(FilePreview { text: None, size });
+        return Ok(FilePreview {
+            text: None,
+            image: None,
+            size,
+        });
     }
     let mut bytes = Vec::with_capacity(usize::try_from(size).unwrap_or(0));
     fs::File::open(&path)?
@@ -97,7 +134,23 @@ pub(crate) fn preview(folder: &Path, file: &str) -> Result<FilePreview> {
     // Git's own test for binary: a NUL in the first 8000 bytes.
     let binary = bytes.iter().take(8000).any(|b| *b == 0);
     let text = (!binary).then(|| String::from_utf8(bytes).ok()).flatten();
-    Ok(FilePreview { text, size })
+    Ok(FilePreview {
+        text,
+        image: None,
+        size,
+    })
+}
+
+/// An image's bytes, for the preview: only the image types it shows, up to their size.
+pub(crate) fn image(folder: &Path, file: &str) -> Result<Vec<u8>> {
+    let path = inside(folder, file)?;
+    let too_big = fs::metadata(&path)?.len() > MAX_IMAGE_BYTES;
+    if image_type(&path).is_none() || too_big {
+        return Err(Error::Invalid(
+            "This file isn't an image to show here.".into(),
+        ));
+    }
+    Ok(fs::read(&path)?)
 }
 
 /// One directory of a project's folder: `dir` is `""` for the folder itself.
@@ -110,6 +163,18 @@ pub fn folder_entries(
 ) -> Result<Vec<Entry>> {
     let folder = project_folder(&db.conn(), project_id, &folder)?;
     entries(&folder, &dir)
+}
+
+/// An image in a project's folder, as raw bytes (an `ArrayBuffer` on the page).
+#[tauri::command(async)]
+pub fn folder_image(
+    db: State<'_, Db>,
+    project_id: i64,
+    folder: String,
+    file: String,
+) -> Result<Response> {
+    let folder = project_folder(&db.conn(), project_id, &folder)?;
+    Ok(Response::new(image(&folder, &file)?))
 }
 
 /// A file in a project's folder, for the preview.
@@ -168,5 +233,19 @@ mod tests {
         );
         assert!(preview(&dir, "b.bin").unwrap().text.is_none());
         assert!(preview(&dir, "big.txt").unwrap().text.is_none());
+    }
+
+    #[test]
+    fn shows_images_by_their_type() {
+        let dir = tempfile_dir("image");
+        let png = [0x89, b'P', b'N', b'G', 0, 1, 2];
+        fs::write(dir.join("logo.PNG"), png).unwrap();
+        fs::write(dir.join("data.bin"), [0u8, 1]).unwrap();
+        let shown = preview(&dir, "logo.PNG").unwrap();
+        assert_eq!(shown.image.as_deref(), Some("image/png"));
+        assert!(shown.text.is_none());
+        assert_eq!(image(&dir, "logo.PNG").unwrap(), png);
+        assert!(image(&dir, "data.bin").is_err());
+        assert!(image(&dir, "../logo.PNG").is_err());
     }
 }

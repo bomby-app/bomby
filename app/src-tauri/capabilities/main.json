@@ -60,6 +60,7 @@
     "allow-folder-changes",
     "allow-folder-entries",
     "allow-folder-file",
+    "allow-folder-image",
     "allow-watch-folder",
     "allow-unwatch-folder",
     "allow-terminal-open",

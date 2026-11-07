@@ -1,6 +1,6 @@
 import { Folder, Plus, X } from "lucide-react"
 import { Tabs as TabsPrimitive } from "radix-ui"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 
 import { ErrorCard } from "@/components/error-card"
 import { Button } from "@/components/ui/button"
@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils"
 import { folderChanges, folderInfo } from "./api"
 import { ChangesView } from "./changes-view"
 import { FilesView } from "./files-view"
+import { preloadHighlighting } from "./pierre"
 import { treeStatuses } from "./status"
 import { TerminalView } from "./terminal-view"
 import { useFolderVersion, useReading } from "./use-folder"
@@ -53,6 +54,7 @@ export function WorkspacePanel({
   /** The panel shows: a terminal counts as active only then. */
   open: boolean
 }) {
+  useEffect(preloadHighlighting, [])
   const [picked, setPicked] = useState(folders[0])
   // A folder removed in Project settings falls back to the first.
   const folder = folders.includes(picked) ? picked : folders[0]
