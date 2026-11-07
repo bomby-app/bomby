@@ -223,7 +223,7 @@ fn save_agents(conn: &mut Connection, id: i64, agents: &ProjectAgents) -> Result
     Ok(())
 }
 
-fn folders(conn: &Connection, id: i64) -> Result<Vec<String>> {
+pub(crate) fn folders(conn: &Connection, id: i64) -> Result<Vec<String>> {
     Ok(conn
         .prepare("SELECT path FROM project_folders WHERE project_id = ?1 ORDER BY position")?
         .query_map([id], |row| row.get(0))?

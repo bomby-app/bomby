@@ -55,6 +55,17 @@
     "allow-pick-agent-settings",
     "allow-install-adapters",
     "allow-first-run",
-    "allow-finish-first-run"
+    "allow-finish-first-run",
+    "allow-folder-info",
+    "allow-folder-changes",
+    "allow-folder-entries",
+    "allow-folder-file",
+    "allow-folder-image",
+    "allow-watch-folder",
+    "allow-unwatch-folder",
+    "allow-terminal-open",
+    "allow-terminal-write",
+    "allow-terminal-resize",
+    "allow-terminal-close"
   ]
 }

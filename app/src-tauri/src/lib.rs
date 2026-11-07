@@ -1,5 +1,5 @@
 //! The Tauri core of the desktop app: windows, the menu bar icon, notifications, updates, the permission prompt for the mic, the app's
-//! database, and the commands the page calls. Each command's module documents it;
+//! database, the workspace panel's terminals, git changes and files, and the commands the page calls. Each command's module documents it;
 //! capabilities/ grants them.
 
 mod adapters;
@@ -24,6 +24,7 @@ mod tray;
 mod updates;
 mod voice;
 mod windows;
+mod workspace;
 
 use tauri::Manager;
 use tauri::webview::{PermissionKind, PermissionResponse};
@@ -64,6 +65,8 @@ pub fn run() {
             app.manage(agent_picks::Listings::default());
             app.manage(calls::CallAgents::default());
             app.manage(updates::Updates::default());
+            app.manage(workspace::terminals::TerminalsState::default());
+            app.manage(workspace::watch::Watches::default());
             tray::init(app.handle())?;
             notifications::init(app.handle())?;
             // Look for the agents now, so Settings and the first call find them ready.
@@ -130,13 +133,28 @@ pub fn run() {
             projects::update_project,
             projects::set_project_agents,
             projects::delete_project,
+            workspace::changes::folder_info,
+            workspace::changes::folder_changes,
+            workspace::files::folder_entries,
+            workspace::files::folder_file,
+            workspace::files::folder_image,
+            workspace::watch::watch_folder,
+            workspace::watch::unwatch_folder,
+            workspace::terminals::terminal_open,
+            workspace::terminals::terminal_write,
+            workspace::terminals::terminal_resize,
+            workspace::terminals::terminal_close,
         ])
         .build(tauri::generate_context!())
         .expect("error while building the app")
         .run(|app, event| match event {
-            // The agent worker and the LiveKit server would outlive the app otherwise.
+            // The agent worker, the LiveKit server and the terminals' shells would outlive
+            // the app otherwise.
             tauri::RunEvent::Exit => {
                 app.state::<agent::AgentWorker>().shutdown();
+                app.state::<workspace::terminals::TerminalsState>()
+                    .0
+                    .close_all();
                 app.state::<local_server::LocalServer>().stop();
             }
             // A click on the Dock icon brings the (maybe hidden) main window back.

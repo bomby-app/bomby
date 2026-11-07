@@ -11,6 +11,9 @@
 @theme inline {
   --font-heading: "Bricolage Grotesque", var(--font-sans);
   --color-claude: var(--claude);
+  --color-change-added: var(--change-added);
+  --color-change-modified: var(--change-modified);
+  --color-change-deleted: var(--change-deleted);
   --color-livekit-cloud: var(--livekit-cloud);
   --color-highlighter: var(--highlighter);
   --color-highlighter-foreground: var(--highlighter-foreground);
@@ -184,6 +187,30 @@
   --elevation-primary: 0 10px 24px -12px rgb(18 18 18 / 0.5);
   /* The user's bubble in the call transcript. */
   --bubble-user: var(--foreground);
+  /* The workspace terminal's 16 ANSI colours, for white: ink, then readable mid tones,
+     with highlighter's place (yellow) taken by an amber that shows on white. */
+  --terminal-ansi-0: #121212;
+  --terminal-ansi-1: #c62a1f;
+  --terminal-ansi-2: #2f7d32;
+  --terminal-ansi-3: #9a6a00;
+  --terminal-ansi-4: #2f5fc4;
+  --terminal-ansi-5: #a3358f;
+  --terminal-ansi-6: #1f7a85;
+  --terminal-ansi-7: #6b6b6b;
+  --terminal-ansi-8: #8a8a8a;
+  --terminal-ansi-9: #d92d20;
+  --terminal-ansi-10: #3c9a40;
+  --terminal-ansi-11: #b07d00;
+  --terminal-ansi-12: #3b74e0;
+  --terminal-ansi-13: #bf46a8;
+  --terminal-ansi-14: #23909c;
+  --terminal-ansi-15: #121212;
+  --terminal-cursor: #121212;
+  /* A file's git status in the workspace panel (letters, counts): readable on white. */
+  --change-added: #2f7d32;
+  --change-modified: #9a6a00;
+  --change-deleted: #c62a1f;
+  --terminal-selection: rgb(18 18 18 / 0.14);
 }
 
 .dark {
@@ -235,6 +262,29 @@
     0 0 0 1px var(--border), 0 20px 40px -24px rgb(0 0 0 / 0.6);
   --elevation-primary: 0 10px 28px -12px rgb(232 255 58 / 0.5);
   --bubble-user: #2a2a2a;
+  /* On ink, highlighter is the terminal's yellow and its cursor; bubblegum its magenta. */
+  --terminal-ansi-0: #2a2a2a;
+  --terminal-ansi-1: #f97066;
+  --terminal-ansi-2: #7fd88f;
+  --terminal-ansi-3: #e8ff3a;
+  --terminal-ansi-4: #7aa7ff;
+  --terminal-ansi-5: #ff9bd2;
+  --terminal-ansi-6: #6fd6e0;
+  --terminal-ansi-7: #d4d4d0;
+  --terminal-ansi-8: #6b6b6b;
+  --terminal-ansi-9: #ff8a80;
+  --terminal-ansi-10: #9be6a8;
+  --terminal-ansi-11: #f2ff8a;
+  --terminal-ansi-12: #9dbdff;
+  --terminal-ansi-13: #ffb8de;
+  --terminal-ansi-14: #95e4eb;
+  --terminal-ansi-15: #f5f5f2;
+  --terminal-cursor: #e8ff3a;
+  /* On ink, highlighter marks what changed. */
+  --change-added: #7fd88f;
+  --change-modified: #e8ff3a;
+  --change-deleted: #f97066;
+  --terminal-selection: rgb(232 255 58 / 0.22);
 }
 
 @layer base {
@@ -347,5 +397,13 @@
 @media (prefers-reduced-motion: reduce) {
   [data-slot="sliding-name-text"] {
     transition: none;
+  }
+}
+
+/* A row of tabs that scrolls sideways without showing a scroll bar. */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
   }
 }

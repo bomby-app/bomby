@@ -49,6 +49,17 @@ const COMMANDS: &[&str] = &[
     "update_project",
     "set_project_agents",
     "delete_project",
+    "folder_info",
+    "folder_changes",
+    "folder_entries",
+    "folder_file",
+    "folder_image",
+    "watch_folder",
+    "unwatch_folder",
+    "terminal_open",
+    "terminal_write",
+    "terminal_resize",
+    "terminal_close",
 ];
 
 fn main() {
