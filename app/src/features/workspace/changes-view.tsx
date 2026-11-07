@@ -247,6 +247,7 @@ function Summary({
 }) {
   const additions = files.reduce((sum, f) => sum + f.additions, 0)
   const deletions = files.reduce((sum, f) => sum + f.deletions, 0)
+  const conflicts = files.filter((f) => f.status === "conflicted").length
   const label = allCollapsed ? "Expand all files" : "Collapse all files"
   return (
     <div className="flex flex-col gap-1.5 pt-2 pr-2 pb-2 pl-3">
@@ -274,6 +275,13 @@ function Summary({
           </Tooltip>
         </span>
       </div>
+      {conflicts > 0 && (
+        <p className="text-xs font-medium text-change-deleted">
+          {conflicts === 1
+            ? "1 file has a conflict to fix."
+            : `${conflicts} files have conflicts to fix.`}
+        </p>
+      )}
       {hidden.length > 0 && (
         <p className="text-xs text-muted-foreground">
           {truncated

@@ -5,6 +5,8 @@ import { useEffect, useRef, useState } from "react"
 
 import { ErrorCard } from "@/components/error-card"
 
+import "./terminal.css"
+
 import { openTerminal, type TerminalSession } from "./api"
 
 /** Lines of history each terminal keeps. */

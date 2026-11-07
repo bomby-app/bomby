@@ -1,9 +1,10 @@
 import type { ReactNode } from "react"
 
 import { AgentsPanel } from "@/features/call/agents-panel"
-import { useCall } from "@/features/call/call-provider"
+import { type ActiveCall, useCall } from "@/features/call/call-provider"
 import { CallView } from "@/features/call/call-view"
 import { SavedCallView } from "@/features/call/saved-call-view"
+import type { CallSummary, Project } from "@/features/projects/api"
 import { callLabel } from "@/features/projects/names"
 import { ProjectActions } from "@/features/projects/project-actions"
 import {
@@ -18,26 +19,10 @@ import { WorkspaceLayout } from "@/features/workspace/workspace-layout"
 
 import { AppHeader } from "./app-header"
 
-/** The header's actions, then the workspace panel's toggle when the project has one. */
-function Actions({
-  children,
-  toggle,
-}: {
-  children: ReactNode
-  toggle: ReactNode
-}) {
-  return (
-    <div className="flex items-center gap-1.5">
-      {children}
-      {toggle}
-    </div>
-  )
-}
-
 /**
  * The right side: whatever the sidebar has selected, under the header. A project, its
- * live call and its past calls share one workspace layout, so moving between them keeps
- * the workspace panel and its terminals.
+ * live call and its past calls are one workspace layout (same component, same key), so
+ * moving between them keeps the workspace panel and its terminals.
  */
 export function MainPanel({
   selection,
@@ -72,79 +57,77 @@ export function MainPanel({
     )
   }
 
-  // The running call (the session lives in CallProvider, above the panels).
-  const live =
-    active?.projectId === project.id &&
-    (selection?.kind === "project" ||
-      (selection?.kind === "call" && selection.callId === active.callId))
-  if (live) {
-    return (
-      <WorkspaceLayout
-        key={project.id}
-        project={project}
-        header={(toggle) => (
-          <AppHeader
-            title={`${project.name} · On a call`}
-            actions={
-              <Actions toggle={toggle}>
-                <AgentsPanel />
-              </Actions>
-            }
-          />
-        )}
-      >
-        <div className="min-h-0 flex-1">
-          <CallView call={active} />
-        </div>
-      </WorkspaceLayout>
-    )
-  }
-
-  if (call) {
-    return (
-      <WorkspaceLayout
-        key={project.id}
-        project={project}
-        header={(toggle) => (
-          <AppHeader
-            title={`${project.name} · ${callLabel(call.startedAt)}`}
-            actions={
-              <Actions toggle={toggle}>
-                <DeleteCallButton
-                  call={call}
-                  onDeleted={() =>
-                    onSelect({ kind: "project", projectId: project.id })
-                  }
-                />
-                <ResumeButton projectId={project.id} callId={call.id} />
-              </Actions>
-            }
-          />
-        )}
-      >
-        <SavedCallView key={call.id} callId={call.id} />
-      </WorkspaceLayout>
-    )
-  }
-
+  const view = projectView(project, selection, active, call, onSelect)
   return (
     <WorkspaceLayout
       key={project.id}
       project={project}
       header={(toggle) => (
         <AppHeader
-          title={project.name}
+          title={view.title}
           actions={
-            <Actions toggle={toggle}>
-              <ProjectActions
-                project={project}
-                onDeleted={() => onSelect(null)}
-              />
-            </Actions>
+            <div className="flex items-center gap-1.5">
+              {view.actions}
+              {toggle}
+            </div>
           }
         />
       )}
     >
+      {view.body}
+    </WorkspaceLayout>
+  )
+}
+
+type ProjectView = { title: string; actions: ReactNode; body: ReactNode }
+
+/** What a project's page shows: its running call, one of its past calls, or its calls. */
+function projectView(
+  project: Project,
+  selection: Selection,
+  active: ActiveCall | null,
+  call: CallSummary | undefined,
+  onSelect: (selection: Selection) => void
+): ProjectView {
+  // The running call (the session lives in CallProvider, above the panels).
+  const live =
+    active?.projectId === project.id &&
+    (selection?.kind === "project" ||
+      (selection?.kind === "call" && selection.callId === active.callId))
+  if (live) {
+    return {
+      title: `${project.name} · On a call`,
+      actions: <AgentsPanel />,
+      body: (
+        <div className="min-h-0 flex-1">
+          <CallView call={active} />
+        </div>
+      ),
+    }
+  }
+  if (call) {
+    return {
+      title: `${project.name} · ${callLabel(call.startedAt)}`,
+      actions: (
+        <>
+          <DeleteCallButton
+            call={call}
+            onDeleted={() =>
+              onSelect({ kind: "project", projectId: project.id })
+            }
+          />
+          <ResumeButton projectId={project.id} callId={call.id} />
+        </>
+      ),
+      body: <SavedCallView key={call.id} callId={call.id} />,
+    }
+  }
+  return {
+    title: project.name,
+    actions: (
+      <ProjectActions project={project} onDeleted={() => onSelect(null)} />
+    ),
+    body: (
       <div className="min-h-0 flex-1 overflow-auto">
         <ProjectCalls
           project={project}
@@ -153,6 +136,6 @@ export function MainPanel({
           }
         />
       </div>
-    </WorkspaceLayout>
-  )
+    ),
+  }
 }

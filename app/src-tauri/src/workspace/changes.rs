@@ -4,9 +4,10 @@
 //! repository, so the user needs no git of their own. Ignored files stay out, as in
 //! `git status`.
 
+use std::fs;
 use std::path::Path;
 
-use git2::{Delta, DiffFindOptions, DiffOptions, ErrorCode, Patch, Repository};
+use git2::{Delta, DiffFindOptions, DiffOptions, ErrorCode, Patch, Repository, Tree};
 use serde::Serialize;
 use tauri::State;
 
@@ -70,6 +71,8 @@ pub enum ChangeStatus {
     Renamed,
     /// A file became a symlink or the other way round.
     Typechange,
+    /// Left unmerged by a merge, rebase or cherry-pick that stopped on a conflict.
+    Conflicted,
 }
 
 fn repository(folder: &Path) -> Option<Repository> {
@@ -105,6 +108,45 @@ pub(crate) fn info(folder: &Path) -> FolderInfo {
 fn path_string(path: Option<&Path>) -> String {
     path.map(|p| p.to_string_lossy().replace('\\', "/"))
         .unwrap_or_default()
+}
+
+/// A patch's text and counts: `None` for its text when it has no lines (a binary file, a
+/// mode change).
+struct PatchText {
+    text: Option<String>,
+    additions: usize,
+    deletions: usize,
+}
+
+fn patch_text(patch: &mut Patch<'_>, binary: bool) -> Result<PatchText> {
+    let (_, additions, deletions) = patch.line_stats()?;
+    let text = (!binary && patch.size(true, true, true) > 0)
+        .then(|| patch.to_buf())
+        .transpose()?
+        .map(|buf| String::from_utf8_lossy(&buf).into_owned());
+    Ok(PatchText {
+        text,
+        additions,
+        deletions,
+    })
+}
+
+/// A conflicted file's patch: its version in `head` (nothing, if it's new) against the
+/// working file, conflict markers and all. `None` if the working file can't be read or is
+/// too big. Its own delta has no lines: its index entry is unmerged.
+fn conflict_patch(repo: &Repository, head: Option<&Tree>, path: &str) -> Option<PatchText> {
+    let file = repo.workdir()?.join(path);
+    if fs::metadata(&file).ok()?.len() > u64::try_from(MAX_FILE_BYTES).ok()? {
+        return None;
+    }
+    let ours = fs::read(&file).ok()?;
+    let committed = head
+        .and_then(|tree| tree.get_path(Path::new(path)).ok())
+        .and_then(|entry| repo.find_blob(entry.id()).ok());
+    let theirs = committed.as_ref().map_or(&[][..], |blob| blob.content());
+    let name = Some(Path::new(path));
+    let mut patch = Patch::from_buffers(theirs, name, &ours, name, None).ok()?;
+    patch_text(&mut patch, false).ok()
 }
 
 /// The changes under `folder`, which may be the repository's root or a folder in it.
@@ -151,7 +193,8 @@ pub(crate) fn changes(folder: &Path) -> Result<Option<Changes>> {
             Delta::Renamed => ChangeStatus::Renamed,
             Delta::Typechange => ChangeStatus::Typechange,
             Delta::Modified => ChangeStatus::Modified,
-            Delta::Unmodified | Delta::Ignored | Delta::Unreadable | Delta::Conflicted => continue,
+            Delta::Conflicted => ChangeStatus::Conflicted,
+            Delta::Unmodified | Delta::Ignored | Delta::Unreadable => continue,
         };
         let path = path_string(delta.new_file().path().or(delta.old_file().path()));
         let old_path =
@@ -165,12 +208,17 @@ pub(crate) fn changes(folder: &Path) -> Result<Option<Changes>> {
             deletions: 0,
             patch: String::new(),
         };
-        if let Some(mut patch) = Patch::from_diff(&diff, index)? {
-            let (_, additions, deletions) = patch.line_stats()?;
-            file.additions = u32::try_from(additions).unwrap_or(u32::MAX);
-            file.deletions = u32::try_from(deletions).unwrap_or(u32::MAX);
-            if !delta.flags().is_binary() && patch.size(true, true, true) > 0 {
-                let text = String::from_utf8_lossy(&patch.to_buf()?).into_owned();
+        let patch = if status == ChangeStatus::Conflicted {
+            conflict_patch(&repo, head.as_ref(), &file.path)
+        } else {
+            Patch::from_diff(&diff, index)?
+                .map(|mut patch| patch_text(&mut patch, delta.flags().is_binary()))
+                .transpose()?
+        };
+        if let Some(patch) = patch {
+            file.additions = u32::try_from(patch.additions).unwrap_or(u32::MAX);
+            file.deletions = u32::try_from(patch.deletions).unwrap_or(u32::MAX);
+            if let Some(text) = patch.text {
                 if total + text.len() > MAX_PATCH_BYTES {
                     truncated = true;
                 } else {
@@ -312,5 +360,50 @@ mod tests {
         assert_eq!(changes.files.len(), 1);
         assert_eq!(changes.files[0].status, ChangeStatus::Untracked);
         drop(repo);
+    }
+
+    /// A merge stopped on a conflict: both branches changed the same line.
+    #[test]
+    fn a_merge_conflict_shows_its_file() {
+        let dir = tempfile_dir("conflict");
+        let repo = Repository::init(&dir).unwrap();
+        fs::write(dir.join("a.txt"), "base\n").unwrap();
+        fs::write(dir.join("b.txt"), "base\n").unwrap();
+        commit_all(&repo, "base");
+        let base = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.branch("theirs", &base, false).unwrap();
+
+        fs::write(dir.join("a.txt"), "ours\n").unwrap();
+        commit_all(&repo, "ours");
+        repo.set_head("refs/heads/theirs").unwrap();
+        repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
+            .unwrap();
+        fs::write(dir.join("a.txt"), "theirs\n").unwrap();
+        commit_all(&repo, "theirs");
+        let theirs = repo.head().unwrap().peel_to_commit().unwrap().id();
+
+        let ours = repo
+            .find_branch("master", git2::BranchType::Local)
+            .or_else(|_| repo.find_branch("main", git2::BranchType::Local))
+            .unwrap();
+        repo.set_head(ours.get().name().unwrap()).unwrap();
+        repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
+            .unwrap();
+        let annotated = repo.find_annotated_commit(theirs).unwrap();
+        repo.merge(&[&annotated], None, None).unwrap();
+        assert!(repo.index().unwrap().has_conflicts());
+
+        let changes = changes(&dir).unwrap().unwrap();
+        let a = changes.files.iter().find(|f| f.path == "a.txt");
+        assert_eq!(
+            a.map(|f| f.status),
+            Some(ChangeStatus::Conflicted),
+            "{:?}",
+            changes.files
+        );
+        // Its patch is the file as it stands, conflict markers and all.
+        let patch = &a.unwrap().patch;
+        assert!(patch.starts_with("diff --git a/a.txt b/a.txt"), "{patch}");
+        assert!(patch.contains("+<<<<<<< "), "{patch}");
     }
 }

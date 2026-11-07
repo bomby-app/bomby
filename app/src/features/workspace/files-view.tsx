@@ -7,7 +7,7 @@ import {
   LoaderCircle,
   X,
 } from "lucide-react"
-import { useState } from "react"
+import { type KeyboardEvent, useRef, useState } from "react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -41,6 +41,9 @@ export function FilesView({
 }: Place & { statuses: TreeStatuses }) {
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set())
   const [selected, setSelected] = useState<string | null>(null)
+  // The one row Tab lands on (a roving tab stop): the last one focused.
+  const [focused, setFocused] = useState<string | null>(null)
+  const treeRef = useRef<HTMLDivElement>(null)
 
   function toggle(dir: string) {
     setOpen((current) => {
@@ -51,9 +54,73 @@ export function FilesView({
     })
   }
 
+  /**
+   * The tree's keys, as a file tree in an editor: up and down move between visible rows,
+   * right opens a folder or steps into it, left closes it or steps out to its parent,
+   * Home and End jump to the ends. Enter and Space are the rows' own clicks.
+   */
+  function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    const rows = [
+      ...(treeRef.current?.querySelectorAll<HTMLElement>("[data-tree-row]") ??
+        []),
+    ]
+    const index = rows.findIndex((row) => row === document.activeElement)
+    const row = rows[index]
+    if (!row) return
+    const path = row.dataset.path ?? ""
+    const dir = row.dataset.dir === "true"
+    const expanded = row.getAttribute("aria-expanded") === "true"
+    let next: HTMLElement | undefined
+    switch (event.key) {
+      case "ArrowDown":
+        next = rows[index + 1]
+        break
+      case "ArrowUp":
+        next = rows[index - 1]
+        break
+      case "Home":
+        next = rows[0]
+        break
+      case "End":
+        next = rows.at(-1)
+        break
+      case "ArrowRight":
+        if (dir && !expanded) toggle(path)
+        else if (dir) next = rows[index + 1]
+        break
+      case "ArrowLeft": {
+        if (dir && expanded) {
+          toggle(path)
+          break
+        }
+        const parent = path.slice(0, Math.max(0, path.lastIndexOf("/")))
+        next = rows.find((r) => r.dataset.path === parent)
+        break
+      }
+      default:
+        return
+    }
+    event.preventDefault()
+    next?.focus()
+  }
+
   const tree = (
     <ScrollArea className="h-full">
-      <div className="py-1.5">
+      <div
+        ref={treeRef}
+        role="tree"
+        aria-label="Files"
+        // Until a row has had focus, Tab lands on the tree and passes it to the first.
+        tabIndex={focused ? -1 : 0}
+        onFocus={(event) => {
+          if (event.target === event.currentTarget)
+            treeRef.current
+              ?.querySelector<HTMLElement>("[data-tree-row]")
+              ?.focus()
+        }}
+        onKeyDown={onKeyDown}
+        className="py-1.5 outline-none"
+      >
         <Directory
           {...place}
           statuses={statuses}
@@ -61,8 +128,10 @@ export function FilesView({
           depth={0}
           open={open}
           selected={selected}
+          focused={focused}
           onToggle={toggle}
           onSelect={setSelected}
+          onFocusRow={setFocused}
         />
       </div>
     </ScrollArea>
@@ -91,16 +160,20 @@ function Directory({
   depth,
   open,
   selected,
+  focused,
   onToggle,
   onSelect,
+  onFocusRow,
 }: Place & {
   statuses: TreeStatuses
   dir: string
   depth: number
   open: ReadonlySet<string>
   selected: string | null
+  focused: string | null
   onToggle: (dir: string) => void
   onSelect: (file: string) => void
+  onFocusRow: (path: string) => void
 }) {
   const reading = useReading(`${folder}\n${dir}`, version, () =>
     folderEntries(projectId, folder, dir)
@@ -138,7 +211,9 @@ function Directory({
             depth={depth}
             expanded={open.has(entry.path)}
             selected={selected === entry.path}
+            tabStop={focused === entry.path}
             statuses={statuses}
+            onFocus={() => onFocusRow(entry.path)}
             onClick={() =>
               entry.dir ? onToggle(entry.path) : onSelect(entry.path)
             }
@@ -153,6 +228,8 @@ function Directory({
               depth={depth + 1}
               open={open}
               selected={selected}
+              focused={focused}
+              onFocusRow={onFocusRow}
               onToggle={onToggle}
               onSelect={onSelect}
             />
@@ -168,15 +245,20 @@ function Row({
   depth,
   expanded,
   selected,
+  tabStop,
   statuses,
   onClick,
+  onFocus,
 }: {
   entry: Entry
   depth: number
   expanded: boolean
   selected: boolean
+  /** The row Tab lands on in the tree. */
+  tabStop: boolean
   statuses: TreeStatuses
   onClick: () => void
+  onFocus: () => void
 }) {
   const Icon = entry.dir ? (expanded ? FolderOpen : Folder) : FileIcon
   const status = entry.dir ? undefined : statuses.files.get(entry.path)
@@ -184,12 +266,19 @@ function Row({
   return (
     <button
       type="button"
+      role="treeitem"
+      aria-level={depth + 1}
       aria-expanded={entry.dir ? expanded : undefined}
-      aria-current={selected || undefined}
+      aria-selected={selected}
+      tabIndex={tabStop ? 0 : -1}
+      data-tree-row
+      data-path={entry.path}
+      data-dir={entry.dir}
       onClick={onClick}
+      onFocus={onFocus}
       style={{ paddingLeft: 8 + depth * INDENT_PX }}
       className={cn(
-        "mx-1.5 flex h-7 w-[calc(100%-12px)] items-center gap-1.5 rounded-sm pr-2 text-left text-sm outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring",
+        "mx-1.5 flex h-7 w-[calc(100%-12px)] items-center gap-1.5 rounded-sm pr-2 text-left text-sm outline-none hover:bg-accent focus-visible:bg-accent",
         selected && "bg-accent font-medium",
         entry.ignored && "text-muted-foreground",
         status && STATUS_COLOR[status]

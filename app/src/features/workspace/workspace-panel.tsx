@@ -46,9 +46,12 @@ function folderName(path: string): string {
 export function WorkspacePanel({
   projectId,
   folders,
+  open,
 }: {
   projectId: number
   folders: string[]
+  /** The panel shows: a terminal counts as active only then. */
+  open: boolean
 }) {
   const [picked, setPicked] = useState(folders[0])
   // A folder removed in Project settings falls back to the first.
@@ -210,7 +213,7 @@ export function WorkspacePanel({
           <TerminalView
             projectId={projectId}
             folder={terminal.folder}
-            active={tab === `terminal-${terminal.id}`}
+            active={open && tab === `terminal-${terminal.id}`}
             onTitle={(title) => setTitle(terminal.id, title)}
           />
         </TabsContent>

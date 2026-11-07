@@ -1,7 +1,8 @@
 import type { ChangeStatus, Changes } from "./api"
 
 // How a file's git status shows, the same in the diff headers and the file tree: a
-// letter, as editors show it, in the change colours (`--change-*` in index.css).
+// letter, as editors show it, in the change colours (`--change-*` in index.css). A conflict
+// (C) takes the removed colour: it needs the user before anything else.
 
 export const STATUS_LETTER: Record<ChangeStatus, string> = {
   added: "A",
@@ -10,6 +11,7 @@ export const STATUS_LETTER: Record<ChangeStatus, string> = {
   renamed: "R",
   typechange: "T",
   deleted: "D",
+  conflicted: "C",
 }
 
 export const STATUS_LABEL: Record<ChangeStatus, string> = {
@@ -19,6 +21,7 @@ export const STATUS_LABEL: Record<ChangeStatus, string> = {
   renamed: "Renamed",
   typechange: "Changed type",
   deleted: "Deleted",
+  conflicted: "Conflict: fix and stage it to finish",
 }
 
 export const STATUS_COLOR: Record<ChangeStatus, string> = {
@@ -28,6 +31,7 @@ export const STATUS_COLOR: Record<ChangeStatus, string> = {
   renamed: "text-change-modified",
   typechange: "text-change-modified",
   deleted: "text-change-deleted",
+  conflicted: "text-change-deleted",
 }
 
 export type TreeStatuses = {
