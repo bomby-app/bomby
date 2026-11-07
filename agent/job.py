@@ -3,7 +3,8 @@
 `JobMetadata` is its contract: it's read and checked once, here, and each part takes the
 fields it needs: the project (`project.py`), the installed agents
 (`harnesses/installed.py`), each agent's picks (`acp_client/settings.py`), who the probe
-lists (`probe.py`), and the voice provider, voice and history (`call_options.py`). Console runs have no
+lists (`probe.py`), the voice provider, voice and history (`call_options.py`), and the
+extensions (`extensions/`). Console runs have no
 metadata, and each part falls back to the environment.
 
 `Pick` and `Line` are pydantic dataclasses rather than models: they're checked inside
@@ -15,7 +16,13 @@ from ACP's own types, never read from JSON.
 from pathlib import Path
 from typing import Annotated, ClassVar, Literal, cast
 
-from pydantic import BaseModel, ConfigDict, StringConstraints, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    JsonValue,
+    StringConstraints,
+    model_validator,
+)
 from pydantic.dataclasses import dataclass
 
 Speaker = Literal["user", "agent"]
@@ -75,6 +82,9 @@ class JobMetadata(BaseModel):
     # Read memory, save nothing from this call.
     memory_incognito: bool = False
     history: tuple[Line, ...] = ()
+    # The extensions the call has (Settings, Extensions, and the project's own choice), by
+    # id, each with what it needs at the start, like the open to-dos (`extensions/`).
+    extensions: dict[str, dict[str, JsonValue]] = {}
 
     @model_validator(mode="before")
     @classmethod

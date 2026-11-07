@@ -71,7 +71,8 @@ The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS)
   "tone": "chatty",
   "memory_user": "bomby-0123456789abcdef",
   "memory_incognito": false,
-  "history": [{"role": "user", "text": "fix the login"}, {"role": "agent", "text": "Claude's on it."}]
+  "history": [{"role": "user", "text": "fix the login"}, {"role": "agent", "text": "Claude's on it."}],
+  "extensions": {"todos": {"open": [{"number": 6, "title": "Rewrite the onboarding copy", "status": "todo"}], "more": 0}}
 }
 ```
 
@@ -84,6 +85,7 @@ The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS)
 - `tone` is `sharp` (the default), `chatty` or `playful`, from Settings, Bomby; an unknown one is `sharp` ([decision](decisions/tones-as-whole-prompts.md)).
 - `user_name` is what the user asked to be called in Settings, Bomby, up to 50 characters; empty when they'd rather not say, and then the prompt doesn't mention a name. Only the voice model gets it, and the user's own Zep project when memory across calls is on; never the coding agents ([decision](decisions/the-users-name-only-for-the-voice.md)).
 - `history` appears only when resuming a call and contains its last 50 lines ([decision](decisions/resume-a-call-with-its-last-lines.md)).
+- `extensions` holds the extensions the call has (Settings, Extensions, or the project's own choice), by id, each with what it needs at the start: for `todos`, up to 30 open to-dos, the newest first, and how many more are open. One the agent doesn't have is ignored ([decision](decisions/extensions.md)).
 - The agent reads and checks it once against one typed contract (`JobMetadata` in `agent/job.py`, pydantic); the project, the installed agents, the picks and the call options each take their fields from that. Console runs use `VOICE_PROVIDER`, `BOMBY_PROJECT`, `BOMBY_FOLDERS`, `BOMBY_INSTRUCTIONS`, `BOMBY_USER_NAME` and `BOMBY_TONE` from `agent/.env`. Invalid metadata fails the call at start.
 
 **`start_task`** ([decision](decisions/one-tool-for-every-agent.md)):
@@ -91,6 +93,15 @@ The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS)
 - `task` is the full request; `session` is a short name normalized to lowercase with dashes; `agent` is an `AgentName` matching `HARNESSES`.
 - New names open parallel sessions. Idle sessions start another prompt turn. Busy sessions take `_session/steering` where supported: the call stays open until the running turn ends, then returns a note beside that turn's result, which covers both. A result always means the work is done. Otherwise the task waits for the running turn and runs after it.
 - Cancelling with `lk_agents_cancel_task` stops the turn but keeps the session.
+
+**Extensions** ([decision](decisions/extensions.md)). Each extension's tools reach the app over LiveKit RPC: method `bomby.<extension>.<op>` on the room's `user` participant (the page), a JSON payload, a JSON answer; a refusal is `RpcError` code 2000 with the message the voice model hears (`agent/extensions/bridge.py`). The to-dos' methods:
+
+- `todos.list` `{status}` (`open`, `all`, `todo`, `doing`, `done` or `cancelled`) answers with the to-dos;
+- `todos.add` `{items: [{title}]}`, at most 20, answers with those added, each `todo`;
+- `todos.update` `{number, status?, title?, notes?}` answers with the to-do as it is now;
+- `todos.remove` `{number}` answers with the to-do removed.
+
+A to-do is `{number, title, notes, status, ...}`; the agent reads those four and ignores the rest.
 
 **Briefing.** Each session receives `prompts/harness-briefing.md` plus the project name, folders and instructions once (never again with follow-ups or steering): through the system prompt when supported, otherwise before its first task. It requires a short, plain-text, outcome-first final report for speech.
 

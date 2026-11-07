@@ -2,10 +2,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from call_options import CallOptions
+from extensions import CallExtensions, ExtensionContext
+from extensions.todos import TODOS_EXTENSION
 from harnesses import HARNESSES
 from job import Line
 from project import Project
-from sections import PLAIN
+from sections import MARKDOWN, PLAIN, Style
 from tools import agents_note
 from voice_prompt import (
     PROMPTS,
@@ -176,3 +178,26 @@ def test_gpt_live_hears_its_persona_and_plain_sections() -> None:
     assert "recall_about_user" not in text
     assert "generate <|SpawnThinking|> to look up anything else" in text
     assert text.endswith("User: fix the login\nYou: Done.")
+
+
+def test_the_calls_extensions_add_their_notes_after_the_project() -> None:
+    class NoBridge:
+        async def call(self, method: str, payload: object) -> None:
+            raise AssertionError(f"{method} {payload}")
+
+    def todos(style: Style) -> CallExtensions:
+        return CallExtensions.for_call({"todos": {}}, NoBridge(), style)
+
+    text = voice_instructions(
+        project(), CallOptions(voice="Kore"), AGENTS, now=NOW, extensions=todos(PLAIN)
+    )
+    assert text.startswith(
+        f"{VOICE}\n\n{agents_note(AGENTS)}\n\n{PROJECT}\n\n## To-dos"
+    )
+
+    # GPT-Live's backend calls the tools, so it hears the note in its own style too.
+    options = CallOptions(voice="gleam", provider=OPENAI)
+    backend = backend_instructions(
+        project(), options, AGENTS, now=NOW, extensions=todos(MARKDOWN)
+    )
+    assert backend.endswith(TODOS_EXTENSION.note(ExtensionContext(NoBridge())))
