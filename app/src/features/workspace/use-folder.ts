@@ -38,12 +38,14 @@ export function useFolderVersion(projectId: number, folder: string): number {
 /**
  * Reads `load()` for `key` from the core when the component mounts and again whenever
  * `version` changes, showing the last answer meanwhile (`readings.ts` keeps them).
- * `key` names what `load` reads.
+ * `key` names what `load` reads. Until `enabled`, it reads nothing and shows what an earlier
+ * reading left, if anything.
  */
 export function useReading<T>(
   key: string,
   version: number,
-  load: () => Promise<T>
+  load: () => Promise<T>,
+  enabled = true
 ): Reading<T> {
   const value = useSyncExternalStore(
     (listener) => readings.subscribe(key, listener),
@@ -53,7 +55,7 @@ export function useReading<T>(
   // what `key` names, even once the component has moved on to another key.
   const loaderNow = useEffectEvent(() => load)
   useEffect(() => {
-    readings.refresh(key, loaderNow())
-  }, [key, version])
+    if (enabled) readings.refresh(key, loaderNow())
+  }, [key, version, enabled])
   return value as Reading<T>
 }

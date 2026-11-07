@@ -26,8 +26,8 @@ import {
 import { commandShortcut } from "@/lib/shortcuts"
 import { cn } from "@/lib/utils"
 
-// The panel's libraries (Pierre's diffs with Shiki, the terminal) load the first time it
-// opens, not with the window.
+// The panel loads the first time it opens, not with the window; each of its tabs loads its
+// own libraries the first time it shows (workspace-panel.tsx).
 const WorkspacePanel = lazy(() =>
   import("./workspace-panel").then((m) => ({ default: m.WorkspacePanel }))
 )

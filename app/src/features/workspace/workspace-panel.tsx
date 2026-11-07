@@ -1,6 +1,6 @@
 import { Folder, Plus, X } from "lucide-react"
 import { Tabs as TabsPrimitive } from "radix-ui"
-import { useEffect, useState } from "react"
+import { lazy, Suspense, useState } from "react"
 
 import { ErrorCard } from "@/components/error-card"
 import { Button } from "@/components/ui/button"
@@ -20,12 +20,20 @@ import {
 import { cn } from "@/lib/utils"
 
 import { folderChanges, folderInfo } from "./api"
-import { ChangesView } from "./changes-view"
-import { FilesView } from "./files-view"
-import { preloadHighlighting } from "./pierre"
 import { treeStatuses } from "./status"
-import { TerminalView } from "./terminal-view"
 import { useFolderVersion, useReading } from "./use-folder"
+
+// Each tab's code loads the first time it shows: Pierre's diffs with Shiki for Changes and
+// Files, the terminal (wterm and its Ghostty core) for terminals. The panel itself is light.
+const ChangesView = lazy(() =>
+  import("./changes-view").then((m) => ({ default: m.ChangesView }))
+)
+const FilesView = lazy(() =>
+  import("./files-view").then((m) => ({ default: m.FilesView }))
+)
+const TerminalView = lazy(() =>
+  import("./terminal-view").then((m) => ({ default: m.TerminalView }))
+)
 
 type TerminalTab = {
   id: number
@@ -54,18 +62,25 @@ export function WorkspacePanel({
   /** The panel shows: a terminal counts as active only then. */
   open: boolean
 }) {
-  useEffect(preloadHighlighting, [])
   const [picked, setPicked] = useState(folders[0])
   // A folder removed in Project settings falls back to the first.
   const folder = folders.includes(picked) ? picked : folders[0]
   const version = useFolderVersion(projectId, folder)
+  // Cheap: whether the folder is in a repository, and its branch.
   const info = useReading(`info ${folder}`, version, () =>
     folderInfo(projectId, folder)
   )
-  const changes = useReading(`changes ${folder}`, version, () =>
-    folderChanges(projectId, folder)
-  )
   const repo = info.data?.repo ?? false
+  // The tabs that have shown: each mounts the first time it does and stays, hidden.
+  const [shown, setShown] = useState<ReadonlySet<string>>(new Set())
+  // The diff of every changed file, for Changes and the file tree's marks: read only once
+  // one of them has shown.
+  const changes = useReading(
+    `changes ${folder}`,
+    version,
+    () => folderChanges(projectId, folder),
+    shown.has("changes") || shown.has("files")
+  )
 
   const [terminals, setTerminals] = useState<TerminalTab[]>([])
   const [nextTerminal, setNextTerminal] = useState(1)
@@ -77,6 +92,10 @@ export function WorkspacePanel({
   ]
   const tab =
     chosenTab && tabs.includes(chosenTab) ? chosenTab : (tabs[0] ?? "files")
+  // Counted once the panel shows and knows its tabs (Changes only in a repository), so the
+  // tab it opens on before that never loads.
+  const settled = open && (info.data !== undefined || info.error !== null)
+  if (settled && !shown.has(tab)) setShown(new Set(shown).add(tab))
 
   function addTerminal() {
     const id = nextTerminal
@@ -184,25 +203,31 @@ export function WorkspacePanel({
         <ErrorCard message={failed} className="m-auto max-w-xs" />
       ) : (
         <>
-          {repo && (
+          {repo && shown.has("changes") && (
             <TabsContent value="changes" forceMount className={PANE}>
               {changes.data && (
-                <ChangesView
-                  changes={changes.data}
-                  branch={info.data?.branch ?? null}
-                />
+                <Suspense>
+                  <ChangesView
+                    changes={changes.data}
+                    branch={info.data?.branch ?? null}
+                  />
+                </Suspense>
               )}
             </TabsContent>
           )}
-          <TabsContent value="files" forceMount className={PANE}>
-            <FilesView
-              key={folder}
-              projectId={projectId}
-              folder={folder}
-              version={version}
-              statuses={treeStatuses(changes.data)}
-            />
-          </TabsContent>
+          {shown.has("files") && (
+            <TabsContent value="files" forceMount className={PANE}>
+              <Suspense>
+                <FilesView
+                  key={folder}
+                  projectId={projectId}
+                  folder={folder}
+                  version={version}
+                  statuses={treeStatuses(changes.data)}
+                />
+              </Suspense>
+            </TabsContent>
+          )}
         </>
       )}
       {terminals.map((terminal) => (
@@ -212,19 +237,21 @@ export function WorkspacePanel({
           forceMount
           className={TERMINAL_PANE}
         >
-          <TerminalView
-            projectId={projectId}
-            folder={terminal.folder}
-            active={open && tab === `terminal-${terminal.id}`}
-            onTitle={(title) => setTitle(terminal.id, title)}
-          />
+          <Suspense>
+            <TerminalView
+              projectId={projectId}
+              folder={terminal.folder}
+              active={open && tab === `terminal-${terminal.id}`}
+              onTitle={(title) => setTitle(terminal.id, title)}
+            />
+          </Suspense>
         </TabsContent>
       ))}
     </Tabs>
   )
 }
 
-/** Every tab's pane fills the panel; inactive ones stay mounted, hidden. */
+/** Every tab's pane fills the panel; once shown, an inactive one stays mounted, hidden. */
 const PANE = "min-h-0 flex-1 data-[state=inactive]:hidden"
 
 /**
