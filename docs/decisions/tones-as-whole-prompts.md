@@ -8,7 +8,7 @@ The owner wanted to choose how Bomby talks: Sharp, Chatty or Playful, in Setting
 
 ## Decision
 
-- **One whole prompt per tone**: `agent/prompts/sharp.md` (the old `voice.md`), `chatty.md` and `playful.md`, each written top to bottom in its tone: Gemini Live talks the way its prompt is written, so a Tone section alone left Playful sounding Sharp (owner's test, 2026-11-05). Sharp is the original `voice.md`. All three share their sections and `## Non-negotiable rules` word for word.
+- **One whole prompt per tone**: `agent/prompts/sharp.md` (the old `voice.md`), `chatty.md` and `playful.md`, now one set per voice provider in `agent/prompts/<provider>/` ([voice providers](voice-providers-like-harnesses.md)), each written top to bottom in its tone: Gemini Live talks the way its prompt is written, so a Tone section alone left Playful sounding Sharp (owner's test, 2026-11-05). Sharp is the original `voice.md`. All three share their sections and `## Non-negotiable rules` word for word.
 - **Stored and sent like the name**: the `tone` setting goes in each call's metadata; `voice_prompt.py` picks the file. Sharp is the default, and an unknown tone falls back to it rather than failing the call.
 
 ## Consequences

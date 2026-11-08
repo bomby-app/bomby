@@ -22,7 +22,7 @@ flowchart LR
     Core["Tauri core: keychain, SQLite, tokens, agent worker, LiveKit server"]
   end
   subgraph Agent["Voice agent (agent/)"]
-    Gemini["Voice model session: Gemini Live or Prism"]
+    Gemini["Voice model session: Gemini Live, GPT-Live or Prism"]
     Tool["start_task tool"]
     Runner["AcpRunner per harness: named sessions"]
   end
@@ -136,4 +136,8 @@ The core keeps them (`src-tauri/src/extensions/`): `extensions_settings()` lists
 - [ACP and adapter behavior](acp-notes.md)
 - [LiveKit behavior](livekit-notes.md)
 - [Gemini behavior](gemini-notes.md)
+- [OpenAI GPT-Live behavior](openai-notes.md)
 - [Rime behavior](rime-notes.md)
+- [Zep behavior](zep-notes.md)
+- [Tauri behavior](tauri-notes.md)
+- [The frontend stack](frontend-notes.md)
