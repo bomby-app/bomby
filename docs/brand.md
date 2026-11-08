@@ -5,11 +5,12 @@ The source of truth is the Paper file **bomby**, pages `branding` and `app asset
 ## Name
 
 - **Bomby**; lowercase wordmark `bomby`. Website `bomby.app` ([rename decision](decisions/name-bomby.md)).
-- Tagline: **"Stop typing. Start talking."** (owner, 2026-11-04, from the cover). Supporting line: "Say the task out loud. Bomby hands it to your agent and tells you when it's done."
+- Tagline: **"Say the word."** (owner, 2026-11-08; it replaces "Stop typing. Start talking."). Supporting line: "Say the task out loud. Bomby hands it to your agent and tells you when it's done."
 - Never co-brand with Claude, LiveKit or Gemini. Name them only to describe requirements or implementation. Their logos appear only in Settings and on the first-run card, in `currentColor`, except Claude's own colours on its first-run tile (owner's board, 2026-11-04).
-- `.github/assets/cover.jpg` (1280 x 640) heads the README and serves as the social preview.
+- The mark and the mascot have no names of their own: both are Bomby (owner, 2026-11-08).
+- `.github/assets/cover.jpg` (2:1, 2560 x 1280) heads the README and serves as the social preview, uploaded in the repository's settings. A new cover is in design (owner, 2026-11-08); it replaces the file at the same path.
 
-## Mark: Dot Dot
+## Mark
 
 A speech bubble with a square bottom-left corner and two round eyes. It speaks and listens.
 
@@ -117,7 +118,7 @@ The mascot speaks to the user on one card, `app/src/components/mascot-card.tsx`:
 
 In the menu bar, the mascot swaps one template image per state and never animates (Motion board): no call (dots), waking, listening, thinking, speaking, working (eyes to the left, while an agent works and the voice only listens) and failed (crossed, for five seconds after a call fails). Paper `app assets`, `tray-icon-template` and `tray-icon-<state>-template`, exported at 36 px to `app/src-tauri/icons/tray/` ([Tauri notes](tauri-notes.md#menu-bar-icon)). Its menu: the call's project, Open Bomby, Start a call on the three recent projects (or what's missing), End call, Settings, Quit Bomby.
 
-`app/src/components/mascot.tsx` exports `<Mascot state level size />` and `mascotState(agentState)`. Dot Dot sits over LiveKit's bar visualizer on the call screen, replaces a project's folder icon during a call and appears on Start a call. Visualizer bars use `--primary`: highlighter in dark, ink in light (owner, 2026-11-04).
+`app/src/components/mascot.tsx` exports `<Mascot state level size />` and `mascotState(agentState)`. The mascot sits over LiveKit's bar visualizer on the call screen, replaces a project's folder icon during a call and appears on Start a call. Visualizer bars use `--primary`: highlighter in dark, ink in light (owner, 2026-11-04).
 
 Motion uses CSS transforms on one SVG. Eyes lead; only sound scales the bubble. Use ease-out for changes, sine for loops, no bounce, and 120 to 400ms one-offs. Reduced motion removes loops and makes swaps instant, but keeps blinking. Below 32px nothing loops.
 
@@ -126,7 +127,7 @@ Motion uses CSS transforms on one SVG. Eyes lead; only sound scales the bubble. 
 Paper page `splash`, option A (owner, 2026-11-04), in `app/src/features/onboarding/`. A short form of two steps, the agent and then the keys; which one shows follows from what's set up and what the user chose. It shows until a call can talk: LiveKit (on this Mac, or the user's keys) and a voice provider with its key, with an agent that's set up or left for later (owner, 2026-11-06).
 
 - **Glow.** `components/day-glow.tsx`: a glow rising from the bottom, by the Mac's clock: highlighter in the morning (5 to 12), option B's bubblegum glow around a highlighter core in the afternoon (12 to 17), bubblegum in option A's shape in the evening. Dark mode uses the dark boards. Its `rest` stage is the projects view's glow (page `projects view`), for reuse there.
-- **Sequence.** One GSAP timeline, each move after the last, slow in and slow out (sine), as the owner asked (2026-11-05): the glow comes up from nothing while Dot Dot floats up from below with its eyes closed (3.2 s, slowing as it arrives); as it arrives its eyes open and it settles to full size, then it looks left, right and back at you; "Good morning, I'm bomby." and "Let's set up your first agent." fade in under it, stay 2.4 s and fade out; then Dot Dot moves up, small and listening, and the setup fades in with a slight rise. A new step fades the old one out first. About 11 s in all, with the six-second opening sound (`app/src/assets/splash-music.mp3`) at the start; reduced motion starts at the setup.
+- **Sequence.** One GSAP timeline, each move after the last, slow in and slow out (sine), as the owner asked (2026-11-05): the glow comes up from nothing while the mascot floats up from below with its eyes closed (3.2 s, slowing as it arrives); as it arrives its eyes open and it settles to full size, then it looks left, right and back at you; "Good morning, I'm bomby." and "Let's set up your first agent." fade in under it, stay 2.4 s and fade out; then the mascot moves up, small and listening, and the setup fades in with a slight rise. A new step fades the old one out first. About 11 s in all, with the six-second opening sound (`app/src/assets/splash-music.mp3`) at the start; reduced motion starts at the setup.
 - **Film grain.** `components/film-grain.tsx`: moving grain over the glow, one tiny WebGL shader with no libraries, at 24 frames a second, blended with overlay at 9% (12% in dark); one still frame with reduced motion.
 - **Mascot with depth.** `<Mascot depth />`: Paper's lit bubble (a gradient from above, a rim of light, catchlights in the eyes, a soft shadow), an ink bubble with highlighter eyes in light and the reverse in dark (`--mascot-*` tokens). Its closed eyes are the curved lids of the Done state; waking crossfades them into round eyes that open from a squint (560 ms), with the blink on its own layer. `look` turns the eyes left or right.
 - **The agent step.** Claude Code when it's installed, ready or not, else Codex, else the first ready agent (owner, 2026-11-05), with Set up now (installs its adapter), its model, or what it needs. With none installed, Claude Code's card offers Install, which opens its own install page (Paper "04 Setup · No agent"). Installing and signing in stay the agent's own: the card only says whether it's ready, and under it "Already installed one? Check again" or "Set it up in Claude Code, then check again", then Set up later (owner, 2026-11-06). "Other supported agents" lists the rest, each to Use or Install. Claude's tile keeps Claude's own colours, as the owner's board shows (`--agent-claude`).
@@ -135,7 +136,7 @@ Paper page `splash`, option A (owner, 2026-11-04), in `app/src/features/onboardi
 
 ## Projects home
 
-Paper page `projects view`, in `app/src/features/projects/projects-home.tsx`: the main panel with nothing selected. Dot Dot with depth, the day's greeting ("Good evening.") in the day glow's `rest` stage, then the recent projects, the newest call first (three, See all for the rest), or Create your first project. The sidebar's logo brings it back, with no hover state. Each time it opens, Dot Dot drops in and settles like something with weight, a damped spring (`elastic.out(1, 0.45)`, 1.6 s): the one place it overshoots, by the owner's choice (2026-11-05). Call and Resume stay disabled, with a tooltip saying what's missing, until a call has LiveKit and a voice provider with its key (`features/call/use-call-readiness.ts`); a call with no agent ready still talks.
+Paper page `projects view`, in `app/src/features/projects/projects-home.tsx`: the main panel with nothing selected. The mascot with depth, the day's greeting ("Good evening.") in the day glow's `rest` stage, then the recent projects, the newest call first (three, See all for the rest), or Create your first project. The sidebar's logo brings it back, with no hover state. Each time it opens, the mascot drops in and settles like something with weight, a damped spring (`elastic.out(1, 0.45)`, 1.6 s): the one place it overshoots, by the owner's choice (2026-11-05). Call and Resume stay disabled, with a tooltip saying what's missing, until a call has LiveKit and a voice provider with its key (`features/call/use-call-readiness.ts`); a call with no agent ready still talks.
 
 ## Workspace panel
 
@@ -163,7 +164,7 @@ Short, everyday sentences with contractions. Name the actor: Claude does the wor
 | Update on its way | Getting version 0.2.0... / 42% · Bomby restarts when it's done. |
 | Update waiting for a call to end | Version 0.2.0 is downloaded. / Restart Bomby to finish, once your call is over. [Restart to update] |
 
-`agent/prompts/sharp.md` (and its tone variants, `chatty.md` and `playful.md`) applies this voice to the spoken agent, written as behaviour rather than adjectives because Gemini Live reads every word as an instruction (owner, 2026-11-04): one-or-two-sentence, outcome-first replies; even tone; no hype; humour only when the user jokes; silence while the user is quiet.
+Each voice provider's `agent/prompts/<provider>/sharp.md` (and its tone variants, `chatty.md` and `playful.md`) applies this voice to the spoken agent, written as behaviour rather than adjectives because Gemini Live reads every word as an instruction (owner, 2026-11-04): one-or-two-sentence, outcome-first replies; even tone; no hype; humour only when the user jokes; silence while the user is quiet.
 
 ## App assets
 

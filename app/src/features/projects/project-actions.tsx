@@ -64,7 +64,7 @@ export function CallButton({ project }: { project: Project }) {
         disabled={!ready || active !== null || starting !== null}
         onClick={() => void start(project.id)}
       >
-        {/* Dot Dot in the button's own colours: bubble in its text colour, eyes in its fill. */}
+        {/* The mascot in the button's own colours: bubble in its text colour, eyes in its fill. */}
         <Mascot
           state={waking ? "waking" : "idle"}
           size={16}
