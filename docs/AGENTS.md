@@ -17,6 +17,7 @@ Every doc has one job; keep it that way.
 | [gemini-notes.md](gemini-notes.md) | Gemini 3.8 Live facts and caveats, checked against the plugin. |
 | [openai-notes.md](openai-notes.md) | OpenAI GPT-Live facts, limits and prompting, checked against LiveKit's engine and OpenAI's docs. |
 | [rime-notes.md](rime-notes.md) | Rime Prism facts, limits and prompting, checked against the plugin and SDK. |
+| [mcp-notes.md](mcp-notes.md) | LiveKit's MCP client, and the hosted MCP servers' (Zapier, Composio) authorization, checked against the installed SDK and the live servers. |
 
 ## How we document
 
