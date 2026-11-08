@@ -109,6 +109,12 @@ deny:
 advisories:
     cargo-deny --manifest-path src-tauri/Cargo.toml check advisories
 
-# Everything a change must pass: format, lint and types for both halves, tests, dependency licenses
+# Build the frontend as a release does (tauri.conf.json's beforeBuildCommand), into dist/
 [group('check')]
-check: lint test deny
+[working-directory: 'app']
+build-frontend:
+    bun --bun run build
+
+# Everything a change must pass: format, lint and types for both halves, tests, dependency licenses, the frontend's build
+[group('check')]
+check: lint test deny build-frontend

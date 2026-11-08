@@ -56,12 +56,13 @@ jobs:
           install_args: rust go bun just cargo-deny
 
       # The Rust core won't compile without the bundled LiveKit server, built from source by
-      # `just livekit build`. It changes only with its pinned version in livekit.just. The
-      # Release workflow restores no caches, so nothing cached here reaches a signed build.
+      # `just livekit build`. It changes only with its version in livekit.just or the Go pin in
+      # mise.toml. The Release workflow restores no caches, so nothing cached here reaches a
+      # signed build.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: app/src-tauri/binaries
-          key: livekit-server-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('livekit.just') }}
+          key: livekit-server-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('livekit.just', 'mise.toml') }}
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
@@ -69,7 +70,8 @@ jobs:
 
       - run: just app install
 
-      # Format, lint and types for both halves, tests, generated types current, dependency licenses
+      # Format, lint and types for both halves, tests, generated types current, dependency
+      # licenses, the frontend's production build
       - run: just app check
 
   repo:

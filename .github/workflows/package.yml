@@ -51,11 +51,11 @@ jobs:
         with:
           install_args: rust go bun uv just
 
-      # As in ci.yml: the LiveKit server changes only with its version in livekit.just.
+      # As in ci.yml: the LiveKit server changes only with livekit.just or the Go pin in mise.toml.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: app/src-tauri/binaries
-          key: livekit-server-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('livekit.just') }}
+          key: livekit-server-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('livekit.just', 'mise.toml') }}
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
