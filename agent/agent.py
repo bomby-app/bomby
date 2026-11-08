@@ -12,12 +12,12 @@ from acp_client import CallRunners
 from call import Call
 from call_options import CallOptions
 from extensions import CallExtensions
-from extensions.bridge import RoomBridge
+from extensions.bridge import APP_IDENTITY, REFUSED, RoomBridge
 from job import read_metadata
 from memory import ATTRIBUTE as MEMORY_ATTRIBUTE
 from memory import UNAVAILABLE, Memory, MemoryUnavailable
 from memory import notify as notify_memory
-from task_board import TaskBoard
+from task_board import REQUEST_METHOD, TaskBoard
 from tools import ALL_TOOLS, MEMORY_TOOLS
 from voice_prompt import backend_instructions, local_zone, voice_instructions
 from voice_providers import Tools
@@ -116,8 +116,23 @@ async def entrypoint(ctx: JobContext) -> None:
         notify_memory(memory_unavailable)
     if memory:
         memory.on_unavailable(memory_unavailable)
-    call = Call(runners, TaskBoard(publish), memory, options.provider)
+    board = TaskBoard(publish)
+    call = Call(runners, board, memory, options.provider)
     ctx.add_shutdown_callback(call.aclose)
+
+    # The page asks for a task's full request when the user opens it: `bomby.tasks` carries
+    # each shortened.
+    async def task_request(data: rtc.RpcInvocationData) -> str:
+        request = (
+            board.request(data.payload)
+            if data.caller_identity == APP_IDENTITY
+            else None
+        )
+        if request is None:
+            raise rtc.RpcError(REFUSED, "That task isn't kept anymore.")
+        return request
+
+    _ = ctx.room.local_participant.register_rpc_method(REQUEST_METHOD, task_request)
 
     # Which audio the agent gets, from whom: the first thing to check on an audio problem.
     def on_track_subscribed(

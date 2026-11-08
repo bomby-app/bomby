@@ -2,7 +2,7 @@
 what it was asked, and how it's going. Published as one attribute on the agent's own
 LiveKit participant (`bomby.tasks`, JSON), which the page reads with `useAgent()`.
 LiveKit allows 64 KiB of attributes in all, so only the latest tasks are kept, each
-shortened."""
+shortened; the page asks for one's full request when the user opens it (`REQUEST_METHOD`)."""
 
 import json
 import logging
@@ -17,8 +17,12 @@ from harnesses import Harness
 logger = logging.getLogger("bomby.task_board")
 
 ATTRIBUTE = "bomby.tasks"
+# The page's RPC for a task's full request: the task's id in, its words out.
+REQUEST_METHOD = "bomby.tasks.request"
 KEEP = 20
 TASK_CHARS = 160
+# The most of a request one RPC answer carries: LiveKit's limit is 15 KiB each way.
+REQUEST_BYTES = 14_000
 # How soon the same request again counts as a repeat (`repeat_of`).
 REPEAT_MS = 10_000
 
@@ -61,6 +65,17 @@ class TaskBoard:
     @property
     def tasks(self) -> list[Task]:
         return list(self._tasks)
+
+    def request(self, id: str) -> str | None:
+        """What the agent was asked in task `id`, word for word, if it's still kept; one
+        past `REQUEST_BYTES` is cut there."""
+        text = self._requests.get(id)
+        if text is None:
+            return None
+        raw = text.encode()
+        if len(raw) <= REQUEST_BYTES:
+            return text
+        return raw[: REQUEST_BYTES - 3].decode(errors="ignore") + "…"
 
     def add(
         self, harness: Harness, session: str, task: str, status: Status = "working"

@@ -1,4 +1,5 @@
 import {
+  ArrowRight,
   Check,
   CircleSlash,
   Inbox,
@@ -7,8 +8,17 @@ import {
   Plus,
   X,
 } from "lucide-react"
+import { useState } from "react"
 
+import { Mascot } from "@/components/mascot"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import {
   Popover,
   PopoverContent,
@@ -25,71 +35,144 @@ import {
 import { AgentLogo } from "@/features/agents/agent-logos"
 import { cn } from "@/lib/utils"
 
-import { type Task, useTasks } from "./tasks"
+import { type Task, useTaskRequest, useTasks } from "./tasks"
 
 /**
  * The agents panel in the call's header: a box icon with the number of running tasks,
- * opening the list of what each agent is doing on this call.
+ * opening the list of what each agent is doing on this call. A task opens what Bomby asked
+ * its agent, in full, so the user can catch a request Bomby got wrong.
  */
 export function AgentsPanel() {
   const tasks = useTasks()
   const working = tasks.filter((t) => t.status === "working").length
+  const [listOpen, setListOpen] = useState(false)
+  const [opened, setOpened] = useState<string | null>(null)
+  // The task as it is now, so its status keeps up while it's open.
+  const task = tasks.find((t) => t.id === opened) ?? null
 
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={working ? `Tasks, ${working} running` : "Tasks"}
-          className="relative"
-        >
-          <Inbox />
-          {working > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground tabular-nums">
-              {working}
-            </span>
+    <>
+      <Popover open={listOpen} onOpenChange={setListOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={working ? `Tasks, ${working} running` : "Tasks"}
+            className="relative"
+          >
+            <Inbox />
+            {working > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground tabular-nums">
+                {working}
+              </span>
+            )}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="w-80 p-0">
+          <PopoverHeader className="px-3 pt-3">
+            <PopoverTitle>Tasks</PopoverTitle>
+          </PopoverHeader>
+          {tasks.length === 0 ? (
+            <p className="px-3 pb-3 text-sm text-muted-foreground">
+              Nothing yet. Ask for something and it shows up here.
+            </p>
+          ) : (
+            <ScrollArea className="**:data-[slot=scroll-area-viewport]:max-h-80">
+              <ul className="flex flex-col divide-y px-1 pb-1">
+                {tasks.map((each) => (
+                  <TaskRow
+                    key={each.id}
+                    task={each}
+                    onOpen={() => {
+                      setListOpen(false)
+                      setOpened(each.id)
+                    }}
+                  />
+                ))}
+              </ul>
+            </ScrollArea>
           )}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-80 p-0">
-        <PopoverHeader className="px-3 pt-3">
-          <PopoverTitle>Tasks</PopoverTitle>
-        </PopoverHeader>
-        {tasks.length === 0 ? (
-          <p className="px-3 pb-3 text-sm text-muted-foreground">
-            Nothing yet. Ask for something and it shows up here.
-          </p>
-        ) : (
-          <ScrollArea className="**:data-[slot=scroll-area-viewport]:max-h-80">
-            <ul className="flex flex-col divide-y px-1 pb-1">
-              {tasks.map((task) => (
-                <TaskRow key={task.id} task={task} />
-              ))}
-            </ul>
-          </ScrollArea>
-        )}
-      </PopoverContent>
-    </Popover>
+        </PopoverContent>
+      </Popover>
+      <TaskDialog task={task} onClose={() => setOpened(null)} />
+    </>
   )
 }
 
-function TaskRow({ task }: { task: Task }) {
+function TaskRow({ task, onOpen }: { task: Task; onOpen: () => void }) {
   return (
-    <li className="flex gap-2.5 px-2 py-2.5">
-      <span className="flex size-5 shrink-0 items-center justify-center pt-0.5 text-foreground [&_svg]:size-4">
-        <AgentLogo id={task.agent} />
-      </span>
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <div className="flex items-center gap-2">
-          <span className="truncate text-sm font-medium">{task.session}</span>
-          <TaskStatus status={task.status} />
-        </div>
-        <span className="line-clamp-2 text-xs text-muted-foreground select-text">
-          {task.agentName}: {task.task}
+    <li>
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex w-full gap-2.5 rounded-md px-2 py-2.5 text-left outline-none hover:bg-accent/60 focus-visible:ring-3 focus-visible:ring-ring/50"
+      >
+        <span className="flex size-5 shrink-0 items-center justify-center pt-0.5 text-foreground [&_svg]:size-4">
+          <AgentLogo id={task.agent} />
         </span>
-      </div>
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="flex items-center gap-2">
+            <span className="truncate text-sm font-medium">{task.session}</span>
+            <TaskStatus status={task.status} />
+          </span>
+          <span className="line-clamp-2 text-xs text-muted-foreground">
+            {task.agentName}: {task.task}
+          </span>
+        </span>
+      </button>
     </li>
+  )
+}
+
+/**
+ * What Bomby asked the agent in a task, word for word: Bomby to the agent in its header,
+ * the session and status under it, then the request, selectable. The shortened request
+ * shows until the full one arrives, and stays if the agent can't send it.
+ */
+function TaskDialog({
+  task,
+  onClose,
+}: {
+  task: Task | null
+  onClose: () => void
+}) {
+  const request = useTaskRequest(task)
+  return (
+    <Dialog open={task !== null} onOpenChange={(open) => !open && onClose()}>
+      {task && (
+        <DialogContent className="flex max-h-[80vh] flex-col gap-4 sm:max-w-lg">
+          <DialogHeader className="gap-3">
+            <div
+              aria-hidden
+              className="flex items-center gap-2 text-muted-foreground [&_svg]:size-5"
+            >
+              <Mascot state="idle" size={20} />
+              <ArrowRight className="size-4!" />
+              <span className="text-foreground">
+                <AgentLogo id={task.agent} />
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <DialogTitle className="truncate">{task.session}</DialogTitle>
+              <TaskStatus status={task.status} />
+            </div>
+            <DialogDescription>
+              What Bomby asked {task.agentName}, word for word.
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="min-h-0 flex-1 rounded-md border bg-muted/40">
+            <p className="p-3 text-sm whitespace-pre-wrap select-text">
+              {request.state === "read" ? request.text : task.task}
+            </p>
+          </ScrollArea>
+          {request.state === "failed" && task.task.endsWith("…") && (
+            <p className="text-xs text-muted-foreground">
+              Bomby couldn&apos;t send the rest, so this is the start of it.
+            </p>
+          )}
+        </DialogContent>
+      )}
+    </Dialog>
   )
 }
 
