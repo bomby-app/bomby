@@ -1,3 +1,7 @@
 # The gitignored files `wt step copy-ignored` copies into a new worktree (.config/wt.toml).
 agent/.env
 app/src-tauri/target/
+# Locally installed agent skills (.gitignore)
+.agents/skills/brand-guidelines/
+.agents/skills/tauri-v2/
+skills-lock.json

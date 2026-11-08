@@ -25,3 +25,9 @@ agent/adapters/bin/
 
 # Reference checkouts (not ours)
 .scratch/
+
+# Agent skills each developer installs for themselves (`npx skills add`), not shipped with
+# the repo. .worktreeinclude copies them into new worktrees.
+.agents/skills/brand-guidelines/
+.agents/skills/tauri-v2/
+skills-lock.json
