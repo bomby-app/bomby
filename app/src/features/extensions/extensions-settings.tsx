@@ -1,5 +1,6 @@
 import { Fragment, useRef, useState } from "react"
 
+import { ExperimentalBadge } from "@/components/experimental-badge"
 import { FieldError, FieldLabel } from "@/components/ui/field"
 import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
@@ -8,6 +9,9 @@ import { setExtension } from "./api"
 import { ExtensionConnection } from "./extension-connection"
 import { ExtensionIcon } from "./extension-icon"
 import { setExtensions, useExtensions } from "./use-extensions"
+
+/** Still settling in Bomby: marked Experimental. */
+const EXPERIMENTAL = new Set(["zapier", "composio"])
 
 /**
  * The Extensions section of the settings window (Paper "extensions", 01): each extension
@@ -61,9 +65,12 @@ export function ExtensionsSettings() {
                 <ExtensionIcon id={extension.id} className="size-[18px]" />
               </span>
               <div className="flex min-w-0 flex-1 flex-col gap-0.5 text-sm">
-                <FieldLabel htmlFor={`extension-${extension.id}`}>
-                  {extension.name}
-                </FieldLabel>
+                <span className="flex items-center gap-2">
+                  <FieldLabel htmlFor={`extension-${extension.id}`}>
+                    {extension.name}
+                  </FieldLabel>
+                  {EXPERIMENTAL.has(extension.id) && <ExperimentalBadge />}
+                </span>
                 <span className="text-muted-foreground">
                   {extension.description}
                 </span>

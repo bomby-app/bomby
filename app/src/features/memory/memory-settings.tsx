@@ -2,6 +2,7 @@ import { Brain, EyeOff } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 
 import { ApiKeyForm } from "@/components/api-key-form"
+import { ExperimentalBadge } from "@/components/experimental-badge"
 import { InfoTip } from "@/components/info-tip"
 import {
   FieldError,
@@ -92,6 +93,9 @@ export function MemorySettings() {
               I keep what I learn about you and your work, and use it next time.
               Resuming a call picks up its last lines either way.
             </InfoTip>
+            <span className="ml-1">
+              <ExperimentalBadge />
+            </span>
           </div>
           <Switch
             id="memory"
