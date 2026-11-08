@@ -14,22 +14,34 @@ import { setExtensions, useExtensions } from "./use-extensions"
  * (docs/decisions/extensions.md). Applies from the next call.
  */
 export function ExtensionsSettings() {
-  const extensions = useExtensions()
+  const confirmed = useExtensions()
   const [error, setError] = useState<string | null>(null)
+  // What the user switched and the core hasn't yet confirmed, shown over what it has. The
+  // store only ever holds the core's answers, so a failed save shows what's really saved.
+  const [pending, setPending] = useState<Record<string, boolean>>({})
   // Saves run one after another, in click order, so a quick off and on can't land swapped.
   const queue = useRef<Promise<unknown>>(Promise.resolve())
+  // Each extension's newest switch: only it clears the pending value, never an older save.
+  const latest = useRef(new Map<string, number>())
 
   function toggle(id: string, on: boolean) {
     setError(null)
-    if (extensions) {
-      setExtensions(extensions.map((e) => (e.id === id ? { ...e, on } : e)))
-    }
+    setPending((now) => ({ ...now, [id]: on }))
+    const switched = (latest.current.get(id) ?? 0) + 1
+    latest.current.set(id, switched)
     queue.current = queue.current
       .then(() => setExtension(id, on))
       .then(setExtensions, (e: unknown) => setError(String(e)))
+      .finally(() => {
+        if (latest.current.get(id) !== switched) return
+        setPending((now) =>
+          Object.fromEntries(Object.entries(now).filter(([key]) => key !== id))
+        )
+      })
   }
 
-  if (!extensions) return null
+  if (!confirmed) return null
+  const extensions = confirmed.map((e) => ({ ...e, on: pending[e.id] ?? e.on }))
 
   return (
     <div className="flex flex-col gap-6">

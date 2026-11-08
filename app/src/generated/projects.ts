@@ -38,8 +38,8 @@ export type ProjectExtensions = {
 own: boolean, 
 /**
  * With `own`, the ones on, by id; kept while it follows Settings, for when it picks
- * again.
+ * again. None until it first picks, so picking starts from Settings' only then.
  */
-on: Array<string>, };
+on: Array<string> | null, };
 
 export type ProjectInput = { name: string, folders: Array<string>, instructions: string, };

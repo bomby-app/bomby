@@ -61,8 +61,19 @@ class TodosData(BaseModel):
     more: int = 0
 
 
+class Listing(BaseModel):
+    """What `todos.list` answers: the to-dos asked for, oldest first, and how many older
+    ones were left out to keep the answer within LiveKit's RPC limit."""
+
+    model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="ignore")
+
+    todos: tuple[Todo, ...]
+    omitted: int = 0
+
+
 TODO = TypeAdapter(Todo)
 TODOS = TypeAdapter(list[Todo])
+LISTING = TypeAdapter(Listing)
 
 
 def line(todo: Todo, style: Style, notes: bool = False) -> str:
@@ -137,14 +148,21 @@ class Todos(Extension):
                 status: Which to-dos: "open" (to do and doing, the default), "all", or
                     only those "todo", "doing", "done" or "cancelled".
             """
-            todos = read(TODOS, await ask("todos.list", {"status": status}))
+            answer = read(LISTING, await ask("todos.list", {"status": status}))
+            todos, omitted = list(answer.todos), answer.omitted
+            total = len(todos) + omitted
             which = FILTER_WORDS[status]
-            if not todos:
+            if total == 0:
                 return (
                     f"There are no {which} to-dos." if which else "The list is empty."
                 )
-            plural = "s" if len(todos) > 1 else ""
-            count = " ".join(w for w in (str(len(todos)), which, f"to-do{plural}") if w)
+            plural = "s" if total > 1 else ""
+            count = " ".join(w for w in (str(total), which, f"to-do{plural}") if w)
+            if omitted:
+                count += (
+                    f", too many to send at once: the newest {len(todos)}, the oldest "
+                    f"{omitted} left out"
+                )
             return join(f"{count}:", listing(todos, style, True))
 
         @function_tool()

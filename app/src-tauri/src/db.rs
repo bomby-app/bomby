@@ -85,11 +85,13 @@ const MIGRATIONS: &[&str] = &[
     );
     ",
     // 7: extensions (docs/decisions/extensions.md). Which a project's calls have: those on
-    // in Settings unless it picks its own, then the rows it has. And its to-dos, each with a
+    // in Settings unless it picks its own, then the rows it has; extensions_picked once it
+    // has picked, so a pick of none stays none and only a first pick starts from Settings'. And its to-dos, each with a
     // number of its own in the project, counted by `todos_made` so none is reused. status:
     // 'todo', 'doing', 'done' or 'cancelled'; created_by and updated_by: 'user' or 'bomby'.
     "
     ALTER TABLE projects ADD COLUMN extensions_own INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE projects ADD COLUMN extensions_picked INTEGER NOT NULL DEFAULT 0;
     CREATE TABLE project_extensions (
         project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
         extension  TEXT    NOT NULL,

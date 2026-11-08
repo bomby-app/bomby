@@ -15,8 +15,8 @@ type Mode = "settings" | "own"
 /**
  * Which extensions a project's calls have (Paper "extensions", 02): the same as Settings,
  * or the project's own pick, one switch per extension beside what Settings has. Picking
- * starts from the project's last picks, or Settings' when it has none. Applies from the
- * next call.
+ * starts from the project's last picks, even none, or Settings' if it never picked.
+ * Applies from the next call.
  */
 export function ProjectExtensionsField({
   extensions: chosen,
@@ -34,14 +34,12 @@ export function ProjectExtensionsField({
       return
     }
     const on =
-      chosen.on.length > 0
-        ? chosen.on
-        : (settings ?? []).filter((e) => e.on).map((e) => e.id)
+      chosen.on ?? (settings ?? []).filter((e) => e.on).map((e) => e.id)
     onChange({ own: true, on })
   }
 
   function toggle(id: string, on: boolean) {
-    const others = chosen.on.filter((e) => e !== id)
+    const others = (chosen.on ?? []).filter((e) => e !== id)
     onChange({ own: true, on: on ? [...others, id] : others })
   }
 
@@ -110,7 +108,7 @@ export function ProjectExtensionsField({
               </span>
               <Switch
                 id={`project-extension-${extension.id}`}
-                checked={chosen.on.includes(extension.id)}
+                checked={chosen.on?.includes(extension.id) ?? false}
                 onCheckedChange={(on) => toggle(extension.id, on)}
               />
             </div>

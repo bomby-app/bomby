@@ -19,7 +19,12 @@ import {
 import { ProjectsHome } from "@/features/projects/projects-home"
 import { useProjects } from "@/features/projects/projects-provider"
 import type { Selection } from "@/features/projects/selection"
-import { TODOS_TAB, TodosView, useOpenCount } from "@/features/todos/todos-view"
+import {
+  forgetProjectTodos,
+  TODOS_TAB,
+  TodosView,
+  useOpenCount,
+} from "@/features/todos/todos-view"
 import type { ExtraTab } from "@/features/workspace/extra-tab"
 import { WorkspaceLayout } from "@/features/workspace/workspace-layout"
 
@@ -79,8 +84,9 @@ function ProjectLayout({
   view: ProjectView
 }) {
   const extensions = useExtensions()
-  const openTodos = useOpenCount(project.id)
-  const tabs: ExtraTab[] = isOn("todos", project.extensions, extensions)
+  const todosOn = isOn("todos", project.extensions, extensions)
+  const openTodos = useOpenCount(project.id, todosOn)
+  const tabs: ExtraTab[] = todosOn
     ? [
         {
           ...TODOS_TAB,
@@ -164,7 +170,11 @@ function projectView(
     secondary: (
       <ProjectSettingsButton
         project={project}
-        onDeleted={() => onSelect(null)}
+        onDeleted={() => {
+          // SQLite may give a new project its id: nothing of this one may show there.
+          forgetProjectTodos(project.id)
+          onSelect(null)
+        }}
       />
     ),
     primary: <CallButton project={project} />,

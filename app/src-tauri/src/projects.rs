@@ -228,33 +228,39 @@ fn save_agents(conn: &mut Connection, id: i64, agents: &ProjectAgents) -> Result
 }
 
 fn project_extensions(conn: &Connection, id: i64) -> Result<ProjectExtensions> {
-    let own: bool = conn
+    let (own, picked): (bool, bool) = conn
         .query_row(
-            "SELECT extensions_own FROM projects WHERE id = ?1",
+            "SELECT extensions_own, extensions_picked FROM projects WHERE id = ?1",
             [id],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()?
         .ok_or(Error::NotFound("project"))?;
-    let on = conn
-        .prepare(
-            "SELECT extension FROM project_extensions WHERE project_id = ?1 ORDER BY extension",
-        )?
-        .query_map([id], |row| row.get(0))?
-        .collect::<rusqlite::Result<_>>()?;
+    let on = if picked {
+        Some(
+            conn.prepare(
+                "SELECT extension FROM project_extensions WHERE project_id = ?1 ORDER BY extension",
+            )?
+            .query_map([id], |row| row.get(0))?
+            .collect::<rusqlite::Result<_>>()?,
+        )
+    } else {
+        None
+    };
     Ok(ProjectExtensions { own, on })
 }
 
 fn save_extensions(conn: &mut Connection, id: i64, chosen: &ProjectExtensions) -> Result<()> {
-    if let Some(unknown) = chosen.on.iter().find(|e| !extensions::is_known(e)) {
+    let picks = chosen.on.as_deref().unwrap_or_default();
+    if let Some(unknown) = picks.iter().find(|e| !extensions::is_known(e)) {
         return Err(Error::Invalid(format!(
             "Bomby has no extension called {unknown}."
         )));
     }
     let tx = conn.transaction()?;
     let changed = tx.execute(
-        "UPDATE projects SET extensions_own = ?1 WHERE id = ?2",
-        params![chosen.own, id],
+        "UPDATE projects SET extensions_own = ?1, extensions_picked = ?2 WHERE id = ?3",
+        params![chosen.own, chosen.on.is_some(), id],
     )?;
     if changed == 0 {
         return Err(Error::NotFound("project"));
@@ -263,7 +269,7 @@ fn save_extensions(conn: &mut Connection, id: i64, chosen: &ProjectExtensions) -
     let mut insert = tx.prepare(
         "INSERT OR IGNORE INTO project_extensions (project_id, extension) VALUES (?1, ?2)",
     )?;
-    for extension in &chosen.on {
+    for extension in picks {
         insert.execute(params![id, extension])?;
     }
     drop(insert);
@@ -563,14 +569,14 @@ mod tests {
 
         let none = ProjectExtensions {
             own: true,
-            on: Vec::new(),
+            on: Some(Vec::new()),
         };
         save_extensions(&mut conn, id, &none).unwrap();
-        assert_eq!(chosen(&conn), none);
+        assert_eq!(chosen(&conn), none, "a pick of none is kept as none");
 
         let todos = ProjectExtensions {
             own: false,
-            on: vec!["todos".into()],
+            on: Some(vec!["todos".into()]),
         };
         save_extensions(&mut conn, id, &todos).unwrap();
         assert_eq!(
@@ -581,7 +587,7 @@ mod tests {
 
         let unknown = ProjectExtensions {
             own: true,
-            on: vec!["hal".into()],
+            on: Some(vec!["hal".into()]),
         };
         assert!(matches!(
             save_extensions(&mut conn, id, &unknown),

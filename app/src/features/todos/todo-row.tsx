@@ -12,26 +12,35 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 
-import { removeTodo, type Todo, type TodoStatus, updateTodo } from "./api"
+import {
+  removeTodo,
+  type Todo,
+  type TodoChange,
+  type TodoStatus,
+  updateTodo,
+} from "./api"
 import { bombyLine, GROUPS, STATUS_LABEL } from "./labels"
 import { StatusMark } from "./status-mark"
+import type { Draft } from "./view-state"
 
 /**
  * One to-do (Paper "extensions", 03 and 04): its status mark, which opens a menu of
  * statuses; its words, notes and, when Bomby changed it last, who and when; its number,
- * the one Bomby says. Clicking the words edits it in place.
+ * the one Bomby says. Clicking the words edits it in place; the words being edited live in
+ * the panel's state (`view-state.ts`), so a remount keeps them.
  */
 export function TodoRow({
   projectId,
   todo,
-  editing,
-  onEdit,
+  draft,
+  onDraft,
   onError,
 }: {
   projectId: number
   todo: Todo
-  editing: boolean
-  onEdit: (editing: boolean) => void
+  /** Its words being edited, while it is. */
+  draft: Draft | null
+  onDraft: (draft: Draft | null) => void
   onError: (error: string | null) => void
 }) {
   function setStatus(status: TodoStatus) {
@@ -41,14 +50,14 @@ export function TodoRow({
     )
   }
 
-  if (editing) {
+  if (draft) {
     return (
       <TodoEditor
         projectId={projectId}
         todo={todo}
-        onClose={() => onEdit(false)}
+        draft={draft}
+        onDraft={onDraft}
         onError={onError}
-        onStatus={setStatus}
       />
     )
   }
@@ -60,7 +69,14 @@ export function TodoRow({
       <StatusMenu status={todo.status} onChange={setStatus} />
       <button
         type="button"
-        onClick={() => onEdit(true)}
+        onClick={() =>
+          onDraft({
+            number: todo.number,
+            title: todo.title,
+            notes: todo.notes,
+            was: { title: todo.title, notes: todo.notes },
+          })
+        }
         className="flex min-w-0 flex-1 flex-col gap-1 rounded-sm text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
       >
         <span
@@ -122,23 +138,26 @@ function StatusMenu({
   )
 }
 
-/** A to-do being edited: its words and notes, saved with Return or Save; Esc cancels. */
+/**
+ * A to-do being edited: its words and notes, saved with Return or Save, or with a status
+ * picked from its mark; Esc cancels. Saves only what the user changed since editing began,
+ * so a change Bomby made meanwhile to the rest stays.
+ */
 function TodoEditor({
   projectId,
   todo,
-  onClose,
+  draft,
+  onDraft,
   onError,
-  onStatus,
 }: {
   projectId: number
   todo: Todo
-  onClose: () => void
+  draft: Draft
+  onDraft: (draft: Draft | null) => void
   onError: (error: string | null) => void
-  onStatus: (status: TodoStatus) => void
 }) {
-  const [title, setTitle] = useState(todo.title)
-  const [notes, setNotes] = useState(todo.notes)
-  const [busy, setBusy] = useState(false)
+  const { title, notes, was } = draft
+  const [saving, setSaving] = useState(false)
   const titleField = useRef<HTMLInputElement>(null)
 
   // Editing starts in its words.
@@ -146,29 +165,39 @@ function TodoEditor({
     titleField.current?.focus()
   }, [])
 
+  function close() {
+    onDraft(null)
+  }
+
   async function run(work: () => Promise<unknown>) {
+    if (saving) return
+    setSaving(true)
     onError(null)
-    setBusy(true)
     try {
       await work()
-      onClose()
+      close()
     } catch (e) {
       onError(String(e))
     } finally {
-      setBusy(false)
+      setSaving(false)
     }
   }
 
-  function save() {
-    if (title === todo.title && notes === todo.notes) return onClose()
-    void run(() => updateTodo(projectId, todo.number, { title, notes }, "user"))
+  /** Saves what the user changed, with a status picked here, and closes. */
+  function save(status?: TodoStatus) {
+    const change: TodoChange = {}
+    if (title !== was.title) change.title = title
+    if (notes !== was.notes) change.notes = notes
+    if (status !== undefined && status !== todo.status) change.status = status
+    if (Object.keys(change).length === 0) return close()
+    void run(() => updateTodo(projectId, todo.number, change, "user"))
   }
 
   /** Esc cancels; Return saves, from the notes too (Shift-Return there starts a line). */
   function onKeyDown(event: KeyboardEvent) {
     if (event.key === "Escape") {
       event.preventDefault()
-      onClose()
+      close()
     } else if (
       event.key === "Enter" &&
       !event.shiftKey &&
@@ -188,13 +217,13 @@ function TodoEditor({
       className="flex flex-col gap-2.5 rounded-lg bg-background p-2.5 ring-1 ring-foreground"
     >
       <div className="flex items-start gap-2.5">
-        <StatusMenu status={todo.status} onChange={onStatus} />
+        <StatusMenu status={todo.status} onChange={save} />
         <Input
           aria-label="To-do"
           ref={titleField}
           value={title}
           onKeyDown={onKeyDown}
-          onChange={(e) => setTitle(e.target.value)}
+          onChange={(e) => onDraft({ ...draft, title: e.target.value })}
           className="h-auto flex-1 border-0 p-0 text-sm font-medium shadow-none focus-visible:ring-0 dark:bg-transparent"
         />
         <span className="w-7 shrink-0 text-right font-mono text-xs leading-5 text-muted-foreground tabular-nums">
@@ -207,7 +236,7 @@ function TodoEditor({
         value={notes}
         rows={2}
         onKeyDown={onKeyDown}
-        onChange={(e) => setNotes(e.target.value)}
+        onChange={(e) => onDraft({ ...draft, notes: e.target.value })}
         className="ml-7.5 min-h-0 w-auto resize-none border-0 p-0 text-sm text-muted-foreground shadow-none focus-visible:ring-0 dark:bg-transparent"
       />
       <div className="ml-7.5 flex items-center gap-2">
@@ -218,7 +247,7 @@ function TodoEditor({
           type="button"
           variant="ghost"
           size="sm"
-          disabled={busy}
+          disabled={saving}
           className="text-destructive hover:text-destructive"
           onClick={() => void run(() => removeTodo(projectId, todo.number))}
         >
@@ -228,7 +257,7 @@ function TodoEditor({
           type="submit"
           variant="highlighter"
           size="sm"
-          disabled={busy || !title.trim()}
+          disabled={saving || !title.trim()}
         >
           Save
         </Button>

@@ -50,12 +50,18 @@ describe("to-dos for Bomby", () => {
     const todos = Array.from({ length: 20 }, (_, i) =>
       todo(i + 1, { notes: long })
     )
-    const kept = fit(todos)
-    expect(kept.length).toBeLessThan(20)
-    expect(kept.at(-1)?.number).toBe(20)
+    const answer = fit(todos)
+    expect(answer.todos.length).toBeLessThan(20)
+    expect(answer.todos.length + answer.omitted).toBe(20)
+    expect(answer.todos[0]?.number).toBe(answer.omitted + 1)
+    expect(answer.todos.at(-1)?.number).toBe(20)
     expect(
-      new TextEncoder().encode(JSON.stringify(kept)).length
+      new TextEncoder().encode(JSON.stringify(answer)).length
     ).toBeLessThanOrEqual(MAX_ANSWER_BYTES)
+    expect(fit(todos.slice(0, 2))).toEqual({
+      todos: todos.slice(0, 2),
+      omitted: 0,
+    })
   })
 })
 

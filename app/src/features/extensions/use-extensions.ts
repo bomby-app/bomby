@@ -35,6 +35,6 @@ export function isOn(
   project: ProjectExtensions,
   settings: ExtensionSetting[] | null
 ): boolean {
-  if (project.own) return project.on.includes(id)
+  if (project.own) return project.on?.includes(id) ?? false
   return settings?.find((e) => e.id === id)?.on ?? false
 }

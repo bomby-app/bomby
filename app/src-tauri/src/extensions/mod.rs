@@ -62,8 +62,8 @@ pub struct ProjectExtensions {
     /// Picks its own rather than following Settings.
     pub own: bool,
     /// With `own`, the ones on, by id; kept while it follows Settings, for when it picks
-    /// again.
-    pub on: Vec<String>,
+    /// again. None until it first picks, so picking starts from Settings' only then.
+    pub on: Option<Vec<String>>,
 }
 
 /// Whether Bomby has an extension called `id`.
@@ -111,7 +111,7 @@ pub(crate) fn on_for(conn: &Connection, project: &ProjectExtensions) -> Result<V
         .into_iter()
         .filter(|e| {
             if project.own {
-                project.on.contains(&e.id)
+                project.on.as_ref().is_some_and(|on| on.contains(&e.id))
             } else {
                 e.on
             }
@@ -189,7 +189,7 @@ mod tests {
 
         let none_of_its_own = ProjectExtensions {
             own: true,
-            on: Vec::new(),
+            on: Some(Vec::new()),
         };
         assert!(on_for(&conn, &none_of_its_own).unwrap().is_empty());
 
@@ -197,7 +197,7 @@ mod tests {
         assert!(on_for(&conn, &follows).unwrap().is_empty());
         let its_own = ProjectExtensions {
             own: true,
-            on: vec![todos::ID.into(), "from-a-newer-app".into()],
+            on: Some(vec![todos::ID.into(), "from-a-newer-app".into()]),
         };
         assert_eq!(on_for(&conn, &its_own).unwrap(), [todos::ID]);
     }

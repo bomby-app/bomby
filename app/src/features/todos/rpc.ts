@@ -41,15 +41,28 @@ function text(value: unknown, what: string): string | undefined {
   return value
 }
 
+/** What `todos.list` answers (`Listing` in `agent/extensions/todos.py`). */
+export type Listing = { todos: TodoLine[]; omitted: number }
+
 /**
- * The newest that fit in one answer, oldest first: LiveKit's RPC carries at most 15 KiB, so
- * a long list or long notes leave out the oldest.
+ * The newest that fit in one answer, oldest first, and how many older ones were left out:
+ * LiveKit's RPC carries at most 15 KiB, so a long list or long notes leave out the oldest,
+ * and Bomby says so.
  */
-export function fit(todos: TodoLine[]): TodoLine[] {
-  const kept = [...todos]
-  const size = () => new TextEncoder().encode(JSON.stringify(kept)).length
-  while (kept.length > 0 && size() > MAX_ANSWER_BYTES) kept.shift()
-  return kept
+export function fit(todos: TodoLine[]): Listing {
+  const encoder = new TextEncoder()
+  const bytes = (value: unknown) => encoder.encode(JSON.stringify(value)).length
+  // The answer without its to-dos, counting the most digits `omitted` can take.
+  let size = bytes({ todos: [], omitted: todos.length })
+  let first = todos.length
+  while (first > 0) {
+    // Each to-do with the comma before it.
+    const next = bytes(todos[first - 1]) + 1
+    if (size + next > MAX_ANSWER_BYTES) break
+    size += next
+    first -= 1
+  }
+  return { todos: todos.slice(first), omitted: first }
 }
 
 export const TODOS_RPC: ExtensionRpc = {

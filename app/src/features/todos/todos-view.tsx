@@ -23,7 +23,8 @@ import { type Filter, FILTERS, found, matches } from "./filters"
 import { FILTER_LABEL, GROUPS, ordered, STATUS_LABEL } from "./labels"
 import { StatusMark } from "./status-mark"
 import { TodoRow } from "./todo-row"
-import { useTodos } from "./use-todos"
+import { forgetTodos, useTodos } from "./use-todos"
+import { forgetViewState, useTodosViewState } from "./view-state"
 
 /** The workspace panel's To-dos tab, but for its count and content (`main-panel.tsx`). */
 export const TODOS_TAB = {
@@ -32,9 +33,18 @@ export const TODOS_TAB = {
   icon: <ListTodo />,
 }
 
-/** How many of a project's to-dos are open (to do or doing), for its tab and button. */
-export function useOpenCount(projectId: number): number {
-  const { todos } = useTodos(projectId)
+/** Drops what this page keeps of a deleted project's to-dos and its panel. */
+export function forgetProjectTodos(projectId: number) {
+  forgetTodos(projectId)
+  forgetViewState(projectId)
+}
+
+/**
+ * How many of a project's to-dos are open (to do or doing), for its panel's header and
+ * toggle; 0 without reading them when the project's calls don't have to-dos (`enabled`).
+ */
+export function useOpenCount(projectId: number, enabled: boolean): number {
+  const { todos } = useTodos(enabled ? projectId : null)
   return todos?.filter((t) => matches(t, "open")).length ?? 0
 }
 
@@ -42,14 +52,13 @@ export function useOpenCount(projectId: number): number {
  * A project's to-dos, as the workspace panel's To-dos tab shows them (Paper "extensions",
  * 03 and 04): search and a status filter, a field to add one, then the list by status.
  * Open shows doing and to do, with what's done folded under them. Bomby's changes land
- * here as they happen (`use-todos.ts`).
+ * here as they happen (`use-todos.ts`). The search, filter and words being edited outlast
+ * the panel (`view-state.ts`).
  */
 export function TodosView({ projectId }: { projectId: number }) {
   const { todos, error: readError } = useTodos(projectId)
-  const [search, setSearch] = useState("")
-  const [filter, setFilter] = useState<Filter>("open")
-  const [showDone, setShowDone] = useState(false)
-  const [editing, setEditing] = useState<number | null>(null)
+  const [{ search, filter, showDone, draft, adding }, setView] =
+    useTodosViewState(projectId)
   const [error, setError] = useState<string | null>(null)
 
   if (!todos) {
@@ -75,8 +84,8 @@ export function TodosView({ projectId }: { projectId: number }) {
         key={todo.number}
         projectId={projectId}
         todo={todo}
-        editing={editing === todo.number}
-        onEdit={(on) => setEditing(on ? todo.number : null)}
+        draft={draft?.number === todo.number ? draft : null}
+        onDraft={(next) => setView({ draft: next })}
         onError={setError}
       />
     )
@@ -94,12 +103,12 @@ export function TodosView({ projectId }: { projectId: number }) {
               aria-label="Search to-dos"
               placeholder="Search to-dos"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => setView({ search: e.target.value })}
             />
           </InputGroup>
           <Select
             value={filter}
-            onValueChange={(next) => setFilter(next as Filter)}
+            onValueChange={(next) => setView({ filter: next as Filter })}
           >
             <SelectTrigger size="sm" aria-label="Show" className="w-auto">
               <SelectValue />
@@ -116,7 +125,12 @@ export function TodosView({ projectId }: { projectId: number }) {
             </SelectContent>
           </Select>
         </div>
-        <AddTodo projectId={projectId} onError={setError} />
+        <AddTodo
+          projectId={projectId}
+          title={adding}
+          onTitle={(next) => setView({ adding: next })}
+          onError={setError}
+        />
         {error && <FieldError>{error}</FieldError>}
       </div>
 
@@ -141,7 +155,7 @@ export function TodosView({ projectId }: { projectId: number }) {
                 <button
                   type="button"
                   aria-expanded={showDone}
-                  onClick={() => setShowDone(!showDone)}
+                  onClick={() => setView({ showDone: !showDone })}
                   className="flex h-9 items-center gap-2.5 rounded-md px-2 text-left text-sm outline-none hover:bg-accent/60 focus-visible:ring-3 focus-visible:ring-ring/50"
                 >
                   <span className="flex size-5 items-center justify-center">
@@ -199,12 +213,16 @@ function GroupLabel({ status, count }: { status: TodoStatus; count: number }) {
 /** The field that adds a to-do: Return adds it, as the user's. */
 function AddTodo({
   projectId,
+  title,
+  onTitle,
   onError,
 }: {
   projectId: number
+  /** Its words, kept with the panel's state. */
+  title: string
+  onTitle: (title: string) => void
   onError: (error: string | null) => void
 }) {
-  const [title, setTitle] = useState("")
   const [adding, setAdding] = useState(false)
 
   async function add(event: FormEvent) {
@@ -214,7 +232,7 @@ function AddTodo({
     setAdding(true)
     try {
       await addTodos(projectId, [{ title }], "user")
-      setTitle("")
+      onTitle("")
     } catch (e) {
       onError(String(e))
     } finally {
@@ -233,7 +251,7 @@ function AddTodo({
           placeholder="Add a to-do"
           value={title}
           disabled={adding}
-          onChange={(e) => setTitle(e.target.value)}
+          onChange={(e) => onTitle(e.target.value)}
         />
       </InputGroup>
     </form>

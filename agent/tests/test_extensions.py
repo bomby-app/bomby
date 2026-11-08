@@ -9,7 +9,7 @@ from livekit.agents.llm import FunctionTool, ToolError, Toolset
 from pydantic import JsonValue
 
 from extensions import EXTENSIONS, CallExtensions, ExtensionContext, ExtensionError
-from extensions.bridge import REFUSED, UNREACHABLE, RoomBridge
+from extensions.bridge import REFUSED, UNCONFIRMED, UNREACHABLE, RoomBridge
 from extensions.catalogue import render
 from extensions.todos import TODOS_EXTENSION
 from job import JobMetadata
@@ -67,7 +67,7 @@ def test_the_todos_tools_are_named_apart_from_tasks() -> None:
 
 
 def test_listing_names_each_todo_by_number_with_its_status_and_notes() -> None:
-    bridge = FakeBridge({"todos.list": [REMINDERS, COPY]})
+    bridge = FakeBridge({"todos.list": {"todos": [REMINDERS, COPY]}})
     result = asyncio.run(todo_tools(bridge)["list_todos"]())
 
     assert bridge.calls == [("todos.list", {"status": "open"})]
@@ -78,8 +78,16 @@ def test_listing_names_each_todo_by_number_with_its_status_and_notes() -> None:
     )
 
 
+def test_a_listing_says_how_many_were_left_out() -> None:
+    bridge = FakeBridge({"todos.list": {"todos": [COPY], "omitted": 40}})
+    result = asyncio.run(todo_tools(bridge)["list_todos"]())
+    assert result.startswith(
+        "41 open to-dos, too many to send at once: the newest 1, the oldest 40 left out:"
+    )
+
+
 def test_an_empty_listing_says_so() -> None:
-    tools = todo_tools(FakeBridge({"todos.list": []}))
+    tools = todo_tools(FakeBridge({"todos.list": {"todos": []}}))
     assert asyncio.run(tools["list_todos"]("done")) == "There are no done to-dos."
     assert asyncio.run(tools["list_todos"]("all")) == "The list is empty."
 
@@ -126,7 +134,7 @@ def test_an_answer_of_another_shape_fails_the_tool() -> None:
 
 
 def test_plain_results_have_no_markdown() -> None:
-    bridge = FakeBridge({"todos.list": [REMINDERS]})
+    bridge = FakeBridge({"todos.list": {"todos": [REMINDERS]}})
     context = ExtensionContext(bridge=bridge, style=PLAIN)
     result = asyncio.run(todo_tools(bridge, context)["list_todos"]())
     assert result == "1 open to-do:\n\n5: Fix the watering reminders (doing)"
@@ -208,6 +216,10 @@ def test_a_refusal_carries_the_apps_words_and_other_failures_one_line() -> None:
     with pytest.raises(ExtensionError, match=UNREACHABLE):
         _ = asyncio.run(gone.call("todos.add", {}))
 
+    timed_out, _ = bridge_answering(rtc.RpcError(1502, "Response timeout"))
+    with pytest.raises(ExtensionError, match=UNCONFIRMED):
+        _ = asyncio.run(timed_out.call("todos.add", {}))
+
     garbled, _ = bridge_answering("not json")
-    with pytest.raises(ExtensionError, match=UNREACHABLE):
+    with pytest.raises(ExtensionError, match=UNCONFIRMED):
         _ = asyncio.run(garbled.call("todos.add", {}))
