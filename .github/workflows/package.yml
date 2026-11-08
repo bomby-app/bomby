@@ -1,0 +1,74 @@
+# Builds the app as a release would, unsigned, and checks the frozen agent inside it runs:
+# catches a PyInstaller or bundling break before release day. Only for changes that can
+# cause one, so it isn't a required check. Signing and notarizing: release.yml.
+name: Package
+
+on:
+  pull_request:
+    paths:
+      - "agent/**"
+      - "app/src-tauri/**"
+      - "app/package.json"
+      - "app/bun.lock"
+      - "justfile"
+      - "*.just"
+      - "mise.toml"
+      - ".github/workflows/package.yml"
+  push:
+    branches: [main]
+    paths:
+      - "agent/**"
+      - "app/src-tauri/**"
+      - "app/package.json"
+      - "app/bun.lock"
+      - "justfile"
+      - "*.just"
+      - "mise.toml"
+      - ".github/workflows/package.yml"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: package-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: package
+    runs-on: xcode-27
+    permissions:
+      contents: read
+    timeout-minutes: 60
+    env:
+      APP: app/src-tauri/target/release/bundle/macos/Bomby.app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+        with:
+          install_args: rust go bun uv just
+
+      # As in ci.yml: the LiveKit server changes only with its version in livekit.just.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: app/src-tauri/binaries
+          key: livekit-server-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('livekit.just') }}
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: app/src-tauri -> target
+
+      - run: just app install
+
+      # No APPLE_* variables, so nothing is signed; only the .app, the DMG is release.yml's.
+      - name: Build the app, with the frozen agent
+        run: just app build --bundles app
+
+      - name: Check the frozen agent runs
+        run: just agent check-frozen "$PWD/$APP/Contents/Resources/agent/bomby-agent"
+
+      - name: Check the bundled LiveKit server runs
+        run: '"$APP/Contents/MacOS/livekit-server" --version'

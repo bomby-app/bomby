@@ -133,21 +133,21 @@ extensions-current:
 [group('check')]
 [working-directory: 'agent']
 lint:
-    uvx ruff check .
-    uvx ruff format --check .
+    uv run ruff check .
+    uv run ruff format --check .
 
 # Format the code and apply safe lint fixes
 [group('check')]
 [working-directory: 'agent']
 fmt:
-    uvx ruff format .
-    uvx ruff check --fix .
+    uv run ruff format .
+    uv run ruff check --fix .
 
 # Type-check (must report 0 errors and 0 warnings)
 [group('check')]
 [working-directory: 'agent']
 typecheck:
-    uvx basedpyright .
+    uv run basedpyright .
 
 # Everything a change must pass: lint, types, tests, and the app's catalogues current
 [group('check')]

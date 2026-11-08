@@ -11,3 +11,7 @@ bun = "1.4.4"
 uv = "0.13.4"
 # The command runner for every recipe (justfile)
 just = "1.59.0"
+# Checks the Rust core's dependencies: licenses we can ship and known advisories (`just app deny`)
+cargo-deny = "0.20.2"
+# Checks the docs' links and anchors, offline (`just lint-docs`)
+lychee = "0.24.2"

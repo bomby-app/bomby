@@ -97,6 +97,18 @@ cargo-test types filter="": livekit-server
     rm -rf {{ types }}
     TS_RS_EXPORT_DIR="$PWD/{{ types }}" TS_RS_LARGE_INT=number cargo test --manifest-path src-tauri/Cargo.toml {{ filter }}
 
-# Everything a change must pass: format, lint and types for both halves, tests
+# Check the core's dependencies against src-tauri/deny.toml: licenses we can ship, crates.io only
 [group('check')]
-check: lint test
+[working-directory: 'app']
+deny:
+    cargo-deny --manifest-path src-tauri/Cargo.toml check licenses bans sources
+
+# Check the core's dependencies against RustSec's advisories (needs the network; CI runs it too)
+[group('check')]
+[working-directory: 'app']
+advisories:
+    cargo-deny --manifest-path src-tauri/Cargo.toml check advisories
+
+# Everything a change must pass: format, lint and types for both halves, tests, dependency licenses
+[group('check')]
+check: lint test deny

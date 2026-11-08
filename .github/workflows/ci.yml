@@ -1,0 +1,126 @@
+# Everything a change must pass (`just check`), on every pull request and every push to main,
+# plus the Rust core's RustSec advisories, also weekly so a new advisory shows up without a
+# change. Pull requests from forks run with a read-only token and no secrets. What each job
+# checks: CONTRIBUTING.md.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 6 * * 1" # Mondays, 06:17 UTC
+  workflow_dispatch:
+
+permissions: {}
+
+# A new push to a pull request cancels its older run; main runs every push.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  agent:
+    name: agent
+    # The voice agent is plain Python, so Linux runs it; the app needs macOS.
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+        with:
+          install_args: uv just
+
+      # Lint, types, tests, and the app's catalogues of providers and extensions current
+      - run: just agent check
+
+  app:
+    name: app
+    # macOS 27 with Xcode 27, as the Release workflow builds on.
+    runs-on: xcode-27
+    permissions:
+      contents: read
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+        with:
+          install_args: rust go bun just cargo-deny
+
+      # The Rust core won't compile without the bundled LiveKit server, built from source by
+      # `just livekit build`. It changes only with its pinned version in livekit.just. The
+      # Release workflow restores no caches, so nothing cached here reaches a signed build.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: app/src-tauri/binaries
+          key: livekit-server-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('livekit.just') }}
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: app/src-tauri -> target
+
+      - run: just app install
+
+      # Format, lint and types for both halves, tests, generated types current, dependency licenses
+      - run: just app check
+
+  repo:
+    name: repo
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+        with:
+          install_args: uv just lychee
+
+      # actionlint and zizmor
+      - run: just lint-workflows
+
+      # Every link and anchor between the Markdown files
+      - run: just lint-docs
+
+  advisories:
+    name: advisories
+    # Not a required check: a new advisory can turn up on any day, unrelated to the change.
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+        with:
+          install_args: rust just cargo-deny
+
+      - run: just app advisories
+
+  dependency-review:
+    name: dependency-review
+    # Flags a pull request that adds a dependency with a known vulnerability, in any of the
+    # lockfiles. GitHub offers it free on public repositories only.
+    if: github.event_name == 'pull_request' && !github.event.repository.private
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 10
+    steps:
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
