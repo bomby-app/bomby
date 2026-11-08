@@ -5,13 +5,16 @@ import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
 
 import { setExtension } from "./api"
+import { ExtensionConnection } from "./extension-connection"
 import { ExtensionIcon } from "./extension-icon"
 import { setExtensions, useExtensions } from "./use-extensions"
 
 /**
  * The Extensions section of the settings window (Paper "extensions", 01): each extension
  * Bomby has, on or off for every project that follows Settings
- * (docs/decisions/extensions.md). Applies from the next call.
+ * (docs/decisions/extensions.md). Applies from the next call. One that signs in (Zapier,
+ * Composio) opens its own settings under its row while it's on or connected, the way
+ * Settings, Voice opens a provider's key under it.
  */
 export function ExtensionsSettings() {
   const confirmed = useExtensions()
@@ -71,6 +74,13 @@ export function ExtensionsSettings() {
                 onCheckedChange={(on) => toggle(extension.id, on)}
               />
             </div>
+            {extension.connection &&
+              (extension.on || extension.connection.connected) && (
+                // Lined up with the title: the row's padding, the tile and the gap.
+                <div className="flex flex-col gap-3 pt-1 pr-4 pb-4 pl-16">
+                  <ExtensionConnection extension={extension} />
+                </div>
+              )}
           </Fragment>
         ))}
       </div>

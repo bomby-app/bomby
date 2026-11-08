@@ -3,6 +3,7 @@ import { useEffect, useState } from "react"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { CallProvider } from "@/features/call/call-provider"
 import { ExtensionRpcBridge } from "@/features/extensions/extension-rpc-bridge"
+import { HOSTED_MCP_RPC } from "@/features/extensions/hosted-rpc"
 import { TaskNotifier } from "@/features/notifications/task-notifier"
 import { firstRun } from "@/features/onboarding/api"
 import { Splash } from "@/features/onboarding/splash"
@@ -18,7 +19,7 @@ import { MainPanel } from "./main-panel"
 import { NEW_PROJECT_SHORTCUT } from "./new-project-row"
 
 /** What each extension answers Bomby over RPC while a call is on. */
-const EXTENSION_RPC = [TODOS_RPC]
+const EXTENSION_RPC = [TODOS_RPC, ...HOSTED_MCP_RPC]
 
 /**
  * The main window: the first-run splash until it's finished, then the project tree on
