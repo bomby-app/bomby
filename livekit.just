@@ -3,7 +3,9 @@
 version := "1.13.10"
 sha256 := "d1b93ced314b14654faceeb99627a79114b8ebe002bb5d620be4a185db83a4b2"
 binaries := justfile_directory() / "app/src-tauri/binaries"
-work := justfile_directory() / "app/src-tauri/target/livekit-server"
+# The source and Go's caches, kept out of Cargo's target/: CI's Rust cache trims that folder,
+# which would leave Go a partial module cache.
+work := justfile_directory() / ".cache/livekit-server"
 
 # List the LiveKit recipes
 default:

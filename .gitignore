@@ -19,6 +19,8 @@ agent/adapters/bin/
 # Tool caches
 .pytest_cache/
 .ruff_cache/
+# The LiveKit server's source and Go caches (livekit.just)
+.cache/
 
 # Web research cache
 .firecrawl/
