@@ -1,0 +1,79 @@
+name: Bug report
+description: Something in Bomby doesn't work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. A security problem? Don't post it here: see [SECURITY.md](https://github.com/bomby-app/bomby/blob/main/SECURITY.md).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: And what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start a call on a project with one folder
+        2. Ask Claude to ...
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Bomby version
+      description: Settings, About. Or "from source" with the commit.
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: macOS 26.4
+    validations:
+      required: true
+  - type: dropdown
+    id: voice
+    attributes:
+      label: Voice provider
+      options:
+        - Gemini Live
+        - OpenAI GPT-Live
+        - Rime Prism
+        - Not about a call
+    validations:
+      required: true
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Agent
+      multiple: true
+      options:
+        - Claude Code
+        - Codex
+        - OpenCode
+        - goose
+        - omp
+        - Not about an agent
+    validations:
+      required: true
+  - type: dropdown
+    id: server
+    attributes:
+      label: Call server
+      options:
+        - LiveKit on this Mac
+        - LiveKit Cloud or my own server
+        - Not about a call
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        The lines around the problem from `~/Library/Logs/app.bomby.desktop/` (`app.log`, `agent.log`, `livekit.log`). Check them for anything private before you paste, like folder names or what you said on the call.
+      render: text
