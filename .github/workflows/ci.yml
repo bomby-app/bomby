@@ -85,7 +85,7 @@ jobs:
 
       - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
         with:
-          install_args: uv just lychee
+          install_args: uv just lychee shellcheck
 
       # actionlint and zizmor
       - run: just lint-workflows
