@@ -8,7 +8,7 @@ The source of truth is the Paper file **bomby**, pages `branding` and `app asset
 - Tagline: **"Say the word."** (owner, 2026-11-08; it replaces "Stop typing. Start talking."). Supporting line: "Say the task out loud. Bomby hands it to your agent and tells you when it's done."
 - Never co-brand with Claude, LiveKit or Gemini. Name them only to describe requirements or implementation. Their logos appear only in Settings and on the first-run card, in `currentColor`, except Claude's own colours on its first-run tile (owner's board, 2026-11-04).
 - The mark and the mascot have no names of their own: both are Bomby (owner, 2026-11-08).
-- `.github/assets/cover.jpg` (2:1, 2560 x 1280) heads the README and serves as the social preview, uploaded in the repository's settings. A new cover is in design (owner, 2026-11-08); it replaces the file at the same path.
+- `.github/assets/cover.jpg` (2:1, 2560 x 1280) heads the README and serves as the social preview, uploaded in the repository's settings. It's Paper page `web assets`, frame `github-readme-cover-c-rising-window`, exported as JPG at 2x (owner, 2026-11-08).
 
 ## Mark
 

@@ -1,5 +1,4 @@
 <p align="center">
-  <!-- The cover is being redesigned: the new one replaces .github/assets/cover.jpg (docs/brand.md). -->
   <img src=".github/assets/cover.jpg" alt="Bomby: say the word" width="100%">
 </p>
 
