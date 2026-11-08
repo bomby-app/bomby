@@ -32,6 +32,10 @@ const WANTED_SCOPES: [&str; 4] = ["openid", "profile", "email", "offline_access"
 /// The most of a callback request Bomby reads.
 const MAX_CALLBACK: usize = 16 * 1024;
 const CALLBACK_PATH: &str = "/callback";
+/// Bomby's logo for the vendors' lists of signed-in clients: Paper page `app assets`, frame
+/// `client-logo · 512 · OAuth logo_uri` (docs/brand.md). It loads once the repo is public.
+const LOGO_URI: &str =
+    "https://raw.githubusercontent.com/bomby-app/bomby/main/.github/assets/logo.png";
 
 /// What went wrong, as a message for the user (the vendor's own when it gave one).
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
@@ -295,6 +299,7 @@ async fn register(http: &reqwest::Client, at: &Discovered, redirect_uri: &str) -
     let mut body = serde_json::json!({
         "client_name": "Bomby",
         "client_uri": "https://bomby.app",
+        "logo_uri": LOGO_URI,
         "redirect_uris": [redirect_uri],
         "grant_types": ["authorization_code", "refresh_token"],
         "response_types": ["code"],
@@ -923,6 +928,8 @@ mod tests {
         let registration: serde_json::Value =
             serde_json::from_str(&body_of(&seen, "/register")).unwrap();
         assert_eq!(registration["token_endpoint_auth_method"], "none");
+        assert_eq!(registration["client_name"], "Bomby");
+        assert_eq!(registration["logo_uri"], LOGO_URI);
         assert_eq!(registration["scope"], "openid email offline_access");
         let token = body_of(&seen, "/token");
         assert!(
