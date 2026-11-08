@@ -1,0 +1,15 @@
+name: Conduct report
+description: Ask the maintainer to contact you privately about a code of conduct problem. Put no details here.
+title: Conduct report
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This issue is public, so don't describe what happened. Open it as it is, and the maintainer will get in touch with you privately to hear the rest ([code of conduct](https://github.com/bomby-app/bomby/blob/main/CODE_OF_CONDUCT.md)).
+  - type: checkboxes
+    id: public
+    attributes:
+      label: Before you open it
+      options:
+        - label: I understand this issue is public and I've left the details out.
+          required: true

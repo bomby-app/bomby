@@ -4,7 +4,7 @@ import { useEffect, useId, useState } from "react"
 import { cn } from "@/lib/utils"
 
 /**
- * Dot Dot, the mascot (docs/brand.md, Paper boards "04 Mascot states" and "05 Motion").
+ * Bomby, the mascot (docs/brand.md, Paper boards "04 Mascot states" and "05 Motion").
  * The bubble never changes shape or colour; only the eyes do. The bubble scales with sound
  * while listening or talking, and nothing else moves it.
  *
@@ -152,7 +152,7 @@ export function Mascot({
       aria-label={`Bomby, ${state}`}
       className={cn(
         "shrink-0 overflow-visible",
-        state === "failed" && "motion-safe:animate-dotdot-shake",
+        state === "failed" && "motion-safe:animate-mascot-shake",
         state === "done" && !still && "motion-safe:animate-mascot-hop",
         className
       )}
@@ -199,7 +199,7 @@ export function Mascot({
       <g
         className={cn(
           "transition-transform duration-[450ms] ease-in-out",
-          state === "thinking" && "motion-safe:animate-dotdot-wander"
+          state === "thinking" && "motion-safe:animate-mascot-wander"
         )}
         style={{
           transform:

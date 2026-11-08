@@ -3,11 +3,18 @@
 "github:livekit/livekit-cli" = "2.18.8"
 # Go builds the bundled LiveKit server (`just livekit build`)
 go = "1.27.3"
-# Rust toolchain for the Tauri app (app/src-tauri), installed through rustup by mise
-rust = "1.99.1"
+# Rust toolchain for the Tauri app (app/src-tauri), installed through rustup by mise, with clippy
+# and rustfmt for `just app lint` (rustup's minimal profile, which CI gets, leaves them out)
+rust = { version = "1.99.1", components = ["clippy", "rustfmt"] }
 # JS package manager and runtime for the app's frontend (app/)
 bun = "1.4.4"
 # Python for the voice agent (agent/): uv runs it, its dependencies and PyInstaller
 uv = "0.13.4"
 # The command runner for every recipe (justfile)
 just = "1.59.0"
+# Checks the Rust core's dependencies: licenses we can ship and known advisories (`just app deny`)
+cargo-deny = "0.20.2"
+# Checks the scripts in the workflows, through actionlint (`just lint-workflows`)
+shellcheck = "0.11.0"
+# Checks the docs' links and anchors, offline (`just lint-docs`)
+lychee = "0.24.2"

@@ -3,7 +3,7 @@ import type { SVGProps } from "react"
 import { cn } from "@/lib/utils"
 
 /**
- * The Dot Dot mark on its tile (Paper artboards `app-logo-light` and `app-logo-dark`).
+ * The Bomby mark on its tile (Paper artboards `app-logo-light` and `app-logo-dark`).
  * Light: ink tile, highlighter bubble. Dark: highlighter tile, ink bubble, so it stays the
  * brightest thing in the sidebar. The colours are the sidebar-primary tokens, which flip
  * with the theme. Shape rules: docs/brand.md. Minimum size 16px.
@@ -28,7 +28,7 @@ export function AppLogo({ className }: { className?: string }) {
   )
 }
 
-/** Dot Dot as a line icon in `currentColor`, beside lucide's in lists like Settings. */
+/** The Bomby mark as a line icon in `currentColor`, beside lucide's in lists like Settings. */
 export function MascotIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 120 120" aria-hidden {...props}>

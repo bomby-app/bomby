@@ -1,6 +1,6 @@
 # Releasing
 
-How a signed Bomby build is made. The workflow is `.github/workflows/release.yml`; the why is in [the decision](decisions/ship-the-agent-and-adapter-as-sidecars.md). Releases are macOS on Apple Silicon only.
+How a signed Bomby build is made. The workflow is `.github/workflows/release.yml`; the why is in [the decision](decisions/ship-the-agent-and-adapter-as-sidecars.md). Releases are macOS on Apple Silicon only. Changes that could break packaging are built unsigned first, on their pull request (`.github/workflows/package.yml`).
 
 ## How it works
 

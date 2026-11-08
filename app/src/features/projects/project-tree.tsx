@@ -88,7 +88,7 @@ function ProjectNode({
           isActive={selection?.kind === "project" && holdsSelection}
           onClick={() => onSelect({ kind: "project", projectId: project.id })}
         >
-          {/* On a call, Dot Dot takes the folder's place. */}
+          {/* On a call, the mascot takes the folder's place. */}
           {onCall ? <Mascot state="listening" size={16} /> : <Folder />}
           <span>{project.name}</span>
         </SidebarMenuButton>

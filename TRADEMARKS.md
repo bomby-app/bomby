@@ -2,7 +2,7 @@
 
 The code in this repository is licensed under the [MIT License](LICENSE). The license covers the code only and grants no rights to the Bomby brand.
 
-Bomby™, the `bomby` wordmark, the Dot Dot mascot and logo, and the app icons are trademarks of Ahmed Aborady.
+Bomby™, the `bomby` wordmark, the Bomby logo and mascot, and the app icons are trademarks of Ahmed Aborady.
 
 ## Without asking
 
@@ -13,7 +13,7 @@ Bomby™, the `bomby` wordmark, the Dot Dot mascot and logo, and the app icons a
 ## Only with permission
 
 - Calling a fork, product or service Bomby, or a name that could be mistaken for it.
-- Using the wordmark, Dot Dot, the logo or the app icons in your own build, product or marketing.
+- Using the wordmark, the logo, the mascot or the app icons in your own build, product or marketing.
 - Suggesting that your build is official, or endorsed by or affiliated with Bomby.
 
 ## Shipping a fork

@@ -24,10 +24,10 @@
   /* Height of the title bar rows (sidebar top strip, main header): h-titlebar.
        tauri.conf.json trafficLightPosition centers the macOS buttons in this row. */
   --spacing-titlebar: 2.5rem;
-  /* Dot Dot's loops (components/mascot.tsx, Paper board "05 Motion"): think drift and the
+  /* The mascot's loops (components/mascot.tsx, Paper board "05 Motion"): think drift and the
      one fail shake. Sine for loops, ease-out for one-offs, nothing overshoots. */
-  --animate-dotdot-wander: dotdot-wander 2.4s ease-in-out infinite;
-  --animate-dotdot-shake: dotdot-shake 300ms ease-out 1;
+  --animate-mascot-wander: mascot-wander 2.4s ease-in-out infinite;
+  --animate-mascot-shake: mascot-shake 300ms ease-out 1;
   /* Done's hop (Paper "05 Motion": up 6px in 160ms, then down), once every 2.8s. */
   --animate-mascot-hop: mascot-hop 2.8s ease-in-out infinite;
   @keyframes mascot-hop {
@@ -40,7 +40,7 @@
       transform: translateY(-6px);
     }
   }
-  @keyframes dotdot-wander {
+  @keyframes mascot-wander {
     0%,
     100% {
       transform: translate(5px, -6px);
@@ -55,7 +55,7 @@
       transform: translate(3px, -5px);
     }
   }
-  @keyframes dotdot-shake {
+  @keyframes mascot-shake {
     0%,
     100% {
       transform: translateX(0);

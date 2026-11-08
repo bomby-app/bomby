@@ -98,7 +98,7 @@ Checked 2026-11-04 against `@vitejs/plugin-react` 6.2.1 (installed README), `oxc
 
 - Install with `just app add @agents-ui/<name>`. Generated code lands in `components/agents-ui/` and `hooks/agents-ui/`.
 - Registry: `https://livekit.com/ui/r/{name}.json` (`components.json`). Components use our shadcn primitives through `registryDependencies`, not their own primitive library; they require `@livekit/components-react` and `livekit-client`. [Docs](https://docs.livekit.io/frontends/agents-ui/), [source](https://github.com/livekit/components-js/tree/main/packages/shadcn).
-- `features/call/call-view.tsx` follows the starter's `agent-session-view-01` composition: central agent visual, overlay transcript, status, `AgentControlBar variant="livekit"` and `StartAudioButton`. Dot Dot sits over a five-bar `AgentAudioVisualizerBar` driven by `agent.microphoneTrack` and coloured with `text-primary`. The Aura visualizer was removed at the owner's request (2026-11-04).
+- `features/call/call-view.tsx` follows the starter's `agent-session-view-01` composition: central agent visual, overlay transcript, status, `AgentControlBar variant="livekit"` and `StartAudioButton`. The mascot sits over a five-bar `AgentAudioVisualizerBar` driven by `agent.microphoneTrack` and coloured with `text-primary`. The Aura visualizer was removed at the owner's request (2026-11-04).
 - `saveUserChoices={false}` makes devices follow the system. livekit-client 2.23.0 captures the default device with echo cancellation, noise suppression, auto gain and voice isolation enabled.
 - `useTrackVolume(track)` on the agent microphone and local participant microphone drives mascot levels.
 

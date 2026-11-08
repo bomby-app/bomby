@@ -36,7 +36,7 @@ const FADE_IN: MotionProps = {
  * The live call screen, laid out like LiveKit's agent-session-view-01 block (agent starter
  * app): the agent's visual in the middle, a transcript that opens over it, the status line
  * and LiveKit's control bar (mic with its device menu, transcript, leave) at the bottom.
- * The visual is Dot Dot with Agents UI's bar visualizer under it: the eyes say what the
+ * The visual is the mascot with Agents UI's bar visualizer under it: the eyes say what the
  * agent is doing, the bars move with its voice.
  */
 export function CallView({ call }: { call: ActiveCall }) {
@@ -125,7 +125,7 @@ export function CallView({ call }: { call: ActiveCall }) {
 }
 
 /**
- * The agent's visual: Dot Dot, eyes for the state and bubble breathing with whoever is
+ * The agent's visual: the mascot, eyes for the state and bubble breathing with whoever is
  * talking, over LiveKit's bar visualizer in the brand's primary colour (highlighter in
  * dark mode, ink in light: never highlighter on white). Moves to the top, smaller, while
  * the transcript is open.

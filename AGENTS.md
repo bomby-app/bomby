@@ -4,7 +4,7 @@
 
 Bomby is a macOS desktop app you talk to. You say what you want done, and Bomby's voice agent hands it to a coding agent already installed on the computer (Claude Code, Codex, OpenCode, omp or goose), keeps the conversation going while it works, and tells you the result when it's done. You can run several tasks at once, add to one while it runs, and resume an earlier call. Beside a project, a resizable panel shows its folder's git changes as the agent makes them, its files, and terminals of the user's own. A project can carry instructions, so Bomby and the agent know what it is from the first word, and Bomby can call you by name.
 
-Why: talking is the fastest way to hand off work ("Stop typing. Start talking."). Bomby works with the agent the user already has, on their own setup, and with their own key for the voice model they pick (Gemini Live, OpenAI's GPT-Live or Rime's Prism), running LiveKit on their Mac (or their own LiveKit Cloud), and their own Zep project if they want Bomby to remember them across calls, so we host nothing and hold no one's keys or logins.
+Why: talking is the fastest way to hand off work ("Say the word."). Bomby works with the agent the user already has, on their own setup, and with their own key for the voice model they pick (Gemini Live, OpenAI's GPT-Live or Rime's Prism), running LiveKit on their Mac (or their own LiveKit Cloud), and their own Zep project if they want Bomby to remember them across calls, so we host nothing and hold no one's keys or logins.
 
 It is in beta: releases are signed, notarized DMGs for Apple Silicon Macs, and developers run it from source. The owner designs and tests it; agents write the code.
 
@@ -22,11 +22,12 @@ It is in beta: releases are signed, notarized DMGs for Apple Silicon Macs, and d
 - [docs/roadmap.md](docs/roadmap.md): what's built, what's next, what's deliberately not done.
 - [docs/decisions/](docs/decisions/): why things are the way they are.
 - [docs/AGENTS.md](docs/AGENTS.md): every other doc, and how we document.
+- [CONTRIBUTING.md](CONTRIBUTING.md): how outside contributions work, and what CI runs.
 
 ## Rules
 
 - Run commands through `just` from the repo root; `just` lists them.
-- `just check` must pass (lint, types with 0 errors and 0 warnings, tests) before a change is done. Fix any failure you see, related or not.
+- `just check` must pass (lint, types with 0 errors and 0 warnings, tests, dependency licenses, docs links) before a change is done; CI runs the same recipes. Fix any failure you see, related or not.
 - Don't run the app (`just app dev`), `just agent console` or any dev server unless the owner explicitly approves it. Builds and checks are fine; tell the owner what to run.
 - Never trust memory for LiveKit, Gemini, OpenAI, Rime, ACP or Tauri APIs. Check the installed source and current docs, and record what you find in the matching `docs/*-notes.md` with source and version.
 - Pin new tools in `mise.toml`. No system-level installs.
