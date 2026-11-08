@@ -16,6 +16,8 @@ from pydantic import JsonValue
 from sections import MARKDOWN, Style
 from voice_providers import Tools
 
+from .tokens import Tokens
+
 
 class ExtensionError(Exception):
     """Something the voice model should hear as is: the app refused a change ("There's no
@@ -41,6 +43,9 @@ class ExtensionContext:
     """How everything that reaches the voice model is written (`sections.py`)."""
     data: Mapping[str, JsonValue] = field(default_factory=dict[str, JsonValue])
     """What the app sent for this extension when the call started."""
+    tokens: Tokens | None = None
+    """The core's access tokens for the hosted MCP extensions (`tokens.py`); None outside
+    the app."""
 
 
 class Extension(ABC):

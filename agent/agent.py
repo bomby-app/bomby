@@ -13,6 +13,7 @@ from call import Call
 from call_options import CallOptions
 from extensions import CallExtensions
 from extensions.bridge import APP_IDENTITY, REFUSED, RoomBridge
+from extensions.tokens import SocketTokens
 from job import read_metadata
 from memory import ATTRIBUTE as MEMORY_ATTRIBUTE
 from memory import UNAVAILABLE, Memory, MemoryUnavailable
@@ -150,13 +151,15 @@ async def entrypoint(ctx: JobContext) -> None:
 
     _ = ctx.room.on("track_subscribed", on_track_subscribed)  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
 
-    # The call's extensions reach the app's page in the room. Their tools' results go to
+    # The call's extensions reach the app's page in the room, and the hosted MCP ones get
+    # their tokens from the core (`extensions/tokens.py`). Their tools' results go to
     # whichever model calls them: the backend, for a provider that delegates.
     provider = options.provider
     extensions = CallExtensions.for_call(
         job.extensions if job else {},
         RoomBridge(ctx.room),
         provider.backend_style if provider.delegates else provider.prompt_style,
+        SocketTokens.from_env(),
     )
     logger.info("extensions %s", ", ".join(extensions.ids) or "none")
 

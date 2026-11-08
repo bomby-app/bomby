@@ -52,6 +52,9 @@ APP_KEYS = frozenset(
         "OPENAI_API_KEY",
         "RIME_API_KEY",
         "ZEP_API_KEY",
+        # The core's token socket for the hosted MCP extensions (`extensions/tokens.py`).
+        "BOMBY_TOKENS",
+        "BOMBY_TOKENS_SECRET",
     }
 )
 DEFAULT_SESSION = "main"

@@ -10,7 +10,7 @@ requires-python = ">=3.13"
 dependencies = [
     "agent-client-protocol>=0.12.1",
     "google-genai>=2.34.0",
-    "livekit-agents>=1.8.11",
+    "livekit-agents[mcp]>=1.8.11",
     "livekit-plugins-google>=1.8.11",
     "livekit-plugins-openai>=1.8.11",
     "livekit-plugins-rime[realtime]>=1.8.11",
