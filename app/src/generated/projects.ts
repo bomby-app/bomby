@@ -6,7 +6,7 @@ export type Project = { id: number, name: string, folders: Array<string>,
 /**
  * What the user wrote about the project; empty if nothing.
  */
-instructions: string, agents: ProjectAgents, createdAt: number, 
+instructions: string, agents: ProjectAgents, extensions: ProjectExtensions, createdAt: number, 
 /**
  * Newest first.
  */
@@ -26,5 +26,20 @@ on: boolean,
  * later. Kept while off, for when it's on again.
  */
 only: Array<string>, };
+
+/**
+ * Which extensions a project's calls have (Project settings, Extensions). Saved as it
+ * changes (`projects::set_project_extensions`).
+ */
+export type ProjectExtensions = { 
+/**
+ * Picks its own rather than following Settings.
+ */
+own: boolean, 
+/**
+ * With `own`, the ones on, by id; kept while it follows Settings, for when it picks
+ * again. None until it first picks, so picking starts from Settings' only then.
+ */
+on: Array<string> | null, };
 
 export type ProjectInput = { name: string, folders: Array<string>, instructions: string, };

@@ -103,8 +103,9 @@ dev:
 test *args:
     uv run pytest {{ args }}
 
-# What Settings and the splash need before a call (voice_providers/catalogue.py); the core
-# embeds it, so it's committed and builds never run Python for it.
+# What Settings and the splash need before a call (voice_providers/catalogue.py,
+# extensions/catalogue.py); the core embeds them, so they're committed and builds never run
+# Python for them.
 
 # Write the voice providers' catalogue the app embeds (app/src-tauri/voice-providers.json) from their definitions
 [working-directory: 'agent']
@@ -116,6 +117,17 @@ providers:
 [working-directory: 'agent']
 providers-current:
     uv run python -m voice_providers.catalogue check ../app/src-tauri/voice-providers.json
+
+# Write the extensions' catalogue the app embeds (app/src-tauri/extensions.json) from their definitions
+[working-directory: 'agent']
+extensions:
+    uv run python -m extensions.catalogue write ../app/src-tauri/extensions.json
+
+# Check the app's extensions' catalogue is current with their definitions
+[group('check')]
+[working-directory: 'agent']
+extensions-current:
+    uv run python -m extensions.catalogue check ../app/src-tauri/extensions.json
 
 # Lint and check formatting
 [group('check')]
@@ -137,6 +149,6 @@ fmt:
 typecheck:
     uvx basedpyright .
 
-# Everything a change must pass: lint, types, tests, and the app's catalogue current
+# Everything a change must pass: lint, types, tests, and the app's catalogues current
 [group('check')]
-check: lint typecheck test providers-current
+check: lint typecheck test providers-current extensions-current

@@ -1,0 +1,11 @@
+{
+  "generated": "Generated from agent/extensions/ by `just agent extensions`; don't edit.",
+  "extensions": [
+    {
+      "id": "todos",
+      "name": "To-dos",
+      "description": "A list for each project that you and Bomby keep together.",
+      "default_on": true
+    }
+  ]
+}

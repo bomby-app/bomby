@@ -9,7 +9,8 @@ Bomby is a desktop app for talking to coding agents. A call connects a voice mod
 | Voice agent | `agent/`: Python, LiveKit Agents, Gemini 3.8 Live, OpenAI GPT-Live or Rime Prism (`voice_providers/`) | Built; GPT-Live is new and untried on calls ([notes](openai-notes.md)); Rime is Experimental: tried on the owner's calls with a workaround for its LiveKit plugin ([notes](rime-notes.md)) |
 | Harnesses | `agent/harnesses/`: Claude Code, Codex, OpenCode, omp and goose; shared ACP client and runner in `agent/acp_client/`; one voice tool, `start_task` | Built |
 | Desktop app | `app/`: Tauri v2, React, LiveKit Agents UI; settings, projects, calls and saved transcripts | In progress; runs the agent from source in dev, the packaged agent in release builds |
-| Workspace panel | `app/src/features/workspace/`, `app/src-tauri/src/workspace/`: a project folder's git changes, files and terminals beside the call | Built ([decision](decisions/workspace-panel-beside-the-project.md)) |
+| Workspace panel | `app/src/features/workspace/`, `app/src-tauri/src/workspace/`: a project folder's git changes, files and terminals beside the call, and the panels extensions add | Built ([decision](decisions/workspace-panel-beside-the-project.md)) |
+| Extensions | `agent/extensions/`, `app/src-tauri/src/extensions/`, `app/src/features/extensions/`: tool sets the agent gets on a call, on or off in Settings and per project; the first is To-dos (`app/src/features/todos/`) | Built, not yet tried on a call ([decision](decisions/extensions.md)) |
 | App data | One core-owned SQLite database for projects, calls and messages | Built ([decision](decisions/app-data-in-one-sqlite-db.md)) |
 | Packaging | The agent frozen with PyInstaller into the app's resources; adapters installed on Set up | Bundled in release builds; signed and notarized by the Release workflow ([releasing.md](releasing.md), [decision](decisions/ship-the-agent-and-adapter-as-sidecars.md)) |
 | LiveKit server | Bundled `livekit-server` run by the core on this Mac (`livekit.just`, `src-tauri/src/local_server.rs`), or the user's LiveKit Cloud or own server; not needed for `just agent console` | Built |
@@ -71,7 +72,8 @@ The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS)
   "tone": "chatty",
   "memory_user": "bomby-0123456789abcdef",
   "memory_incognito": false,
-  "history": [{"role": "user", "text": "fix the login"}, {"role": "agent", "text": "Claude's on it."}]
+  "history": [{"role": "user", "text": "fix the login"}, {"role": "agent", "text": "Claude's on it."}],
+  "extensions": {"todos": {"open": [{"number": 6, "title": "Rewrite the onboarding copy", "status": "todo"}], "more": 0}}
 }
 ```
 
@@ -84,6 +86,7 @@ The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS)
 - `tone` is `sharp` (the default), `chatty` or `playful`, from Settings, Bomby; an unknown one is `sharp` ([decision](decisions/tones-as-whole-prompts.md)).
 - `user_name` is what the user asked to be called in Settings, Bomby, up to 50 characters; empty when they'd rather not say, and then the prompt doesn't mention a name. Only the voice model gets it, and the user's own Zep project when memory across calls is on; never the coding agents ([decision](decisions/the-users-name-only-for-the-voice.md)).
 - `history` appears only when resuming a call and contains its last 50 lines ([decision](decisions/resume-a-call-with-its-last-lines.md)).
+- `extensions` holds the extensions the call has (Settings, Extensions, or the project's own choice), by id, each with what it needs at the start: for `todos`, up to 30 open to-dos, the newest first, and how many more are open. One the agent doesn't have is ignored ([decision](decisions/extensions.md)).
 - The agent reads and checks it once against one typed contract (`JobMetadata` in `agent/job.py`, pydantic); the project, the installed agents, the picks and the call options each take their fields from that. Console runs use `VOICE_PROVIDER`, `BOMBY_PROJECT`, `BOMBY_FOLDERS`, `BOMBY_INSTRUCTIONS`, `BOMBY_USER_NAME` and `BOMBY_TONE` from `agent/.env`. Invalid metadata fails the call at start.
 
 **`start_task`** ([decision](decisions/one-tool-for-every-agent.md)):
@@ -91,6 +94,17 @@ The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS)
 - `task` is the full request; `session` is a short name normalized to lowercase with dashes; `agent` is an `AgentName` matching `HARNESSES`.
 - New names open parallel sessions. Idle sessions start another prompt turn. Busy sessions take `_session/steering` where supported: the call stays open until the running turn ends, then returns a note beside that turn's result, which covers both. A result always means the work is done. Otherwise the task waits for the running turn and runs after it.
 - Cancelling with `lk_agents_cancel_task` stops the turn but keeps the session.
+
+**Extensions** ([decision](decisions/extensions.md)). Each extension's tools reach the app over LiveKit RPC: method `bomby.<extension>.<op>` on the room's `user` participant (the page), a JSON payload, a JSON answer; a refusal is `RpcError` code 2000 with the message the voice model hears (`agent/extensions/bridge.py`). Any other failure tells the voice model that nothing changed when the page never ran the request (no such participant or method, never sent), and otherwise (a timeout, the page leaving, a failed handler) that it may have, to read the list again before retrying. The to-dos' methods:
+
+- `todos.list` `{status}` (`open`, `all`, `todo`, `doing`, `done` or `cancelled`) answers `{todos, omitted}`: the to-dos, oldest first, and how many older ones were left out to fit, which Bomby says;
+- `todos.add` `{items: [{title}]}`, at most 20, answers with those added, each `todo`;
+- `todos.update` `{number, status?, title?, notes?}` answers with the to-do as it is now;
+- `todos.remove` `{number}` answers with the to-do removed.
+
+A to-do is `{number, title, notes, status, ...}`; the agent reads those four and ignores the rest.
+
+The core keeps them (`src-tauri/src/extensions/`): `extensions_settings()` lists each extension from the agent's catalogue (`src-tauri/extensions.json`, written by `just agent extensions`) with whether Settings has it on, `set_extension(id, on)` changes that and sends `extensions-changed`, and `set_project_extensions(id, { own, on })` makes a project follow Settings or pick its own (`on` is null until it first picks, so only then does picking start from Settings'; a pick of none stays none). `open_call` fixes the call's extensions; each token's metadata reads what they need fresh, so a reconnect starts from the list as it is. `list_todos(projectId)`, `add_todos(projectId, items, by)`, `update_todo(projectId, number, change, by)` and `remove_todo(projectId, number)` keep a project's to-dos, `by` being `user` or `bomby`; each change sends `todos-changed` (`{ projectId }`) to every window. On the page, `ExtensionRpcBridge` registers every extension's methods on the session's room for as long as the window lives, and answers only the room's agent participant, about the active call's project (`features/extensions/`); each extension's handlers call the same commands the user's do, as `bomby` (`features/todos/rpc.ts`). An answer keeps under 14,000 bytes: a long listing leaves out its oldest to-dos. The user's own changes use the same commands from the To-dos panel beside the project (`features/todos/`), which every window keeps current from `todos-changed`. Numbers come from the project's own count and are never reused; a title is 1 to 200 characters, notes up to 2,000, and a refusal is a message for the user ("There's no to-do number 9.").
 
 **Briefing.** Each session receives `prompts/harness-briefing.md` plus the project name, folders and instructions once (never again with follow-ups or steering): through the system prompt when supported, otherwise before its first task. It requires a short, plain-text, outcome-first final report for speech.
 
@@ -105,6 +119,8 @@ The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS)
 **Memory across calls.** With `memory_user` and `ZEP_API_KEY`, the agent reads Zep's summary and facts about the user while the room connects, within 5 s, before Gemini connects (`## What you remember` in the voice prompt), adds `recall_about_user`, and saves every line to a Zep thread in the background, in the order it was said, the rest on hang-up (`agent/memory.py`). The Zep user carries the name from Settings, Bomby and the Mac's time zone. When Zep can't be reached the call goes on without memory and the agent sets `bomby.memory` to `unavailable`, which the call view shows as a card. Settings, Memory turns it on (`memory_setting`, `set_memory_setting`), sets incognito (`memory_incognito`, `set_memory_incognito`) and keeps the key (`has_zep_key`, `save_zep_key`, `clear_zep_key`).
 
 **Menu bar.** The main window's page reports `set_tray_status({ state, call, starting, recent, blocked })` whenever the call changes; End call is offered only once the call has started (`features/tray/tray-bridge.tsx`); the core draws the icon and menu from it (`src-tauri/src/tray.rs`) and sends `tray-start-call` (a project id) and `tray-end-call` back to the main window. Closing the main window hides it, so a call keeps running.
+
+**Tasks.** The voice agent publishes the call's latest 20 tasks as the `bomby.tasks` attribute, each request shortened to 160 characters (`agent/task_board.py`). Opening one in the agents panel asks the agent for its full request over RPC, `bomby.tasks.request` with the task's id as the payload, answered with the words Bomby sent the agent (cut at 14,000 bytes); the agent answers only the page, and refuses with code 2000 a task it no longer keeps (`features/call/tasks.ts`).
 
 **Notifications.** The main window's page watches `bomby.tasks`; when a task it saw `working` turns `done` or `failed`, it calls `task_finished({ projectId, agentName, session, status, task })` (`features/notifications/task-notifier.tsx`). The core notifies only when no Bomby window is focused ("Claude's done · fix-login", the task as the body), and a click sends `open-project` back (`src-tauri/src/notifications.rs`).
 

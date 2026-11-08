@@ -1,17 +1,18 @@
 """The voice model's instructions for one call: the voice provider's prompt for the
 user's tone (`prompts/<provider>/sharp.md`, `chatty.md` or `playful.md`), then what this
-call adds, in the provider's style (`sections.py`). Each added section is left out when
-it has nothing to say.
+call adds, in the provider's style (`sections.py`), the call's extensions' notes among
+them. Each added section is left out when it has nothing to say.
 
 A provider that `delegates` (GPT-Live) has a backend that reasons and calls the tools, with
-instructions of its own: `prompts/<provider>/backend.md`, then the agents and the project
-(`backend_instructions`). Every other provider's backend instructions are empty."""
+instructions of its own: `prompts/<provider>/backend.md`, then the agents, the project and
+the extensions' notes (`backend_instructions`). Every other provider's backend instructions are empty."""
 
 import os
 from datetime import datetime
 from pathlib import Path
 
 from call_options import TONES, CallOptions, Tone
+from extensions import CallExtensions
 from harnesses.harness import Harness
 from job import Line, Speaker
 from project import Project
@@ -60,6 +61,7 @@ def voice_instructions(
     agents: list[Harness],
     remembered: str = "",
     now: datetime | None = None,
+    extensions: CallExtensions | None = None,
 ) -> str:
     style = options.provider.prompt_style
     return join(
@@ -69,6 +71,7 @@ def voice_instructions(
         what_you_remember(remembered, style, options.provider.recall_hint(style)),
         agents_note(agents, style, project.agents_off),
         project_context(project, style),
+        *(extensions.notes(style) if extensions else ()),
         previous_conversation(options.history, style),
     )
 
@@ -78,6 +81,7 @@ def backend_instructions(
     options: CallOptions,
     agents: list[Harness],
     now: datetime | None = None,
+    extensions: CallExtensions | None = None,
 ) -> str:
     """The backend's instructions for one call, or empty for a provider that doesn't
     delegate. The backend writes the tasks the coding agents get, so it hears neither the
@@ -91,6 +95,7 @@ def backend_instructions(
         the_time(now or datetime.now().astimezone(), local_zone(), style),
         agents_note(agents, style, project.agents_off),
         project_context(project, style),
+        *(extensions.notes(style) if extensions else ()),
     )
 
 

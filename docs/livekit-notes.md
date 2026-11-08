@@ -82,3 +82,20 @@ Checked 2026-11-06 against `livekit-agents` 1.8.10 (`voice/agent_activity.py`, `
 
 - Participant attributes carry current state. `bomby.tasks` (the call's tasks) and `bomby.memory` (`unavailable` when the call has no memory because Zep can't be reached) are set with `local_participant.set_attributes` and read through `useAgent().attributes`, which re-renders on changes. Total attribute limit: 64 KiB ([docs](https://docs.livekit.io/transport/data/state/participant-attributes)).
 - Text streams suit event messages, RPC request-response, and attributes or room metadata shared state ([docs](https://docs.livekit.io/transport/data/)).
+
+## RPC
+
+Checked 2026-11-08 against the installed `livekit` SDK 1.2.0 (`livekit/rtc/participant.py`, `rpc.py`), `livekit-client` 2.23.0 (`dist/livekit-client.esm.mjs`, `dist/src/room/rpc/utils.d.ts`) and the bundled `livekit-server` 1.13.10. Extensions use it to reach the app's page ([decision](decisions/extensions.md)).
+
+- **Agent side.** `room.local_participant.perform_rpc(destination_identity=, method=, payload=, response_timeout=None)` returns the answer's string or raises `rtc.RpcError` (`.code`, `.message`, `.data`). The page's identity is `user` (the token, `calls.rs`).
+- **Page side.** `room.registerRpcMethod(method, async (data) => string)`, with `data.callerIdentity`, `data.payload` and `data.responseTimeout`; registering a method twice throws, so `unregisterRpcMethod` first. A thrown `RpcError(code, message)` reaches the caller with its message intact (at most 256 bytes); any other error arrives as 1500, "Application Error".
+- **Codes.** 1400 the page has no handler for the method, 1401 no such participant, 1402 or 1504 a payload too large, 1403 a server older than 1.8.0, 1500 the handler failed, 1501 no acknowledgement in time, 1502 no answer in time, 1503 the page left. Codes 1001 to 1999 are LiveKit's; Bomby's own refusal is 2000.
+- **Acknowledged before it runs.** The page acknowledges a request as it arrives, then runs the handler and sends its answer (livekit-client `RpcServerManager.handleIncomingRpcRequest`). After 1400, 1401, 1402, 1403, 1404 or 1505 (send failed) the handler never ran; after a timeout (1501, 1502), the page leaving (1503) or 1500 it may have, so a change may have been made (`NOT_RUN` in `agent/extensions/bridge.py`).
+- **Timing.** The page must acknowledge within 7 s and answer within 15 s by default; the JavaScript client never waits less than 8 s.
+- **Size.** 15 KiB (15,360 bytes) each way with the v1 protocol. livekit-client 2.23 also has a v2 over data streams with no limit, used only when the other side advertises it (`CLIENT_PROTOCOL_DATA_STREAM_RPC`); Bomby doesn't rely on it.
+
+## Tools are fixed for a call
+
+- LiveKit Agents 1.8.11 has no skills or on-demand tool loading (nothing named so in the installed package).
+- `Agent.update_tools(tools)` changes a running agent's tools, but each realtime plugin applies it its own way: Gemini's marks its Live session to restart (`_mark_restart_needed` in `plugins/google/realtime/realtime_api.py`), Rime's reapplies its settings, GPT-Live's adapter updates the duplex session. A restart mid-call would be heard, so Bomby gives every tool when the session connects.
+- `llm.Toolset(id=, tools=[...])` groups tools; the session flattens it. Optional arguments (`str | None = None`) reach Gemini as `nullable` (`plugins/google/utils.py`).

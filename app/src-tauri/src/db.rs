@@ -84,6 +84,35 @@ const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (project_id, agent)
     );
     ",
+    // 7: extensions (docs/decisions/extensions.md). Which a project's calls have: those on
+    // in Settings unless it picks its own, then the rows it has; extensions_picked once it
+    // has picked, so a pick of none stays none and only a first pick starts from Settings'. And its to-dos, each with a
+    // number of its own in the project, counted by `todos_made` so none is reused. status:
+    // 'todo', 'doing', 'done' or 'cancelled'; created_by and updated_by: 'user' or 'bomby'.
+    "
+    ALTER TABLE projects ADD COLUMN extensions_own INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE projects ADD COLUMN extensions_picked INTEGER NOT NULL DEFAULT 0;
+    CREATE TABLE project_extensions (
+        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        extension  TEXT    NOT NULL,
+        PRIMARY KEY (project_id, extension)
+    );
+    ALTER TABLE projects ADD COLUMN todos_made INTEGER NOT NULL DEFAULT 0;
+    CREATE TABLE todos (
+        id         INTEGER PRIMARY KEY,
+        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        number     INTEGER NOT NULL,
+        title      TEXT    NOT NULL,
+        notes      TEXT    NOT NULL DEFAULT '',
+        status     TEXT    NOT NULL,
+        created_by TEXT    NOT NULL,
+        updated_by TEXT    NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        done_at    INTEGER,
+        UNIQUE (project_id, number)
+    );
+    ",
 ];
 
 /// The open database, shared by every command through Tauri state.

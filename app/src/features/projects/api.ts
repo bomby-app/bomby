@@ -1,7 +1,12 @@
 import { invoke } from "@tauri-apps/api/core"
 import { open } from "@tauri-apps/plugin-dialog"
 
-import type { Project, ProjectAgents, ProjectInput } from "@/generated/projects"
+import type {
+  Project,
+  ProjectAgents,
+  ProjectExtensions,
+  ProjectInput,
+} from "@/generated/projects"
 
 // The core's project commands (src-tauri/src/projects.rs), backed by the app's SQLite db.
 // The types are generated from the core's structs (`just app types`).
@@ -10,6 +15,7 @@ export type {
   CallSummary,
   Project,
   ProjectAgents,
+  ProjectExtensions,
   ProjectInput,
 } from "@/generated/projects"
 
@@ -37,6 +43,14 @@ export function setProjectAgents(
   agents: ProjectAgents
 ): Promise<Project> {
   return invoke("set_project_agents", { id, agents })
+}
+
+/** Which extensions the project's calls have; applies from the next call. */
+export function setProjectExtensions(
+  id: number,
+  extensions: ProjectExtensions
+): Promise<Project> {
+  return invoke("set_project_extensions", { id, extensions })
 }
 
 export function deleteProject(id: number): Promise<void> {

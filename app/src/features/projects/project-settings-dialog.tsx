@@ -1,5 +1,5 @@
 import { Trash2 } from "lucide-react"
-import { useActionState, useRef, useState } from "react"
+import { type ComponentType, useActionState, useRef, useState } from "react"
 
 import { InlineEditInput } from "@/components/inline-edit-input"
 import {
@@ -31,16 +31,23 @@ import {
   FieldLegend,
   FieldSet,
 } from "@/components/ui/field"
+import { ProjectExtensionsField } from "@/features/extensions/project-extensions-field"
 
-import type { Project, ProjectAgents, ProjectInput } from "./api"
+import type {
+  Project,
+  ProjectAgents,
+  ProjectExtensions,
+  ProjectInput,
+} from "./api"
 import { FolderList } from "./folder-list"
 import { InstructionsField, submittedInstructions } from "./instructions-field"
 import { ProjectAgentsField } from "./project-agents-field"
 import { useProjects } from "./projects-provider"
 
 /**
- * A project's settings, opened from the header: its name, its folders, its instructions,
- * and delete. The name and folders are saved as they change; the instructions with Save.
+ * A project's settings, opened from the header: its name, its folders, its agents, its
+ * extensions, its instructions, and delete. All but the instructions are saved as they
+ * change; the instructions with Save.
  */
 export function ProjectSettingsDialog({
   project,
@@ -88,7 +95,7 @@ function ProjectSettings({
   onClose: () => void
   onDeleted: () => void
 }) {
-  const { update, setAgents, remove } = useProjects()
+  const { update, setAgents, setExtensions, remove } = useProjects()
   const [error, setError] = useState<string | null>(null)
 
   // Each save sends the whole draft and saves run one after another, so a rename followed
@@ -167,11 +174,20 @@ function ProjectSettings({
           />
         </FieldSet>
 
-        <AgentsField
-          key={project.id}
+        <QueuedField
+          key={`agents ${project.id}`}
           saved={project.agents}
           save={(agents) => setAgents(project.id, agents)}
           onError={setError}
+          Field={AgentsCard}
+        />
+
+        <QueuedField
+          key={`extensions ${project.id}`}
+          saved={project.extensions}
+          save={(extensions) => setExtensions(project.id, extensions)}
+          onError={setError}
+          Field={ExtensionsCard}
         />
 
         <form id={INSTRUCTIONS_FORM} action={saveInstructions}>
@@ -217,28 +233,31 @@ function ProjectSettings({
 }
 
 /**
- * The project's agents, saved as they change, one after another in click order. A failed
- * save puts back the last one the core took, unless a newer change is on its way.
+ * A setting of the project saved as it changes (its agents, its extensions), one save
+ * after another in click order. A failed save puts back the last value the core took,
+ * unless a newer change is on its way.
  */
-function AgentsField({
+function QueuedField<T>({
   saved,
   save,
   onError,
+  Field,
 }: {
-  saved: ProjectAgents
-  save: (agents: ProjectAgents) => Promise<unknown>
+  saved: T
+  save: (value: T) => Promise<unknown>
   onError: (error: string | null) => void
+  Field: ComponentType<{ value: T; onChange: (next: T) => void }>
 }) {
-  const [agents, setAgents] = useState(saved)
+  const [value, setValue] = useState(saved)
   const queue = useRef<Promise<unknown>>(Promise.resolve())
-  // The last agents the core took, and the newest change, so a failure rolls back to the
+  // The last value the core took, and the newest change, so a failure rolls back to the
   // first and never over the second.
   const confirmed = useRef(saved)
   const latest = useRef(0)
 
-  function change(next: ProjectAgents) {
+  function change(next: T) {
     onError(null)
-    setAgents(next)
+    setValue(next)
     const id = ++latest.current
     queue.current = queue.current.then(() =>
       save(next).then(
@@ -246,14 +265,34 @@ function AgentsField({
           confirmed.current = next
         },
         (e: unknown) => {
-          if (id === latest.current) setAgents(confirmed.current)
+          if (id === latest.current) setValue(confirmed.current)
           onError(String(e))
         }
       )
     )
   }
 
-  return <ProjectAgentsField agents={agents} onChange={change} />
+  return <Field value={value} onChange={change} />
+}
+
+function AgentsCard({
+  value,
+  onChange,
+}: {
+  value: ProjectAgents
+  onChange: (agents: ProjectAgents) => void
+}) {
+  return <ProjectAgentsField agents={value} onChange={onChange} />
+}
+
+function ExtensionsCard({
+  value,
+  onChange,
+}: {
+  value: ProjectExtensions
+  onChange: (extensions: ProjectExtensions) => void
+}) {
+  return <ProjectExtensionsField extensions={value} onChange={onChange} />
 }
 
 /** The project's name; saves on Enter or when the field loses focus, Esc puts it back. */

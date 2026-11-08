@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "settings",
-  "description": "The settings window: setup, intro, agents, voice, appearance, credentials and about (the first-run splash in the main window reads and saves credentials too).",
+  "description": "The settings window: setup, intro, agents, voice, memory, extensions, call server, appearance and about (the first-run splash in the main window reads and saves credentials too).",
   "windows": [
     "settings"
   ],
@@ -54,6 +54,8 @@
     "allow-set-user-name",
     "allow-tone",
     "allow-set-tone",
+    "allow-extensions-settings",
+    "allow-set-extension",
     "allow-about",
     "allow-check-for-updates",
     "allow-install-update"

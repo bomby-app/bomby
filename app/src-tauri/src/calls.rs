@@ -23,7 +23,9 @@ use crate::local_server::LocalServer;
 use crate::setup::Pick;
 use crate::sync;
 use crate::voice::{self, CallVoice};
-use crate::{agent_picks, agents, call_server, credentials, projects, settings, updates, windows};
+use crate::{
+    agent_picks, agents, call_server, credentials, extensions, projects, settings, updates, windows,
+};
 
 /// The agent's name in `agent/agent.py` (`AGENT_NAME`), which the token dispatches.
 const AGENT_NAME: &str = "bomby";
@@ -99,6 +101,8 @@ struct OpenedWith {
     memory_incognito: bool,
     /// The voice provider it talks through, with its voice and options.
     voice: CallVoice,
+    /// Its extensions, by id (Settings, Extensions, or the project's own choice).
+    extensions: Vec<String>,
 }
 
 /// A call id and what it opened with.
@@ -164,13 +168,15 @@ struct HistoryLine {
 /// their programs and the picks each session gets (`JobMetadata.picks` in `agent/job.py`,
 /// applied by `apply` in `agent/acp_client/settings.py`), the voice provider with its voice
 /// and options, what the user likes to be called and, on a resumed call, the conversation so
-/// far (`CallOptions.from_job` in `agent/call_options.py`). What the call opened with comes
-/// from `opened` alone, so every token for the call carries the same.
+/// far (`CallOptions.from_job` in `agent/call_options.py`), and its extensions with what each
+/// needs at the start (`extensions::for_call`, `agent/extensions/`). What the call opened with
+/// comes from `opened` alone, so every token for the call carries the same.
 fn dispatch_metadata(
     project: &projects::CallProject,
     opened: &OpenedWith,
     settings: &settings::CallSettings,
     history: &[HistoryLine],
+    extensions: &serde_json::Map<String, serde_json::Value>,
 ) -> String {
     let OpenedWith {
         agents,
@@ -204,6 +210,7 @@ fn dispatch_metadata(
         "memory_user": memory_user,
         "memory_incognito": memory_incognito,
         "history": history,
+        "extensions": extensions,
     })
     .to_string()
 }
@@ -344,6 +351,7 @@ pub fn open_call<R: Runtime>(
     // Read before the call is recorded, so a failed read leaves no call without its agents.
     let picks = agent_picks::saved(&conn)?;
     let call_voice = voice::for_call(&conn, provider)?;
+    let call_extensions = extensions::on_for(&conn, &project.extensions)?;
     let call_id = match resume_call_id {
         Some(call_id) => {
             reopen(&conn, project_id, call_id)?;
@@ -367,6 +375,7 @@ pub fn open_call<R: Runtime>(
             memory_user,
             memory_incognito,
             voice: call_voice,
+            extensions: call_extensions,
         },
     );
     opening.opened(call_id);
@@ -387,7 +396,7 @@ pub fn call_token<R: Runtime>(
     call_agents: State<'_, CallAgents>,
     call_id: i64,
 ) -> Result<CallToken> {
-    let (project, history, settings) = {
+    let (project_id, project, history, settings) = {
         let conn = db.conn();
         let project_id: i64 = conn
             .query_row(
@@ -398,6 +407,7 @@ pub fn call_token<R: Runtime>(
             .optional()?
             .ok_or(Error::NotFound("call"))?;
         (
+            project_id,
             projects::for_call(&conn, project_id)?,
             recent_lines(&conn, call_id)?,
             settings::for_call(&conn)?,
@@ -419,9 +429,12 @@ pub fn call_token<R: Runtime>(
             // The worker that has the Zep key was started with an opened call.
             memory_user: String::new(),
             memory_incognito: false,
+            extensions: extensions::on_for(&db.conn(), &project.extensions)?,
         },
     };
-    let metadata = dispatch_metadata(&project, &opened, &settings, &history);
+    // Read fresh for each room, so a reconnect starts from the list as it is now.
+    let extension_data = extensions::for_call(&db.conn(), project_id, &opened.extensions)?;
+    let metadata = dispatch_metadata(&project, &opened, &settings, &history, &extension_data);
     let server = opened.server;
     Ok(CallToken {
         participant_token: token(&server, &room, metadata)?,
@@ -532,6 +545,7 @@ mod tests {
             memory_user: "bomby-0123456789abcdef".into(),
             memory_incognito: false,
             voice: rime(),
+            extensions: vec!["todos".into()],
         };
         agents.set(1, claude.clone());
         assert_eq!(agents.get(1), Some(claude));
@@ -545,6 +559,7 @@ mod tests {
             memory_user: String::new(),
             memory_incognito: false,
             voice: rime(),
+            extensions: vec!["todos".into()],
         };
         agents.set(2, none.clone());
         assert_eq!(agents.get(1), None);
@@ -709,10 +724,13 @@ mod tests {
             memory_user: "bomby-0123456789abcdef".into(),
             memory_incognito: true,
             voice,
+            extensions: vec!["todos".into()],
         };
-        let metadata: serde_json::Value =
-            serde_json::from_str(&dispatch_metadata(&project, &opened, &settings, &history))
-                .unwrap();
+        let data = extensions::for_call(&conn, 1, &opened.extensions).unwrap();
+        let metadata: serde_json::Value = serde_json::from_str(&dispatch_metadata(
+            &project, &opened, &settings, &history, &data,
+        ))
+        .unwrap();
         assert_eq!(
             metadata,
             serde_json::json!({
@@ -731,6 +749,7 @@ mod tests {
                 "memory_user": "bomby-0123456789abcdef",
                 "memory_incognito": true,
                 "history": [{ "role": "agent", "text": "Hi." }],
+                "extensions": { "todos": { "open": [], "more": 0 } },
             })
         );
     }
@@ -788,6 +807,7 @@ mod tests {
             folders,
             instructions: String::new(),
             agents: projects::ProjectAgents::default(),
+            extensions: extensions::ProjectExtensions::default(),
         };
         assert!(folders_are_there(&project(vec![here.clone()])).is_ok());
         let gone = folders_are_there(&project(vec![here, "/Users/me/Dev/gone".into()]));
