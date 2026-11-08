@@ -196,13 +196,17 @@ export function WorkspaceColumn({
         return {
           named: terminals.length < 2,
           actions: (
-            <TerminalTabs
-              terminals={terminals}
-              current={current}
-              onChoose={(t) => setChosen(t.id)}
-              onClose={closeTerminal}
-              onAdd={addTerminal}
-            />
+            <>
+              <TerminalTabs
+                terminals={terminals}
+                current={current}
+                onChoose={(t) => setChosen(t.id)}
+                onClose={closeTerminal}
+                onAdd={addTerminal}
+              />
+              {/* Where the next terminal starts. */}
+              {folderPicker}
+            </>
           ),
           body: <div ref={terminalSlot} className="min-h-0 flex-1" />,
         }
