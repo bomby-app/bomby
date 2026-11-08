@@ -60,6 +60,9 @@ pub struct WorkerConfig {
     pub voice_keys: BTreeMap<VoiceProvider, String>,
     /// Whenever one is saved; each call's metadata says whether it remembers.
     pub zep_key: Option<String>,
+    /// Where the hosted MCP extensions' tokens come from (`extensions::tokens`): the
+    /// socket's path and the run's secret, the same for the whole run.
+    pub tokens: Option<[(&'static str, String); 2]>,
 }
 
 struct Running {
@@ -175,6 +178,9 @@ fn start(config: &WorkerConfig, log_dir: &Path, on_crash: OnCrash) -> Result<(Ch
         Some(key) => command.env("ZEP_API_KEY", key),
         None => command.env_remove("ZEP_API_KEY"),
     };
+    for (name, value) in config.tokens.iter().flatten() {
+        command.env(name, value);
+    }
     // Its own process group, so stopping it also stops uv's python and the job processes.
     #[cfg(unix)]
     std::os::unix::process::CommandExt::process_group(&mut command, 0);

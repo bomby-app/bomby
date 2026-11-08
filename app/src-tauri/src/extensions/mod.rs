@@ -4,16 +4,24 @@
 //! `set_extension`), and a project follows that or picks its own
 //! (`projects::set_project_extensions`). A call opens with the ones it has, and its job's
 //! metadata carries what each needs at the start (`for_call`). Each extension keeps its
-//! data here: `todos.rs`.
+//! data here: `todos.rs`. The hosted MCP ones (Zapier, Composio) sign in instead
+//! (docs/decisions/hosted-mcp-extensions-with-oauth.md): `oauth.rs` is the flow,
+//! `connections.rs` keeps the grants, and `tokens.rs` hands the worker their tokens; a call
+//! has one only once it's connected.
 
+pub mod connections;
+pub mod oauth;
 pub mod todos;
+pub mod tokens;
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::LazyLock;
 
-use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Runtime, State};
 
+use self::oauth::Grant;
+use crate::credentials::Vault;
 use crate::db::Db;
 use crate::error::{Error, Result};
 use crate::settings;
@@ -39,6 +47,18 @@ struct CatalogueEntry {
     name: String,
     description: String,
     default_on: bool,
+    connect: Option<ConnectSpec>,
+}
+
+/// How a hosted MCP extension connects (`Connect` in `agent/extensions/hosted_mcp.py`).
+#[derive(Debug, Deserialize)]
+pub struct ConnectSpec {
+    /// The vendor's MCP server.
+    pub mcp_url: String,
+    /// Where the user manages what Bomby can reach on the vendor's side.
+    pub manage_url: String,
+    /// The hosts its sign-in links may open, each with its subdomains.
+    pub link_hosts: Vec<String>,
 }
 
 /// An extension as Settings, Extensions shows it.
@@ -51,6 +71,20 @@ pub struct ExtensionSetting {
     description: String,
     /// On for every project that follows Settings.
     on: bool,
+    /// For one that signs in (Zapier, Composio): whether it's connected. None for the rest.
+    connection: Option<Connection>,
+}
+
+/// A hosted MCP extension's sign-in, as Settings shows it. No token ever comes with it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "extensions.ts"))]
+pub struct Connection {
+    connected: bool,
+    /// The account it's signed in as, when the vendor said.
+    account: Option<String>,
+    /// Where the user manages what Bomby can reach on the vendor's side.
+    manage_url: String,
 }
 
 /// Which extensions a project's calls have (Project settings, Extensions). Saved as it
@@ -71,12 +105,34 @@ pub fn is_known(id: &str) -> bool {
     CATALOGUE.extensions.iter().any(|e| e.id == id)
 }
 
+/// The extension's name in Settings ("Zapier").
+pub fn name(id: &str) -> Option<&'static str> {
+    CATALOGUE
+        .extensions
+        .iter()
+        .find(|e| e.id == id)
+        .map(|e| e.name.as_str())
+}
+
+/// How the extension connects, for one that signs in.
+pub fn connect_spec(id: &str) -> Option<&'static ConnectSpec> {
+    CATALOGUE
+        .extensions
+        .iter()
+        .find(|e| e.id == id)
+        .and_then(|e| e.connect.as_ref())
+}
+
 fn setting_key(id: &str) -> String {
     format!("extension.{id}")
 }
 
-/// Each extension with whether Settings has it on: as the user set it, else its default.
-fn settings(conn: &Connection) -> Result<Vec<ExtensionSetting>> {
+/// Each extension with whether Settings has it on (as the user set it, else its default),
+/// and for one that signs in, whether `grants` has it.
+fn settings(
+    conn: &rusqlite::Connection,
+    grants: &BTreeMap<String, Grant>,
+) -> Result<Vec<ExtensionSetting>> {
     CATALOGUE
         .extensions
         .iter()
@@ -86,17 +142,26 @@ fn settings(conn: &Connection) -> Result<Vec<ExtensionSetting>> {
                 Some("off") => false,
                 _ => e.default_on,
             };
+            let connection = e.connect.as_ref().map(|spec| {
+                let grant = grants.get(&e.id);
+                Connection {
+                    connected: grant.is_some(),
+                    account: grant.and_then(|g| g.account.clone()),
+                    manage_url: spec.manage_url.clone(),
+                }
+            });
             Ok(ExtensionSetting {
                 id: e.id.clone(),
                 name: e.name.clone(),
                 description: e.description.clone(),
                 on,
+                connection,
             })
         })
         .collect()
 }
 
-fn save(conn: &Connection, id: &str, on: bool) -> Result<()> {
+fn save(conn: &rusqlite::Connection, id: &str, on: bool) -> Result<()> {
     if !is_known(id) {
         return Err(Error::Invalid(format!(
             "Bomby has no extension called {id}."
@@ -105,9 +170,14 @@ fn save(conn: &Connection, id: &str, on: bool) -> Result<()> {
     settings::put(conn, &setting_key(id), if on { "on" } else { "off" })
 }
 
-/// The extensions a project's calls have, by id, in the catalogue's order.
-pub(crate) fn on_for(conn: &Connection, project: &ProjectExtensions) -> Result<Vec<String>> {
-    Ok(settings(conn)?
+/// The extensions a project's calls have, by id, in the catalogue's order: those on for it,
+/// less any that signs in and isn't `connected`, whose tools couldn't work.
+pub(crate) fn on_for(
+    conn: &rusqlite::Connection,
+    project: &ProjectExtensions,
+    connected: &BTreeSet<String>,
+) -> Result<Vec<String>> {
+    Ok(settings(conn, &BTreeMap::new())?
         .into_iter()
         .filter(|e| {
             if project.own {
@@ -116,6 +186,7 @@ pub(crate) fn on_for(conn: &Connection, project: &ProjectExtensions) -> Result<V
                 e.on
             }
         })
+        .filter(|e| e.connection.is_none() || connected.contains(&e.id))
         .map(|e| e.id)
         .collect())
 }
@@ -123,7 +194,7 @@ pub(crate) fn on_for(conn: &Connection, project: &ProjectExtensions) -> Result<V
 /// The job's `extensions` for a call on `project_id` that has `on`: each one's id with what
 /// it needs at the start (`extensions` in `agent/job.py`).
 pub(crate) fn for_call(
-    conn: &Connection,
+    conn: &rusqlite::Connection,
     project_id: i64,
     on: &[String],
 ) -> Result<serde_json::Map<String, serde_json::Value>> {
@@ -139,8 +210,12 @@ pub(crate) fn for_call(
 }
 
 #[tauri::command(async)]
-pub fn extensions_settings(db: State<'_, Db>) -> Result<Vec<ExtensionSetting>> {
-    settings(&db.conn())
+pub fn extensions_settings<R: Runtime>(
+    app: AppHandle<R>,
+    db: State<'_, Db>,
+    vault: State<'_, Vault>,
+) -> Result<Vec<ExtensionSetting>> {
+    settings(&db.conn(), &vault.grants(&app)?)
 }
 
 /// Applies from the next call; one under way keeps its extensions.
@@ -148,12 +223,13 @@ pub fn extensions_settings(db: State<'_, Db>) -> Result<Vec<ExtensionSetting>> {
 pub fn set_extension<R: Runtime>(
     app: AppHandle<R>,
     db: State<'_, Db>,
+    vault: State<'_, Vault>,
     id: String,
     on: bool,
 ) -> Result<Vec<ExtensionSetting>> {
     let conn = db.conn();
     save(&conn, &id, on)?;
-    let now = settings(&conn)?;
+    let now = settings(&conn, &vault.grants(&app)?)?;
     let _ = app.emit(CHANGED, ());
     Ok(now)
 }
@@ -162,22 +238,78 @@ pub fn set_extension<R: Runtime>(
 mod tests {
     use super::*;
 
+    fn none() -> BTreeSet<String> {
+        BTreeSet::new()
+    }
+
+    fn grant(account: &str) -> Grant {
+        Grant {
+            client_id: "c".into(),
+            token_endpoint: "https://auth.example/token".into(),
+            resource: "https://mcp.example/mcp".into(),
+            access_token: "secret-token".into(),
+            refresh_token: None,
+            expires_at: None,
+            account: Some(account.into()),
+        }
+    }
+
     #[test]
-    fn the_catalogue_has_the_todos() {
+    fn the_catalogue_has_the_todos_and_the_hosted_mcp_ones() {
         assert!(is_known(todos::ID));
         assert!(!is_known("hal"));
+        assert!(connect_spec(todos::ID).is_none());
+        let zapier = connect_spec("zapier").unwrap();
+        assert_eq!(zapier.mcp_url, "https://mcp.zapier.com/api/v1/connect");
+        assert_eq!(zapier.link_hosts, ["zapier.com"]);
+        assert!(connect_spec("composio").is_some());
+        assert_eq!(name("composio"), Some("Composio"));
     }
 
     #[test]
     fn settings_start_at_each_default_and_keep_what_the_user_set() {
         let db = Db::in_memory().unwrap();
         let conn = db.conn();
-        let on = |conn: &Connection| settings(conn).unwrap()[0].on;
-        assert!(on(&conn), "to-dos are on by default");
+        let on = |conn: &rusqlite::Connection, id: &str| {
+            settings(conn, &BTreeMap::new())
+                .unwrap()
+                .into_iter()
+                .find(|e| e.id == id)
+                .unwrap()
+                .on
+        };
+        assert!(on(&conn, todos::ID), "to-dos are on by default");
+        assert!(
+            !on(&conn, "zapier"),
+            "the hosted ones are off until the user wants them"
+        );
 
         save(&conn, todos::ID, false).unwrap();
-        assert!(!on(&conn));
+        assert!(!on(&conn, todos::ID));
         assert!(matches!(save(&conn, "hal", true), Err(Error::Invalid(_))));
+    }
+
+    #[test]
+    fn settings_say_who_a_hosted_one_is_connected_as_and_never_the_token() {
+        let db = Db::in_memory().unwrap();
+        let grants = BTreeMap::from([("zapier".to_owned(), grant("me@example.com"))]);
+        let all = settings(&db.conn(), &grants).unwrap();
+        let find = |id: &str| all.iter().find(|e| e.id == id).unwrap().clone();
+        assert_eq!(find(todos::ID).connection, None);
+        assert_eq!(
+            find("zapier").connection,
+            Some(Connection {
+                connected: true,
+                account: Some("me@example.com".into()),
+                manage_url: "https://mcp.zapier.com".into(),
+            })
+        );
+        assert!(!find("composio").connection.unwrap().connected);
+        assert!(
+            !serde_json::to_string(&all)
+                .unwrap()
+                .contains("secret-token")
+        );
     }
 
     #[test]
@@ -185,20 +317,60 @@ mod tests {
         let db = Db::in_memory().unwrap();
         let conn = db.conn();
         let follows = ProjectExtensions::default();
-        assert_eq!(on_for(&conn, &follows).unwrap(), [todos::ID]);
+        assert_eq!(on_for(&conn, &follows, &none()).unwrap(), [todos::ID]);
 
         let none_of_its_own = ProjectExtensions {
             own: true,
             on: Some(Vec::new()),
         };
-        assert!(on_for(&conn, &none_of_its_own).unwrap().is_empty());
+        assert!(on_for(&conn, &none_of_its_own, &none()).unwrap().is_empty());
 
         save(&conn, todos::ID, false).unwrap();
-        assert!(on_for(&conn, &follows).unwrap().is_empty());
+        assert!(on_for(&conn, &follows, &none()).unwrap().is_empty());
         let its_own = ProjectExtensions {
             own: true,
             on: Some(vec![todos::ID.into(), "from-a-newer-app".into()]),
         };
-        assert_eq!(on_for(&conn, &its_own).unwrap(), [todos::ID]);
+        assert_eq!(on_for(&conn, &its_own, &none()).unwrap(), [todos::ID]);
+    }
+
+    #[test]
+    fn a_call_gets_a_hosted_one_only_once_its_connected() {
+        let db = Db::in_memory().unwrap();
+        let conn = db.conn();
+        save(&conn, "zapier", true).unwrap();
+        save(&conn, "composio", true).unwrap();
+        let follows = ProjectExtensions::default();
+        assert_eq!(on_for(&conn, &follows, &none()).unwrap(), [todos::ID]);
+        let connected = BTreeSet::from(["composio".to_owned()]);
+        assert_eq!(
+            on_for(&conn, &follows, &connected).unwrap(),
+            [todos::ID, "composio"]
+        );
+        let data = for_call(&conn, 1, &["composio".into()]).unwrap();
+        assert_eq!(data["composio"], serde_json::json!({}));
+    }
+
+    #[test]
+    fn settings_may_open_each_vendors_page() {
+        let capability: serde_json::Value =
+            serde_json::from_str(include_str!("../../capabilities/settings.json")).unwrap();
+        let allowed: Vec<&str> = capability["permissions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|p| p["identifier"] == "opener:allow-open-url")
+            .flat_map(|p| p["allow"].as_array().unwrap())
+            .filter_map(|url| url["url"].as_str())
+            .collect();
+        for e in &CATALOGUE.extensions {
+            if let Some(spec) = &e.connect {
+                assert!(
+                    allowed.contains(&spec.manage_url.as_str()),
+                    "Settings may not open {}",
+                    spec.manage_url
+                );
+            }
+        }
     }
 }

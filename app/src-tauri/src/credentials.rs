@@ -20,6 +20,7 @@ use tauri::{AppHandle, Emitter, Runtime, State};
 
 use crate::dev;
 use crate::error::{Error, Result};
+use crate::extensions::oauth::Grant;
 use crate::sync;
 use crate::voice::VoiceProvider;
 
@@ -59,6 +60,9 @@ struct Keys {
     /// For memory across conversations (`settings::Memory::Zep`).
     #[serde(default)]
     zep_key: Option<String>,
+    /// The hosted MCP extensions' sign-ins, by extension id (`extensions/connections.rs`).
+    #[serde(default)]
+    grants: BTreeMap<String, Grant>,
 }
 
 impl Keys {
@@ -76,6 +80,7 @@ impl Keys {
             && self.openai_key.is_none()
             && self.rime_key.is_none()
             && self.zep_key.is_none()
+            && self.grants.is_empty()
     }
 }
 
@@ -159,8 +164,21 @@ impl Vault {
         Ok(cached.clone().unwrap_or_default())
     }
 
-    /// Changes the keys and writes them back, under one lock.
+    /// Changes the keys and writes them back, under one lock, and tells every window.
     fn update<R: Runtime>(
+        &self,
+        app: &AppHandle<R>,
+        change: impl FnOnce(&mut Keys) -> Result<()>,
+    ) -> Result<()> {
+        self.write_back(app, change)?;
+        // Every window re-reads which keys are saved (no key goes with it). Only fails for
+        // an invalid event name or payload.
+        let _ = app.emit(KEYS_CHANGED, ());
+        Ok(())
+    }
+
+    /// Changes the keys and writes them back, under one lock.
+    fn write_back<R: Runtime>(
         &self,
         app: &AppHandle<R>,
         change: impl FnOnce(&mut Keys) -> Result<()>,
@@ -176,10 +194,6 @@ impl Vault {
             return Err(e);
         }
         *cached = Some(keys);
-        drop(cached);
-        // Every window re-reads which keys are saved (no key goes with it). Only fails for
-        // an invalid event name or payload.
-        let _ = app.emit(KEYS_CHANGED, ());
         Ok(())
     }
 
@@ -202,6 +216,28 @@ impl Vault {
 
     pub fn zep_key<R: Runtime>(&self, app: &AppHandle<R>) -> Result<Option<String>> {
         Ok(self.keys(app)?.zep_key)
+    }
+
+    /// Every hosted MCP extension's sign-in, by extension id.
+    pub fn grants<R: Runtime>(&self, app: &AppHandle<R>) -> Result<BTreeMap<String, Grant>> {
+        Ok(self.keys(app)?.grants)
+    }
+
+    /// Saves or removes an extension's sign-in. Quiet: the grant's own event
+    /// (`extensions::CHANGED`) is the caller's to send, and a refresh mid-call sends none.
+    pub fn set_grant<R: Runtime>(
+        &self,
+        app: &AppHandle<R>,
+        id: &str,
+        grant: Option<Grant>,
+    ) -> Result<()> {
+        self.write_back(app, |keys| {
+            match grant {
+                Some(grant) => keys.grants.insert(id.to_owned(), grant),
+                None => keys.grants.remove(id),
+            };
+            Ok(())
+        })
     }
 }
 
@@ -355,7 +391,7 @@ mod tests {
     }
 
     #[test]
-    fn an_entry_saved_before_openai_rime_and_zep_still_reads() {
+    fn an_entry_saved_before_openai_rime_zep_and_grants_still_reads() {
         let mut keys: Keys = serde_json::from_str(r#"{"livekit":null,"gemini_key":"g"}"#).unwrap();
         assert_eq!(keys.voice_key(VoiceProvider::Gemini).as_deref(), Some("g"));
         assert_eq!(*keys.voice_key(VoiceProvider::OpenAi), None);

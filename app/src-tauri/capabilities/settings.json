@@ -23,7 +23,9 @@
         { "url": "https://app.getzep.com" },
         { "url": "https://aistudio.google.com/apikey" },
         { "url": "https://platform.openai.com/api-keys" },
-        { "url": "https://app.rime.ai/tokens" }
+        { "url": "https://app.rime.ai/tokens" },
+        { "url": "https://mcp.zapier.com" },
+        { "url": "https://connect.composio.dev" }
       ]
     },
     "clipboard-manager:allow-read-text",
@@ -56,6 +58,9 @@
     "allow-set-tone",
     "allow-extensions-settings",
     "allow-set-extension",
+    "allow-connect-extension",
+    "allow-cancel-extension-connect",
+    "allow-disconnect-extension",
     "allow-about",
     "allow-check-for-updates",
     "allow-install-update"
