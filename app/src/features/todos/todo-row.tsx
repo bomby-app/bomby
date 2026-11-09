@@ -26,10 +26,11 @@ import {
   type TodoStatus,
   updateTodo,
 } from "./api"
+import { EXPAND_SHORTCUT, Left, SAVE_SHORTCUT } from "./editing"
 import { bombyLine, GROUPS, STATUS_LABEL } from "./labels"
 import { fits, NOTES_MAX, TITLE_MAX } from "./limits"
 import { StatusMark } from "./status-mark"
-import { EXPAND_SHORTCUT, Left, SAVE_SHORTCUT, TodoDialog } from "./todo-dialog"
+import { TodoDialog } from "./todo-dialog"
 import type { Draft } from "./view-state"
 
 /**

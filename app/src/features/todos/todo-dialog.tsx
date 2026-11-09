@@ -13,16 +13,10 @@ import {
 import { FieldError } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { commandShortcut } from "@/lib/shortcuts"
-import { cn } from "@/lib/utils"
 
-import { fits, NOTES_MAX, remaining, TITLE_MAX } from "./limits"
+import { Left, SAVE_SHORTCUT } from "./editing"
+import { fits, NOTES_MAX, TITLE_MAX } from "./limits"
 import type { Words } from "./view-state"
-
-/** Saves a to-do from its words, in its row or the dialog. */
-export const SAVE_SHORTCUT = commandShortcut("Enter")
-/** Opens a to-do being edited in its row in the dialog, for longer notes. */
-export const EXPAND_SHORTCUT = commandShortcut("e")
 
 /**
  * A to-do's title and notes with room to write, for a new one with notes (the + by the
@@ -157,31 +151,5 @@ export function TodoDialog({
         </form>
       </DialogContent>
     </Dialog>
-  )
-}
-
-/** How many characters are left, once close to the limit; red past it. */
-export function Left({
-  text,
-  max,
-  className,
-}: {
-  text: string
-  max: number
-  className?: string
-}) {
-  const left = remaining(text, max)
-  if (left === null) return null
-  return (
-    <span
-      aria-live="polite"
-      className={cn(
-        "shrink-0 font-mono text-xs text-muted-foreground tabular-nums",
-        left < 0 && "text-destructive",
-        className
-      )}
-    >
-      {left}
-    </span>
   )
 }
