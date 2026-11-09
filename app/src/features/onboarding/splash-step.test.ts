@@ -28,6 +28,7 @@ function agent(
     version: null,
     setup: state === "missing" ? null : { ...SETUP, step: state },
     installPage: `https://example.com/${id}`,
+    check: `${id} --version`,
   }
 }
 

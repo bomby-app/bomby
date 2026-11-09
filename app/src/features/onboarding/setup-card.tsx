@@ -74,7 +74,16 @@ export function Tile({
 export type Tone = "looking" | "todo" | "done" | "cloud" | "off"
 
 /** The card's status: a dot (bubblegum while something's missing) and a mono line. */
-export function StatusLine({ tone, text }: { tone: Tone; text: string }) {
+export function StatusLine({
+  tone,
+  text,
+  info,
+}: {
+  tone: Tone
+  text: string
+  /** Beside the text: how to fix it, when there's a fix (`FixSteps`). */
+  info?: ReactNode
+}) {
   return (
     <span className="flex min-w-0 items-center gap-1.5">
       {tone === "looking" ? (
@@ -99,6 +108,7 @@ export function StatusLine({ tone, text }: { tone: Tone; text: string }) {
       >
         {text}
       </span>
+      {info}
     </span>
   )
 }

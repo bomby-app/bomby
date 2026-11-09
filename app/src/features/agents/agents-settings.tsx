@@ -6,7 +6,8 @@ import { ErrorCard } from "@/components/error-card"
 import { StatusRow } from "@/components/status-row"
 
 import { AgentLogo } from "./agent-logos"
-import { type AgentStatus, sentence, versionNumber } from "./api"
+import { type AgentStatus, versionNumber } from "./api"
+import { FixSteps } from "./fix-steps"
 import { InstallButton } from "./install-button"
 import { modelName } from "./model-picker"
 import { ModelSettings, skippedNote } from "./model-settings"
@@ -136,18 +137,19 @@ function detail(agent: AgentStatus): ReactNode {
       return "Not installed. Install it, then check again."
     case "connect":
       return `Found on this Mac. Set it up to use it in calls.`
-    case "sign_in": {
-      const problem = setup?.problem && (
-        <span className="select-text">{sentence(setup.problem)} </span>
-      )
-      return (
-        <>
-          Needs setup. {problem}Set it up in {name}, then check again.
-        </>
-      )
-    }
+    case "sign_in":
     case "unreachable":
-      return `${sentence(setup?.problem ?? "It didn't answer")} Check again in a moment.`
+      return (
+        <span className="inline-flex max-w-full items-center gap-1.5">
+          <span className="truncate select-text">
+            {setup?.problem ??
+              (setupStep(agent) === "sign_in"
+                ? "Needs setup"
+                : "It didn't answer")}
+          </span>
+          <FixSteps agent={agent} />
+        </span>
+      )
     case "pick":
       return setup?.skipped.length
         ? `${skippedNote(setup.skipped[0], name)} Calls use it once its model is picked.`
