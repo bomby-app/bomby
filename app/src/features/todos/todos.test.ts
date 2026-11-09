@@ -5,6 +5,7 @@ import { MAX_ANSWER_BYTES } from "@/features/extensions/rpc"
 import type { Todo } from "./api"
 import { found, matches } from "./filters"
 import { bombyLine, ordered } from "./labels"
+import { fits, length, NOTES_MAX, remaining, TITLE_MAX } from "./limits"
 import { fit } from "./rpc"
 
 function todo(number: number, changes: Partial<Todo> = {}): Todo {
@@ -99,5 +100,30 @@ describe("to-do labels", () => {
     ]
     expect(ordered(todos, "todo").map((t) => t.number)).toEqual([2, 4])
     expect(ordered(todos, "done").map((t) => t.number)).toEqual([3, 1])
+  })
+})
+
+describe("to-do limits", () => {
+  it("count characters as the core does, trimmed, an emoji as one", () => {
+    expect(length("  café 🎉 ")).toBe(6)
+  })
+
+  it("count down only near the limit, and below zero past it", () => {
+    expect(remaining("x".repeat(10), TITLE_MAX)).toBeNull()
+    expect(remaining("x".repeat(TITLE_MAX - 5), TITLE_MAX)).toBe(5)
+    expect(remaining("x".repeat(NOTES_MAX + 1), NOTES_MAX)).toBe(-1)
+  })
+
+  it("save words with a title, within the limits", () => {
+    expect(fits({ title: "Ship it", notes: "" })).toBe(true)
+    expect(fits({ title: "  ", notes: "Some notes" })).toBe(false)
+    expect(fits({ title: "x".repeat(TITLE_MAX + 1), notes: "" })).toBe(false)
+    expect(fits({ title: "x", notes: "x".repeat(NOTES_MAX + 1) })).toBe(false)
+  })
+
+  it("hold a to-do from before the limits only to what changes", () => {
+    const was = { title: "x".repeat(TITLE_MAX + 10), notes: "" }
+    expect(fits({ ...was, notes: "New notes" }, was)).toBe(true)
+    expect(fits({ ...was, title: `${was.title}!` }, was)).toBe(false)
   })
 })

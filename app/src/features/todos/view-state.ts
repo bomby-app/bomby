@@ -8,13 +8,16 @@ import type { Filter } from "./filters"
 // cost the user their search, filter or unsaved words. A deleted project's state goes with
 // it (`forgetViewState`), since SQLite may give a new project its id.
 
+/** A to-do's words: its title and notes. */
+export type Words = { title: string; notes: string }
+
 /** A to-do being edited: its words as the user has them, and as they were when editing began. */
-export type Draft = {
+export type Draft = Words & {
   number: number
-  title: string
-  notes: string
   /** Only what the user changed from these is saved, so Bomby's changes meanwhile stay. */
-  was: { title: string; notes: string }
+  was: Words
+  /** In the dialog, with room for longer notes, rather than in its row. */
+  expanded: boolean
 }
 
 export type TodosViewState = {
@@ -25,6 +28,8 @@ export type TodosViewState = {
   draft: Draft | null
   /** The words in the field that adds one. */
   adding: string
+  /** A to-do being written in the dialog that adds one with notes, while it's open. */
+  composing: Words | null
 }
 
 const INITIAL: TodosViewState = {
@@ -33,6 +38,7 @@ const INITIAL: TodosViewState = {
   showDone: false,
   draft: null,
   adding: "",
+  composing: null,
 }
 
 const stores = new Map<number, Store<TodosViewState>>()
