@@ -67,7 +67,9 @@ export function TodoDialog({
   }
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onCancel()}>
+    // While it saves, it stays as it is: no typing, Cancel or Esc, so the words saved are
+    // the words shown.
+    <Dialog open onOpenChange={(open) => !open && !busy && onCancel()}>
       <DialogContent
         className="gap-0 p-0 sm:max-w-lg"
         onInteractOutside={(event) => event.preventDefault()}
@@ -95,6 +97,7 @@ export function TodoDialog({
                 aria-label="To-do"
                 placeholder="What's to do?"
                 value={words.title}
+                readOnly={busy}
                 onChange={(e) => onWords({ ...words, title: e.target.value })}
                 onKeyDown={(event) => {
                   onKeyDown(event)
@@ -118,6 +121,7 @@ export function TodoDialog({
               aria-label="Notes"
               placeholder="Add notes"
               value={words.notes}
+              readOnly={busy}
               onKeyDown={onKeyDown}
               onChange={(e) => onWords({ ...words, notes: e.target.value })}
               className="max-h-[50vh] min-h-40 resize-none rounded-none border-0 p-0 shadow-none focus-visible:ring-0 dark:bg-transparent"
@@ -134,6 +138,7 @@ export function TodoDialog({
                 type="button"
                 variant="ghost"
                 size="sm"
+                disabled={busy}
                 onClick={onCancel}
               >
                 Cancel

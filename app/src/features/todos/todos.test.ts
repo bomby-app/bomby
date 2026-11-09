@@ -7,6 +7,7 @@ import { found, matches } from "./filters"
 import { bombyLine, ordered } from "./labels"
 import { fits, length, NOTES_MAX, remaining, TITLE_MAX } from "./limits"
 import { fit } from "./rpc"
+import { afterSave } from "./view-state"
 
 function todo(number: number, changes: Partial<Todo> = {}): Todo {
   return {
@@ -125,5 +126,19 @@ describe("to-do limits", () => {
     const was = { title: "x".repeat(TITLE_MAX + 10), notes: "" }
     expect(fits({ ...was, notes: "New notes" }, was)).toBe(true)
     expect(fits({ ...was, title: `${was.title}!` }, was)).toBe(false)
+  })
+})
+
+describe("a save that finishes", () => {
+  it("ends the editing it was for", () => {
+    const draft = { title: "Ship it", notes: "" }
+    expect(afterSave(draft, draft)).toBeNull()
+  })
+
+  it("leaves what the user went on to meanwhile", () => {
+    const saved = { title: "Ship it", notes: "" }
+    const next = { title: "Ship it", notes: "" }
+    expect(afterSave(next, saved)).toBe(next)
+    expect(afterSave(null, saved)).toBeNull()
   })
 })

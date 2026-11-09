@@ -31,7 +31,7 @@ import { bombyLine, GROUPS, STATUS_LABEL } from "./labels"
 import { fits, NOTES_MAX, TITLE_MAX } from "./limits"
 import { StatusMark } from "./status-mark"
 import { TodoDialog } from "./todo-dialog"
-import type { Draft } from "./view-state"
+import { type Draft, settle } from "./view-state"
 
 /**
  * One to-do (Paper "extensions", 03 and 04): its status mark, which opens a menu of
@@ -171,7 +171,7 @@ function ExpandedEditor({
     setError(null)
     try {
       await updateTodo(projectId, todo.number, change, "user")
-      onDraft(null)
+      settle(projectId, "draft", draft)
     } catch (e) {
       setError(String(e))
     } finally {
@@ -269,7 +269,9 @@ function TodoEditor({
     onError(null)
     try {
       await work()
-      close()
+      // Only if this is still the draft that was saved: a remount meanwhile may have
+      // let the user close it and start another.
+      settle(projectId, "draft", draft)
     } catch (e) {
       onError(String(e))
     } finally {
@@ -287,7 +289,7 @@ function TodoEditor({
 
   /** Esc cancels, Cmd-Return saves, Cmd-E expands, from the words or the notes. */
   function onKeyDown(event: KeyboardEvent) {
-    if (event.nativeEvent.isComposing) return
+    if (event.nativeEvent.isComposing || saving) return
     if (event.key === "Escape") {
       event.preventDefault()
       close()
@@ -328,6 +330,7 @@ function TodoEditor({
           aria-label="To-do"
           ref={titleField}
           value={title}
+          readOnly={saving}
           onKeyDown={onTitleKeyDown}
           onChange={(e) => onDraft({ ...draft, title: e.target.value })}
           className="h-auto flex-1 border-0 p-0 text-sm font-medium shadow-none focus-visible:ring-0 dark:bg-transparent"
@@ -342,6 +345,7 @@ function TodoEditor({
           aria-label="Notes"
           placeholder="Add notes"
           value={notes}
+          readOnly={saving}
           onKeyDown={onKeyDown}
           onChange={(e) => onDraft({ ...draft, notes: e.target.value })}
           className="max-h-60 min-h-14 resize-none rounded-md border-0 bg-muted px-2 py-1.5 shadow-none focus-visible:ring-0 dark:bg-muted"

@@ -78,6 +78,33 @@ export function composeTodo(projectId: number) {
     store.set({ ...state, composing: { title: "", notes: "", announce: true } })
 }
 
+/**
+ * What's kept once a save of `submitted` finishes: nothing if it's still what's being
+ * edited, else what the user has gone on to (a save can finish after its editor closed
+ * and another opened).
+ */
+export function afterSave<T>(current: T | null, submitted: T): T | null {
+  return current === submitted ? null : current
+}
+
+/**
+ * Ends editing `submitted` (the to-do being edited, or the one being written in the
+ * dialog) once its save finishes, with `also` changed alongside; nothing if the user has
+ * moved on to another meanwhile. Every edit replaces the object, so it's the same one only
+ * if nothing changed since the save began.
+ */
+export function settle<K extends "draft" | "composing">(
+  projectId: number,
+  key: K,
+  submitted: NonNullable<TodosViewState[K]>,
+  also: Partial<TodosViewState> = {}
+) {
+  const store = storeFor(projectId)
+  const state = store.get()
+  if (afterSave(state[key], submitted) !== null) return
+  store.set({ ...state, [key]: null, ...also })
+}
+
 /** Drops a deleted project's panel state. */
 export function forgetViewState(projectId: number) {
   stores.delete(projectId)

@@ -35,6 +35,7 @@ import { forgetTodos, useTodos } from "./use-todos"
 import {
   type Composing,
   forgetViewState,
+  settle,
   useTodosViewState,
   type Words,
 } from "./view-state"
@@ -309,9 +310,16 @@ export function NewTodo({
   const [{ composing }, setView] = useTodosViewState(projectId)
   if (!composing) return null
 
-  function done(added: Todo | null, { announce }: Composing) {
-    setView({ composing: null, ...(added && !announce && { adding: "" }) })
-    if (added && announce) {
+  function done(added: Todo | null, submitted: Composing) {
+    if (!added) return setView({ composing: null })
+    // The field it started from empties too, unless it came from elsewhere.
+    settle(
+      projectId,
+      "composing",
+      submitted,
+      submitted.announce ? {} : { adding: "" }
+    )
+    if (submitted.announce) {
       toast(`Added to-do ${added.number}.`, {
         action: { label: "Show", onClick: onShow },
       })
