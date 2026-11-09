@@ -15,6 +15,7 @@ The app's web half is `app/src`. Checked 2026-11-03/04 against installed shadcn 
 - UI uses the OS font. Bricolage Grotesque Bold (`@fontsource/bricolage-grotesque/700.css`, bundled) is `font-heading` for the wordmark and headlines; no network font load.
 - Sidebar: `SidebarProvider` > `Sidebar` + `SidebarInset`; Cmd+B toggles. The window's `minWidth` (820) keeps it above the 768px sheet breakpoint. Its open-state cookie is unused.
 - Vite dark mode toggles `.dark` on `<html>`. Our provider also follows OS changes and sets the native window theme ([Tauri notes](tauri-notes.md#window)).
+- **Toasts**: shadcn's Sonner (`components/ui/sonner.tsx`, `sonner` 2.0.8, added 2026-11-09), one `Toaster` per window in `windows/mount.tsx`. shadcn's file reads the theme from `next-themes`, which the app doesn't use: ours reads `hooks/use-dark-mode.ts` instead, and `next-themes` was removed.
 
 ## Radix
 

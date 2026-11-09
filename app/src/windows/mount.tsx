@@ -2,6 +2,7 @@ import "@/index.css"
 import { type ReactNode, StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 
+import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { ThemeProvider } from "@/features/theme/theme-provider"
 
@@ -19,6 +20,7 @@ export function mountWindow(content: ReactNode) {
       <ThemeProvider>
         {/* Native tooltips wait before showing; shadcn's default of 0 feels like a web page. */}
         <TooltipProvider delayDuration={500}>{content}</TooltipProvider>
+        <Toaster position="bottom-center" />
       </ThemeProvider>
     </StrictMode>
   )

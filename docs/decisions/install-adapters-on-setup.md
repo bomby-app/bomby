@@ -17,5 +17,6 @@ Claude Code and Codex reach ACP only through adapters, npm packages that need a 
 ## Consequences
 
 - The first Set up needs the internet: about 40 MB for bun, a few MB for the packages, and 90 MB on disk per compiled adapter.
+- The bun download retries a timeout, 408, 429 and 5xx three times (curl over HTTP/1.1, since curl 8.7 won't retry over HTTP/2). A failure says "Try again in a minute!" with the HTTP code, or "no connection"; curl's own error goes to `adapters/install.log`. A company network can block the download: it needs `github.com`, `release-assets.githubusercontent.com` and `registry.npmjs.org`.
 - Bomby redistributes nothing of the adapters or the agents.
 - The probe reports an agent without its adapter as needing setup, and calls leave it out until it's installed.
