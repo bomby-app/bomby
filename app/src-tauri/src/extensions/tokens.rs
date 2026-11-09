@@ -12,18 +12,20 @@
 //!
 //! Tokens never go to the page or through LiveKit.
 
-use std::io::{BufRead, BufReader, Read, Write};
+use std::future::Future;
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
-use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::Arc;
-use std::thread;
 use std::time::Duration;
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use serde::Deserialize;
 use tauri::{AppHandle, Runtime};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::net::{UnixListener, UnixStream};
+use tokio::sync::Semaphore;
 
 use super::connections;
 use crate::app_log;
@@ -37,10 +39,16 @@ const READ_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_REQUEST: u64 = 64 * 1024;
 /// A Unix socket's path is limited to 104 bytes on macOS (`sun_path`).
 const MAX_SOCKET_PATH: usize = 100;
+/// The most requests answered at once; more connections are closed unanswered. A call asks
+/// for one token per extension at a time, so this is far above real use.
+const MAX_AT_ONCE: usize = 16;
+
+/// A token, with its seconds left, or a line for the voice model.
+pub type Answer = std::result::Result<(String, Option<i64>), String>;
 
 /// Answers a request for an extension's token: its id and the stale token, if any.
 pub type Fetch = Arc<
-    dyn Fn(&str, Option<&str>) -> std::result::Result<(String, Option<i64>), String> + Send + Sync,
+    dyn Fn(String, Option<String>) -> Pin<Box<dyn Future<Output = Answer> + Send>> + Send + Sync,
 >;
 
 #[derive(Deserialize)]
@@ -62,7 +70,8 @@ pub struct TokenSocket {
 }
 
 impl TokenSocket {
-    /// Listens in a fresh folder under the temp dir, answering with `fetch`.
+    /// Listens in a fresh folder under the temp dir, answering with `fetch` on the async
+    /// runtime.
     pub fn start(fetch: Fetch) -> Result<Self> {
         Self::start_in(&std::env::temp_dir(), fetch)
     }
@@ -76,23 +85,20 @@ impl TokenSocket {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::DirBuilder::new().mode(0o700).create(&dir)?;
         let path = dir.join("tokens.sock");
-        let listener = UnixListener::bind(&path)?;
+        let listener = std::os::unix::net::UnixListener::bind(&path)?;
+        listener.set_nonblocking(true)?;
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
         let mut bytes = [0u8; 32];
         getrandom::fill(&mut bytes)
             .map_err(|e| Error::Invalid(format!("Couldn't make the token secret: {e}")))?;
         let secret = URL_SAFE_NO_PAD.encode(bytes);
         let expected = secret.clone();
-        thread::Builder::new()
-            .name("token-socket".into())
-            .spawn(move || {
-                for stream in listener.incoming().flatten() {
-                    let (fetch, expected) = (fetch.clone(), expected.clone());
-                    let _ = thread::Builder::new()
-                        .name("token-request".into())
-                        .spawn(move || serve(stream, &expected, &fetch));
-                }
-            })?;
+        tauri::async_runtime::spawn(async move {
+            match UnixListener::from_std(listener) {
+                Ok(listener) => serve(listener, expected, fetch).await,
+                Err(e) => eprintln!("token socket: {e}"),
+            }
+        });
         Ok(Self { dir, path, secret })
     }
 
@@ -114,7 +120,8 @@ impl TokenSocket {
 pub fn start<R: Runtime>(app: &AppHandle<R>) -> Option<TokenSocket> {
     let handle = app.clone();
     let fetch: Fetch = Arc::new(move |id, stale| {
-        tauri::async_runtime::block_on(connections::fresh_token(&handle, id, stale))
+        let app = handle.clone();
+        Box::pin(async move { connections::fresh_token(&app, &id, stale.as_deref()).await })
     });
     match TokenSocket::start(fetch) {
         Ok(socket) => Some(socket),
@@ -135,13 +142,13 @@ fn same(a: &str, b: &str) -> bool {
 }
 
 /// The answer to one request line.
-pub fn answer(line: &str, secret: &str, fetch: &Fetch) -> String {
+pub async fn answer(line: &str, secret: &str, fetch: &Fetch) -> String {
     let reply = match serde_json::from_str::<Request>(line) {
         Err(_) => serde_json::json!({ "error": "The request wasn't readable." }),
         Ok(request) if !same(&request.secret, secret) => {
             serde_json::json!({ "error": "Not allowed." })
         }
-        Ok(request) => match fetch(&request.extension, request.stale.as_deref()) {
+        Ok(request) => match fetch(request.extension, request.stale).await {
             Ok((token, expires_in)) => {
                 serde_json::json!({ "token": token, "expires_in": expires_in })
             }
@@ -151,20 +158,36 @@ pub fn answer(line: &str, secret: &str, fetch: &Fetch) -> String {
     reply.to_string()
 }
 
-fn serve(stream: UnixStream, secret: &str, fetch: &Fetch) {
-    let _ = stream.set_read_timeout(Some(READ_TIMEOUT));
-    let Ok(reader) = stream.try_clone() else {
-        return;
-    };
+/// Accepts connections for the run, answering at most `MAX_AT_ONCE` at a time.
+async fn serve(listener: UnixListener, secret: String, fetch: Fetch) {
+    let permits = Arc::new(Semaphore::new(MAX_AT_ONCE));
+    loop {
+        let Ok((stream, _)) = listener.accept().await else {
+            continue;
+        };
+        // Over the limit: closed unanswered, which the worker reads as the app not answering.
+        let Ok(permit) = permits.clone().try_acquire_owned() else {
+            continue;
+        };
+        let (secret, fetch) = (secret.clone(), fetch.clone());
+        tauri::async_runtime::spawn(async move {
+            let _permit = permit;
+            respond(stream, &secret, &fetch).await;
+        });
+    }
+}
+
+/// Reads one request line, within `READ_TIMEOUT`, and writes its answer.
+async fn respond(stream: UnixStream, secret: &str, fetch: &Fetch) {
+    let (read, mut write) = stream.into_split();
     let mut line = String::new();
-    if BufReader::new(reader.take(MAX_REQUEST))
-        .read_line(&mut line)
-        .is_err()
-    {
+    let mut reader = BufReader::new(read.take(MAX_REQUEST));
+    let request = reader.read_line(&mut line);
+    if !matches!(tokio::time::timeout(READ_TIMEOUT, request).await, Ok(Ok(_))) {
         return;
     }
-    let mut stream = stream;
-    let _ = writeln!(stream, "{}", answer(&line, secret, fetch));
+    let reply = answer(&line, secret, fetch).await;
+    let _ = write.write_all(format!("{reply}\n").as_bytes()).await;
 }
 
 #[cfg(test)]
@@ -174,30 +197,32 @@ mod tests {
     use std::os::unix::fs::MetadataExt;
     use std::sync::Mutex;
 
+    use tokio::io::AsyncBufReadExt;
+
     /// Each request the fake grants saw: the extension and the stale token.
     type Seen = Arc<Mutex<Vec<(String, Option<String>)>>>;
 
     fn fetch(seen: Seen) -> Fetch {
         Arc::new(move |id, stale| {
-            seen.lock()
-                .unwrap()
-                .push((id.to_owned(), stale.map(str::to_owned)));
-            match id {
-                "zapier" => Ok(("tok".into(), Some(300))),
-                _ => Err("Composio isn't connected.".into()),
-            }
+            seen.lock().unwrap().push((id.clone(), stale));
+            Box::pin(async move {
+                match id.as_str() {
+                    "zapier" => Ok(("tok".into(), Some(300))),
+                    _ => Err("Composio isn't connected.".into()),
+                }
+            })
         })
     }
 
-    #[test]
-    fn answers_with_the_token_only_for_the_runs_secret() {
+    #[tokio::test]
+    async fn answers_with_the_token_only_for_the_runs_secret() {
         let seen = Arc::new(Mutex::new(Vec::new()));
         let f = fetch(seen.clone());
-        let ask = |line: &str| {
-            serde_json::from_str::<serde_json::Value>(&answer(line, "s3cret", &f)).unwrap()
+        let ask = async |line: &str| {
+            serde_json::from_str::<serde_json::Value>(&answer(line, "s3cret", &f).await).unwrap()
         };
         assert_eq!(
-            ask(r#"{"secret":"s3cret","extension":"zapier","stale":"old"}"#),
+            ask(r#"{"secret":"s3cret","extension":"zapier","stale":"old"}"#).await,
             serde_json::json!({ "token": "tok", "expires_in": 300 })
         );
         assert_eq!(
@@ -205,14 +230,17 @@ mod tests {
             ("zapier".into(), Some("old".into()))
         );
         assert_eq!(
-            ask(r#"{"secret":"s3cret","extension":"composio","stale":null}"#),
+            ask(r#"{"secret":"s3cret","extension":"composio","stale":null}"#).await,
             serde_json::json!({ "error": "Composio isn't connected." })
         );
         assert_eq!(
-            ask(r#"{"secret":"guess","extension":"zapier","stale":null}"#)["error"],
+            ask(r#"{"secret":"guess","extension":"zapier","stale":null}"#).await["error"],
             "Not allowed."
         );
-        assert_eq!(ask("nonsense")["error"], "The request wasn't readable.");
+        assert_eq!(
+            ask("nonsense").await["error"],
+            "The request wasn't readable."
+        );
         assert_eq!(
             seen.lock().unwrap().len(),
             2,
@@ -220,9 +248,9 @@ mod tests {
         );
     }
 
-    #[test]
-    fn the_socket_is_private_and_answers_over_the_wire() {
-        let parent = tempfile_dir();
+    #[tokio::test]
+    async fn the_socket_is_private_and_answers_over_the_wire() {
+        let parent = tempfile_dir("wire");
         let socket =
             TokenSocket::start_in(&parent, fetch(Arc::new(Mutex::new(Vec::new())))).unwrap();
         let [(_, path), (_, secret)] = socket.env();
@@ -233,14 +261,12 @@ mod tests {
         assert_eq!(std::fs::metadata(&path).unwrap().mode() & 0o777, 0o600);
         assert!(path.len() <= MAX_SOCKET_PATH);
 
-        let mut stream = UnixStream::connect(&path).unwrap();
-        writeln!(
-            stream,
-            r#"{{"secret":"{secret}","extension":"zapier","stale":null}}"#
-        )
-        .unwrap();
+        let mut stream = UnixStream::connect(&path).await.unwrap();
+        let request =
+            format!("{{\"secret\":\"{secret}\",\"extension\":\"zapier\",\"stale\":null}}\n");
+        stream.write_all(request.as_bytes()).await.unwrap();
         let mut reply = String::new();
-        BufReader::new(stream).read_line(&mut reply).unwrap();
+        BufReader::new(stream).read_line(&mut reply).await.unwrap();
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(&reply).unwrap()["token"],
             "tok"
@@ -251,9 +277,36 @@ mod tests {
         let _ = std::fs::remove_dir_all(parent);
     }
 
-    fn tempfile_dir() -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("bomby-test-{}", std::process::id()));
+    /// A folder of the test's own, short enough for a socket path.
+    fn tempfile_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("bt-{name}-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[tokio::test]
+    async fn a_silent_client_is_dropped_and_others_still_answered() {
+        let parent = tempfile_dir("silent");
+        let socket =
+            TokenSocket::start_in(&parent, fetch(Arc::new(Mutex::new(Vec::new())))).unwrap();
+        let [(_, path), (_, secret)] = socket.env();
+        // More silent connections than the limit, then a real request.
+        let mut silent = Vec::new();
+        for _ in 0..MAX_AT_ONCE + 4 {
+            silent.push(UnixStream::connect(&path).await.unwrap());
+        }
+        tokio::time::sleep(READ_TIMEOUT + Duration::from_millis(500)).await;
+        let mut stream = UnixStream::connect(&path).await.unwrap();
+        let request =
+            format!("{{\"secret\":\"{secret}\",\"extension\":\"zapier\",\"stale\":null}}\n");
+        stream.write_all(request.as_bytes()).await.unwrap();
+        let mut reply = String::new();
+        BufReader::new(stream).read_line(&mut reply).await.unwrap();
+        assert!(
+            reply.contains("tok"),
+            "the silent ones timed out and freed their places"
+        );
+        socket.stop();
+        let _ = std::fs::remove_dir_all(parent);
     }
 }
