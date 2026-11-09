@@ -5,7 +5,34 @@
       "id": "todos",
       "name": "To-dos",
       "description": "A list for each project that you and Bomby keep together.",
-      "default_on": true
+      "default_on": true,
+      "connect": null
+    },
+    {
+      "id": "zapier",
+      "name": "Zapier",
+      "description": "Your apps through Zapier: mail, calendar, Slack, sheets and thousands more.",
+      "default_on": false,
+      "connect": {
+        "mcp_url": "https://mcp.zapier.com/api/v1/connect",
+        "manage_url": "https://mcp.zapier.com",
+        "link_hosts": [
+          "zapier.com"
+        ]
+      }
+    },
+    {
+      "id": "composio",
+      "name": "Composio",
+      "description": "Your apps through Composio: Gmail, GitHub, Notion, Linear and a thousand more.",
+      "default_on": false,
+      "connect": {
+        "mcp_url": "https://connect.composio.dev/mcp",
+        "manage_url": "https://connect.composio.dev",
+        "link_hosts": [
+          "composio.dev"
+        ]
+      }
     }
   ]
 }

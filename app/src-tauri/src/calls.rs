@@ -335,6 +335,11 @@ pub fn open_call<R: Runtime>(
                     livekit: server.clone(),
                     voice_keys,
                     zep_key,
+                    tokens: app
+                        .state::<extensions::tokens::Tokens>()
+                        .0
+                        .as_ref()
+                        .map(extensions::tokens::TokenSocket::env),
                 },
                 &log_dir,
                 report_crashes(&app),
@@ -351,7 +356,8 @@ pub fn open_call<R: Runtime>(
     // Read before the call is recorded, so a failed read leaves no call without its agents.
     let picks = agent_picks::saved(&conn)?;
     let call_voice = voice::for_call(&conn, provider)?;
-    let call_extensions = extensions::on_for(&conn, &project.extensions)?;
+    let connected = extensions::connections::connected(&app, &vault)?;
+    let call_extensions = extensions::on_for(&conn, &project.extensions, &connected)?;
     let call_id = match resume_call_id {
         Some(call_id) => {
             reopen(&conn, project_id, call_id)?;
@@ -429,7 +435,11 @@ pub fn call_token<R: Runtime>(
             // The worker that has the Zep key was started with an opened call.
             memory_user: String::new(),
             memory_incognito: false,
-            extensions: extensions::on_for(&db.conn(), &project.extensions)?,
+            extensions: extensions::on_for(
+                &db.conn(),
+                &project.extensions,
+                &extensions::connections::connected(&app, &vault)?,
+            )?,
         },
     };
     // Read fresh for each room, so a reconnect starts from the list as it is now.

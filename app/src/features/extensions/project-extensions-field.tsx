@@ -43,8 +43,10 @@ export function ProjectExtensionsField({
     onChange({ own: true, on: on ? [...others, id] : others })
   }
 
+  // One that signs in reaches a call only once it's connected.
   const names = settings
     .filter((e) => isOn(e.id, chosen, settings))
+    .filter((e) => !e.connection || e.connection.connected)
     .map((e) => e.name)
   const summary =
     names.length === 0
@@ -104,7 +106,11 @@ export function ProjectExtensionsField({
                 {extension.name}
               </FieldLabel>
               <span className="font-mono text-xs text-muted-foreground">
-                {extension.on ? "On in Settings" : "Off in Settings"}
+                {extension.connection && !extension.connection.connected
+                  ? "Not connected"
+                  : extension.on
+                    ? "On in Settings"
+                    : "Off in Settings"}
               </span>
               <Switch
                 id={`project-extension-${extension.id}`}

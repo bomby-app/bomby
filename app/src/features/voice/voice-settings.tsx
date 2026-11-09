@@ -1,5 +1,6 @@
 import { ApiKeyForm } from "@/components/api-key-form"
 import { ChoiceList, ChoiceRow } from "@/components/choice-list"
+import { ExperimentalBadge } from "@/components/experimental-badge"
 import { InfoTip } from "@/components/info-tip"
 import { Field, FieldError, FieldLabel } from "@/components/ui/field"
 import {
@@ -107,13 +108,7 @@ function ProviderRow({
       logo={<Logo />}
       title={copy.name}
       description={copy.description}
-      badge={
-        copy.experimental && (
-          <span className="rounded-full bg-highlighter px-1.5 py-px text-label font-medium text-highlighter-foreground">
-            Experimental
-          </span>
-        )
-      }
+      badge={copy.experimental && <ExperimentalBadge />}
     >
       <ApiKeyForm
         id={`${id}-api-key`}

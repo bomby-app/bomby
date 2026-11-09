@@ -62,6 +62,10 @@ pub fn run() {
                 app.path().app_log_dir()?,
             ));
             app.manage(credentials::Vault::default());
+            app.manage(extensions::connections::Connections::default());
+            app.manage(extensions::tokens::Tokens(extensions::tokens::start(
+                app.handle(),
+            )));
             app.manage(agents::Agents::default());
             app.manage(agent_picks::Listings::default());
             app.manage(calls::CallAgents::default());
@@ -136,6 +140,10 @@ pub fn run() {
             projects::set_project_extensions,
             extensions::extensions_settings,
             extensions::set_extension,
+            extensions::connections::connect_extension,
+            extensions::connections::cancel_extension_connect,
+            extensions::connections::disconnect_extension,
+            extensions::connections::open_extension_link,
             extensions::todos::list_todos,
             extensions::todos::add_todos,
             extensions::todos::update_todo,
@@ -164,6 +172,9 @@ pub fn run() {
                     .0
                     .close_all();
                 app.state::<local_server::LocalServer>().stop();
+                if let Some(socket) = &app.state::<extensions::tokens::Tokens>().0 {
+                    socket.stop();
+                }
             }
             // A click on the Dock icon brings the (maybe hidden) main window back.
             #[cfg(target_os = "macos")]

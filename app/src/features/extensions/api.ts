@@ -25,3 +25,31 @@ export function setExtension(
 export function onExtensionsChanged(handler: () => void): Promise<UnlistenFn> {
   return listen("extensions-changed", () => handler())
 }
+
+// The hosted MCP extensions' sign-ins (src-tauri/src/extensions/connections.rs,
+// docs/decisions/hosted-mcp-extensions-with-oauth.md). No token ever comes back.
+
+/** What the core says when a sign-in is cancelled; not an error to show. */
+export const CANCELLED = "The sign-in was cancelled."
+
+/**
+ * Opens the vendor's sign-in in the browser and resolves once the user finishes, with every
+ * extension as it is now. Rejects with a message for the user, or `CANCELLED`.
+ */
+export function connectExtension(id: string): Promise<ExtensionSetting[]> {
+  return invoke("connect_extension", { id })
+}
+
+/** Stops the extension's sign-in under way; its `connectExtension` rejects with `CANCELLED`. */
+export function cancelExtensionConnect(id: string): Promise<void> {
+  return invoke("cancel_extension_connect", { id })
+}
+
+export function disconnectExtension(id: string): Promise<ExtensionSetting[]> {
+  return invoke("disconnect_extension", { id })
+}
+
+/** Opens a link one of the extension's tools handed Bomby, only on the vendor's hosts. */
+export function openExtensionLink(id: string, url: string): Promise<void> {
+  return invoke("open_extension_link", { id, url })
+}

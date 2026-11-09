@@ -9,6 +9,7 @@ The source of truth is the Paper file **bomby**, pages `branding` and `app asset
 - Never co-brand with Claude, LiveKit or Gemini. Name them only to describe requirements or implementation. Their logos appear only in Settings and on the first-run card, in `currentColor`, except Claude's own colours on its first-run tile (owner's board, 2026-11-04).
 - The mark and the mascot have no names of their own: both are Bomby (owner, 2026-11-08).
 - `.github/assets/cover.jpg` (2:1, 2560 x 1280) heads the README and serves as the social preview, uploaded in the repository's settings. It's Paper page `web assets`, frame `github-readme-cover-c-rising-window`, exported as JPG at 2x (owner, 2026-11-08).
+- `.github/assets/logo.png` (512 x 512) is Bomby's logo where other services list it as a signed-in client, sent as `logo_uri` when Bomby registers for a sign-in (`app/src-tauri/src/extensions/oauth.rs`). It's Paper page `app assets`, frame `client-logo · 512 · OAuth logo_uri`: the mark in ink on highlighter, full bleed, so a service's own rounded or round crop keeps it whole.
 
 ## Mark
 

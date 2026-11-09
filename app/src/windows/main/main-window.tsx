@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { CallProvider } from "@/features/call/call-provider"
 import { ExtensionRpcBridge } from "@/features/extensions/extension-rpc-bridge"
+import { useHostedMcpRpc } from "@/features/extensions/hosted-rpc"
 import { TaskNotifier } from "@/features/notifications/task-notifier"
 import { firstRun } from "@/features/onboarding/api"
 import { Splash } from "@/features/onboarding/splash"
@@ -16,9 +17,6 @@ import { openSettings, SETTINGS_SHORTCUT } from "../settings/open-settings"
 import { AppSidebar } from "./app-sidebar"
 import { MainPanel } from "./main-panel"
 import { NEW_PROJECT_SHORTCUT } from "./new-project-row"
-
-/** What each extension answers Bomby over RPC while a call is on. */
-const EXTENSION_RPC = [TODOS_RPC]
 
 /**
  * The main window: the first-run splash until it's finished, then the project tree on
@@ -37,6 +35,9 @@ export function MainWindow() {
 }
 
 function Workspace() {
+  // What each extension answers Bomby over RPC while a call is on.
+  const hostedRpc = useHostedMcpRpc()
+  const extensionRpc = useMemo(() => [TODOS_RPC, ...hostedRpc], [hostedRpc])
   const [selection, setSelection] = useState<Selection>(null)
   const [creating, setCreating] = useState(false)
 
@@ -82,7 +83,7 @@ function Workspace() {
           onCreated={(project) => openProject(project.id)}
         />
         <TrayBridge onOpenProject={openProject} />
-        <ExtensionRpcBridge extensions={EXTENSION_RPC} />
+        <ExtensionRpcBridge extensions={extensionRpc} />
         <TaskNotifier onOpen={openProject} />
       </CallProvider>
     </ProjectsProvider>
