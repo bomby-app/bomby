@@ -4,7 +4,6 @@ import {
   useSessionContext,
   useSessionMessages,
 } from "@livekit/components-react"
-import { invoke } from "@tauri-apps/api/core"
 import { RoomEvent, TokenSource } from "livekit-client"
 import {
   createContext,
@@ -25,6 +24,7 @@ import {
   callMessages,
   callToken,
   endCall,
+  log,
   onAgentCrashed,
   openCall,
   type SavedMessage,
@@ -58,10 +58,6 @@ type CallState = {
 }
 
 const CallContext = createContext<CallState | null>(null)
-
-function log(line: string) {
-  void invoke("app_log", { line }).catch(() => {})
-}
 
 /**
  * LiveKit fetches a token whenever it likes: on mount, on each start, and on end and

@@ -2,7 +2,10 @@ import { useSessionContext, useTrackToggle } from "@livekit/components-react"
 import { Track } from "livekit-client"
 import { useEffect, useEffectEvent } from "react"
 
+import { showErrorToast } from "@/components/error-toast"
 import { commandShortcut } from "@/lib/shortcuts"
+
+import { log } from "./api"
 
 /** Mutes or unmutes the mic on a call. Cmd-M is macOS's Minimize, so Shift too. */
 export const MUTE_SHORTCUT = commandShortcut("m", { shift: true })
@@ -22,7 +25,17 @@ export function useMic(): {
     available: isConnected,
     enabled: mic.enabled,
     toggle: () => {
-      if (isConnected && !mic.pending) void mic.toggle()
+      if (!isConnected || mic.pending) return
+      // A device or permission failure rejects; it would otherwise go unseen, from a
+      // shortcut or the palette with the call's page not in view.
+      mic.toggle().catch((e: unknown) => {
+        log(`mic toggle failed: ${String(e)}`)
+        showErrorToast(
+          mic.enabled
+            ? "Couldn't mute the mic. Try the call's mic button?"
+            : "Couldn't turn the mic on. Check it's connected and allowed?"
+        )
+      })
     },
   }
 }

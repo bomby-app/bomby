@@ -57,3 +57,8 @@ export function onAgentCrashed(handler: (crash: AgentCrashed) => void) {
     (event) => handler(event.payload)
   )
 }
+
+/** Writes a line to `app.log`, for what only the page sees; never fails. */
+export function log(line: string) {
+  void invoke("app_log", { line }).catch(() => {})
+}
