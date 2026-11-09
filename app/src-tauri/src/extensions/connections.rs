@@ -128,10 +128,18 @@ impl Connections {
         }
     }
 
-    /// Saves a new sign-in, after any refresh of the old one under way.
-    pub async fn save(&self, grants: &impl Grants, id: &str, grant: Grant) -> Result<()> {
+    /// Saves sign-in `run`'s grant, after any refresh of the old one under way, unless the
+    /// user cancelled it or started another meanwhile: checked under the extension's lock,
+    /// so a Cancel that lands while the save waits still wins.
+    pub async fn save(&self, grants: &impl Grants, id: &str, run: u64, grant: Grant) -> Result<()> {
         let lock = self.lock(id);
         let _held = lock.lock().await;
+        let current = sync::lock(&self.pending)
+            .get(id)
+            .is_some_and(|p| p.run == run);
+        if !current {
+            return Err(Error::Invalid(CANCELLED.into()));
+        }
         grants.replace(id, Expect::Any, Some(grant)).map(|_| ())
     }
 
@@ -251,6 +259,7 @@ pub async fn connect_extension<R: Runtime>(
                     vault: &vault,
                 },
                 &id,
+                run,
                 grant,
             )
             .await
@@ -520,9 +529,10 @@ mod tests {
         let refreshing = tokio::spawn(slow_refresh(connections.clone(), grants.clone(), released));
         tokio::time::sleep(Duration::from_millis(20)).await;
 
+        let (run, _) = connections.begin("zapier");
         let saving = {
             let (c, g) = (connections.clone(), grants.clone());
-            tokio::spawn(async move { c.save(&*g, "zapier", grant("new")).await })
+            tokio::spawn(async move { c.save(&*g, "zapier", run, grant("new")).await })
         };
         release.send(()).unwrap();
         let _ = refreshing.await.unwrap();
@@ -584,5 +594,52 @@ mod tests {
         );
         connections.end("zapier", second);
         assert!(connections.connecting().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_sign_in_cancelled_while_its_save_waits_saves_nothing() {
+        let connections = Arc::new(Connections::default());
+        let grants = Arc::new(with("zapier", grant("at1")));
+        let (release, released) = oneshot::channel();
+        let refreshing = tokio::spawn(slow_refresh(connections.clone(), grants.clone(), released));
+        tokio::time::sleep(Duration::from_millis(20)).await;
+
+        // The browser came back; the save waits behind the refresh, and the user cancels.
+        let (run, _) = connections.begin("zapier");
+        let saving = {
+            let (c, g) = (connections.clone(), grants.clone());
+            tokio::spawn(async move { c.save(&*g, "zapier", run, grant("cancelled")).await })
+        };
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        connections.cancel("zapier");
+        release.send(()).unwrap();
+        let _ = refreshing.await.unwrap();
+
+        let refused = saving.await.unwrap().unwrap_err().to_string();
+        assert_eq!(refused, CANCELLED);
+        assert_eq!(
+            saved(&grants, "zapier").as_deref(),
+            Some("at2"),
+            "the refreshed one stays"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_sign_in_replaced_by_a_later_one_saves_nothing() {
+        let connections = Connections::default();
+        let grants = MemoryGrants::default();
+        let (first, _) = connections.begin("zapier");
+        let (second, _) = connections.begin("zapier");
+        assert!(
+            connections
+                .save(&grants, "zapier", first, grant("old"))
+                .await
+                .is_err()
+        );
+        connections
+            .save(&grants, "zapier", second, grant("new"))
+            .await
+            .unwrap();
+        assert_eq!(saved(&grants, "zapier").as_deref(), Some("new"));
     }
 }

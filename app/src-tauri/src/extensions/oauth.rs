@@ -39,6 +39,8 @@ const WANTED_SCOPES: [&str; 4] = ["openid", "profile", "email", "offline_access"
 /// The most of a callback request Bomby reads.
 const MAX_CALLBACK: usize = 16 * 1024;
 const CALLBACK_PATH: &str = "/callback";
+/// How long one connection to the loopback redirect gets to send its request.
+const CALLBACK_READ_TIMEOUT: Duration = Duration::from_secs(10);
 /// Bomby's logo for the vendors' lists of signed-in clients: Paper page `app assets`, frame
 /// `client-logo · 512 · OAuth logo_uri` (docs/brand.md). It loads once the repo is public.
 const LOGO_URI: &str =
@@ -501,14 +503,40 @@ fn page(title: &str, line: &str) -> String {
 
 const NOT_FOUND: &str = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
 
-/// Waits on `listener` for the redirect that carries `state`, answering the browser.
+/// Waits on `listener` for the redirect that carries `state`, answering the browser. Each
+/// connection is read on its own, within `CALLBACK_READ_TIMEOUT`: browsers open spare
+/// connections ahead of time, and an idle one must not hold up the real callback.
 async fn wait_for_code(listener: TcpListener, state: &str, at: &Discovered) -> Result<String> {
+    let (found, mut outcomes) = tokio::sync::mpsc::channel(4);
+    let mut readers = tokio::task::JoinSet::new();
     loop {
-        let Ok((mut stream, _)) = listener.accept().await else {
-            continue;
-        };
-        let mut buf = vec![0u8; MAX_CALLBACK];
-        let mut read = 0;
+        tokio::select! {
+            accepted = listener.accept() => {
+                let Ok((stream, _)) = accepted else { continue };
+                let (found, state, at) = (found.clone(), state.to_owned(), at.clone());
+                readers.spawn(async move {
+                    if let Some(outcome) = answer_callback(stream, &state, &at).await {
+                        let _ = found.send(outcome).await;
+                    }
+                });
+            }
+            Some(outcome) = outcomes.recv() => return outcome,
+            // Finished readers are dropped as they end; the set aborts the rest on return.
+            Some(_) = readers.join_next(), if !readers.is_empty() => {}
+        }
+    }
+}
+
+/// Reads one connection's request and answers it; the sign-in's outcome when it's the
+/// callback, None for anything else (a favicon, a spare connection that stays idle).
+async fn answer_callback(
+    mut stream: tokio::net::TcpStream,
+    state: &str,
+    at: &Discovered,
+) -> Option<Result<String>> {
+    let mut buf = vec![0u8; MAX_CALLBACK];
+    let mut read = 0;
+    let headers = async {
         // The request line and headers arrive in one or a few reads; stop at their end.
         while read < buf.len() {
             match stream.read(&mut buf[read..]).await {
@@ -519,30 +547,34 @@ async fn wait_for_code(listener: TcpListener, state: &str, at: &Discovered) -> R
                 break;
             }
         }
-        let request = String::from_utf8_lossy(&buf[..read]);
-        let (reply, outcome) = match read_callback(&request, state, at) {
-            Callback::Code(code) => (
-                page(
-                    "You're connected",
-                    "You can close this tab and go back to Bomby.",
-                ),
-                Some(Ok(code)),
-            ),
-            Callback::Refused(message) => (
-                page(
-                    "Not connected",
-                    "You can close this tab and try again in Bomby.",
-                ),
-                Some(Err(failed(format!("The sign-in didn't finish: {message}")))),
-            ),
-            Callback::Other => (NOT_FOUND.to_owned(), None),
-        };
-        let _ = stream.write_all(reply.as_bytes()).await;
-        let _ = stream.shutdown().await;
-        if let Some(outcome) = outcome {
-            return outcome;
-        }
+    };
+    if tokio::time::timeout(CALLBACK_READ_TIMEOUT, headers)
+        .await
+        .is_err()
+    {
+        return None;
     }
+    let request = String::from_utf8_lossy(&buf[..read]);
+    let (reply, outcome) = match read_callback(&request, state, at) {
+        Callback::Code(code) => (
+            page(
+                "You're connected",
+                "You can close this tab and go back to Bomby.",
+            ),
+            Some(Ok(code)),
+        ),
+        Callback::Refused(message) => (
+            page(
+                "Not connected",
+                "You can close this tab and try again in Bomby.",
+            ),
+            Some(Err(failed(format!("The sign-in didn't finish: {message}")))),
+        ),
+        Callback::Other => (NOT_FOUND.to_owned(), None),
+    };
+    let _ = stream.write_all(reply.as_bytes()).await;
+    let _ = stream.shutdown().await;
+    outcome
 }
 
 /// The email (or name) in an ID token's claims, read without checking its signature: it only
@@ -1228,5 +1260,34 @@ mod tests {
             discover(&http, "http://mcp.example/mcp").await.is_err(),
             "not https"
         );
+    }
+
+    #[tokio::test]
+    async fn an_idle_browser_connection_doesnt_hold_up_the_callback() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let at = discovered();
+        let waiting = tokio::spawn(async move { wait_for_code(listener, "s1", &at).await });
+
+        // A spare connection the browser opened ahead of time, which never sends anything.
+        let _idle = tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .unwrap();
+        let mut callback = tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .unwrap();
+        callback
+            .write_all(get("/callback?code=abc&state=s1").as_bytes())
+            .await
+            .unwrap();
+
+        let code = tokio::time::timeout(Duration::from_secs(2), waiting)
+            .await
+            .expect("answered well before the idle connection's timeout")
+            .unwrap();
+        assert_eq!(code, Ok("abc".to_owned()));
+        let mut page = String::new();
+        let _ = callback.read_to_string(&mut page).await;
+        assert!(page.contains("You're connected"));
     }
 }
