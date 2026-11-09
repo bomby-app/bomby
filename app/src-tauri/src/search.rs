@@ -106,24 +106,35 @@ fn calls(conn: &Connection, words: &[&str]) -> Result<Vec<CallHit>> {
         return Ok(Vec::new());
     };
     conn.prepare(
-        // FTS5 refuses snippet() beside window functions, so the matching lines come first.
+        // Each call's first matching line and how many matched, the latest calls first,
+        // then a snippet cut only for the lines of those calls: snippet() is the costly
+        // part, and a common word can match thousands of lines. FTS5 refuses snippet()
+        // beside window functions, so the choosing comes first, materialized.
         "WITH hits AS MATERIALIZED (
-             SELECT rowid AS id, snippet(messages_search, 0, ?2, ?3, '…', ?4) AS snippet
-             FROM messages_search WHERE messages_search MATCH ?1
-         )
-         SELECT call_id, project_id, project_name, started_at, role, snippet, matches FROM (
-             SELECT m.call_id, c.project_id, p.name AS project_name, c.started_at, m.role,
-                 hits.snippet,
+             SELECT rowid AS id FROM messages_search WHERE messages_search MATCH ?1
+         ),
+         firsts AS (
+             SELECT m.id, m.call_id, m.role,
                  ROW_NUMBER() OVER (PARTITION BY m.call_id ORDER BY m.created_at, m.id) AS nth,
                  COUNT(*) OVER (PARTITION BY m.call_id) AS matches
-             FROM hits
-             JOIN messages m ON m.id = hits.id
-             JOIN calls c ON c.id = m.call_id
+             FROM hits JOIN messages m ON m.id = hits.id
+         ),
+         chosen AS MATERIALIZED (
+             SELECT f.id, f.call_id, c.project_id, p.name AS project_name, c.started_at,
+                 f.role, f.matches
+             FROM firsts f
+             JOIN calls c ON c.id = f.call_id
              JOIN projects p ON p.id = c.project_id
+             WHERE f.nth = 1
+             ORDER BY c.started_at DESC, c.id DESC
+             LIMIT ?5
          )
-         WHERE nth = 1
-         ORDER BY started_at DESC, call_id DESC
-         LIMIT ?5",
+         SELECT chosen.call_id, chosen.project_id, chosen.project_name, chosen.started_at,
+             chosen.role, snippet(messages_search, 0, ?2, ?3, '…', ?4), chosen.matches
+         FROM chosen
+         JOIN messages_search ON messages_search.rowid = chosen.id
+         WHERE messages_search MATCH ?1
+         ORDER BY chosen.started_at DESC, chosen.call_id DESC",
     )?
     .query_map(
         params![expression, MARK_START, MARK_END, SNIPPET_TOKENS, MAX_CALLS],
@@ -269,6 +280,37 @@ mod tests {
                 .calls
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn a_common_word_gives_the_latest_calls_each_with_its_snippet() {
+        let db = Db::in_memory().unwrap();
+        let conn = db.conn();
+        let garden = project(&conn, "Garden");
+        let calls: Vec<i64> = (0..MAX_CALLS + 5)
+            .map(|at| {
+                let id = call(&conn, garden, at);
+                say(&conn, id, "a", "user", "The plan for the week");
+                say(&conn, id, "b", "agent", "Then the beds");
+                id
+            })
+            .collect();
+
+        let results = search_in(&conn, "the").unwrap();
+        let newest: Vec<i64> = calls
+            .iter()
+            .rev()
+            .take(usize::try_from(MAX_CALLS).unwrap())
+            .copied()
+            .collect();
+        assert_eq!(call_ids(&results), newest);
+        for hit in &results.calls {
+            assert_eq!(hit.matches, 2);
+            assert_eq!(
+                hit.snippet, "\u{2}The\u{3} plan for \u{2}the\u{3} week",
+                "the first matching line"
+            );
+        }
     }
 
     #[test]
