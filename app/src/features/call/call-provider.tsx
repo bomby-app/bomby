@@ -33,6 +33,7 @@ import {
 import { MuteShortcut } from "./mute"
 import { forgetSavedCall } from "./saved-call-view"
 import { lineId, roleOf } from "./transcript"
+import { track, written } from "./transcript-writes"
 
 export type ActiveCall = {
   projectId: number
@@ -112,8 +113,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
   const finish = useCallback(
     async (id: number) => {
-      setActive(null)
+      // Its last lines are saved before the call's page shows its saved transcript, and
+      // only then is what this page kept of it dropped, so the transcript read is whole.
+      await written(id)
       forgetSavedCall(id)
+      setActive(null)
       await endCall(id)
       await refresh()
     },
@@ -243,7 +247,10 @@ function CallRecorder({ call }: { call: ActiveCall }) {
       const id = lineId(message)
       if (saved.current.get(id) === text) continue
       saved.current.set(id, text)
-      void saveMessage(call.callId, { segmentId: id, role, text })
+      track(
+        call.callId,
+        saveMessage(call.callId, { segmentId: id, role, text })
+      )
     }
   }, [messages, call])
   return null
