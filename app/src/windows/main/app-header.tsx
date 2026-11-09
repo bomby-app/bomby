@@ -13,7 +13,8 @@ export function AppHeader({
   title,
   actions,
 }: {
-  title: string
+  /** Text, or the project's name with something in it to click: a call's name. */
+  title: ReactNode
   actions?: ReactNode
 }) {
   const { state } = useSidebar()
@@ -32,8 +33,12 @@ export function AppHeader({
         orientation="vertical"
         className="mr-1 data-vertical:h-4 data-vertical:self-center"
       />
-      <h1 className="pointer-events-none truncate text-sm font-medium">
-        {title}
+      <h1 className="pointer-events-none flex min-w-0 items-center gap-1 text-sm font-medium">
+        {typeof title === "string" ? (
+          <span className="truncate">{title}</span>
+        ) : (
+          title
+        )}
       </h1>
       {actions && <div className="ml-auto shrink-0">{actions}</div>}
     </header>

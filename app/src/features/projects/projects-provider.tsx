@@ -1,5 +1,8 @@
 import { createContext, type ReactNode, use, useEffect, useState } from "react"
 
+import { onCallRenamed } from "@/features/call/api"
+import { useCoreEvent } from "@/hooks/use-core-event"
+
 import {
   createProject,
   deleteProject,
@@ -42,6 +45,9 @@ export function ProjectsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void listProjects().then(setProjects)
   }, [])
+
+  // A call renamed by the user in another window, or by Bomby mid-call.
+  useCoreEvent(onCallRenamed, () => void reload())
 
   const state: ProjectsState = {
     projects,

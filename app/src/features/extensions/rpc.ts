@@ -14,11 +14,11 @@ export const MAX_ANSWER_BYTES = 14_000
 /** A refusal for the user: a request Bomby can fix, such as a to-do that isn't there. */
 export class Refusal extends Error {}
 
-/** One operation: the request's payload (parsed JSON) and the call's project, to an answer. */
-export type RpcHandler = (
-  payload: unknown,
-  projectId: number
-) => Promise<unknown>
+/** The call Bomby asks about: its project, and the call itself. */
+export type RpcCall = { projectId: number; callId: number }
+
+/** One operation: the request's payload (parsed JSON) and the call it's on, to an answer. */
+export type RpcHandler = (payload: unknown, call: RpcCall) => Promise<unknown>
 
 /** An extension's operations, by name: `todos` with `add` answers `bomby.todos.add`. */
 export type ExtensionRpc = { id: string; handlers: Record<string, RpcHandler> }
@@ -39,7 +39,7 @@ export function methods(extension: ExtensionRpc): [string, RpcHandler][] {
 export async function answer(
   handler: RpcHandler,
   payload: string,
-  projectId: number
+  call: RpcCall
 ): Promise<string> {
   let request: unknown
   try {
@@ -48,7 +48,7 @@ export async function answer(
     throw new RpcError(REFUSED, "That request wasn't readable.")
   }
   try {
-    return JSON.stringify(await handler(request, projectId))
+    return JSON.stringify(await handler(request, call))
   } catch (e) {
     if (e instanceof Refusal) throw new RpcError(REFUSED, e.message)
     if (typeof e === "string") throw new RpcError(REFUSED, e)

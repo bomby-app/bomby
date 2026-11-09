@@ -1,12 +1,12 @@
 import { use, useEffect } from "react"
 
-import { AgentChatTranscript } from "@/components/agents-ui/agent-chat-transcript"
 import { ErrorCard } from "@/components/error-card"
 
-import { callMessages, type SavedMessage } from "./api"
-import { toReceived } from "./transcript"
+import { callTranscript } from "./api"
+import { SessionTranscript } from "./session-transcript"
+import { bySession, type SessionLines } from "./transcript"
 
-type Loaded = { messages: SavedMessage[] } | { error: string }
+type Loaded = { sessions: SessionLines[] } | { error: string }
 
 // Past calls' lines as read, so `use` gets the same promise on every render and opening
 // one again is instant: the latest MOST_KEPT, and always those whose page is showing. A
@@ -28,8 +28,8 @@ function load(callId: number): Promise<Loaded> {
     const created: Entry = {
       failed: false,
       showing: 0,
-      promise: callMessages(callId).then(
-        (messages): Loaded => ({ messages }),
+      promise: callTranscript(callId).then(
+        (transcript): Loaded => ({ sessions: bySession(transcript) }),
         (e: unknown): Loaded => {
           created.failed = true
           return { error: String(e) }
@@ -75,15 +75,15 @@ export function SavedCallView({ callId }: { callId: number }) {
   }, [callId])
   if ("error" in loaded)
     return <ErrorCard message={loaded.error} className="m-6" />
-  if (loaded.messages.length === 0)
+  if (loaded.sessions.length === 0)
     return (
       <p className="p-6 text-sm text-muted-foreground">
         Nothing was said on this call.
       </p>
     )
   return (
-    <AgentChatTranscript
-      messages={loaded.messages.map(toReceived)}
+    <SessionTranscript
+      sessions={loaded.sessions}
       defaultScrollPosition="start"
       className="call-transcript min-h-0 flex-1"
     />

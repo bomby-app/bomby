@@ -1,5 +1,5 @@
 """Extensions: self-contained tool sets the user turns on in Settings, Extensions, and per
-project, one definition per file (`todos.py`), all of the `Extension` type (`extension.py`)
+project, one definition per file (`todos.py`, `call_names.py`), all of the `Extension` type (`extension.py`)
 ([decision](../../docs/decisions/extensions.md)).
 
 The app sends the ones a call has, each with what it needs at the start (`extensions` in the
@@ -25,6 +25,7 @@ from pydantic import JsonValue
 from sections import Style
 from voice_providers import Tools
 
+from .call_names import CALL_NAMES_EXTENSION
 from .composio import COMPOSIO_EXTENSION
 from .extension import AppBridge, Extension, ExtensionContext, ExtensionError
 from .todos import TODOS_EXTENSION
@@ -33,7 +34,13 @@ from .zapier import ZAPIER_EXTENSION
 
 # In the order Settings lists them.
 EXTENSIONS: dict[str, Extension] = {
-    e.id: e for e in (TODOS_EXTENSION, ZAPIER_EXTENSION, COMPOSIO_EXTENSION)
+    e.id: e
+    for e in (
+        TODOS_EXTENSION,
+        CALL_NAMES_EXTENSION,
+        ZAPIER_EXTENSION,
+        COMPOSIO_EXTENSION,
+    )
 }
 
 

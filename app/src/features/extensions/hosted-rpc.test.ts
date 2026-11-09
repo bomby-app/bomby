@@ -40,8 +40,8 @@ describe("hosted MCP extensions' RPC", () => {
   it("refuses a request without a link before it reaches the core", async () => {
     const [zapier] = hostedMcpRpc(SETTINGS)
     const openLink = zapier!.handlers.open_link!
-    await expect(answer(openLink, '{"url": 5}', 1)).rejects.toEqual(
-      new RpcError(REFUSED, "Send the link to open.")
-    )
+    await expect(
+      answer(openLink, '{"url": 5}', { projectId: 1, callId: 1 })
+    ).rejects.toEqual(new RpcError(REFUSED, "Send the link to open."))
   })
 })

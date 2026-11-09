@@ -68,13 +68,13 @@ export function fit(todos: TodoLine[]): Listing {
 export const TODOS_RPC: ExtensionRpc = {
   id: "todos",
   handlers: {
-    list: async (payload, projectId) => {
+    list: async (payload, { projectId }) => {
       const { status = "open" } = record(payload)
       if (!isFilter(status)) throw new Refusal("That's not a status I know.")
       const todos = await listTodos(projectId)
       return fit(todos.filter((t) => matches(t, status)).map(line))
     },
-    add: async (payload, projectId) => {
+    add: async (payload, { projectId }) => {
       const { items } = record(payload)
       if (!Array.isArray(items)) throw new Refusal("Say what to add.")
       const added = await addTodos(
@@ -90,7 +90,7 @@ export const TODOS_RPC: ExtensionRpc = {
       )
       return added.map(line)
     },
-    update: async (payload, projectId) => {
+    update: async (payload, { projectId }) => {
       const request = record(payload)
       const { status } = request
       if (status !== undefined && !STATUSES.includes(status as TodoStatus))
@@ -104,7 +104,7 @@ export const TODOS_RPC: ExtensionRpc = {
         await updateTodo(projectId, number(request.number), change, "bomby")
       )
     },
-    remove: async (payload, projectId) =>
+    remove: async (payload, { projectId }) =>
       line(await removeTodo(projectId, number(record(payload).number))),
   },
 }

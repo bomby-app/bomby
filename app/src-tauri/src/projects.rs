@@ -39,8 +39,13 @@ pub struct Project {
 #[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "projects.ts"))]
 pub struct CallSummary {
     id: i64,
+    /// When it first started; resuming it keeps this.
     started_at: i64,
     ended_at: Option<i64>,
+    /// None until the user or Bomby names it; it shows when it started instead.
+    name: Option<String>,
+    /// How long it was on, its sessions added up, without the time between them.
+    active_ms: i64,
 }
 
 #[derive(Deserialize)]
@@ -300,14 +305,18 @@ fn load(conn: &Connection, id: i64) -> Result<Project> {
 
     let calls = conn
         .prepare(
-            "SELECT id, started_at, ended_at FROM calls
-             WHERE project_id = ?1 ORDER BY started_at DESC",
+            "SELECT c.id, c.started_at, c.ended_at, c.name,
+                    COALESCE(SUM(COALESCE(s.ended_at, s.started_at) - s.started_at), 0)
+             FROM calls c LEFT JOIN call_sessions s ON s.call_id = c.id
+             WHERE c.project_id = ?1 GROUP BY c.id ORDER BY c.started_at DESC",
         )?
         .query_map([id], |row| {
             Ok(CallSummary {
                 id: row.get(0)?,
                 started_at: row.get(1)?,
                 ended_at: row.get(2)?,
+                name: row.get(3)?,
+                active_ms: row.get(4)?,
             })
         })?
         .collect::<rusqlite::Result<_>>()?;

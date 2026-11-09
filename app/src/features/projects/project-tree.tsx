@@ -22,7 +22,7 @@ import {
 
 import { useCall } from "../call/call-provider"
 import type { Project } from "./api"
-import { callLabel } from "./names"
+import { callLabel, callTitle } from "./names"
 import { useProjects } from "./projects-provider"
 import type { Selection } from "./selection"
 
@@ -127,7 +127,14 @@ function ProjectNode({
                         })
                       }
                     >
-                      <span>{callLabel(call.startedAt)}</span>
+                      <span
+                        // A named call still says when it started, on hover.
+                        title={
+                          call.name ? callLabel(call.startedAt) : undefined
+                        }
+                      >
+                        {callTitle(call)}
+                      </span>
                     </button>
                   </SidebarMenuSubButton>
                 </SidebarMenuSubItem>

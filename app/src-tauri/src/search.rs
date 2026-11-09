@@ -1,5 +1,6 @@
-//! Search for the command palette: projects by name, and calls by what was said in them,
-//! from the full-text index over their lines (`messages_search`, migration 8 in db.rs).
+//! Search for the command palette: projects by name, and calls by their name and what was
+//! said in them, from the full-text index over their lines (`messages_search`, migration 8
+//! in db.rs).
 //! Both come back for one query, so a word in a project's name and in a call both show.
 
 use rusqlite::{Connection, params};
@@ -26,7 +27,7 @@ const MARK_END: &str = "\u{3}";
 pub struct SearchResults {
     /// Those whose name has every word, those starting with the query first.
     projects: Vec<ProjectHit>,
-    /// Those with a line that has every word, the latest first.
+    /// Those whose name or a line has every word, the latest first.
     calls: Vec<CallHit>,
 }
 
@@ -46,13 +47,23 @@ pub struct CallHit {
     project_id: i64,
     project_name: String,
     started_at: i64,
-    /// Who said the first line that matched.
-    #[cfg_attr(test, ts(type = "\"user\" | \"agent\""))]
-    role: String,
-    /// That line around what matched, each match between U+0002 and U+0003.
-    snippet: String,
+    /// The call's name, if it has one.
+    name: Option<String>,
+    /// The first line that matched, if one did: the name alone may have.
+    line: Option<LineHit>,
     /// How many of the call's lines matched.
     matches: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "search.ts"))]
+pub struct LineHit {
+    /// Who said it.
+    #[cfg_attr(test, ts(type = "\"user\" | \"agent\""))]
+    role: String,
+    /// The line around what matched, each match between U+0002 and U+0003.
+    snippet: String,
 }
 
 /// The query's words: what's between spaces, without the empty.
@@ -121,7 +132,7 @@ fn calls(conn: &Connection, words: &[&str]) -> Result<Vec<CallHit>> {
          ),
          chosen AS MATERIALIZED (
              SELECT f.id, f.call_id, c.project_id, p.name AS project_name, c.started_at,
-                 f.role, f.matches
+                 c.name, f.role, f.matches
              FROM firsts f
              JOIN calls c ON c.id = f.call_id
              JOIN projects p ON p.id = c.project_id
@@ -130,7 +141,8 @@ fn calls(conn: &Connection, words: &[&str]) -> Result<Vec<CallHit>> {
              LIMIT ?5
          )
          SELECT chosen.call_id, chosen.project_id, chosen.project_name, chosen.started_at,
-             chosen.role, snippet(messages_search, 0, ?2, ?3, '…', ?4), chosen.matches
+             chosen.name, chosen.role, snippet(messages_search, 0, ?2, ?3, '…', ?4),
+             chosen.matches
          FROM chosen
          JOIN messages_search ON messages_search.rowid = chosen.id
          WHERE messages_search MATCH ?1
@@ -144,14 +156,64 @@ fn calls(conn: &Connection, words: &[&str]) -> Result<Vec<CallHit>> {
                 project_id: row.get(1)?,
                 project_name: row.get(2)?,
                 started_at: row.get(3)?,
-                role: row.get(4)?,
-                snippet: row.get(5)?,
-                matches: row.get(6)?,
+                name: row.get(4)?,
+                line: Some(LineHit {
+                    role: row.get(5)?,
+                    snippet: row.get(6)?,
+                }),
+                matches: row.get(7)?,
             })
         },
     )?
     .collect::<rusqlite::Result<_>>()
     .map_err(Into::into)
+}
+
+/// Calls whose name has every word, the latest first, without a line.
+fn named_calls(conn: &Connection, words: &[&str]) -> Result<Vec<CallHit>> {
+    let mut sql = "SELECT c.id, c.project_id, p.name, c.started_at, c.name
+         FROM calls c JOIN projects p ON p.id = c.project_id
+         WHERE c.name IS NOT NULL"
+        .to_owned();
+    let args: Vec<String> = words
+        .iter()
+        .map(|word| format!("%{}%", like_escaped(word)))
+        .collect();
+    for n in 1..=args.len() {
+        sql.push_str(&format!(" AND c.name LIKE ?{n} ESCAPE '\\'"));
+    }
+    sql.push_str(&format!(
+        " ORDER BY c.started_at DESC, c.id DESC LIMIT {MAX_CALLS}"
+    ));
+    conn.prepare(&sql)?
+        .query_map(rusqlite::params_from_iter(&args), |row| {
+            Ok(CallHit {
+                call_id: row.get(0)?,
+                project_id: row.get(1)?,
+                project_name: row.get(2)?,
+                started_at: row.get(3)?,
+                name: row.get(4)?,
+                line: None,
+                matches: 0,
+            })
+        })?
+        .collect::<rusqlite::Result<_>>()
+        .map_err(Into::into)
+}
+
+/// Calls whose name or a line matched, once each with its line if one did, the latest
+/// first, at most `MAX_CALLS`.
+fn all_calls(conn: &Connection, words: &[&str]) -> Result<Vec<CallHit>> {
+    let mut hits = calls(conn, words)?;
+    let said: std::collections::HashSet<i64> = hits.iter().map(|hit| hit.call_id).collect();
+    hits.extend(
+        named_calls(conn, words)?
+            .into_iter()
+            .filter(|hit| !said.contains(&hit.call_id)),
+    );
+    hits.sort_by_key(|hit| std::cmp::Reverse((hit.started_at, hit.call_id)));
+    hits.truncate(usize::try_from(MAX_CALLS).unwrap_or(usize::MAX));
+    Ok(hits)
 }
 
 fn search_in(conn: &Connection, query: &str) -> Result<SearchResults> {
@@ -161,12 +223,12 @@ fn search_in(conn: &Connection, query: &str) -> Result<SearchResults> {
     }
     Ok(SearchResults {
         projects: projects(conn, &words, query)?,
-        calls: calls(conn, &words)?,
+        calls: all_calls(conn, &words)?,
     })
 }
 
-/// Projects whose name has every word of `query`, and calls with a line that has every
-/// word (each of three characters or more), any case.
+/// Projects whose name has every word of `query`, and calls whose name has every word or
+/// with a line that has every word (each of three characters or more), any case.
 #[tauri::command(async)]
 pub fn search(db: State<'_, Db>, query: String) -> Result<SearchResults> {
     search_in(&db.conn(), &query)
@@ -253,12 +315,14 @@ mod tests {
         assert_eq!(call_ids(&results), [newer, older]);
         let first = &results.calls[0];
         assert_eq!(first.project_name, "Garden");
-        assert_eq!((first.role.as_str(), first.matches), ("user", 2));
-        assert_eq!(first.snippet, "What about the \u{2}reminders\u{3} on iOS?");
+        let said = first.line.as_ref().unwrap();
+        assert_eq!((said.role.as_str(), first.matches), ("user", 2));
+        assert_eq!(said.snippet, "What about the \u{2}reminders\u{3} on iOS?");
         let rambling = call(&conn, garden, 3);
         let line = format!("{} pumpkins {}", "x".repeat(200), "y".repeat(200));
         say(&conn, rambling, "e", "user", &line);
-        let long = &search_in(&conn, "pumpkins").unwrap().calls[0].snippet;
+        let results = search_in(&conn, "pumpkins").unwrap();
+        let long = &results.calls[0].line.as_ref().unwrap().snippet;
         assert!(
             long.starts_with('…') && long.ends_with('…') && long.chars().count() < 100,
             "a long line is cut around what matched: {long}"
@@ -280,6 +344,40 @@ mod tests {
                 .calls
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn finds_calls_by_their_name_once_each_with_a_line_when_one_matched_too() {
+        let db = Db::in_memory().unwrap();
+        let conn = db.conn();
+        let garden = project(&conn, "Garden");
+        let named = call(&conn, garden, 1);
+        let both = call(&conn, garden, 2);
+        let unnamed = call(&conn, garden, 3);
+        for (id, name) in [(named, "Watering UI"), (both, "Reminders on iOS")] {
+            conn.execute(
+                "UPDATE calls SET name = ?1, named_by = 'user' WHERE id = ?2",
+                params![name, id],
+            )
+            .unwrap();
+        }
+        say(&conn, both, "a", "user", "The reminders fire twice");
+        say(&conn, unnamed, "b", "user", "Reminders again");
+
+        let results = search_in(&conn, "ui water").unwrap();
+        assert_eq!(
+            call_ids(&results),
+            [named],
+            "any part, any case, short words too"
+        );
+        assert_eq!(results.calls[0].name.as_deref(), Some("Watering UI"));
+        assert!(results.calls[0].line.is_none());
+
+        let results = search_in(&conn, "reminders").unwrap();
+        assert_eq!(call_ids(&results), [unnamed, both]);
+        assert!(results.calls.iter().all(|hit| hit.line.is_some()));
+        assert_eq!(results.calls[1].name.as_deref(), Some("Reminders on iOS"));
+        assert!(search_in(&conn, "100%").unwrap().calls.is_empty());
     }
 
     #[test]
@@ -307,7 +405,8 @@ mod tests {
         for hit in &results.calls {
             assert_eq!(hit.matches, 2);
             assert_eq!(
-                hit.snippet, "\u{2}The\u{3} plan for \u{2}the\u{3} week",
+                hit.line.as_ref().unwrap().snippet,
+                "\u{2}The\u{3} plan for \u{2}the\u{3} week",
                 "the first matching line"
             );
         }

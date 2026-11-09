@@ -299,7 +299,10 @@ function matchesCommand(command: PaletteCommand, query: string): boolean {
     .every((word) => text.includes(word))
 }
 
-/** A conversation that matched: its project and when, and the line, matches marked. */
+/**
+ * A call that matched: its name if it has one, its project and when, and the line that
+ * matched if one did, matches marked.
+ */
 function CallItem({ hit, onSelect }: { hit: CallHit; onSelect: () => void }) {
   return (
     <CommandItem
@@ -310,26 +313,32 @@ function CallItem({ hit, onSelect }: { hit: CallHit; onSelect: () => void }) {
       <MessageSquare className="mt-0.5" />
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="flex min-w-0 items-baseline gap-1.5">
-          <span className="truncate font-medium">{hit.projectName}</span>
+          <span className="truncate font-medium">
+            {hit.name ?? hit.projectName}
+          </span>
           <span className="shrink-0 text-xs text-muted-foreground">
-            {callLabel(hit.startedAt)}
+            {hit.name
+              ? `${hit.projectName} · ${callLabel(hit.startedAt)}`
+              : callLabel(hit.startedAt)}
           </span>
         </span>
-        <span className="line-clamp-2 text-xs/5 break-words text-muted-foreground">
-          {hit.role === "agent" ? "Bomby: " : "You: "}
-          {snippetParts(hit.snippet).map((part, index) =>
-            part.match ? (
-              <mark
-                key={`${index} ${part.text}`}
-                className="rounded-[2px] bg-highlighter px-px text-highlighter-foreground"
-              >
-                {part.text}
-              </mark>
-            ) : (
-              <span key={`${index} ${part.text}`}>{part.text}</span>
-            )
-          )}
-        </span>
+        {hit.line && (
+          <span className="line-clamp-2 text-xs/5 break-words text-muted-foreground">
+            {hit.line.role === "agent" ? "Bomby: " : "You: "}
+            {snippetParts(hit.line.snippet).map((part, index) =>
+              part.match ? (
+                <mark
+                  key={`${index} ${part.text}`}
+                  className="rounded-[2px] bg-highlighter px-px text-highlighter-foreground"
+                >
+                  {part.text}
+                </mark>
+              ) : (
+                <span key={`${index} ${part.text}`}>{part.text}</span>
+              )
+            )}
+          </span>
+        )}
       </div>
       {hit.matches > 1 && (
         <CommandShortcut className="tracking-normal tabular-nums">

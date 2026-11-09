@@ -9,6 +9,13 @@
       "connect": null
     },
     {
+      "id": "call_names",
+      "name": "Call names",
+      "description": "Bomby names each call once it knows what it's about.",
+      "default_on": true,
+      "connect": null
+    },
+    {
       "id": "zapier",
       "name": "Zapier",
       "description": "Your apps through Zapier: mail, calendar, Slack, sheets and thousands more.",

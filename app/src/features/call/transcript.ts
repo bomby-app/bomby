@@ -1,7 +1,9 @@
 import type { ReceivedMessage } from "@livekit/components-react"
 import type { Participant } from "livekit-client"
 
-import type { SavedMessage } from "./api"
+import { callLabel, callLength } from "@/features/projects/names"
+
+import type { CallSession, SavedMessage, Transcript } from "./api"
 
 /**
  * A live line's lasting id. LiveKit sends each spoken segment as an interim stream, then a
@@ -38,4 +40,37 @@ export function toReceived(saved: SavedMessage): ReceivedMessage {
     message: saved.text,
     from: { isLocal: saved.role === "user" } as Participant,
   }
+}
+
+/** One session of a call in its transcript: the session, and its lines as Agents UI has them. */
+export type SessionLines = { session: CallSession; lines: ReceivedMessage[] }
+
+/** A saved call's sessions with their lines, in order. One where nothing was said is left out. */
+export function bySession({ sessions, messages }: Transcript): SessionLines[] {
+  const lines = new Map<number, ReceivedMessage[]>()
+  for (const message of messages) {
+    const said = lines.get(message.sessionId) ?? []
+    said.push(toReceived(message))
+    lines.set(message.sessionId, said)
+  }
+  return sessions.flatMap((session) => {
+    const said = lines.get(session.id)
+    return said ? [{ session, lines: said }] : []
+  })
+}
+
+/**
+ * What the divider over a session says: "Started Today, 21:40 · 12 min" for the call's
+ * first, "Resumed Yesterday, 09:05 · 4 min" for each after it. A session that never ended
+ * (the app quit during it) has no length.
+ */
+export function sessionLabel(
+  session: CallSession,
+  first: boolean,
+  now = new Date()
+): string {
+  const when = `${first ? "Started" : "Resumed"} ${callLabel(session.startedAt, now)}`
+  return session.endedAt === null
+    ? when
+    : `${when} · ${callLength(session.endedAt - session.startedAt)}`
 }
