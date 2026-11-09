@@ -30,7 +30,7 @@ import { type Filter, FILTERS, found, matches } from "./filters"
 import { FILTER_LABEL, GROUPS, ordered, STATUS_LABEL } from "./labels"
 import { StatusMark } from "./status-mark"
 import { TodoDialog } from "./todo-dialog"
-import { TodoRow } from "./todo-row"
+import { ExpandedTodo, TodoRow } from "./todo-row"
 import { forgetTodos, useTodos } from "./use-todos"
 import {
   type Composing,
@@ -295,12 +295,31 @@ function AddTodo({
 }
 
 /**
- * The dialog that adds a to-do with notes, while one is being written: on the project's
- * page rather than in the To-dos panel, so the command palette's Add a to-do opens it alone.
+ * The project's to-do dialogs, on its page rather than in the To-dos panel, so they open
+ * without it and outlive its filter: a new to-do with notes, and one expanded to edit.
+ */
+export function TodoDialogs({
+  projectId,
+  onShow,
+}: {
+  projectId: number
+  onShow: () => void
+}) {
+  return (
+    <>
+      <NewTodo projectId={projectId} onShow={onShow} />
+      <ExpandedTodo projectId={projectId} />
+    </>
+  )
+}
+
+/**
+ * The dialog that adds a to-do with notes, while one is being written, so the command
+ * palette's Add a to-do opens it alone.
  * One added from there is announced with a toast whose Show opens the panel (`onShow`); one
  * from the panel's + clears the field it started from.
  */
-export function NewTodo({
+function NewTodo({
   projectId,
   onShow,
 }: {

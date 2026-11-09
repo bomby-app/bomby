@@ -31,14 +31,15 @@ import { bombyLine, GROUPS, STATUS_LABEL } from "./labels"
 import { fits, NOTES_MAX, TITLE_MAX } from "./limits"
 import { StatusMark } from "./status-mark"
 import { TodoDialog } from "./todo-dialog"
-import { type Draft, settle } from "./view-state"
+import { useTodos } from "./use-todos"
+import { type Draft, settle, useTodosViewState } from "./view-state"
 
 /**
  * One to-do (Paper "extensions", 03 and 04): its status mark, which opens a menu of
  * statuses; its words, notes (their first lines, as written) and, when Bomby changed it
  * last, who and when; its number, the one Bomby says. Clicking the words edits it in
  * place, and the expand button, or Cmd-E while editing, opens it in the dialog with room
- * for longer notes. The words being edited live in the panel's state (`view-state.ts`), so
+ * for longer notes (`ExpandedTodo`, on the project's page). The words being edited live in the panel's state (`view-state.ts`), so
  * a remount keeps them.
  */
 export function TodoRow({
@@ -127,14 +128,6 @@ export function TodoRow({
       <span className="w-7 shrink-0 text-right font-mono text-xs leading-5 text-muted-foreground tabular-nums">
         {todo.number}
       </span>
-      {draft?.expanded && (
-        <ExpandedEditor
-          projectId={projectId}
-          todo={todo}
-          draft={draft}
-          onDraft={onDraft}
-        />
-      )}
     </div>
   )
 }
@@ -147,6 +140,27 @@ function changeOf(todo: Todo, draft: Draft, status?: TodoStatus): TodoChange {
   if (notes !== was.notes) change.notes = notes
   if (status !== undefined && status !== todo.status) change.status = status
   return change
+}
+
+/**
+ * The to-do being edited in the dialog, if one is: on the project's page rather than in its
+ * row, so it stays open when Bomby moves the to-do out of the list's filter or group.
+ */
+export function ExpandedTodo({ projectId }: { projectId: number }) {
+  const [{ draft }, setView] = useTodosViewState(projectId)
+  const { todos } = useTodos(projectId)
+  const todo = draft?.expanded
+    ? todos?.find((t) => t.number === draft.number)
+    : undefined
+  if (!draft || !todo) return null
+  return (
+    <ExpandedEditor
+      projectId={projectId}
+      todo={todo}
+      draft={draft}
+      onDraft={(next) => setView({ draft: next })}
+    />
+  )
 }
 
 /** A to-do being edited in the dialog: saves what changed and closes; Cancel drops it. */

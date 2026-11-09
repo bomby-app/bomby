@@ -21,7 +21,7 @@ import { useProjects } from "@/features/projects/projects-provider"
 import type { Selection } from "@/features/projects/selection"
 import {
   forgetProjectTodos,
-  NewTodo,
+  TodoDialogs,
   TODOS_TAB,
   TodosView,
   useOpenCount,
@@ -76,7 +76,7 @@ export function MainPanel({
 
 /**
  * A project's page in the workspace layout, with the tabs its extensions add to the panel
- * (To-dos, when the project's calls have it) and the dialog that adds a to-do with notes.
+ * (To-dos, when the project's calls have it) and its to-do dialogs (a new one with notes, one expanded).
  */
 function ProjectLayout({
   project,
@@ -100,7 +100,7 @@ function ProjectLayout({
   return (
     <>
       {todosOn && (
-        <NewTodo
+        <TodoDialogs
           projectId={project.id}
           onShow={() => {
             const panels = projectPanels.get()
