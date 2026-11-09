@@ -20,8 +20,6 @@ use std::sync::LazyLock;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Runtime, State};
 
-use self::oauth::Grant;
-use crate::credentials::Vault;
 use crate::db::Db;
 use crate::error::{Error, Result};
 use crate::settings;
@@ -81,6 +79,8 @@ pub struct ExtensionSetting {
 #[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "extensions.ts"))]
 pub struct Connection {
     connected: bool,
+    /// A sign-in is under way in the browser (`connect_extension`).
+    connecting: bool,
     /// The account it's signed in as, when the vendor said.
     account: Option<String>,
     /// Where the user manages what Bomby can reach on the vendor's side.
@@ -127,12 +127,17 @@ fn setting_key(id: &str) -> String {
     format!("extension.{id}")
 }
 
+/// Which hosted MCP extensions are signed in, as which account, and which are signing in
+/// now (`connections::sign_ins`).
+#[derive(Default)]
+pub(crate) struct SignIns {
+    pub accounts: BTreeMap<String, Option<String>>,
+    pub connecting: BTreeSet<String>,
+}
+
 /// Each extension with whether Settings has it on (as the user set it, else its default),
-/// and for one that signs in, whether `grants` has it.
-fn settings(
-    conn: &rusqlite::Connection,
-    grants: &BTreeMap<String, Grant>,
-) -> Result<Vec<ExtensionSetting>> {
+/// and for one that signs in, its sign-in.
+fn settings(conn: &rusqlite::Connection, sign_ins: &SignIns) -> Result<Vec<ExtensionSetting>> {
     CATALOGUE
         .extensions
         .iter()
@@ -143,10 +148,11 @@ fn settings(
                 _ => e.default_on,
             };
             let connection = e.connect.as_ref().map(|spec| {
-                let grant = grants.get(&e.id);
+                let account = sign_ins.accounts.get(&e.id);
                 Connection {
-                    connected: grant.is_some(),
-                    account: grant.and_then(|g| g.account.clone()),
+                    connected: account.is_some(),
+                    connecting: sign_ins.connecting.contains(&e.id),
+                    account: account.cloned().flatten(),
                     manage_url: spec.manage_url.clone(),
                 }
             });
@@ -177,7 +183,7 @@ pub(crate) fn on_for(
     project: &ProjectExtensions,
     connected: &BTreeSet<String>,
 ) -> Result<Vec<String>> {
-    Ok(settings(conn, &BTreeMap::new())?
+    Ok(settings(conn, &SignIns::default())?
         .into_iter()
         .filter(|e| {
             if project.own {
@@ -213,9 +219,8 @@ pub(crate) fn for_call(
 pub fn extensions_settings<R: Runtime>(
     app: AppHandle<R>,
     db: State<'_, Db>,
-    vault: State<'_, Vault>,
 ) -> Result<Vec<ExtensionSetting>> {
-    settings(&db.conn(), &vault.grants(&app)?)
+    settings(&db.conn(), &connections::sign_ins(&app)?)
 }
 
 /// Applies from the next call; one under way keeps its extensions.
@@ -223,13 +228,12 @@ pub fn extensions_settings<R: Runtime>(
 pub fn set_extension<R: Runtime>(
     app: AppHandle<R>,
     db: State<'_, Db>,
-    vault: State<'_, Vault>,
     id: String,
     on: bool,
 ) -> Result<Vec<ExtensionSetting>> {
     let conn = db.conn();
     save(&conn, &id, on)?;
-    let now = settings(&conn, &vault.grants(&app)?)?;
+    let now = settings(&conn, &connections::sign_ins(&app)?)?;
     let _ = app.emit(CHANGED, ());
     Ok(now)
 }
@@ -240,18 +244,6 @@ mod tests {
 
     fn none() -> BTreeSet<String> {
         BTreeSet::new()
-    }
-
-    fn grant(account: &str) -> Grant {
-        Grant {
-            client_id: "c".into(),
-            token_endpoint: "https://auth.example/token".into(),
-            resource: "https://mcp.example/mcp".into(),
-            access_token: "secret-token".into(),
-            refresh_token: None,
-            expires_at: None,
-            account: Some(account.into()),
-        }
     }
 
     #[test]
@@ -271,7 +263,7 @@ mod tests {
         let db = Db::in_memory().unwrap();
         let conn = db.conn();
         let on = |conn: &rusqlite::Connection, id: &str| {
-            settings(conn, &BTreeMap::new())
+            settings(conn, &SignIns::default())
                 .unwrap()
                 .into_iter()
                 .find(|e| e.id == id)
@@ -290,26 +282,26 @@ mod tests {
     }
 
     #[test]
-    fn settings_say_who_a_hosted_one_is_connected_as_and_never_the_token() {
+    fn settings_say_who_a_hosted_one_is_connected_as_and_which_is_connecting() {
         let db = Db::in_memory().unwrap();
-        let grants = BTreeMap::from([("zapier".to_owned(), grant("me@example.com"))]);
-        let all = settings(&db.conn(), &grants).unwrap();
+        let sign_ins = SignIns {
+            accounts: BTreeMap::from([("zapier".to_owned(), Some("me@example.com".to_owned()))]),
+            connecting: BTreeSet::from(["composio".to_owned()]),
+        };
+        let all = settings(&db.conn(), &sign_ins).unwrap();
         let find = |id: &str| all.iter().find(|e| e.id == id).unwrap().clone();
         assert_eq!(find(todos::ID).connection, None);
         assert_eq!(
             find("zapier").connection,
             Some(Connection {
                 connected: true,
+                connecting: false,
                 account: Some("me@example.com".into()),
                 manage_url: "https://mcp.zapier.com".into(),
             })
         );
-        assert!(!find("composio").connection.unwrap().connected);
-        assert!(
-            !serde_json::to_string(&all)
-                .unwrap()
-                .contains("secret-token")
-        );
+        let composio = find("composio").connection.unwrap();
+        assert!(!composio.connected && composio.connecting);
     }
 
     #[test]

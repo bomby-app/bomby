@@ -40,8 +40,9 @@ export function connectExtension(id: string): Promise<ExtensionSetting[]> {
   return invoke("connect_extension", { id })
 }
 
-export function cancelExtensionConnect(): Promise<void> {
-  return invoke("cancel_extension_connect")
+/** Stops the extension's sign-in under way; its `connectExtension` rejects with `CANCELLED`. */
+export function cancelExtensionConnect(id: string): Promise<void> {
+  return invoke("cancel_extension_connect", { id })
 }
 
 export function disconnectExtension(id: string): Promise<ExtensionSetting[]> {

@@ -20,7 +20,7 @@ use tauri::{AppHandle, Emitter, Runtime, State};
 
 use crate::dev;
 use crate::error::{Error, Result};
-use crate::extensions::oauth::Grant;
+use crate::extensions::oauth::{Expect, Grant};
 use crate::sync;
 use crate::voice::VoiceProvider;
 
@@ -49,7 +49,7 @@ impl std::fmt::Debug for LiveKitKeys {
 }
 
 /// Everything in the keychain entry.
-#[derive(Clone, Default, Serialize, Deserialize)]
+#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 struct Keys {
     livekit: Option<LiveKitKeys>,
     gemini_key: Option<String>,
@@ -157,11 +157,16 @@ pub struct Vault(Mutex<Option<Keys>>);
 
 impl Vault {
     fn keys<R: Runtime>(&self, app: &AppHandle<R>) -> Result<Keys> {
+        self.read(app, Keys::clone)
+    }
+
+    /// Reads part of the keys under the lock, without copying the rest.
+    fn read<R: Runtime, T>(&self, app: &AppHandle<R>, take: impl FnOnce(&Keys) -> T) -> Result<T> {
         let mut cached = sync::lock(&self.0);
         if cached.is_none() {
             *cached = Some(read_keychain(app)?);
         }
-        Ok(cached.clone().unwrap_or_default())
+        Ok(take(cached.as_ref().unwrap_or(&Keys::default())))
     }
 
     /// Changes the keys and writes them back, under one lock, and tells every window.
@@ -189,7 +194,14 @@ impl Vault {
             None => read_keychain(app)?,
         };
         let before = keys.clone();
-        if let Err(e) = change(&mut keys).and_then(|()| write(app, &keys)) {
+        if let Err(e) = change(&mut keys).and_then(|()| {
+            // Nothing changed, nothing to write (a refresh that lost a race, say).
+            if keys == before {
+                Ok(())
+            } else {
+                write(app, &keys)
+            }
+        }) {
             *cached = Some(before);
             return Err(e);
         }
@@ -218,26 +230,48 @@ impl Vault {
         Ok(self.keys(app)?.zep_key)
     }
 
-    /// Every hosted MCP extension's sign-in, by extension id.
-    pub fn grants<R: Runtime>(&self, app: &AppHandle<R>) -> Result<BTreeMap<String, Grant>> {
-        Ok(self.keys(app)?.grants)
+    /// One hosted MCP extension's sign-in.
+    pub fn grant<R: Runtime>(&self, app: &AppHandle<R>, id: &str) -> Result<Option<Grant>> {
+        self.read(app, |keys| keys.grants.get(id).cloned())
     }
 
-    /// Saves or removes an extension's sign-in. Quiet: the grant's own event
-    /// (`extensions::CHANGED`) is the caller's to send, and a refresh mid-call sends none.
-    pub fn set_grant<R: Runtime>(
+    /// Each signed-in extension's id with the account it's signed in as, no tokens.
+    pub fn signed_in<R: Runtime>(
+        &self,
+        app: &AppHandle<R>,
+    ) -> Result<BTreeMap<String, Option<String>>> {
+        self.read(app, |keys| {
+            keys.grants
+                .iter()
+                .map(|(id, grant)| (id.clone(), grant.account.clone()))
+                .collect()
+        })
+    }
+
+    /// Saves or removes an extension's sign-in if the saved one is still what `expect`
+    /// says, under the vault's lock; false when it changed meanwhile. Quiet: the grant's
+    /// own event (`extensions::CHANGED`) is the caller's to send, and a refresh mid-call
+    /// sends none.
+    pub fn replace_grant<R: Runtime>(
         &self,
         app: &AppHandle<R>,
         id: &str,
+        expect: Expect<'_>,
         grant: Option<Grant>,
-    ) -> Result<()> {
+    ) -> Result<bool> {
+        let mut replaced = false;
         self.write_back(app, |keys| {
+            if !expect.matches(keys.grants.get(id)) {
+                return Ok(());
+            }
+            replaced = true;
             match grant {
                 Some(grant) => keys.grants.insert(id.to_owned(), grant),
                 None => keys.grants.remove(id),
             };
             Ok(())
-        })
+        })?;
+        Ok(replaced)
     }
 }
 

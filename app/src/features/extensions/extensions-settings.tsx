@@ -82,7 +82,9 @@ export function ExtensionsSettings() {
               />
             </div>
             {extension.connection &&
-              (extension.on || extension.connection.connected) && (
+              (extension.on ||
+                extension.connection.connected ||
+                extension.connection.connecting) && (
                 // Lined up with the title: the row's padding, the tile and the gap.
                 <div className="flex flex-col gap-3 pt-1 pr-4 pb-4 pl-16">
                   <ExtensionConnection extension={extension} />

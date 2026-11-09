@@ -5,6 +5,10 @@
  */
 export type Connection = { connected: boolean, 
 /**
+ * A sign-in is under way in the browser (`connect_extension`).
+ */
+connecting: boolean, 
+/**
  * The account it's signed in as, when the vendor said.
  */
 account: string | null, 

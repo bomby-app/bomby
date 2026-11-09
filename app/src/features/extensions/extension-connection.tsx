@@ -14,46 +14,42 @@ import {
 } from "./api"
 import { setExtensions } from "./use-extensions"
 
-type Status = "idle" | "connecting" | "disconnecting"
-
 /**
  * A hosted MCP extension's own settings, under its row in Settings, Extensions: Connect,
  * which signs in to the vendor in the browser, then who it's connected as, the vendor's page
- * and Disconnect (docs/decisions/hosted-mcp-extensions-with-oauth.md).
+ * and Disconnect (docs/decisions/hosted-mcp-extensions-with-oauth.md). Whether a sign-in is
+ * under way comes from the core, so it still shows after leaving the section, in any window.
  */
 export function ExtensionConnection({
   extension,
 }: {
   extension: ExtensionSetting
 }) {
-  const [status, setStatus] = useState<Status>("idle")
+  const [disconnecting, setDisconnecting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const connection = extension.connection
   if (!connection) return null
   const { name } = extension
-  const { manageUrl } = connection
+  const { manageUrl, connecting } = connection
 
   async function connect() {
     setError(null)
-    setStatus("connecting")
     try {
       setExtensions(await connectExtension(extension.id))
     } catch (e) {
       if (String(e) !== CANCELLED) setError(String(e))
-    } finally {
-      setStatus("idle")
     }
   }
 
   async function disconnect() {
     setError(null)
-    setStatus("disconnecting")
+    setDisconnecting(true)
     try {
       setExtensions(await disconnectExtension(extension.id))
     } catch (e) {
       setError(String(e))
     } finally {
-      setStatus("idle")
+      setDisconnecting(false)
     }
   }
 
@@ -83,7 +79,7 @@ export function ExtensionConnection({
         </p>
       ) : (
         <p className="text-sm text-muted-foreground">
-          {status === "connecting"
+          {connecting
             ? `Finish signing in to ${name} in your browser.`
             : `Sign in to ${name} so Bomby can use your apps there. Calls get it once it's connected.`}
         </p>
@@ -93,17 +89,17 @@ export function ExtensionConnection({
         {connection.connected ? (
           <Button
             variant="outline"
-            disabled={status !== "idle"}
+            disabled={disconnecting}
             onClick={disconnect}
           >
-            {status === "disconnecting" ? "Disconnecting..." : "Disconnect"}
+            {disconnecting ? "Disconnecting..." : "Disconnect"}
           </Button>
-        ) : status === "connecting" ? (
+        ) : connecting ? (
           <>
             <Button disabled>Waiting for your browser...</Button>
             <Button
               variant="ghost"
-              onClick={() => void cancelExtensionConnect()}
+              onClick={() => void cancelExtensionConnect(extension.id)}
             >
               Cancel
             </Button>
