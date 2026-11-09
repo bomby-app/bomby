@@ -1,12 +1,12 @@
 # Builds Bomby for Apple Silicon, signs it with the Developer ID, notarizes it and attaches
-# the DMG and the update (Bomby.app.tar.gz, latest.json) to a draft GitHub release. Start it from the Actions tab (Release, Run workflow)
-# or by pushing a version tag (v0.1.0). Secrets, and what to check: docs/releasing.md.
+# the DMG and the update (Bomby.app.tar.gz, latest.json) to a draft GitHub release. Start it
+# from the Actions tab (Release, Run workflow); nothing else starts it. Publishing the draft
+# creates its tag, so a tag trigger would build every release twice. Secrets, and what to
+# check: docs/releasing.md.
 name: Release
 
 on:
   workflow_dispatch:
-  push:
-    tags: ["v*"]
 
 permissions: {}
 
@@ -31,15 +31,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      - name: Check the tag matches the app's version
-        if: github.ref_type == 'tag'
-        run: |
-          version=$(jq -r .version app/src-tauri/tauri.conf.json)
-          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME doesn't match version $version in tauri.conf.json"
-            exit 1
-          fi
 
       # The tools pinned in mise.toml, except the LiveKit CLI, which builds don't use. No
       # caches anywhere in this workflow: what gets signed is built from scratch, never from

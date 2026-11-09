@@ -32,7 +32,7 @@ The signing identity is read from the certificate, so it isn't a secret. While t
 ## Making a release
 
 1. Set `version` in `app/src-tauri/tauri.conf.json`.
-2. Actions > Release > Run workflow (or push the tag `v<version>`; the workflow checks it matches).
+2. Actions > Release > Run workflow. Nothing else starts it: publishing the draft creates the tag `v<version>`, and a tag trigger would build the release a second time.
 3. Download the DMG from the draft release on the Releases page, open it on a Mac and check that it opens without a warning and that a call works. Then publish the release: from that moment installed copies are offered it. A published release is never changed; the next build needs a new version.
 
 The Run workflow button appears only once the workflow is on the default branch (GitHub runs `workflow_dispatch` from there). Updates reach users only while the repo is public: a private repo's release files need a login, so until then the check says it couldn't check.
