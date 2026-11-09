@@ -70,6 +70,8 @@ class OpenAI(VoiceProvider):
     # follow suit.
     prompt_style: ClassVar[Style] = PLAIN
     delegates: ClassVar[bool] = True
+    # GPT-Live refuses an append over 500 tokens; ~4 characters a token, with room to spare.
+    late_result_chars: ClassVar[int | None] = 1_600
     options: ClassVar[tuple[Option, ...]] = (
         # OpenAI's web search, run on the response model's side.
         Switch(WEB_SEARCH, default=True),

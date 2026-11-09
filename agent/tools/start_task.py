@@ -87,7 +87,36 @@ async def start_task(
         await board.finish(id, "failed")
         raise
     await board.finish(id, "added" if turn.steered else "done")
-    return turn.text
+    limit = context.userdata.provider.late_result_chars
+    if limit is None:
+        return turn.text
+    return fit_report(turn.text, limit - len(task) - len(name) - ARGUMENTS_OVERHEAD)
+
+
+ARGUMENTS_OVERHEAD = 200  # the call's other arguments and wrapper, sent with the result
+MIN_REPORT = 400
+# Without "only if the user wants more", the model fetches the rest and loops again.
+SHORTENED = (
+    " (Shortened to fit. Tell the user this much; ask the agent for the rest only if"
+    + " the user wants more.)"
+)
+
+
+def fit_report(report: str, budget: int) -> str:
+    """`report` cut to `budget` characters at a sentence's end, with a note that it was cut."""
+    budget = max(budget, MIN_REPORT)
+    if len(report) <= budget:
+        return report
+    room = budget - len(SHORTENED)
+    head = report[:room]
+    ends = [head.rfind(mark) for mark in (". ", "! ", "? ", ".\n", "!\n", "?\n")]
+    end = max(ends)
+    if end > 0:
+        head = head[: end + 1]
+    else:
+        space = head.rfind(" ")
+        head = head[:space] if space > 0 else head
+    return head.rstrip() + SHORTENED
 
 
 def agents_note(

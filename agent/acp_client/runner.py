@@ -39,6 +39,12 @@ logger = logging.getLogger("bomby.acp_client.runner")
 AGENT_ROOT = Path(__file__).resolve().parent.parent
 # What every harness is told about working behind a voice assistant.
 BRIEFING = (AGENT_ROOT / "prompts" / "harness-briefing.md").read_text().rstrip()
+# Must match the line in harness-briefing.md (a test checks).
+REPORT_RULE = "- stay under about 100 words, unless the task is to find information the user asked for"
+SHORT_REPORT_RULE = (
+    "- stay under about 100 words, even when the task is to find information: give what"
+    + " the user asked for and leave out the rest, which they can ask for next"
+)
 # Never passed to any harness: the desktop app starts this agent with the user's LiveKit,
 # voice provider and Zep keys in its environment (not in .env), and GEMINI_API_KEY may
 # come from the user's own shell. Each harness blocks its own on top.
@@ -113,7 +119,7 @@ def stopped(harness: Harness) -> str:
     )
 
 
-def briefing(project: Project) -> str:
+def briefing(project: Project, short_reports: bool = False) -> str:
     """What a harness is told once per session: how its result is used, the folders it
     works in (every harness gets them, whether or not it reads ACP's
     `additionalDirectories`) and the user's description of the project, if any."""
@@ -127,8 +133,11 @@ def briefing(project: Project) -> str:
         if project.instructions
         else ""
     )
+    rules = (
+        BRIEFING.replace(REPORT_RULE, SHORT_REPORT_RULE) if short_reports else BRIEFING
+    )
     return join(
-        BRIEFING,
+        rules,
         section("This project", join(f"{project.name}. {folders}.", description)),
     )
 
@@ -212,8 +221,10 @@ class AcpRunner:
         command: str,
         args: Sequence[str] = (),
         picks: Sequence[Pick] = (),
+        short_reports: bool = False,
     ) -> None:
         self._harness = harness
+        self._short_reports = short_reports
         self._picks = tuple(picks)  # the model and effort the user picked, if any
         self._command = command
         self._args = tuple(args)
@@ -341,7 +352,9 @@ class AcpRunner:
                 )
             options: dict[str, object] = {}
             if self._harness.system_prompt_append:
-                options["systemPrompt"] = {"append": briefing(self._project)}
+                options["systemPrompt"] = {
+                    "append": briefing(self._project, self._short_reports)
+                }
             try:
                 created = await conn.new_session(
                     cwd=str(self._project.cwd),
@@ -387,7 +400,11 @@ class AcpRunner:
         reply = self._client.replies[session_id] = Reply()
         logger.info("%s turn in %s started: %s", self._harness.id, s.name, task)
         # Without a system prompt to put it in, the briefing goes with the first task.
-        texts = [task] if s.briefed else [briefing(self._project), task]
+        texts = (
+            [task]
+            if s.briefed
+            else [briefing(self._project, self._short_reports), task]
+        )
         s.briefed = True
         try:
             response = await conn.prompt(
@@ -566,8 +583,10 @@ class CallRunners:
         installed: Mapping[str, Path],
         environ: Mapping[str, str],
         picks: Mapping[str, Sequence[Pick]] | None = None,
+        short_reports: bool = False,
     ) -> None:
         self._project = project
+        self._short_reports = short_reports
         self._environ = dict(environ)
         self._picks = dict(picks or {})
         self._installed = {
@@ -578,7 +597,7 @@ class CallRunners:
         self._runners: dict[str, AcpRunner] = {}
 
     @classmethod
-    def for_job(cls, fields: JobFields) -> "CallRunners":
+    def for_job(cls, fields: JobFields, short_reports: bool = False) -> "CallRunners":
         """Runners for the project and the installed agents in the job's metadata, with
         each agent's picks (see `Project.from_job` and `harnesses.installed`)."""
         return cls(
@@ -586,6 +605,7 @@ class CallRunners:
             installed(fields, HARNESSES, os.environ),
             os.environ,
             fields.picks if fields else {},
+            short_reports,
         )
 
     @property
@@ -624,6 +644,7 @@ class CallRunners:
             command=command,
             args=args,
             picks=self._picks.get(harness.id, ()),
+            short_reports=self._short_reports,
         )
         return runner
 
