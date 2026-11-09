@@ -20,6 +20,12 @@ export type Draft = Words & {
   expanded: boolean
 }
 
+/**
+ * A to-do being written in the dialog. `announce` when it was opened from outside the
+ * panel (the command palette), so adding it says so, since the list may not be in view.
+ */
+export type Composing = Words & { announce: boolean }
+
 export type TodosViewState = {
   search: string
   filter: Filter
@@ -29,7 +35,7 @@ export type TodosViewState = {
   /** The words in the field that adds one. */
   adding: string
   /** A to-do being written in the dialog that adds one with notes, while it's open. */
-  composing: Words | null
+  composing: Composing | null
 }
 
 const INITIAL: TodosViewState = {
@@ -61,12 +67,15 @@ export function useTodosViewState(
   return [state, (change) => store.set({ ...store.get(), ...change })]
 }
 
-/** Opens the dialog that adds a to-do with notes, keeping one already being written. */
+/**
+ * Opens the dialog that adds a to-do with notes, from outside the panel, keeping one
+ * already being written.
+ */
 export function composeTodo(projectId: number) {
   const store = storeFor(projectId)
   const state = store.get()
   if (!state.composing)
-    store.set({ ...state, composing: { title: "", notes: "" } })
+    store.set({ ...state, composing: { title: "", notes: "", announce: true } })
 }
 
 /** Drops a deleted project's panel state. */

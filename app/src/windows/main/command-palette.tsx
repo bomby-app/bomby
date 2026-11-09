@@ -257,7 +257,6 @@ function paletteCommands({
       keywords: ["new to-do", "todo", "task"],
       run: () => {
         composeTodo(project.id)
-        panels.show("todos")
       },
     })
   }

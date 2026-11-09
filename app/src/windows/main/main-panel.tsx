@@ -21,11 +21,13 @@ import { useProjects } from "@/features/projects/projects-provider"
 import type { Selection } from "@/features/projects/selection"
 import {
   forgetProjectTodos,
+  NewTodo,
   TODOS_TAB,
   TodosView,
   useOpenCount,
 } from "@/features/todos/todos-view"
 import type { ExtraTab } from "@/features/workspace/extra-tab"
+import { projectPanels } from "@/features/workspace/panel-requests"
 import { WorkspaceLayout } from "@/features/workspace/workspace-layout"
 
 import { AppHeader } from "./app-header"
@@ -74,7 +76,7 @@ export function MainPanel({
 
 /**
  * A project's page in the workspace layout, with the tabs its extensions add to the panel
- * (To-dos, when the project's calls have it).
+ * (To-dos, when the project's calls have it) and the dialog that adds a to-do with notes.
  */
 function ProjectLayout({
   project,
@@ -96,26 +98,37 @@ function ProjectLayout({
       ]
     : []
   return (
-    <WorkspaceLayout
-      project={project}
-      tabs={tabs}
-      header={(toggles) => (
-        <AppHeader
-          title={view.title}
-          actions={
-            // The page's own actions, its panels' toggles, then its main action on its
-            // own at the right end (owner, 2026-11-08).
-            <div className="flex items-center gap-1.5">
-              {view.secondary}
-              {toggles}
-              {view.primary && <div className="ml-1.5">{view.primary}</div>}
-            </div>
-          }
+    <>
+      {todosOn && (
+        <NewTodo
+          projectId={project.id}
+          onShow={() => {
+            const panels = projectPanels.get()
+            if (panels?.projectId === project.id) panels.show("todos")
+          }}
         />
       )}
-    >
-      {view.body}
-    </WorkspaceLayout>
+      <WorkspaceLayout
+        project={project}
+        tabs={tabs}
+        header={(toggles) => (
+          <AppHeader
+            title={view.title}
+            actions={
+              // The page's own actions, its panels' toggles, then its main action on its
+              // own at the right end (owner, 2026-11-08).
+              <div className="flex items-center gap-1.5">
+                {view.secondary}
+                {toggles}
+                {view.primary && <div className="ml-1.5">{view.primary}</div>}
+              </div>
+            }
+          />
+        )}
+      >
+        {view.body}
+      </WorkspaceLayout>
+    </>
   )
 }
 
