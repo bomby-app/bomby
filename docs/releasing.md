@@ -13,21 +13,21 @@ The workflow runs on a fresh GitHub macOS machine, thrown away after the job: it
 
 ## Secrets
 
-Repository secrets (Settings > Secrets and variables > Actions), set from the machine that holds the signing files:
+Secrets of the `release` environment (Settings > Environments > release), open to `main` only, set from the machine that holds the signing files:
 
 | Secret | Value | Set with |
 | --- | --- | --- |
-| `APPLE_CERTIFICATE` | The Developer ID `.p12` (certificate, private key, Apple's G2 intermediate), base64 | `base64 -w0 <file>.p12 \| gh secret set APPLE_CERTIFICATE -R bomby-app/bomby` |
-| `APPLE_CERTIFICATE_PASSWORD` | The `.p12` export password | `gh secret set APPLE_CERTIFICATE_PASSWORD -R bomby-app/bomby` (asks for it) |
-| `APPLE_API_KEY` | The App Store Connect API key's Key ID | `gh secret set APPLE_API_KEY -R bomby-app/bomby` |
-| `APPLE_API_ISSUER` | The API key's Issuer ID | `gh secret set APPLE_API_ISSUER -R bomby-app/bomby` |
-| `APPLE_API_KEY_P8` | The `.p8` file's contents | `gh secret set APPLE_API_KEY_P8 -R bomby-app/bomby < AuthKey_<id>.p8` |
-| `TAURI_SIGNING_PRIVATE_KEY` | The updater's private key | `gh secret set TAURI_SIGNING_PRIVATE_KEY -R bomby-app/bomby < bomby-updater.key` |
-| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Its password | `gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD -R bomby-app/bomby` |
+| `APPLE_CERTIFICATE` | The Developer ID `.p12` (certificate, private key, Apple's G2 intermediate), base64 | `base64 -w0 <file>.p12 \| gh secret set APPLE_CERTIFICATE -R bomby-app/bomby --env release` |
+| `APPLE_CERTIFICATE_PASSWORD` | The `.p12` export password | `gh secret set APPLE_CERTIFICATE_PASSWORD -R bomby-app/bomby --env release` (asks for it) |
+| `APPLE_API_KEY` | The App Store Connect API key's Key ID | `gh secret set APPLE_API_KEY -R bomby-app/bomby --env release` |
+| `APPLE_API_ISSUER` | The API key's Issuer ID | `gh secret set APPLE_API_ISSUER -R bomby-app/bomby --env release` |
+| `APPLE_API_KEY_P8` | The `.p8` file's contents | `gh secret set APPLE_API_KEY_P8 -R bomby-app/bomby --env release < AuthKey_<id>.p8` |
+| `TAURI_SIGNING_PRIVATE_KEY` | The updater's private key | `gh secret set TAURI_SIGNING_PRIVATE_KEY -R bomby-app/bomby --env release < bomby-updater.key` |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Its password | `gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD -R bomby-app/bomby --env release` |
 
 The updater key pair is made once, on the machine that holds the signing files, with `bunx @tauri-apps/cli@2.12.4 signer generate -w bomby-updater.key`. Its public half goes in `plugins.updater.pubkey` in `tauri.conf.json`. Losing the private key means installed copies can never update again: keep it, and its password, with the other signing files.
 
-The signing identity is read from the certificate, so it isn't a secret. While the repo is private on GitHub Free these are repository secrets: environments, which would limit them to the release job, need a public repo or a paid plan ([GitHub docs](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments)). Move them into a `release` environment when the repo goes public.
+The signing identity is read from the certificate, so it isn't a secret. Only the Release job names the environment, so no other workflow, and no branch but `main`, can read them ([GitHub docs](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments)).
 
 ## Making a release
 
@@ -35,11 +35,11 @@ The signing identity is read from the certificate, so it isn't a secret. While t
 2. Actions > Release > Run workflow. Nothing else starts it: publishing the draft creates the tag `v<version>`, and a tag trigger would build the release a second time.
 3. Download the DMG from the draft release on the Releases page, open it on a Mac and check that it opens without a warning and that a call works. Then publish the release: from that moment installed copies are offered it. A published release is never changed; the next build needs a new version.
 
-The Run workflow button appears only once the workflow is on the default branch (GitHub runs `workflow_dispatch` from there). Updates reach users only while the repo is public: a private repo's release files need a login, so until then the check says it couldn't check.
+The Run workflow button appears only once the workflow is on the default branch (GitHub runs `workflow_dispatch` from there). Updates need the repo public: a private repo's release files need a login.
 
 ## Cost
 
-macOS runners on a private repo draw from the plan's included compute: $12 a month on GitHub Free, at $0.062 a minute for the standard arm64 runner, about 190 minutes ([pricing](https://docs.github.com/en/billing/reference/actions-runner-pricing), 2026-11-05). Keep the organization's Actions budget at $0 so a run stops instead of charging. The workflow uses no caches, so what is signed is always built from scratch. The DMG goes on the release, not into Actions artifact storage (500 MB on Free). On a public repo, standard runners are free.
+Standard runners, macOS included, are free on a public repo ([pricing](https://docs.github.com/en/billing/reference/actions-runner-pricing), 2026-11-05). The workflow uses no caches, so what is signed is always built from scratch. The DMG goes on the release, not into Actions artifact storage.
 
 ## When it fails
 

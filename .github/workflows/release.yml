@@ -21,8 +21,8 @@ jobs:
     runs-on: xcode-27
     permissions:
       contents: write # create the draft release and upload the DMG
-    # Repository secrets: environments, which would fence them to this job, need a public
-    # repo or a paid plan (docs/releasing.md).
+    # The signing secrets live in this environment, open to main only (docs/releasing.md).
+    environment: release
     # macOS minutes are paid on a private repo; a hung step shouldn't run for hours.
     timeout-minutes: 60
     env:
@@ -176,8 +176,15 @@ jobs:
             fi
             gh release upload "$tag" "${files[@]}" --clobber
           else
+            # No --target: pinning a commit that changes workflows needs a permission this
+            # token can't have (cli/cli#9514). The draft takes main, so main must be what was built.
+            head=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+            if [ "$head" != "$GITHUB_SHA" ]; then
+              echo "::error::main moved to $head during the build of $GITHUB_SHA; run the workflow again"
+              exit 1
+            fi
             gh release create "$tag" "${files[@]}" --draft --title "Bomby $version" \
-              --target "$GITHUB_SHA" --generate-notes
+              --generate-notes
           fi
 
       - name: Remove the keychain and the key
