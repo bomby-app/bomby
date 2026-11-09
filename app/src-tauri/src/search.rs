@@ -3,9 +3,12 @@
 //! in db.rs).
 //! Both come back for one query, so a word in a project's name and in a call both show.
 
+use rusqlite::functions::FunctionFlags;
 use rusqlite::{Connection, params};
 use serde::Serialize;
 use tauri::State;
+use unicode_normalization::UnicodeNormalization;
+use unicode_normalization::char::is_combining_mark;
 
 use crate::db::Db;
 use crate::error::Result;
@@ -66,14 +69,38 @@ pub struct LineHit {
     snippet: String,
 }
 
+/// `text` as names are compared: lowercase in any script and accents aside ("Écran" is
+/// "ecran"), as the transcript index matches lines (`remove_diacritics`). SQLite's own
+/// `LIKE` folds only ASCII.
+pub(crate) fn fold(text: &str) -> String {
+    text.to_lowercase()
+        .nfd()
+        .filter(|c| !is_combining_mark(*c))
+        .collect()
+}
+
+/// Gives the connection `fold(text)` for queries; null stays null.
+pub(crate) fn add_fold(conn: &Connection) -> rusqlite::Result<()> {
+    conn.create_scalar_function(
+        "fold",
+        1,
+        FunctionFlags::SQLITE_UTF8
+            | FunctionFlags::SQLITE_DETERMINISTIC
+            | FunctionFlags::SQLITE_INNOCUOUS,
+        |ctx| Ok(ctx.get::<Option<String>>(0)?.map(|text| fold(&text))),
+    )
+}
+
 /// The query's words: what's between spaces, without the empty.
 fn words(query: &str) -> Vec<&str> {
     query.split_whitespace().collect()
 }
 
-/// `text` for a LIKE pattern, its wildcards matched as themselves (`ESCAPE '\'`).
+/// `text` folded for a LIKE pattern against a folded column, its wildcards matched as
+/// themselves (`ESCAPE '\'`).
 fn like_escaped(text: &str) -> String {
-    text.replace('\\', "\\\\")
+    fold(text)
+        .replace('\\', "\\\\")
         .replace('%', "\\%")
         .replace('_', "\\_")
 }
@@ -83,11 +110,11 @@ fn projects(conn: &Connection, words: &[&str], query: &str) -> Result<Vec<Projec
     let mut args: Vec<String> = Vec::new();
     for word in words {
         args.push(format!("%{}%", like_escaped(word)));
-        sql.push_str(&format!(" AND name LIKE ?{} ESCAPE '\\'", args.len()));
+        sql.push_str(&format!(" AND fold(name) LIKE ?{} ESCAPE '\\'", args.len()));
     }
     args.push(format!("{}%", like_escaped(query.trim())));
     sql.push_str(&format!(
-        " ORDER BY name LIKE ?{} ESCAPE '\\' DESC, name COLLATE NOCASE LIMIT {MAX_PROJECTS}",
+        " ORDER BY fold(name) LIKE ?{} ESCAPE '\\' DESC, name COLLATE NOCASE LIMIT {MAX_PROJECTS}",
         args.len()
     ));
     conn.prepare(&sql)?
@@ -180,7 +207,7 @@ fn named_calls(conn: &Connection, words: &[&str]) -> Result<Vec<CallHit>> {
         .map(|word| format!("%{}%", like_escaped(word)))
         .collect();
     for n in 1..=args.len() {
-        sql.push_str(&format!(" AND c.name LIKE ?{n} ESCAPE '\\'"));
+        sql.push_str(&format!(" AND fold(c.name) LIKE ?{n} ESCAPE '\\'"));
     }
     sql.push_str(&format!(
         " ORDER BY c.started_at DESC, c.id DESC LIMIT {MAX_CALLS}"
@@ -378,6 +405,35 @@ mod tests {
         assert!(results.calls.iter().all(|hit| hit.line.is_some()));
         assert_eq!(results.calls[1].name.as_deref(), Some("Reminders on iOS"));
         assert!(search_in(&conn, "100%").unwrap().calls.is_empty());
+
+        conn.execute(
+            "UPDATE calls SET name = 'Écran d''accueil' WHERE id = ?1",
+            [named],
+        )
+        .unwrap();
+        for query in ["écran", "ECRAN", "accueil é"] {
+            assert_eq!(
+                call_ids(&search_in(&conn, query).unwrap()),
+                [named],
+                "any case in any script, accents aside: {query}"
+            );
+        }
+    }
+
+    #[test]
+    fn folds_case_in_any_script_and_takes_accents_off() {
+        assert_eq!(fold("Écran ÜBER Straße"), "ecran uber straße");
+        assert_eq!(fold("ÇA"), "ca");
+        let db = Db::in_memory().unwrap();
+        let conn = db.conn();
+        project(&conn, "Café Ölmühle");
+        let found: Vec<String> = search_in(&conn, "cafe OLM")
+            .unwrap()
+            .projects
+            .into_iter()
+            .map(|p| p.name)
+            .collect();
+        assert_eq!(found, ["Café Ölmühle"]);
     }
 
     #[test]

@@ -1,6 +1,6 @@
 import { createContext, type ReactNode, use, useEffect, useState } from "react"
 
-import { onCallRenamed } from "@/features/call/api"
+import { log, onCallRenamed } from "@/features/call/api"
 import { useCoreEvent } from "@/hooks/use-core-event"
 
 import {
@@ -15,6 +15,7 @@ import {
   setProjectExtensions,
   updateProject,
 } from "./api"
+import { serialReload } from "./serial-reload"
 
 type ProjectsState = {
   /** null until the first load finishes. */
@@ -36,18 +37,22 @@ const ProjectsContext = createContext<ProjectsState | null>(null)
  */
 export function ProjectsProvider({ children }: { children: ReactNode }) {
   const [projects, setProjects] = useState<Project[] | null>(null)
-
-  async function reload() {
-    setProjects(await listProjects())
-  }
+  // Every read of the tree goes through this, so a slower answer never replaces a newer one.
+  const [reload] = useState(() => serialReload(listProjects, setProjects))
 
   // The first load from the core; the list lands when it answers.
   useEffect(() => {
-    void listProjects().then(setProjects)
-  }, [])
+    void reload().catch((e: unknown) =>
+      log(`Reading projects failed: ${String(e)}`)
+    )
+  }, [reload])
 
   // A call renamed by the user in another window, or by Bomby mid-call.
-  useCoreEvent(onCallRenamed, () => void reload())
+  useCoreEvent(onCallRenamed, () => {
+    reload().catch((e: unknown) =>
+      log(`Reading projects after a rename failed: ${String(e)}`)
+    )
+  })
 
   const state: ProjectsState = {
     projects,

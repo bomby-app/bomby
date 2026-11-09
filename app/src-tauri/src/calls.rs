@@ -321,7 +321,7 @@ fn recent_lines(conn: &Connection, call_id: i64) -> Result<Vec<HistoryLine>> {
 /// Starts a session of the call, the one its lines are saved in from now on. A session the
 /// app quit during, which nothing ended, ends at its last line first (at its start if it
 /// has none).
-fn begin_session(conn: &Connection, call_id: i64) -> Result<()> {
+fn begin_session(conn: &Connection, call_id: i64, at: i64) -> Result<()> {
     conn.execute(
         "UPDATE call_sessions SET ended_at = COALESCE(
              (SELECT MAX(created_at) FROM messages WHERE session_id = call_sessions.id),
@@ -331,7 +331,7 @@ fn begin_session(conn: &Connection, call_id: i64) -> Result<()> {
     )?;
     conn.execute(
         "INSERT INTO call_sessions (call_id, started_at) VALUES (?1, ?2)",
-        params![call_id, now_ms()],
+        params![call_id, at],
     )?;
     Ok(())
 }
@@ -470,6 +470,8 @@ pub fn open_call<R: Runtime>(
 
 /// A new call on the project, or `resume_call_id` reopened, with a session begun.
 fn start(conn: &Connection, project_id: i64, resume_call_id: Option<i64>) -> Result<i64> {
+    // One clock read: a new call and its first session start at the same moment.
+    let now = now_ms();
     let tx = conn.unchecked_transaction()?;
     let call_id = match resume_call_id {
         Some(call_id) => {
@@ -479,12 +481,12 @@ fn start(conn: &Connection, project_id: i64, resume_call_id: Option<i64>) -> Res
         None => {
             tx.execute(
                 "INSERT INTO calls (project_id, started_at) VALUES (?1, ?2)",
-                params![project_id, now_ms()],
+                params![project_id, now],
             )?;
             tx.last_insert_rowid()
         }
     };
-    begin_session(&tx, call_id)?;
+    begin_session(&tx, call_id, now)?;
     tx.commit()?;
     Ok(call_id)
 }

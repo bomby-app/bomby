@@ -14,6 +14,7 @@ import {
   MessageScrollerItem,
   MessageScrollerProvider,
   MessageScrollerViewport,
+  useMessageScroller,
 } from "@/components/ui/message-scroller"
 import { cn } from "@/lib/utils"
 
@@ -73,8 +74,9 @@ export function SessionTranscript({
               return (
                 <Fragment key={session.id}>
                   {dividers && (
-                    <MessageScrollerItem>
+                    <MessageScrollerItem messageId={dividerId(session.id)}>
                       <SessionDivider
+                        messageId={dividerId(session.id)}
                         label={sessionLabel(session, index === 0)}
                         lines={lines.length}
                         open={shown}
@@ -109,24 +111,42 @@ export function SessionTranscript({
   )
 }
 
-/** "Resumed Yesterday, 09:05 · 4 min" across the transcript; folds its session away. */
+/** A divider's id in the scroller, apart from the lines' (LiveKit's ids and row ids). */
+function dividerId(sessionId: number): string {
+  return `session:${sessionId}`
+}
+
+/**
+ * "Resumed Yesterday, 09:05 · 4 min" across the transcript; folds its session away. It
+ * brings itself to the top first, so the lines it unfolds show under it: the scroller
+ * would otherwise keep following the bottom past them.
+ */
 function SessionDivider({
+  messageId,
   label,
   lines,
   open,
   onToggle,
 }: {
+  messageId: string
   label: string
   lines: number
   open: boolean
   onToggle: () => void
 }) {
+  const { scrollToMessage } = useMessageScroller()
+
+  function toggle() {
+    scrollToMessage(messageId, { align: "start", behavior: "auto" })
+    onToggle()
+  }
+
   return (
     <Marker variant="separator" asChild>
       <button
         type="button"
         aria-expanded={open}
-        onClick={onToggle}
+        onClick={toggle}
         className="group/divider rounded-sm py-1 text-xs outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
         <MarkerContent className="flex items-center gap-1">

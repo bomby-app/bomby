@@ -151,6 +151,7 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX call_sessions_by_call ON call_sessions(call_id, started_at);
     ALTER TABLE messages ADD COLUMN session_id INTEGER REFERENCES call_sessions(id);
+    CREATE INDEX messages_by_session ON messages(session_id, created_at);
     INSERT INTO call_sessions (call_id, started_at, ended_at)
         SELECT id, started_at, ended_at FROM calls;
     UPDATE messages SET session_id =
@@ -176,6 +177,7 @@ impl Db {
         conn.pragma_update(None, "foreign_keys", true)?;
         // WAL keeps reads fast while a call writes transcript lines. In-memory stays "memory".
         conn.pragma_update(None, "journal_mode", "WAL")?;
+        crate::search::add_fold(&conn)?;
         migrate(&mut conn)?;
         Ok(Self(Mutex::new(conn)))
     }

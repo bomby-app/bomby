@@ -9,6 +9,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { callLabel } from "@/features/projects/names"
+import { useProjects } from "@/features/projects/projects-provider"
 import { cn } from "@/lib/utils"
 
 import { log, renameCall } from "./api"
@@ -22,8 +23,11 @@ type NamedCall = { id: number; name: string | null; startedAt: number }
 /**
  * A field for the call's name, open from the start: Enter or leaving it saves, Esc puts
  * it back, and saving no words takes the name away, so the call shows when it started.
- * `onDone` follows either way. Every window hears of the new name from the core
- * (`onCallRenamed`).
+ * `onDone` follows either way, once any save is done. Every window hears of the new name
+ * from the core (`onCallRenamed`).
+ *
+ * What's saved is compared with the name the field opened with, not the call's name now:
+ * if Bomby renames the call meanwhile, leaving the field unchanged keeps Bomby's name.
  */
 export function CallNameInput({
   call,
@@ -34,6 +38,8 @@ export function CallNameInput({
   onDone: () => void
   className?: string
 }) {
+  const { refresh } = useProjects()
+  const [opened] = useState(call.name ?? "")
   // Open to type into: it only shows when the user asks to rename.
   const field = useRef<HTMLInputElement>(null)
   useEffect(() => field.current?.focus(), [])
@@ -41,6 +47,13 @@ export function CallNameInput({
   async function save(name: string) {
     try {
       await renameCall(call.id, name, "user")
+      // The new name is in the tree before the field closes, so the old one never flashes.
+      // It's saved either way: a failed read only leaves the tree to the next one.
+      await refresh().catch((e: unknown) =>
+        log(
+          `Reading projects after renaming call ${call.id} failed: ${String(e)}`
+        )
+      )
       return true
     } catch (e) {
       log(`Renaming call ${call.id} failed: ${String(e)}`)
@@ -50,22 +63,20 @@ export function CallNameInput({
   }
 
   return (
-    // Leaving the field ends editing, after it saved what's in it (its own blur runs first).
-    <span className="contents" onBlur={onDone}>
-      <InlineEditInput
-        // Typing a name doesn't open anything around it.
-        onClick={(event) => event.stopPropagation()}
-        ref={field}
-        value={call.name ?? ""}
-        placeholder={callLabel(call.startedAt)}
-        maxLength={NAME_MAX}
-        aria-label="Call name"
-        spellCheck={false}
-        autoComplete="off"
-        className={cn("pointer-events-auto h-7 w-64", className)}
-        onSave={save}
-      />
-    </span>
+    <InlineEditInput
+      // Typing a name doesn't open anything around it.
+      onClick={(event) => event.stopPropagation()}
+      ref={field}
+      value={opened}
+      onDone={onDone}
+      placeholder={callLabel(call.startedAt)}
+      maxLength={NAME_MAX}
+      aria-label="Call name"
+      spellCheck={false}
+      autoComplete="off"
+      className={cn("pointer-events-auto h-7 w-64", className)}
+      onSave={save}
+    />
   )
 }
 

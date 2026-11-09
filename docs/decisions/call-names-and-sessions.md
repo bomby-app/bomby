@@ -28,4 +28,5 @@ A call can be resumed later ([decision](resume-a-call-with-its-last-lines.md)), 
 - Calls from before this have one session holding all their lines: earlier resumes left nothing to split them by.
 - A call's length is its sessions added up (`activeMs`), not from its first start to its last end.
 - The sessions are where resuming the coding agents' sessions in a later call can hang (roadmap step 4).
-- The command palette finds calls by name too, any part, any case, short words included.
+- The command palette finds calls by name too, any part, any case in any script and accents aside, short words included: SQLite's `LIKE` folds only ASCII, so names go through `fold()`, a SQL function the core adds (Rust's lowercase, then NFD with the combining marks dropped, `unicode-normalization`); project names do too now.
+- One reload of the project tree at a time (`serialReload`): renames arrive from Bomby, the user and other windows, and an older answer must never land after a newer one.

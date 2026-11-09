@@ -108,12 +108,16 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
   const finish = useCallback(
     async (id: number) => {
-      // Its last lines are saved before the call's page shows its saved transcript, and
-      // only then is what this page kept of it dropped, so the transcript read is whole.
+      // Its last lines are saved, and the call and its session ended, before the call's
+      // page shows its saved transcript; only then is what this page kept of it dropped,
+      // so the transcript read is whole, the last session's end included.
       await written(id)
-      forgetSavedCall(id)
-      setActive(null)
-      await endCall(id)
+      try {
+        await endCall(id)
+      } finally {
+        forgetSavedCall(id)
+        setActive((current) => (current?.callId === id ? null : current))
+      }
       await refresh()
     },
     [refresh]
