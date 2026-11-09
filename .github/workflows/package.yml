@@ -1,21 +1,11 @@
 # Builds the app as a release would, unsigned, and checks the frozen agent inside it runs:
 # catches a PyInstaller or bundling break before release day. Only for changes that can
-# cause one, so it isn't a required check. Signing and notarizing: release.yml.
+# cause one, so it isn't a required check. Pull requests only: a push to main was checked on
+# its pull request, and the Release workflow builds the app anyway. Signing: release.yml.
 name: Package
 
 on:
   pull_request:
-    paths:
-      - "agent/**"
-      - "app/src-tauri/**"
-      - "app/package.json"
-      - "app/bun.lock"
-      - "justfile"
-      - "*.just"
-      - "mise.toml"
-      - ".github/workflows/package.yml"
-  push:
-    branches: [main]
     paths:
       - "agent/**"
       - "app/src-tauri/**"
