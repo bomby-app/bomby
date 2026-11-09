@@ -8,18 +8,26 @@ import { toReceived } from "./transcript"
 
 type Loaded = { messages: SavedMessage[] } | { error: string }
 
-// Each past call's lines, read once for the page's life: `use` needs the same promise on
-// every render, and opening the call again is instant. A call's entry goes when it opens
-// as a live call (`forgetSavedCall`), since a resumed call grows and SQLite may give a new
-// call a deleted one's id; a failed read goes once its page closes, so the next opening
-// tries again.
-const loads = new Map<number, { promise: Promise<Loaded>; failed: boolean }>()
+// Past calls' lines as read, so `use` gets the same promise on every render and opening
+// one again is instant: the latest MOST_KEPT, and always those whose page is showing. A
+// call's entry goes when it opens as a live call (`forgetSavedCall`), since a resumed call
+// grows and SQLite may give a new call a deleted one's id; a failed read goes once its
+// page closes, so the next opening tries again.
+const MOST_KEPT = 20
+
+type Entry = { promise: Promise<Loaded>; failed: boolean; showing: number }
+
+/** Oldest first: each read moves its call to the end. */
+const loads = new Map<number, Entry>()
 
 function load(callId: number): Promise<Loaded> {
   let entry = loads.get(callId)
-  if (!entry) {
-    const created = {
+  if (entry) {
+    loads.delete(callId)
+  } else {
+    const created: Entry = {
       failed: false,
+      showing: 0,
       promise: callMessages(callId).then(
         (messages): Loaded => ({ messages }),
         (e: unknown): Loaded => {
@@ -29,9 +37,17 @@ function load(callId: number): Promise<Loaded> {
       ),
     }
     entry = created
-    loads.set(callId, entry)
   }
+  loads.set(callId, entry)
   return entry.promise
+}
+
+/** Drops the oldest calls past MOST_KEPT, never one whose page is showing. */
+function trim() {
+  for (const [callId, entry] of loads) {
+    if (loads.size <= MOST_KEPT) return
+    if (entry.showing === 0) loads.delete(callId)
+  }
 }
 
 /** Drops what this page read of a call, which is about to change. */
@@ -46,12 +62,17 @@ export function forgetSavedCall(callId: number) {
  */
 export function SavedCallView({ callId }: { callId: number }) {
   const loaded = use(load(callId))
-  useEffect(
-    () => () => {
-      if (loads.get(callId)?.failed) loads.delete(callId)
-    },
-    [callId]
-  )
+  useEffect(() => {
+    const entry = loads.get(callId)
+    if (!entry) return
+    entry.showing += 1
+    trim()
+    return () => {
+      entry.showing -= 1
+      if (entry.failed && loads.get(callId) === entry) loads.delete(callId)
+      trim()
+    }
+  }, [callId])
   if ("error" in loaded)
     return <ErrorCard message={loaded.error} className="m-6" />
   if (loaded.messages.length === 0)
