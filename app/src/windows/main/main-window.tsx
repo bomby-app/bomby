@@ -15,8 +15,9 @@ import { TrayBridge } from "@/features/tray/tray-bridge"
 
 import { openSettings, SETTINGS_SHORTCUT } from "../settings/open-settings"
 import { AppSidebar } from "./app-sidebar"
+import { CommandPalette } from "./command-palette"
 import { MainPanel } from "./main-panel"
-import { NEW_PROJECT_SHORTCUT } from "./new-project-row"
+import { NEW_PROJECT_SHORTCUT, PALETTE_SHORTCUT } from "./shortcuts"
 
 /**
  * The main window: the first-run splash until it's finished, then the project tree on
@@ -40,6 +41,7 @@ function Workspace() {
   const extensionRpc = useMemo(() => [TODOS_RPC, ...hostedRpc], [hostedRpc])
   const [selection, setSelection] = useState<Selection>(null)
   const [creating, setCreating] = useState(false)
+  const [searching, setSearching] = useState(false)
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -49,6 +51,9 @@ function Workspace() {
       } else if (NEW_PROJECT_SHORTCUT.matches(event)) {
         event.preventDefault()
         setCreating(true)
+      } else if (PALETTE_SHORTCUT.matches(event)) {
+        event.preventDefault()
+        setSearching((open) => !open)
       }
     }
     window.addEventListener("keydown", onKeyDown)
@@ -68,6 +73,7 @@ function Workspace() {
             selection={selection}
             onSelect={setSelection}
             onNewProject={() => setCreating(true)}
+            onSearch={() => setSearching(true)}
           />
           <SidebarInset className="overflow-hidden">
             <MainPanel
@@ -77,6 +83,13 @@ function Workspace() {
             />
           </SidebarInset>
         </SidebarProvider>
+        <CommandPalette
+          open={searching}
+          onOpenChange={setSearching}
+          selection={selection}
+          onSelect={setSelection}
+          onNewProject={() => setCreating(true)}
+        />
         <NewProjectDialog
           open={creating}
           onOpenChange={setCreating}

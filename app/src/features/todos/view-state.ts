@@ -61,6 +61,14 @@ export function useTodosViewState(
   return [state, (change) => store.set({ ...store.get(), ...change })]
 }
 
+/** Opens the dialog that adds a to-do with notes, keeping one already being written. */
+export function composeTodo(projectId: number) {
+  const store = storeFor(projectId)
+  const state = store.get()
+  if (!state.composing)
+    store.set({ ...state, composing: { title: "", notes: "" } })
+}
+
 /** Drops a deleted project's panel state. */
 export function forgetViewState(projectId: number) {
   stores.delete(projectId)

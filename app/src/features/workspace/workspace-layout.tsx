@@ -5,6 +5,7 @@ import {
   Suspense,
   useEffect,
   useEffectEvent,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react"
@@ -27,6 +28,7 @@ import { cn } from "@/lib/utils"
 
 import { folderChanges, folderInfo } from "./api"
 import type { ExtraTab } from "./extra-tab"
+import { projectPanels } from "./panel-requests"
 import type { Section } from "./sections"
 import { useFolderVersion, useReading } from "./use-folder"
 
@@ -52,7 +54,8 @@ const MIN_SIZE = 320
  * while any is open and is dragged wider or narrower at its edge. A panel mounts the first
  * time it opens and stays while it's closed, so terminals keep running, at their size and
  * out of the keyboard's reach; the column's width is kept on this Mac. `header` gets the
- * toggles to put in the page's header.
+ * toggles to put in the page's header. The command palette sees the panels there are and
+ * asks to show one through `panel-requests.ts`.
  */
 export function WorkspaceLayout({
   project,
@@ -167,6 +170,31 @@ export function WorkspaceLayout({
     setMounted(new Set(mounted).add(id))
     setOpen(ids.filter((s) => s === id || showing.includes(s)))
   }
+
+  /** Brings the panel `id` into view, never closing it: for the command palette. */
+  function show(id: string) {
+    if (!showing.includes(id)) toggle(id)
+    else if (maximized !== null && maximized !== id) setMaximized(null)
+  }
+
+  // The palette lists this page's panels and shows one from its own click, through the
+  // latest `show`; the list changes with the panels' ids, not every render.
+  const latestShow = useRef(show)
+  useLayoutEffect(() => {
+    latestShow.current = show
+  })
+  const panelIds = ids.join(" ")
+  const publish = useEffectEvent(() =>
+    projectPanels.set({
+      projectId: project.id,
+      sections,
+      show: (id) => latestShow.current(id),
+    })
+  )
+  useEffect(() => {
+    publish()
+    return () => projectPanels.set(null)
+  }, [panelIds])
 
   const onShortcut = useEffectEvent(() => toggle("terminal"))
   const hasTerminal = ids.includes("terminal")

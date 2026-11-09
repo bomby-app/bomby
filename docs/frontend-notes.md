@@ -32,6 +32,13 @@ The app's web half is `app/src`. Checked 2026-11-03/04 against installed shadcn 
 - `ComboboxContent` limits itself to `--available-height` and `--available-width`, so it never runs out of the window.
 - Tooltip content styles nested `Kbd`; group keys with `KbdGroup`.
 
+## Command palette
+
+- shadcn's `command` (radix-nova) is cmdk 1.1.1 in shadcn's `Dialog` (`CommandDialog`), added 2026-11-09. `just app add command` asks to overwrite `button`, `input`, `textarea`, `dialog` and `input-group`; answer no, they're ours.
+- `shouldFilter={false}` turns cmdk's filter off when the results come from elsewhere (the core's search), and then `CommandEmpty` shows whenever no item renders, so the palette leaves it out while the first answer is on its way. Each `CommandItem` needs a unique `value`; `loop` wraps the arrow keys.
+- `CommandItem` draws a check at its right end unless it holds a `CommandShortcut`; put `ShortcutKeys` inside one (`tracking-normal`, since it spaces letters wide).
+- FTS5's `snippet()` refuses to run in a query with window functions ("unable to use function snippet in the requested context", SQLite in libsqlite3-sys 0.39.1): `search.rs` takes the matches in a materialized CTE first. With the trigram tokenizer, `snippet()`'s size counts trigrams, about one per character; 64 is its most.
+
 ## Tailwind v4
 
 - CSS-only config: `@import "tailwindcss"` and `@tailwindcss/vite`; no `tailwind.config.js`.

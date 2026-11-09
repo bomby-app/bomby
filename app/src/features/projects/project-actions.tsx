@@ -8,14 +8,19 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { useStore } from "@/lib/store"
 
 import { CallGate } from "../call/call-gate"
 import { useCall } from "../call/call-provider"
 import { useCallReadiness } from "../call/use-call-readiness"
 import type { Project } from "./api"
 import { ProjectSettingsDialog } from "./project-settings-dialog"
+import { settingsRequest } from "./settings-request"
 
-/** The project header's settings button, which opens Project settings. */
+/**
+ * The project header's settings button, which opens Project settings, as does a request
+ * for this project from the command palette (`settings-request.ts`).
+ */
 export function ProjectSettingsButton({
   project,
   onDeleted,
@@ -23,7 +28,12 @@ export function ProjectSettingsButton({
   project: Project
   onDeleted: () => void
 }) {
-  const [open, setOpen] = useState(false)
+  const [clicked, setClicked] = useState(false)
+  const requested = useStore(settingsRequest) === project.id
+  function setOpen(open: boolean) {
+    setClicked(open)
+    if (!open && requested) settingsRequest.set(null)
+  }
   return (
     <>
       <Tooltip>
@@ -41,7 +51,7 @@ export function ProjectSettingsButton({
       </Tooltip>
       <ProjectSettingsDialog
         project={project}
-        open={open}
+        open={clicked || requested}
         onOpenChange={setOpen}
         onDeleted={onDeleted}
       />

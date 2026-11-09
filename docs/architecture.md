@@ -51,7 +51,7 @@ flowchart LR
 
 ## Data the app keeps
 
-The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS) holds `bomby.db`: `projects`, `calls`, `messages` (with `messages_search`, an FTS5 index over their text by trigrams, kept current by triggers), `settings`, and the settings picked for each agent (`agent_picks`). `search(query)` (`src-tauri/src/search.rs`) finds projects whose name has every word and calls with a line that has every word of three characters or more, any case and accents aside: up to 8 projects, those starting with the query first, and up to 20 calls, the latest first, each with its first matching line cut around the match. LiveKit does not retain transcripts. Secrets stay in the OS keychain. The sidebar renders the project-and-call tree ([decision](decisions/sidebar-tree-of-projects-and-calls.md)).
+The app data folder (`~/Library/Application Support/app.bomby.desktop` on macOS) holds `bomby.db`: `projects`, `calls`, `messages` (with `messages_search`, an FTS5 index over their text by trigrams, kept current by triggers), `settings`, and the settings picked for each agent (`agent_picks`). `search(query)` (`src-tauri/src/search.rs`, for the command palette, [decision](decisions/command-palette-with-full-text-search.md)) finds projects whose name has every word and calls with a line that has every word of three characters or more, any case and accents aside: up to 8 projects, those starting with the query first, and up to 20 calls, the latest first, each with its first matching line cut around the match. LiveKit does not retain transcripts. Secrets stay in the OS keychain. The sidebar renders the project-and-call tree ([decision](decisions/sidebar-tree-of-projects-and-calls.md)).
 
 ## Contracts
 
