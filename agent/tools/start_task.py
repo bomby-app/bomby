@@ -87,7 +87,66 @@ async def start_task(
         await board.finish(id, "failed")
         raise
     await board.finish(id, "added" if turn.steered else "done")
-    return turn.text
+    limit = context.userdata.provider.late_result_tokens
+    if limit is None:
+        return turn.text
+    sent = estimate_tokens(task) + estimate_tokens(name) + ARGUMENTS_OVERHEAD
+    return fit_report(turn.text, limit - sent)
+
+
+ARGUMENTS_OVERHEAD = (
+    50  # tokens: the call's other arguments and wrapper, sent with the result
+)
+SENTENCE_ENDS = (". ", "! ", "? ", ".\n", "!\n", "?\n", "。", "！", "？")
+# Without "only if the user wants more", the model fetches the rest and loops again.
+SHORTENED = (
+    " (Shortened to fit. Tell the user this much; ask the agent for the rest only if"
+    + " the user wants more.)"
+)
+
+
+TOO_LONG = (
+    "Done, but the report was too long to pass on. Ask the agent for it in a few words"
+    + " only if the user wants it."
+)
+
+
+def estimate_tokens(text: str) -> int:
+    """A cautious count without a tokenizer: about 4 ASCII characters a token, any other
+    character a token of its own (CJK, Arabic and accents run close to that)."""
+    plain = sum(1 for c in text if c.isascii())
+    return -(-plain // 4) + len(text) - plain
+
+
+def fit_report(report: str, budget: int) -> str:
+    """`report` cut to `budget` estimated tokens at a sentence's end, with a note that it
+    was cut; `TOO_LONG` when the task left no room."""
+    if estimate_tokens(report) <= budget:
+        return report
+    room = budget - estimate_tokens(SHORTENED)
+    head = report[: within(report, room)]
+    if not head.strip():
+        return TOO_LONG
+    end = max(head.rfind(mark) for mark in SENTENCE_ENDS)
+    if end > 0:
+        head = head[: end + 1]
+    else:
+        space = head.rfind(" ")
+        head = head[:space] if space > 0 else head
+    return head.rstrip() + SHORTENED
+
+
+def within(text: str, tokens: int) -> int:
+    """How many of `text`'s characters fit in `tokens` estimated tokens."""
+    plain = other = 0
+    for i, c in enumerate(text):
+        if c.isascii():
+            plain += 1
+        else:
+            other += 1
+        if -(-plain // 4) + other > tokens:
+            return i
+    return len(text)
 
 
 def agents_note(

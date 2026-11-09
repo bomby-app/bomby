@@ -78,9 +78,11 @@ async def entrypoint(ctx: JobContext) -> None:
     # the app found gets one ACP process per call, started on its first task, to
     # run its named sessions. Shutting the job down closes every session and process.
     job = read_metadata(ctx.job.metadata)
-    runners = CallRunners.for_job(job)
     # The voice model, its voice and, on a resumed call, the conversation so far.
     options = CallOptions.from_job(job, os.environ)
+    runners = CallRunners.for_job(
+        job, short_reports=options.provider.late_result_tokens is not None
+    )
     model_name = options.provider.model
     ctx.log_context_fields = {"room": ctx.room.name, "model": model_name}
     logger.info("using %s, options %s", model_name, options.options)

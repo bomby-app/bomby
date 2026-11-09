@@ -13,8 +13,14 @@ from harnesses import CLAUDE_CODE, HARNESSES, OMP, OPENCODE, AgentName, Harness
 from sections import PLAIN
 from task_board import ATTRIBUTE, TaskBoard
 from tools import agents_note
-from tools.start_task import start_task
-from voice_providers import GEMINI, RIME, VoiceProvider
+from tools.start_task import (
+    SHORTENED,
+    TOO_LONG,
+    estimate_tokens,
+    fit_report,
+    start_task,
+)
+from voice_providers import GEMINI, OPENAI, RIME, VoiceProvider
 
 
 def test_start_task_offers_exactly_the_known_harnesses() -> None:
@@ -218,3 +224,57 @@ def test_a_cancelled_task_ends_stopped() -> None:
         return sent
 
     assert asyncio.run(scenario()) == ["working", "stopped"]
+
+
+LONG_REPORT = "The wiki covers the team's clients. " + " ".join(
+    f"Point {n} is about one more page of the wiki." for n in range(200)
+)
+
+
+def finished_report(provider: VoiceProvider, report: str) -> str:
+    async def scenario() -> str:
+        runner = FakeRunner(Turn(report))
+        runner.release.set()
+        b, _ = board()
+        context = cast(RunContext[Call], cast(object, FakeContext(runner, b, provider)))
+        return await start_task(context, "Summarise the wiki", "wiki", "claude")
+
+    return asyncio.run(scenario())
+
+
+def test_on_gpt_live_a_long_report_is_cut_to_what_it_can_take() -> None:
+    result = finished_report(OPENAI, LONG_REPORT)
+    limit = OPENAI.late_result_tokens
+    assert limit is not None
+    assert estimate_tokens(result) <= limit
+    assert result.startswith("The wiki covers the team's clients.")
+    assert result.endswith(SHORTENED)
+    assert result.removesuffix(SHORTENED).endswith("."), "cut at a sentence's end"
+
+
+def test_on_gemini_and_prism_a_long_report_arrives_whole() -> None:
+    assert finished_report(GEMINI, LONG_REPORT) == LONG_REPORT
+    assert finished_report(RIME, LONG_REPORT) == LONG_REPORT
+
+
+def test_on_gpt_live_a_short_report_is_untouched() -> None:
+    assert finished_report(OPENAI, "Fixed the header.") == "Fixed the header."
+
+
+def test_a_report_without_sentences_is_cut_at_a_word() -> None:
+    cut = fit_report("word " * 300, 100)
+    assert estimate_tokens(cut) <= 100
+    assert cut.removesuffix(SHORTENED).endswith("word")
+
+
+def test_a_japanese_report_is_counted_by_its_characters_not_its_length() -> None:
+    # About a token a character: 600 characters is far over budget though under 1,600.
+    report = "ウィキはチームの顧客について書かれています。" * 30
+    cut = fit_report(report, 300)
+    assert estimate_tokens(cut) <= 300
+    assert cut.removesuffix(SHORTENED).endswith("。")
+
+
+def test_a_task_that_leaves_no_room_sends_a_short_note_instead() -> None:
+    assert fit_report(LONG_REPORT, 20) == TOO_LONG
+    assert fit_report(LONG_REPORT, -500) == TOO_LONG

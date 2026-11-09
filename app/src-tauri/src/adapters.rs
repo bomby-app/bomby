@@ -8,6 +8,7 @@
 //! with a new lockfile installs them again in the background at launch.
 
 use std::fs::{self, File};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{Mutex, OnceLock};
@@ -39,7 +40,9 @@ const BUN: &[(&str, &str, &str)] = &[
     ),
 ];
 
-const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(300);
+// Slow is fine, a stall isn't (see `download`); this only stops one that never ends.
+const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(900);
+const FAILED: &str = "Try again in a minute!";
 const STEP_TIMEOUT: Duration = Duration::from_secs(300);
 
 static DIR: OnceLock<PathBuf> = OnceLock::new();
@@ -112,7 +115,7 @@ fn install(dir: &Path) -> Result<()> {
         .args(["install", "--frozen-lockfile", "--omit", "optional"])
         .current_dir(&work)
         .env("BUN_INSTALL_CACHE_DIR", dir.join("cache"));
-    run(packages, &log, "Downloading the adapters")?;
+    run(packages, &log)?;
 
     let staging = dir.join("bin.new");
     let _ = fs::remove_dir_all(&staging);
@@ -125,7 +128,7 @@ fn install(dir: &Path) -> Result<()> {
             .arg("--outfile")
             .arg(staging.join(&name))
             .current_dir(&work);
-        run(build, &log, "Building the adapters")?;
+        run(build, &log)?;
     }
     fs::write(staging.join("bun.lock"), LOCKFILE)?;
     let bin = dir.join("bin");
@@ -157,24 +160,23 @@ fn runtime(dir: &Path, log: &Path) -> Result<PathBuf> {
     let zip = dir.join("bun.zip");
     let url =
         format!("https://github.com/oven-sh/bun/releases/download/bun-v{BUN_VERSION}/{asset}.zip");
-    let mut download = Command::new("curl");
-    download
-        .args(["-fsSL", "--max-time", "280", "-o"])
-        .arg(&zip)
-        .arg(&url);
-    run_for(download, log, "Downloading bun", DOWNLOAD_TIMEOUT)?;
+    let status = dir.join("bun.status");
+    let _ = fs::remove_file(&zip);
+    let downloaded = run_for(download(&url, &zip), log, DOWNLOAD_TIMEOUT, Some(&status));
+    let _ = fs::remove_file(&status);
+    downloaded?;
     if sha256_of(&zip)? != *sha256 {
         let _ = fs::remove_file(&zip);
-        return Err(Error::Invalid(
-            "The bun download didn't match its checksum. Try again.".into(),
-        ));
+        let mut out = File::options().create(true).append(true).open(log)?;
+        let _ = writeln!(out, "the bun download didn't match its checksum");
+        return Err(Error::Invalid(FAILED.into()));
     }
 
     let unpacked = dir.join("runtime.new");
     let _ = fs::remove_dir_all(&unpacked);
     let mut unzip = Command::new("ditto");
     unzip.args(["-x", "-k"]).arg(&zip).arg(&unpacked);
-    run(unzip, log, "Unpacking bun")?;
+    run(unzip, log)?;
     let runtime = dir.join("runtime");
     let _ = fs::remove_dir_all(&runtime);
     fs::create_dir_all(&runtime)?;
@@ -182,6 +184,20 @@ fn runtime(dir: &Path, log: &Path) -> Result<PathBuf> {
     let _ = fs::remove_dir_all(&unpacked);
     let _ = fs::remove_file(&zip);
     Ok(bun)
+}
+
+/// curl fetching `url` into `zip`, its HTTP code on stdout. It gives up on a stall (under
+/// 1 KB/s for 30 s), not on a slow line, and retries a stall, a timeout, 408, 429 and 5xx.
+fn download(url: &str, zip: &Path) -> Command {
+    let mut curl = Command::new("curl");
+    curl
+        // curl 8.7 won't retry an HTTP error over HTTP/2, which GitHub uses.
+        .args(["-fsSL", "--http1.1", "--retry", "3"])
+        .args(["--speed-limit", "1024", "--speed-time", "30"])
+        .args(["-w", "%{http_code}", "-o"])
+        .arg(zip)
+        .arg(url);
+    curl
 }
 
 fn sha256_of(file: &Path) -> Result<String> {
@@ -233,34 +249,109 @@ fn entries(work: &Path) -> Result<Vec<(String, PathBuf)>> {
     Ok(entries)
 }
 
-fn run(command: Command, log: &Path, what: &str) -> Result<()> {
-    run_for(command, log, what, STEP_TIMEOUT)
+fn run(command: Command, log: &Path) -> Result<()> {
+    run_for(command, log, STEP_TIMEOUT, None)
 }
 
-/// Runs `command` with its output appended to `log`, killing it after `timeout`.
-fn run_for(mut command: Command, log: &Path, what: &str, timeout: Duration) -> Result<()> {
+/// Runs `command` with its errors appended to `log`, killing it after `timeout`. Its output
+/// goes to `status` when given (curl's HTTP code), else to `log`. A failure is `FAILED`,
+/// with the HTTP code when there is one.
+fn run_for(
+    mut command: Command,
+    log: &Path,
+    timeout: Duration,
+    status: Option<&Path>,
+) -> Result<()> {
     let out = File::options().create(true).append(true).open(log)?;
+    let stdout = match status {
+        Some(path) => File::create(path)?,
+        None => out.try_clone()?,
+    };
     let mut child = command
         .stdin(Stdio::null())
-        .stdout(out.try_clone()?)
+        .stdout(stdout)
         .stderr(out)
         .spawn()?;
-    let status = process::wait_timeout(&mut child, timeout)?;
-    if status.is_none() {
+    let exit = process::wait_timeout(&mut child, timeout)?;
+    if exit.is_none() {
         process::kill(&mut child);
     }
-    match status {
-        Some(status) if status.success() => Ok(()),
-        Some(_) => Err(Error::Invalid(format!(
-            "{what} failed. Check your internet connection and try again."
-        ))),
-        None => Err(Error::Invalid(format!("{what} took too long. Try again."))),
+    match exit {
+        Some(exit) if exit.success() => Ok(()),
+        Some(exit) => Err(Error::Invalid(failure(status, exit.code()))),
+        None => Err(Error::Invalid(format!("{FAILED} (too slow)"))),
+    }
+}
+
+/// curl's exit code for a timeout, a stall included.
+const CURL_TIMED_OUT: i32 = 28;
+
+/// `FAILED`, with the HTTP error, "no connection" when nothing answered, or "too slow".
+fn failure(status: Option<&Path>, exit: Option<i32>) -> String {
+    let code = status
+        .and_then(|path| fs::read_to_string(path).ok())
+        .map(|code| code.trim().to_owned())
+        .filter(|code| code.len() == 3 && code.bytes().all(|b| b.is_ascii_digit()));
+    match code.as_deref() {
+        Some(code) if code.starts_with('4') || code.starts_with('5') => {
+            format!("{FAILED} ({code})")
+        }
+        _ if status.is_some() && exit == Some(CURL_TIMED_OUT) => format!("{FAILED} (too slow)"),
+        Some("000") => format!("{FAILED} (no connection)"),
+        _ => FAILED.to_owned(),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_failed_download_says_its_http_code_or_that_nothing_answered() {
+        let dir = std::env::temp_dir().join(format!("bomby-failure-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let (log, status) = (dir.join("install.log"), dir.join("status"));
+        let fail = |printed: &str| {
+            let mut curl = Command::new("sh");
+            curl.args(["-c", &format!("printf {printed}; exit 22")]);
+            run_for(curl, &log, STEP_TIMEOUT, Some(&status))
+                .unwrap_err()
+                .to_string()
+        };
+
+        assert!(fail("504").ends_with("Try again in a minute! (504)"));
+        assert!(fail("000").ends_with("Try again in a minute! (no connection)"));
+        let mut stalled = Command::new("sh");
+        stalled.args(["-c", "printf 302; exit 28"]);
+        let message = run_for(stalled, &log, STEP_TIMEOUT, Some(&status)).unwrap_err();
+        assert!(
+            message
+                .to_string()
+                .ends_with("Try again in a minute! (too slow)")
+        );
+        assert!(
+            run(Command::new("false"), &log)
+                .unwrap_err()
+                .to_string()
+                .ends_with("minute!")
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_slow_download_runs_on_and_a_stalled_one_is_retried() {
+        let curl = download("https://example.com/bun.zip", Path::new("/tmp/bun.zip"));
+        let args: Vec<_> = curl.get_args().map(|a| a.to_string_lossy()).collect();
+        let after = |flag: &str| args.iter().position(|a| a == flag).map(|i| &args[i + 1]);
+
+        assert!(
+            !args.iter().any(|a| a == "--max-time"),
+            "no limit on a slow line"
+        );
+        assert_eq!(after("--speed-limit").map(|a| a.as_ref()), Some("1024"));
+        assert_eq!(after("--speed-time").map(|a| a.as_ref()), Some("30"));
+        assert_eq!(after("--retry").map(|a| a.as_ref()), Some("3"));
+    }
 
     #[test]
     fn knows_bun_for_this_mac() {

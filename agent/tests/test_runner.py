@@ -14,6 +14,9 @@ from livekit.agents.llm import ToolError
 from acp_client import AcpRunner
 from acp_client.client import pick_allow
 from acp_client.runner import (
+    BRIEFING,
+    REPORT_RULE,
+    SHORT_REPORT_RULE,
     Turn,
     briefing,
     child_environment,
@@ -286,6 +289,19 @@ def test_the_briefing_says_nothing_of_a_description_the_user_never_wrote(
 
     assert text.endswith(f"## This project\n\nsamba. You're working in {tmp_path}.")
     assert "description" not in text
+
+
+def test_the_briefing_keeps_the_length_rule_that_short_reports_replace() -> None:
+    assert REPORT_RULE in BRIEFING
+
+
+def test_short_reports_hold_information_tasks_to_100_words_too(tmp_path: Path) -> None:
+    project = Project(name="samba", folders=(tmp_path,))
+
+    assert REPORT_RULE in briefing(project)
+    short = briefing(project, short_reports=True)
+    assert SHORT_REPORT_RULE in short
+    assert REPORT_RULE not in short
 
 
 def test_follow_ups_continue_the_same_session(tmp_path: Path) -> None:

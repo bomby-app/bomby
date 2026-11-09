@@ -1,6 +1,7 @@
 import { ChevronDown } from "lucide-react"
-import { useState, useTransition } from "react"
+import { useEffect, useState, useTransition } from "react"
 
+import { showErrorToast } from "@/components/error-toast"
 import { InlineLink } from "@/components/inline-link"
 import { buttonVariants } from "@/components/ui/button"
 import {
@@ -88,6 +89,9 @@ export function FirstAgent({
   const phase = phaseOf(agent)
   const [title, body] = COPY[phase](agent?.name ?? "")
   const install = useAdapterInstall()
+  useEffect(() => {
+    if (install.error) showErrorToast(install.error)
+  }, [install.error])
   const others = agents?.filter((other) => other.id !== agent?.id) ?? []
 
   return (
@@ -97,11 +101,6 @@ export function FirstAgent({
       <AgentCard agent={agent} phase={phase} />
 
       <div className="mt-7 flex min-h-[18px] flex-col items-center gap-3">
-        {install.error && (
-          <p className="text-[13px] leading-[18px] text-destructive">
-            {install.error}
-          </p>
-        )}
         {agent && phase !== "ready" && (
           <NextSteps phase={phase} name={agent.name} onLater={onLater} />
         )}
