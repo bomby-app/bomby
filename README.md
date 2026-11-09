@@ -28,7 +28,8 @@ Bomby is in beta and runs on Apple Silicon Macs with macOS 14 or later.
 - **Several things at once.** Each piece of work gets its own agent session, and sessions run side by side. Add to a task while it runs. The call's agents panel shows what each one is doing, and a notification tells you when one finishes while you're elsewhere.
 - **See the work as it happens.** Beside a project, panels show its folder's git changes as the agent makes them, its files, terminals of your own, and the project's to-dos, which you and Bomby keep together.
 - **It knows your project.** Give a project a few words of instructions, and Bomby and your agent know what it is from the first word. Tell Bomby what to call you, and pick its tone.
-- **Pick up where you left off.** Every call is saved with its transcript, to read back or resume. Turn on memory and Bomby remembers you across calls, in your own Zep project.
+- **Pick up where you left off.** Every call is saved with its transcript, to read back or resume. Bomby names each call once it knows what it's about, and you can rename it. Turn on memory and Bomby remembers you across calls, in your own Zep project.
+- **Find anything.** ⌘K opens a command palette that finds projects by name and calls by what was said in them, and runs the app's commands, each with its shortcut.
 - **Out of your way.** Bomby lives in the menu bar too: start or end a call from there, and closing the window keeps the call going.
 
 ## How it works
