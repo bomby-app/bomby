@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog"
 
 import { type AgentStatus, openInstallPage } from "./api"
+import { forgetListedSettings } from "./use-agent-settings"
 import { checkAgentsAgain, setupStep } from "./use-agents"
 
 /**
@@ -39,14 +40,14 @@ export function FixSteps({ agent }: { agent: AgentStatus }) {
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            {step === "sign_in" ? `Sign in to ${name}` : `${name} didn't start`}
+            {step === "sign_in" ? `Set up ${name}` : `${name} didn't start`}
           </DialogTitle>
           <DialogDescription>
             Bomby uses {name} from the command line. The desktop app's sign-in
             doesn't carry over.
           </DialogDescription>
         </DialogHeader>
-        {step === "unreachable" && setup?.problem && (
+        {setup?.problem && (
           <p className="max-h-24 overflow-auto rounded-md bg-muted px-3 py-2 font-mono text-xs text-muted-foreground select-text">
             {setup.problem}
           </p>
@@ -84,7 +85,12 @@ export function FixSteps({ agent }: { agent: AgentStatus }) {
         <DialogFooter>
           <CheckAgainButton
             checking={checking}
-            onClick={() => startCheck(checkAgentsAgain)}
+            onClick={() =>
+              startCheck(() => {
+                forgetListedSettings()
+                return checkAgentsAgain()
+              })
+            }
           />
         </DialogFooter>
       </DialogContent>
