@@ -30,6 +30,7 @@ import {
   type SavedMessage,
   saveMessage,
 } from "./api"
+import { MuteShortcut } from "./mute"
 import { lineId, roleOf } from "./transcript"
 
 export type ActiveCall = {
@@ -195,6 +196,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         {active && <CallRecorder call={active} />}
         <EndOnAgentFailure onFailed={onAgentFailed} />
         <MicReport />
+        <MuteShortcut />
         <PinMicrophone />
         {/* Shows only if the webview blocks audio playback until a click. */}
         <StartAudioButton

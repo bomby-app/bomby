@@ -3,6 +3,8 @@ import {
   FolderCog,
   ListPlus,
   MessageSquare,
+  Mic,
+  MicOff,
   Settings,
   SquarePen,
 } from "lucide-react"
@@ -20,6 +22,7 @@ import {
   CommandShortcut,
 } from "@/components/ui/command"
 import { useCall } from "@/features/call/call-provider"
+import { MUTE_SHORTCUT, useMic } from "@/features/call/mute"
 import { callLabel } from "@/features/projects/names"
 import { useProjects } from "@/features/projects/projects-provider"
 import type { Selection } from "@/features/projects/selection"
@@ -58,8 +61,8 @@ type PaletteCommand = {
 /**
  * The command palette (Cmd-K, or the search button by New project): one field that finds
  * projects by name and conversations by what was said in them (the core's search), and the
- * commands for the app and the open project: New project, Add a to-do, its panels,
- * Project settings, Settings. Each command shows its shortcut, if it has one.
+ * commands for the app, the call and the open project: New project, Mute or Unmute, Add a
+ * to-do, its panels, Project settings, Settings. Each command shows its shortcut, if it has one.
  */
 export function CommandPalette({
   open,
@@ -109,6 +112,7 @@ function Palette({
   const [query, setQuery] = useState("")
   const { projects } = useProjects()
   const { active } = useCall()
+  const mic = useMic()
   const panels = useStore(projectPanels)
   const { results, error } = useSearch(query)
 
@@ -119,6 +123,7 @@ function Palette({
     // Project settings open from the project's page, which a call on it replaces.
     settingsReachable:
       project !== undefined && active?.projectId !== project.id,
+    mic,
     onSelect,
     onNewProject,
   }).filter((command) => matchesCommand(command, query))
@@ -212,12 +217,14 @@ function paletteCommands({
   project,
   panels,
   settingsReachable,
+  mic,
   onSelect,
   onNewProject,
 }: {
   project: { id: number } | undefined
   panels: ProjectPanels | undefined
   settingsReachable: boolean
+  mic: ReturnType<typeof useMic>
   onSelect: (selection: Selection) => void
   onNewProject: () => void
 }): PaletteCommand[] {
@@ -230,6 +237,16 @@ function paletteCommands({
       run: onNewProject,
     },
   ]
+  if (mic.available) {
+    commands.push({
+      id: "mute",
+      label: mic.enabled ? "Mute" : "Unmute",
+      icon: mic.enabled ? <MicOff /> : <Mic />,
+      keywords: ["microphone", "mic", "call"],
+      shortcut: MUTE_SHORTCUT,
+      run: mic.toggle,
+    })
+  }
   if (project && panels?.sections.some((panel) => panel.id === "todos")) {
     commands.push({
       id: "add-todo",
