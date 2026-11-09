@@ -4,7 +4,6 @@ import {
   useSessionContext,
   useSessionMessages,
 } from "@livekit/components-react"
-import { invoke } from "@tauri-apps/api/core"
 import { RoomEvent, TokenSource } from "livekit-client"
 import {
   createContext,
@@ -25,12 +24,16 @@ import {
   callMessages,
   callToken,
   endCall,
+  log,
   onAgentCrashed,
   openCall,
   type SavedMessage,
   saveMessage,
 } from "./api"
+import { MuteShortcut } from "./mute"
+import { forgetSavedCall } from "./saved-call-view"
 import { lineId, roleOf } from "./transcript"
+import { track, written } from "./transcript-writes"
 
 export type ActiveCall = {
   projectId: number
@@ -55,10 +58,6 @@ type CallState = {
 }
 
 const CallContext = createContext<CallState | null>(null)
-
-function log(line: string) {
-  void invoke("app_log", { line }).catch(() => {})
-}
 
 /**
  * LiveKit fetches a token whenever it likes: on mount, on each start, and on end and
@@ -110,6 +109,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
   const finish = useCallback(
     async (id: number) => {
+      // Its last lines are saved before the call's page shows its saved transcript, and
+      // only then is what this page kept of it dropped, so the transcript read is whole.
+      await written(id)
+      forgetSavedCall(id)
       setActive(null)
       await endCall(id)
       await refresh()
@@ -141,6 +144,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       opened = await openCall(projectId, resumeCallId)
       tokens.join(opened)
       const history = resumeCallId ? await callMessages(opened) : []
+      forgetSavedCall(opened)
       setActive({ projectId, callId: opened, startedAt: Date.now(), history })
       await session.start({ signal: aborter.signal })
       await refresh() // the new call shows in the tree
@@ -195,6 +199,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         {active && <CallRecorder call={active} />}
         <EndOnAgentFailure onFailed={onAgentFailed} />
         <MicReport />
+        <MuteShortcut />
         <PinMicrophone />
         {/* Shows only if the webview blocks audio playback until a click. */}
         <StartAudioButton
@@ -238,7 +243,10 @@ function CallRecorder({ call }: { call: ActiveCall }) {
       const id = lineId(message)
       if (saved.current.get(id) === text) continue
       saved.current.set(id, text)
-      void saveMessage(call.callId, { segmentId: id, role, text })
+      track(
+        call.callId,
+        saveMessage(call.callId, { segmentId: id, role, text })
+      )
     }
   }, [messages, call])
   return null

@@ -16,17 +16,19 @@ import { NewProjectRow } from "./new-project-row"
 import { SettingsButton } from "./settings-button"
 
 /**
- * The left column: brand, New project, the project and call tree, settings. The brand goes
+ * The left column: brand, New project and search, the project and call tree, settings. The brand goes
  * back to the projects home; it looks the same however it's pointed at.
  */
 export function AppSidebar({
   selection,
   onSelect,
   onNewProject,
+  onSearch,
 }: {
   selection: Selection
   onSelect: (selection: Selection) => void
   onNewProject: () => void
+  onSearch: () => void
 }) {
   return (
     <Sidebar variant="inset">
@@ -49,7 +51,7 @@ export function AppSidebar({
 
       <SidebarContent>
         <SidebarGroup>
-          <NewProjectRow onClick={onNewProject} />
+          <NewProjectRow onClick={onNewProject} onSearch={onSearch} />
         </SidebarGroup>
         <ProjectTree selection={selection} onSelect={onSelect} />
       </SidebarContent>

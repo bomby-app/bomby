@@ -18,6 +18,7 @@ mod local_server;
 mod notifications;
 mod process;
 mod projects;
+mod search;
 mod settings;
 mod setup;
 mod sync;
@@ -78,6 +79,7 @@ pub fn run() {
             tauri::async_runtime::spawn(agents::refresh_in_background(app.handle().clone()));
             adapters::update_in_background(app.handle());
             updates::check_in_background(app.handle());
+            windows::place_main(app.handle())?;
             Ok(())
         })
         // Closing the main window hides it: the app, and any call in it, keeps running in
@@ -123,6 +125,7 @@ pub fn run() {
             calls::save_message,
             calls::call_messages,
             calls::delete_call,
+            search::search,
             voice::voice_settings,
             voice::set_voice_provider,
             voice::set_voice,

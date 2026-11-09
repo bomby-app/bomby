@@ -173,7 +173,8 @@ class Todos(Extension):
             one or several at once. Not for work to start now: that's for the agents.
 
             Args:
-                items: Each to-do as a short line in the user's words, at most 20.
+                items: Each to-do as a short line in the user's words, under 120
+                    characters; at most 20.
             """
             titles = [t.strip() for t in items if t.strip()]
             if not titles:
@@ -200,8 +201,9 @@ class Todos(Extension):
             Args:
                 number: The to-do's number.
                 status: "todo", "doing", "done", or "cancelled" for one that won't be done.
-                title: Its new words, a short line.
-                notes: Details to keep with it, replacing any it had; empty to clear them.
+                title: Its new words, a short line under 120 characters.
+                notes: Details to keep with it, up to 1,000 characters, replacing any it
+                    had; empty to clear them.
             """
             change: dict[str, JsonValue] = {"number": number}
             if status is not None:

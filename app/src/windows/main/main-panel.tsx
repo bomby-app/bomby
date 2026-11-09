@@ -21,11 +21,16 @@ import { useProjects } from "@/features/projects/projects-provider"
 import type { Selection } from "@/features/projects/selection"
 import {
   forgetProjectTodos,
+  TodoDialogs,
   TODOS_TAB,
   TodosView,
   useOpenCount,
 } from "@/features/todos/todos-view"
 import type { ExtraTab } from "@/features/workspace/extra-tab"
+import {
+  projectPanels,
+  showProjectPanel,
+} from "@/features/workspace/panel-requests"
 import { WorkspaceLayout } from "@/features/workspace/workspace-layout"
 
 import { AppHeader } from "./app-header"
@@ -69,19 +74,28 @@ export function MainPanel({
   }
 
   const view = projectView(project, selection, active, call, onSelect)
-  return <ProjectLayout key={project.id} project={project} view={view} />
+  return (
+    <ProjectLayout
+      key={project.id}
+      project={project}
+      view={view}
+      onSelect={onSelect}
+    />
+  )
 }
 
 /**
  * A project's page in the workspace layout, with the tabs its extensions add to the panel
- * (To-dos, when the project's calls have it).
+ * (To-dos, when the project's calls have it) and its to-do dialogs (a new one with notes, one expanded).
  */
 function ProjectLayout({
   project,
   view,
+  onSelect,
 }: {
   project: Project
   view: ProjectView
+  onSelect: (selection: Selection) => void
 }) {
   const extensions = useExtensions()
   const todosOn = isOn("todos", project.extensions, extensions)
@@ -96,26 +110,39 @@ function ProjectLayout({
       ]
     : []
   return (
-    <WorkspaceLayout
-      project={project}
-      tabs={tabs}
-      header={(toggles) => (
-        <AppHeader
-          title={view.title}
-          actions={
-            // The page's own actions, its panels' toggles, then its main action on its
-            // own at the right end (owner, 2026-11-08).
-            <div className="flex items-center gap-1.5">
-              {view.secondary}
-              {toggles}
-              {view.primary && <div className="ml-1.5">{view.primary}</div>}
-            </div>
-          }
+    <>
+      {todosOn && (
+        <TodoDialogs
+          projectId={project.id}
+          // From anywhere: the toast outlives moving to another project.
+          onShow={() => {
+            showProjectPanel(project.id, "todos")
+            if (projectPanels.get()?.projectId !== project.id)
+              onSelect({ kind: "project", projectId: project.id })
+          }}
         />
       )}
-    >
-      {view.body}
-    </WorkspaceLayout>
+      <WorkspaceLayout
+        project={project}
+        tabs={tabs}
+        header={(toggles) => (
+          <AppHeader
+            title={view.title}
+            actions={
+              // The page's own actions, its panels' toggles, then its main action on its
+              // own at the right end (owner, 2026-11-08).
+              <div className="flex items-center gap-1.5">
+                {view.secondary}
+                {toggles}
+                {view.primary && <div className="ml-1.5">{view.primary}</div>}
+              </div>
+            }
+          />
+        )}
+      >
+        {view.body}
+      </WorkspaceLayout>
+    </>
   )
 }
 

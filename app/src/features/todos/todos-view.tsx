@@ -1,11 +1,13 @@
 import { ListTodo, Plus, Search } from "lucide-react"
 import { type FormEvent, useState } from "react"
+import { toast } from "sonner"
 
 import { Mascot } from "@/components/mascot"
 import { FieldError } from "@/components/ui/field"
 import {
   InputGroup,
   InputGroupAddon,
+  InputGroupButton,
   InputGroupInput,
 } from "@/components/ui/input-group"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -17,20 +19,33 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 import { addTodos, type Todo, type TodoStatus } from "./api"
 import { type Filter, FILTERS, found, matches } from "./filters"
 import { FILTER_LABEL, GROUPS, ordered, STATUS_LABEL } from "./labels"
 import { StatusMark } from "./status-mark"
-import { TodoRow } from "./todo-row"
+import { TodoDialog } from "./todo-dialog"
+import { ExpandedTodo, TodoRow } from "./todo-row"
 import { forgetTodos, useTodos } from "./use-todos"
-import { forgetViewState, useTodosViewState } from "./view-state"
+import {
+  type Composing,
+  forgetViewState,
+  settle,
+  useTodosViewState,
+  type Words,
+} from "./view-state"
 
 /** The workspace panel's To-dos tab, but for its count and content (`main-panel.tsx`). */
 export const TODOS_TAB = {
   id: "todos",
   label: "To-dos",
   icon: <ListTodo />,
+  keywords: ["to-do list", "todo", "tasks"],
 }
 
 /** Drops what this page keeps of a deleted project's to-dos and its panel. */
@@ -50,7 +65,8 @@ export function useOpenCount(projectId: number, enabled: boolean): number {
 
 /**
  * A project's to-dos, as the workspace panel's To-dos tab shows them (Paper "extensions",
- * 03 and 04): search and a status filter, a field to add one, then the list by status.
+ * 03 and 04): search and a status filter, a field to add one (its + opens the dialog for
+ * one with notes, `NewTodo`), then the list by status.
  * Open shows doing and to do, with what's done folded under them. Bomby's changes land
  * here as they happen (`use-todos.ts`). The search, filter and words being edited outlast
  * the panel (`view-state.ts`).
@@ -129,6 +145,11 @@ export function TodosView({ projectId }: { projectId: number }) {
           projectId={projectId}
           title={adding}
           onTitle={(next) => setView({ adding: next })}
+          onCompose={() =>
+            setView({
+              composing: { title: adding, notes: "", announce: false },
+            })
+          }
           onError={setError}
         />
         {error && <FieldError>{error}</FieldError>}
@@ -210,17 +231,22 @@ function GroupLabel({ status, count }: { status: TodoStatus; count: number }) {
   )
 }
 
-/** The field that adds a to-do: Return adds it, as the user's. */
+/**
+ * The field that adds a to-do: Return adds it, as the user's. Its + opens the dialog for
+ * one with notes, starting from what's typed.
+ */
 function AddTodo({
   projectId,
   title,
   onTitle,
+  onCompose,
   onError,
 }: {
   projectId: number
   /** Its words, kept with the panel's state. */
   title: string
   onTitle: (title: string) => void
+  onCompose: () => void
   onError: (error: string | null) => void
 }) {
   const [adding, setAdding] = useState(false)
@@ -244,7 +270,18 @@ function AddTodo({
     <form onSubmit={(event) => void add(event)}>
       <InputGroup className="h-9 border-transparent bg-muted shadow-none has-[[data-slot=input-group-control]:focus-visible]:bg-background dark:bg-muted">
         <InputGroupAddon>
-          <Plus />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <InputGroupButton
+                size="icon-xs"
+                aria-label="Add with notes"
+                onClick={onCompose}
+              >
+                <Plus />
+              </InputGroupButton>
+            </TooltipTrigger>
+            <TooltipContent>Add with notes</TooltipContent>
+          </Tooltip>
         </InputGroupAddon>
         <InputGroupInput
           aria-label="Add a to-do"
@@ -255,6 +292,114 @@ function AddTodo({
         />
       </InputGroup>
     </form>
+  )
+}
+
+/**
+ * The project's to-do dialogs, on its page rather than in the To-dos panel, so they open
+ * without it and outlive its filter: a new to-do with notes, and one expanded to edit.
+ */
+export function TodoDialogs({
+  projectId,
+  onShow,
+}: {
+  projectId: number
+  onShow: () => void
+}) {
+  return (
+    <>
+      <NewTodo projectId={projectId} onShow={onShow} />
+      <ExpandedTodo projectId={projectId} />
+    </>
+  )
+}
+
+/**
+ * The dialog that adds a to-do with notes, while one is being written, so the command
+ * palette's Add a to-do opens it alone.
+ * One added from there is announced with a toast whose Show opens the panel (`onShow`); one
+ * from the panel's + clears the field it started from.
+ */
+function NewTodo({
+  projectId,
+  onShow,
+}: {
+  projectId: number
+  onShow: () => void
+}) {
+  const [{ composing }, setView] = useTodosViewState(projectId)
+  if (!composing) return null
+
+  function done(added: Todo | null, submitted: Composing) {
+    if (!added) return setView({ composing: null })
+    // The field it started from empties too, unless it came from elsewhere.
+    settle(
+      projectId,
+      "composing",
+      submitted,
+      submitted.announce ? {} : { adding: "" }
+    )
+    if (submitted.announce) {
+      toast(`Added to-do ${added.number}.`, {
+        action: { label: "Show", onClick: onShow },
+      })
+    }
+  }
+
+  return (
+    <NewTodoDialog
+      projectId={projectId}
+      words={composing}
+      onWords={(words) => setView({ composing: { ...composing, ...words } })}
+      onDone={(added) => done(added, composing)}
+    />
+  )
+}
+
+/** A new to-do with notes, as the user's; `onDone` gets it once added, or null. */
+function NewTodoDialog({
+  projectId,
+  words,
+  onWords,
+  onDone,
+}: {
+  projectId: number
+  words: Words
+  onWords: (words: Words) => void
+  onDone: (added: Todo | null) => void
+}) {
+  const [adding, setAdding] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function add() {
+    setAdding(true)
+    setError(null)
+    try {
+      const [added] = await addTodos(
+        projectId,
+        [{ title: words.title, notes: words.notes }],
+        "user"
+      )
+      onDone(added ?? null)
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  return (
+    <TodoDialog
+      heading="New to-do"
+      words={words}
+      onWords={onWords}
+      onSubmit={() => void add()}
+      onCancel={() => onDone(null)}
+      submitLabel="Add"
+      busy={adding}
+      error={error}
+      focus={words.title ? "notes" : "title"}
+    />
   )
 }
 

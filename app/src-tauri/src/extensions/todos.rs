@@ -16,8 +16,11 @@ pub const ID: &str = "todos";
 /// Sent to every window when a project's to-dos change, with the project's id.
 pub const CHANGED: &str = "todos-changed";
 
-const MAX_TITLE_LEN: usize = 200;
-const MAX_NOTES_LEN: usize = 2000;
+/// About a line in the panel, and quick for Bomby to say. The page holds the same limits
+/// (`features/todos/limits.ts`).
+const MAX_TITLE_LEN: usize = 120;
+/// A few short paragraphs.
+const MAX_NOTES_LEN: usize = 1000;
 /// The most added at once; the agent's `add_todos` holds the same limit.
 const MAX_ADD: usize = 20;
 /// The most open to-dos a call starts knowing, the newest first; it can list the rest.
@@ -507,10 +510,24 @@ mod tests {
                 Err(Error::Invalid(_))
             ));
         }
+        let long_notes = NewTodo {
+            title: "x".into(),
+            notes: Some("x".repeat(MAX_NOTES_LEN + 1)),
+        };
+        assert!(matches!(
+            add(&mut conn, samba, vec![long_notes], Author::User),
+            Err(Error::Invalid(_))
+        ));
         assert!(
             list(&conn, samba).unwrap().is_empty(),
             "a refused batch adds nothing"
         );
+        let just_fits = NewTodo {
+            title: "x".repeat(MAX_TITLE_LEN),
+            notes: Some("é".repeat(MAX_NOTES_LEN)),
+        };
+        add(&mut conn, samba, vec![just_fits], Author::User)
+            .expect("the limits count characters, not bytes");
         assert!(matches!(
             add(&mut conn, samba + 1, vec![new("x")], Author::User),
             Err(Error::NotFound(_))
