@@ -358,8 +358,11 @@ def test_a_lost_sign_in_mid_call_reaches_the_model_and_the_call_recovers(
         )
         try:
             _ = await toolset.setup()
-            [tool] = [t for t in toolset.tools if isinstance(t, RawFunctionTool)]
-            send = cast(Callable[..., Awaitable[str]], tool)
+            [send] = [
+                cast(Callable[..., Awaitable[str]], t)
+                for t in toolset.tools
+                if isinstance(t, RawFunctionTool)
+            ]
             # The vendor turns the token away and the core can't refresh it.
             valid[0] = "t2"
             tokens.refusal = "Zapier's sign-in expired. Connect it again in Settings."

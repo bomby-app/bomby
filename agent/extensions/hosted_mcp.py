@@ -19,15 +19,15 @@ LiveKit's own servers import it the same way (`livekit/agents/llm/mcp.py`).
 
 import logging
 import time
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
-from typing import ClassVar, final, override
+from typing import ClassVar, cast, final, override
 from urllib.parse import urlsplit
 
 import httpx2
-from livekit.agents.llm import ToolError, Toolset, function_tool
-from livekit.agents.llm.mcp import MCPServer, MCPTool, MCPToolOptions, MCPToolset
+from livekit.agents.llm import RawFunctionTool, ToolError, Toolset, function_tool
+from livekit.agents.llm.mcp import MCPServer, MCPToolOptions, MCPToolset
 from mcp.client._transport import TransportStreams
 from mcp.client.streamable_http import streamable_http_client
 
@@ -37,6 +37,10 @@ from .extension import Extension, ExtensionContext, ExtensionError
 from .tokens import Token, TokenError, Tokens
 
 logger = logging.getLogger("bomby.extensions")
+
+# A vendor's tool as LiveKit makes it (`MCPTool`, unparameterized there): it takes the raw
+# arguments the model sent.
+type VendorTool = RawFunctionTool[[dict[str, object]], Awaitable[object]]
 
 # A token this close to its expiry is swapped before a request rather than after a 401.
 REFRESH_EARLY_S = 60
@@ -142,11 +146,14 @@ class HostedMcpServer(MCPServer):
     @override
     async def list_tools(
         self, *, tool_options: dict[str, MCPToolOptions] | None = None
-    ) -> list[MCPTool]:
-        tools = await super().list_tools(tool_options=tool_options)
+    ) -> list[VendorTool]:
+        tools = cast(
+            list[VendorTool],
+            await super().list_tools(tool_options=tool_options),  # pyright: ignore[reportUnknownMemberType]
+        )
         return [self._explained(tool) for tool in tools]
 
-    def _explained(self, tool: MCPTool) -> MCPTool:
+    def _explained(self, tool: VendorTool) -> VendorTool:
         """`tool`, raising the core's line when its request went out without a token."""
         auth, info = self._auth, tool.info
 
