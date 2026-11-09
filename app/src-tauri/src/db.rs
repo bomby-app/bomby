@@ -151,11 +151,15 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX call_sessions_by_call ON call_sessions(call_id, started_at);
     ALTER TABLE messages ADD COLUMN session_id INTEGER REFERENCES call_sessions(id);
-    CREATE INDEX messages_by_session ON messages(session_id, created_at);
     INSERT INTO call_sessions (call_id, started_at, ended_at)
         SELECT id, started_at, ended_at FROM calls;
     UPDATE messages SET session_id =
         (SELECT s.id FROM call_sessions s WHERE s.call_id = messages.call_id);
+    ",
+    // 10: a session's lines by index, for ending one the app quit during (calls.rs,
+    // `begin_session`). Apart from 9, which a development build may have run without it.
+    "
+    CREATE INDEX IF NOT EXISTS messages_by_session ON messages(session_id, created_at);
     ",
 ];
 

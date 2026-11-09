@@ -1,6 +1,12 @@
 import type { AgentState, ReceivedMessage } from "@livekit/components-react"
-import { ChevronRight } from "lucide-react"
-import { type ComponentProps, Fragment, useState } from "react"
+import { ChevronRight, Clock, Phone, Play } from "lucide-react"
+import {
+  type ComponentProps,
+  Fragment,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react"
 import { Streamdown } from "streamdown"
 
 import { AgentChatIndicator } from "@/components/agents-ui/agent-chat-indicator"
@@ -18,7 +24,11 @@ import {
 } from "@/components/ui/message-scroller"
 import { cn } from "@/lib/utils"
 
-import { type SessionLines, sessionLabel } from "./transcript"
+import {
+  type SessionLabel,
+  type SessionLines,
+  sessionLabel,
+} from "./transcript"
 
 /**
  * A call's conversation with a divider over each of its sessions (each opening or resume),
@@ -117,9 +127,15 @@ function dividerId(sessionId: number): string {
 }
 
 /**
- * "Resumed Yesterday, 09:05 · 4 min" across the transcript; folds its session away. It
- * brings itself to the top first, so the lines it unfolds show under it: the scroller
- * would otherwise keep following the bottom past them.
+ * A pill over each session, centred between its lines and the ones before: Started or
+ * Resumed, when, and how long, with its line count while folded. Solid bubblegum, the
+ * colour of resuming (the Resume button's), so it reads on both the highlighter and the
+ * ink bubbles around it (owner, 2026-11-09). Clicking it folds its session away. Once
+ * unfolded lines are in, it brings itself to the top, so what it unfolds shows under it:
+ * the scroller would otherwise follow the bottom past them. That runs after the change is
+ * in the page and before it's painted, so the scroller measures the transcript as it now
+ * is (its spacer included), and the scroller's own reaction to the new lines, which comes
+ * after, finds it no longer following the bottom.
  */
 function SessionDivider({
   messageId,
@@ -129,44 +145,54 @@ function SessionDivider({
   onToggle,
 }: {
   messageId: string
-  label: string
+  label: SessionLabel
   lines: number
   open: boolean
   onToggle: () => void
 }) {
   const { scrollToMessage } = useMessageScroller()
+  // Only the user's own unfolding moves the transcript, never a render for another reason.
+  // Folding leaves it be: bringing a pill with nothing under it to the top would have the
+  // scroller pad the bottom with blank space to get it there.
+  const toggled = useRef(false)
+  useLayoutEffect(() => {
+    if (!toggled.current) return
+    toggled.current = false
+    if (open) scrollToMessage(messageId, { align: "start", behavior: "auto" })
+  }, [open, messageId, scrollToMessage])
 
   function toggle() {
-    scrollToMessage(messageId, { align: "start", behavior: "auto" })
+    toggled.current = true
     onToggle()
   }
 
+  const KindIcon = label.kind === "Started" ? Phone : Play
   return (
-    <Marker variant="separator" asChild>
+    <div className="flex justify-center py-4">
       <button
         type="button"
         aria-expanded={open}
         onClick={toggle}
-        className="group/divider rounded-sm py-1 text-xs outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="inline-flex max-w-full items-center gap-2 rounded-full bg-claude py-1.5 pr-3.5 pl-2.5 text-xs font-medium text-claude-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring [&_svg]:size-3.5 [&_svg]:shrink-0"
       >
-        <MarkerContent className="flex items-center gap-1">
-          <ChevronRight
-            aria-hidden
-            className={cn(
-              "size-3.5! transition-transform",
-              open && "rotate-90"
-            )}
-          />
-          {label}
-          {!open && (
-            <span className="text-muted-foreground/70">
-              {" · "}
-              {lines === 1 ? "1 line" : `${lines} lines`}
-            </span>
-          )}
-        </MarkerContent>
+        <ChevronRight
+          aria-hidden
+          className={cn("transition-transform", open && "rotate-90")}
+        />
+        <span className="inline-flex items-center gap-1">
+          <KindIcon aria-hidden />
+          {label.kind}
+        </span>
+        <span className="inline-flex min-w-0 items-center gap-1">
+          <Clock aria-hidden />
+          <span className="truncate">
+            {label.when}
+            {label.length && ` · ${label.length}`}
+            {!open && ` · ${lines === 1 ? "1 line" : `${lines} lines`}`}
+          </span>
+        </span>
       </button>
-    </Marker>
+    </div>
   )
 }
 

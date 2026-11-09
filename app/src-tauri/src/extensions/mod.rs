@@ -224,7 +224,9 @@ pub fn extensions_settings<R: Runtime>(
     app: AppHandle<R>,
     db: State<'_, Db>,
 ) -> Result<Vec<ExtensionSetting>> {
-    settings(&db.conn(), &connections::sign_ins(&app)?)
+    // The keychain first: it may wait on the user's password, and the database waits for no one.
+    let sign_ins = connections::sign_ins(&app)?;
+    settings(&db.conn(), &sign_ins)
 }
 
 /// Applies from the next call; one under way keeps its extensions.
@@ -235,9 +237,11 @@ pub fn set_extension<R: Runtime>(
     id: String,
     on: bool,
 ) -> Result<Vec<ExtensionSetting>> {
+    // The keychain before the database, as in `extensions_settings`.
+    let sign_ins = connections::sign_ins(&app)?;
     let conn = db.conn();
     save(&conn, &id, on)?;
-    let now = settings(&conn, &connections::sign_ins(&app)?)?;
+    let now = settings(&conn, &sign_ins)?;
     let _ = app.emit(CHANGED, ());
     Ok(now)
 }

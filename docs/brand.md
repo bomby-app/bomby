@@ -50,7 +50,7 @@ UI tokens (Paper board "07 Colour in UI"), light / dark:
 Owner's choices, 2026-11-04:
 
 - Transcript bubbles (Paper board "In use / the conversation"): Bomby in highlighter with ink text, the user in ink with white text (raised grey in dark). Bubblegum stays for Claude's own messages when they show in the call.
-- Resume buttons are bubblegum with ink text: resuming brings a conversation back.
+- Resume buttons are bubblegum with ink text: resuming brings a conversation back. So are the pills between a call's sessions in its transcript: a solid bubblegum pill, centred with room above and below, with a chevron that folds the session, a phone and "Started" or a play icon and "Resumed", then a clock with when and how long (owner, 2026-11-09).
 - A small bubblegum **Beta** badge (ink text) follows the wordmark in the sidebar while the app is in beta.
 
 Ready setup marks are an ink thumbs-up on highlighter. A missing item in Setup is a bubblegum button with ink text that goes to where it is added (Add key, Set up); the ink cross on bubblegum remains for a missing item without an action. In the agents panel each task's status is one ink icon on a disc, its label a tooltip: bubblegum while it waits or joins a running task (queued, added), highlighter for working (spinning), done, failed and stopped (owner, 2026-11-05).

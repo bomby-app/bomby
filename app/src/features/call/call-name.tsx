@@ -38,7 +38,7 @@ export function CallNameInput({
   onDone: () => void
   className?: string
 }) {
-  const { refresh } = useProjects()
+  const { showName } = useProjects()
   const [opened] = useState(call.name ?? "")
   // Open to type into: it only shows when the user asks to rename.
   const field = useRef<HTMLInputElement>(null)
@@ -46,14 +46,8 @@ export function CallNameInput({
 
   async function save(name: string) {
     try {
-      await renameCall(call.id, name, "user")
-      // The new name is in the tree before the field closes, so the old one never flashes.
-      // It's saved either way: a failed read only leaves the tree to the next one.
-      await refresh().catch((e: unknown) =>
-        log(
-          `Reading projects after renaming call ${call.id} failed: ${String(e)}`
-        )
-      )
+      // In the tree before the field closes, so the old name never flashes back.
+      showName(call.id, (await renameCall(call.id, name, "user")).name)
       return true
     } catch (e) {
       log(`Renaming call ${call.id} failed: ${String(e)}`)

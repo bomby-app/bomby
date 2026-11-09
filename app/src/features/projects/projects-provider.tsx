@@ -27,6 +27,11 @@ type ProjectsState = {
   remove: (id: number) => Promise<void>
   /** Reloads the tree, after something outside this provider changed it (a call). */
   refresh: () => Promise<void>
+  /**
+   * Shows a call's new name at once, from what the rename answered; the read that
+   * `call-renamed` starts follows with the same.
+   */
+  showName: (callId: number, name: string | null) => void
 }
 
 const ProjectsContext = createContext<ProjectsState | null>(null)
@@ -81,6 +86,20 @@ export function ProjectsProvider({ children }: { children: ReactNode }) {
       await reload()
     },
     refresh: reload,
+    showName: (callId, name) =>
+      setProjects(
+        (all) =>
+          all?.map((project) =>
+            project.calls.some((call) => call.id === callId)
+              ? {
+                  ...project,
+                  calls: project.calls.map((call) =>
+                    call.id === callId ? { ...call, name } : call
+                  ),
+                }
+              : project
+          ) ?? null
+      ),
   }
 
   return <ProjectsContext value={state}>{children}</ProjectsContext>

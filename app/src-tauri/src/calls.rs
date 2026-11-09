@@ -444,11 +444,12 @@ pub fn open_call<R: Runtime>(
     let found = for_project(found, &project.agents);
     let server = started?;
 
+    // The keychain before the database: a password prompt mustn't hold up every other read.
+    let connected = extensions::connections::connected(&app, &vault)?;
     let conn = db.conn();
     // Read before the call is recorded, so a failed read leaves no call without its agents.
     let picks = agent_picks::saved(&conn)?;
     let call_voice = voice::for_call(&conn, provider)?;
-    let connected = extensions::connections::connected(&app, &vault)?;
     let call_extensions = extensions::on_for(&conn, &project.extensions, &connected)?;
     let call_id = start(&conn, project_id, resume_call_id)?;
     call_agents.set(
@@ -526,24 +527,24 @@ pub fn call_token<R: Runtime>(
     // A call opened in this run has its own list; any other gets the last one found.
     let opened = match call_agents.get(call_id) {
         Some(opened) => opened,
-        None => OpenedWith {
-            voice: voice::for_token(&app, &db, &vault)?,
-            server: call_server::current(&app, &db, &vault, &local)?,
-            agents: for_project(
-                agents::usable(&found.cached().unwrap_or_default()),
-                &project.agents,
-            ),
-            agents_off: !project.agents.on,
-            picks: agent_picks::saved(&db.conn())?,
-            // The worker that has the Zep key was started with an opened call.
-            memory_user: String::new(),
-            memory_incognito: false,
-            extensions: extensions::on_for(
-                &db.conn(),
-                &project.extensions,
-                &extensions::connections::connected(&app, &vault)?,
-            )?,
-        },
+        None => {
+            // The keychain before the database, as in `open_call`.
+            let connected = extensions::connections::connected(&app, &vault)?;
+            OpenedWith {
+                voice: voice::for_token(&app, &db, &vault)?,
+                server: call_server::current(&app, &db, &vault, &local)?,
+                agents: for_project(
+                    agents::usable(&found.cached().unwrap_or_default()),
+                    &project.agents,
+                ),
+                agents_off: !project.agents.on,
+                picks: agent_picks::saved(&db.conn())?,
+                // The worker that has the Zep key was started with an opened call.
+                memory_user: String::new(),
+                memory_incognito: false,
+                extensions: extensions::on_for(&db.conn(), &project.extensions, &connected)?,
+            }
+        }
     };
     // Read fresh for each room, so a reconnect starts from the list as it is now.
     let extension_data = extensions::for_call(&db.conn(), project_id, call_id, &opened.extensions)?;

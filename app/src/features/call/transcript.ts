@@ -59,18 +59,27 @@ export function bySession({ sessions, messages }: Transcript): SessionLines[] {
   })
 }
 
-/**
- * What the divider over a session says: "Started Today, 21:40 · 12 min" for the call's
- * first, "Resumed Yesterday, 09:05 · 4 min" for each after it. A session that never ended
- * (the app quit during it) has no length.
- */
+/** What the pill over a session says, each part with its own icon. */
+export type SessionLabel = {
+  /** "Started" for the call's first session, "Resumed" for each after it. */
+  kind: "Started" | "Resumed"
+  /** When it started: "Today, 21:40". */
+  when: string
+  /** How long it was on: "12 min"; null for one that never ended (the app quit during it). */
+  length: string | null
+}
+
 export function sessionLabel(
   session: CallSession,
   first: boolean,
   now = new Date()
-): string {
-  const when = `${first ? "Started" : "Resumed"} ${callLabel(session.startedAt, now)}`
-  return session.endedAt === null
-    ? when
-    : `${when} · ${callLength(session.endedAt - session.startedAt)}`
+): SessionLabel {
+  return {
+    kind: first ? "Started" : "Resumed",
+    when: callLabel(session.startedAt, now),
+    length:
+      session.endedAt === null
+        ? null
+        : callLength(session.endedAt - session.startedAt),
+  }
 }

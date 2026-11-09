@@ -23,6 +23,9 @@ import type { ActiveCall } from "./call-provider"
 import { SessionTranscript } from "./session-transcript"
 import { lineId } from "./transcript"
 
+/** How the agent's visual moves between the middle and the top. */
+const MOVE = { type: "tween", ease: "easeOut", duration: 0.3 } as const
+
 const FADE_IN: MotionProps = {
   initial: { opacity: 0 },
   animate: {
@@ -148,13 +151,18 @@ function AgentPresence({ compact }: { compact: boolean }) {
   return (
     <motion.div
       layout
-      transition={{ type: "tween", ease: "easeOut", duration: 0.3 }}
+      transition={MOVE}
       className={cn(
         "pointer-events-none absolute inset-x-0 z-20 flex justify-center",
         compact ? "top-4" : "top-0 bottom-[156px] items-center"
       )}
     >
-      <div
+      {/* Its own layout too: Motion animates the box's new size by scaling it, which
+          would stretch the mascot with it (tall and thin as the box shrinks); a child in
+          the layout animation is scaled back, and grows or shrinks on its own. */}
+      <motion.div
+        layout
+        transition={MOVE}
         className={cn(
           "flex flex-col items-center",
           compact ? "gap-2" : "gap-6"
@@ -168,7 +176,7 @@ function AgentPresence({ compact }: { compact: boolean }) {
           audioTrack={agent.microphoneTrack}
           className="text-primary"
         />
-      </div>
+      </motion.div>
     </motion.div>
   )
 }

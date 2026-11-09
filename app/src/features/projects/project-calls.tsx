@@ -12,7 +12,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import {
@@ -149,7 +148,23 @@ function CallRow({
   )
 }
 
-/** Continues an earlier call; the agent hears its last lines. One call at a time. */
+/**
+ * Resuming an earlier call, for every place that offers it: whether it can now (the keys
+ * are there, and no call is on or starting), what's missing if not, and whether this one
+ * is waking up. One call at a time.
+ */
+export function useResume(projectId: number, callId: number) {
+  const { active, starting, start } = useCall()
+  const { ready, missing } = useCallReadiness()
+  return {
+    can: ready && active === null && starting === null,
+    missing,
+    waking: starting?.resumeCallId === callId,
+    resume: () => void start(projectId, callId),
+  }
+}
+
+/** Continues an earlier call; the agent hears its last lines. */
 export function ResumeButton({
   projectId,
   callId,
@@ -157,19 +172,18 @@ export function ResumeButton({
   projectId: number
   callId: number
 }) {
-  const { active, starting, start } = useCall()
-  const { ready, missing } = useCallReadiness()
+  const { can, missing, waking, resume } = useResume(projectId, callId)
   return (
     <CallGate missing={missing}>
       <Button
         size="sm"
         // Bubblegum: resuming brings the conversation back (owner's call, docs/brand.md).
         variant="claude"
-        disabled={!ready || active !== null || starting !== null}
-        onClick={() => void start(projectId, callId)}
+        disabled={!can}
+        onClick={resume}
       >
         <Play />
-        {starting?.resumeCallId === callId ? "Waking up..." : "Resume"}
+        {waking ? "Waking up..." : "Resume"}
       </Button>
     </CallGate>
   )
@@ -184,6 +198,45 @@ export function DeleteCallButton({
   onDeleted?: () => void
 }) {
   const { active } = useCall()
+  const [asking, setAsking] = useState(false)
+  return (
+    <>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Delete call"
+            disabled={active?.callId === call.id}
+            onClick={() => setAsking(true)}
+          >
+            <Trash2 />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Delete call</TooltipContent>
+      </Tooltip>
+      <DeleteCallDialog
+        call={call}
+        open={asking}
+        onOpenChange={setAsking}
+        onDeleted={onDeleted}
+      />
+    </>
+  )
+}
+
+/** Asks before deleting a call and its conversation, from wherever Delete was chosen. */
+export function DeleteCallDialog({
+  call,
+  open,
+  onOpenChange,
+  onDeleted,
+}: {
+  call: CallSummary
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onDeleted?: () => void
+}) {
   const { refresh } = useProjects()
   const what = call.name
     ? `“${call.name}”`
@@ -196,22 +249,7 @@ export function DeleteCallButton({
   }
 
   return (
-    <AlertDialog>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Delete call"
-              disabled={active?.callId === call.id}
-            >
-              <Trash2 />
-            </Button>
-          </AlertDialogTrigger>
-        </TooltipTrigger>
-        <TooltipContent>Delete call</TooltipContent>
-      </Tooltip>
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Delete {what}?</AlertDialogTitle>

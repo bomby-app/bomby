@@ -3,6 +3,7 @@
 //! in db.rs).
 //! Both come back for one query, so a word in a project's name and in a call both show.
 
+use caseless::Caseless;
 use rusqlite::functions::FunctionFlags;
 use rusqlite::{Connection, params};
 use serde::Serialize;
@@ -69,11 +70,14 @@ pub struct LineHit {
     snippet: String,
 }
 
-/// `text` as names are compared: lowercase in any script and accents aside ("Écran" is
-/// "ecran"), as the transcript index matches lines (`remove_diacritics`). SQLite's own
-/// `LIKE` folds only ASCII.
+/// `text` as names are compared: Unicode's canonical case folding (decomposed, folded,
+/// decomposed again), which lowercase alone isn't ("ΟΣ" holds "Σ", "Straße" is "STRASSE"),
+/// then without accents ("Écran" is "ecran"), as the transcript index matches lines
+/// (`remove_diacritics`). SQLite's own `LIKE` folds only ASCII.
 pub(crate) fn fold(text: &str) -> String {
-    text.to_lowercase()
+    text.chars()
+        .nfd()
+        .default_case_fold()
         .nfd()
         .filter(|c| !is_combining_mark(*c))
         .collect()
@@ -422,8 +426,9 @@ mod tests {
 
     #[test]
     fn folds_case_in_any_script_and_takes_accents_off() {
-        assert_eq!(fold("Écran ÜBER Straße"), "ecran uber straße");
+        assert_eq!(fold("Écran ÜBER Straße"), "ecran uber strasse");
         assert_eq!(fold("ÇA"), "ca");
+        assert_eq!(fold("ΟΣ"), fold("οσ"), "final sigma folds like any other");
         let db = Db::in_memory().unwrap();
         let conn = db.conn();
         project(&conn, "Café Ölmühle");
@@ -434,6 +439,20 @@ mod tests {
             .map(|p| p.name)
             .collect();
         assert_eq!(found, ["Café Ölmühle"]);
+
+        for (name, query) in [("ΟΣ", "Σ"), ("Straße", "STRASSE"), ("STRASSE", "straße")] {
+            project(&conn, name);
+            let found: Vec<String> = search_in(&conn, query)
+                .unwrap()
+                .projects
+                .into_iter()
+                .map(|p| p.name)
+                .collect();
+            assert!(
+                found.iter().any(|n| n == name),
+                "{query} finds {name}: {found:?}"
+            );
+        }
     }
 
     #[test]

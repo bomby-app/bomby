@@ -41,11 +41,15 @@ describe("a call's transcript by session", () => {
       hour: "2-digit",
       minute: "2-digit",
     })
-    expect(sessionLabel(session, true, NOW)).toBe(
-      `Started Today, ${time} · 1 hr 12 min`
-    )
-    expect(sessionLabel({ ...session, endedAt: null }, false, NOW)).toBe(
-      `Resumed Today, ${time}`
-    )
+    expect(sessionLabel(session, true, NOW)).toEqual({
+      kind: "Started",
+      when: `Today, ${time}`,
+      length: "1 hr 12 min",
+    })
+    expect(sessionLabel({ ...session, endedAt: null }, false, NOW)).toEqual({
+      kind: "Resumed",
+      when: `Today, ${time}`,
+      length: null,
+    })
   })
 })
