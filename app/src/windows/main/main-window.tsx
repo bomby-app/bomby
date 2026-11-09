@@ -1,6 +1,7 @@
 import { startTransition, Suspense, useEffect, useMemo, useState } from "react"
 
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
+import { CALL_NAMES_RPC } from "@/features/call-names/rpc"
 import { CallProvider } from "@/features/call/call-provider"
 import { ExtensionRpcBridge } from "@/features/extensions/extension-rpc-bridge"
 import { useHostedMcpRpc } from "@/features/extensions/hosted-rpc"
@@ -38,7 +39,10 @@ export function MainWindow() {
 function Workspace() {
   // What each extension answers Bomby over RPC while a call is on.
   const hostedRpc = useHostedMcpRpc()
-  const extensionRpc = useMemo(() => [TODOS_RPC, ...hostedRpc], [hostedRpc])
+  const extensionRpc = useMemo(
+    () => [TODOS_RPC, CALL_NAMES_RPC, ...hostedRpc],
+    [hostedRpc]
+  )
   const [selection, setSelected] = useState<Selection>(null)
   // Moving to another page is a Transition, so the page before it stays until the next is
   // ready, a past call's lines read (`SavedCallView` suspends), rather than showing it

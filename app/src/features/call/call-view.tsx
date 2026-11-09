@@ -10,7 +10,6 @@ import { AnimatePresence, type MotionProps, motion } from "motion/react"
 import { useMemo, useState } from "react"
 
 import { AgentAudioVisualizerBar } from "@/components/agents-ui/agent-audio-visualizer-bar"
-import { AgentChatTranscript } from "@/components/agents-ui/agent-chat-transcript"
 import { AgentControlBar } from "@/components/agents-ui/agent-control-bar"
 import { Mascot, mascotState } from "@/components/mascot"
 import {
@@ -21,7 +20,11 @@ import { cn } from "@/lib/utils"
 
 import { agentStatus } from "./agent-status"
 import type { ActiveCall } from "./call-provider"
-import { lineId, toReceived } from "./transcript"
+import { SessionTranscript } from "./session-transcript"
+import { lineId } from "./transcript"
+
+/** How the agent's visual moves between the middle and the top. */
+const MOVE = { type: "tween", ease: "easeOut", duration: 0.3 } as const
 
 const FADE_IN: MotionProps = {
   initial: { opacity: 0 },
@@ -43,16 +46,14 @@ export function CallView({ call }: { call: ActiveCall }) {
   const session = useSessionContext()
   const agent = useAgent(session)
   const { messages: live } = useSessionMessages(session)
-  // The session is reused across calls: keep this session's lines, after a resumed call's
-  // saved ones. Each line keeps one id while it settles, which the scroller needs to follow
-  // the live edge.
+  // The session is reused across calls: keep this session's lines, under a resumed call's
+  // earlier sessions. Each line keeps one id while it settles, which the scroller needs to
+  // follow the live edge.
   const messages = useMemo(
-    () => [
-      ...call.history.map(toReceived),
-      ...live
+    () =>
+      live
         .filter((m) => m.timestamp >= call.startedAt)
         .map((m) => ({ ...m, id: lineId(m) })),
-    ],
     [call, live]
   )
   const [chatOpen, setChatOpen] = useState(false)
@@ -65,9 +66,12 @@ export function CallView({ call }: { call: ActiveCall }) {
             {...FADE_IN}
             className="absolute inset-x-0 top-0 bottom-[156px] overflow-hidden"
           >
-            <AgentChatTranscript
+            <SessionTranscript
+              // The earlier sessions start folded: what's said now comes first.
+              sessions={call.history}
+              folded
+              live={messages}
               agentState={agent.state}
-              messages={messages}
               className="call-transcript h-full **:data-[slot=message-scroller-content]:pt-36!"
             />
             {/* Covers the agent at the top: bubbles scroll under it and fade out first. */}
@@ -147,13 +151,18 @@ function AgentPresence({ compact }: { compact: boolean }) {
   return (
     <motion.div
       layout
-      transition={{ type: "tween", ease: "easeOut", duration: 0.3 }}
+      transition={MOVE}
       className={cn(
         "pointer-events-none absolute inset-x-0 z-20 flex justify-center",
         compact ? "top-4" : "top-0 bottom-[156px] items-center"
       )}
     >
-      <div
+      {/* Its own layout too: Motion animates the box's new size by scaling it, which
+          would stretch the mascot with it (tall and thin as the box shrinks); a child in
+          the layout animation is scaled back, and grows or shrinks on its own. */}
+      <motion.div
+        layout
+        transition={MOVE}
         className={cn(
           "flex flex-col items-center",
           compact ? "gap-2" : "gap-6"
@@ -167,7 +176,7 @@ function AgentPresence({ compact }: { compact: boolean }) {
           audioTrack={agent.microphoneTrack}
           className="text-primary"
         />
-      </div>
+      </motion.div>
     </motion.div>
   )
 }

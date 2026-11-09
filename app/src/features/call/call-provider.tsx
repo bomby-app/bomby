@@ -21,18 +21,17 @@ import { useCoreEvent } from "@/hooks/use-core-event"
 
 import { useProjects } from "../projects/projects-provider"
 import {
-  callMessages,
   callToken,
+  callTranscript,
   endCall,
   log,
   onAgentCrashed,
   openCall,
-  type SavedMessage,
   saveMessage,
 } from "./api"
 import { MuteShortcut } from "./mute"
 import { forgetSavedCall } from "./saved-call-view"
-import { lineId, roleOf } from "./transcript"
+import { bySession, lineId, roleOf, type SessionLines } from "./transcript"
 import { track, written } from "./transcript-writes"
 
 export type ActiveCall = {
@@ -40,8 +39,8 @@ export type ActiveCall = {
   callId: number
   /** When this session started; live lines from before it belong to an earlier session. */
   startedAt: number
-  /** A resumed call's saved lines, shown above the live ones. */
-  history: SavedMessage[]
+  /** A resumed call's earlier sessions and their lines, shown above the live ones. */
+  history: SessionLines[]
 }
 
 /** What a start is for: a project, and the call to resume if any. */
@@ -109,12 +108,16 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
   const finish = useCallback(
     async (id: number) => {
-      // Its last lines are saved before the call's page shows its saved transcript, and
-      // only then is what this page kept of it dropped, so the transcript read is whole.
+      // Its last lines are saved, and the call and its session ended, before the call's
+      // page shows its saved transcript; only then is what this page kept of it dropped,
+      // so the transcript read is whole, the last session's end included.
       await written(id)
-      forgetSavedCall(id)
-      setActive(null)
-      await endCall(id)
+      try {
+        await endCall(id)
+      } finally {
+        forgetSavedCall(id)
+        setActive((current) => (current?.callId === id ? null : current))
+      }
       await refresh()
     },
     [refresh]
@@ -143,7 +146,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
     try {
       opened = await openCall(projectId, resumeCallId)
       tokens.join(opened)
-      const history = resumeCallId ? await callMessages(opened) : []
+      const history = resumeCallId
+        ? bySession(await callTranscript(opened))
+        : []
       forgetSavedCall(opened)
       setActive({ projectId, callId: opened, startedAt: Date.now(), history })
       await session.start({ signal: aborter.signal })

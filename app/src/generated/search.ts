@@ -2,17 +2,27 @@
 
 export type CallHit = { callId: number, projectId: number, projectName: string, startedAt: number, 
 /**
- * Who said the first line that matched.
+ * The call's name, if it has one.
  */
-role: "user" | "agent", 
+name: string | null, 
 /**
- * That line around what matched, each match between U+0002 and U+0003.
+ * The first line that matched, if one did: the name alone may have.
  */
-snippet: string, 
+line: LineHit | null, 
 /**
  * How many of the call's lines matched.
  */
 matches: number, };
+
+export type LineHit = { 
+/**
+ * Who said it.
+ */
+role: "user" | "agent", 
+/**
+ * The line around what matched, each match between U+0002 and U+0003.
+ */
+snippet: string, };
 
 export type ProjectHit = { id: number, name: string, };
 
@@ -22,6 +32,6 @@ export type SearchResults = {
  */
 projects: Array<ProjectHit>, 
 /**
- * Those with a line that has every word, the latest first.
+ * Those whose name or a line has every word, the latest first.
  */
 calls: Array<CallHit>, };

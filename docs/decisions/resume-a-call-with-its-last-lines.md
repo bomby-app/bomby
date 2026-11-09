@@ -11,6 +11,7 @@ A project collects calls, and the user wants to pick one up again later. LiveKit
 - **Resume** on a past call starts a new LiveKit room and Gemini session, but keeps the same call: the core reopens its row (`ended_at` back to null) and the new lines are saved into it.
 - The agent is told the conversation so far: the core sends the call's last 50 lines in the dispatch metadata (`history`), and the agent appends them to its instructions under `## Previous conversation` (`agent/call_options.py`), with a note that the old Claude sessions are closed.
 - The call screen shows the saved lines above the live ones.
+- Each opening or resume is a session of the call, and each line keeps its session, so the transcript shows a divider over each ([decision](call-names-and-sessions.md)).
 
 ## Why
 

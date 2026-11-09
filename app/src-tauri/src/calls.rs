@@ -1,7 +1,9 @@
 //! Calls: opening one on a project (the agent worker and a call row), the LiveKit token that
-//! joins it and dispatches the agent with the project, ending it, and keeping its transcript.
-//! LiveKit keeps no transcripts, so the page sends each line here as it arrives
-//! (docs/decisions/app-data-in-one-sqlite-db.md).
+//! joins it and dispatches the agent with the project, ending it, keeping its transcript and
+//! its name. LiveKit keeps no transcripts, so the page sends each line here as it arrives
+//! (docs/decisions/app-data-in-one-sqlite-db.md). Each opening or resuming of a call is one
+//! of its sessions, and each line is kept with the session it was said in
+//! (docs/decisions/call-names-and-sessions.md).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -27,6 +29,11 @@ use crate::{
     agent_picks, agents, call_server, credentials, extensions, projects, settings, updates, windows,
 };
 
+/// Sent to every window when a call is named or renamed, by the user or by Bomby.
+pub const RENAMED: &str = "call-renamed";
+/// A few words, short enough for a sidebar row. The page holds the same limit
+/// (`features/call/limits.ts`).
+const MAX_NAME_LEN: usize = 60;
 /// The agent's name in `agent/agent.py` (`AGENT_NAME`), which the token dispatches.
 const AGENT_NAME: &str = "bomby";
 /// Only for joining; a call outlives its token.
@@ -139,11 +146,78 @@ pub struct CallToken {
 #[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "call.ts"))]
 pub struct Message {
     id: i64,
+    /// The session it was said in.
+    session_id: i64,
     /// `user` or `agent`.
     #[cfg_attr(test, ts(type = "\"user\" | \"agent\""))]
     role: String,
     text: String,
     created_at: i64,
+}
+
+/// One stretch of a call: from opening or resuming it to its end.
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "call.ts"))]
+pub struct CallSession {
+    id: i64,
+    started_at: i64,
+    /// None while it's on, or when the app quit during it and the call wasn't resumed
+    /// since.
+    ended_at: Option<i64>,
+}
+
+/// A call's saved conversation: its sessions and its lines, each in order.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "call.ts"))]
+pub struct Transcript {
+    sessions: Vec<CallSession>,
+    messages: Vec<Message>,
+}
+
+/// Who named a call: the user in the app, or Bomby on a call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "call.ts"))]
+pub enum Namer {
+    User,
+    Bomby,
+}
+
+impl Namer {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::Bomby => "bomby",
+        }
+    }
+
+    fn parse(text: &str) -> Self {
+        if text == "bomby" {
+            Self::Bomby
+        } else {
+            Self::User
+        }
+    }
+}
+
+/// A call's name and who gave it; both None until it's named.
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "call.ts"))]
+pub struct CallName {
+    name: Option<String>,
+    named_by: Option<Namer>,
+}
+
+/// Sent with `RENAMED`.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "call.ts"))]
+pub struct CallRenamed {
+    project_id: i64,
+    call_id: i64,
 }
 
 #[derive(Deserialize)]
@@ -242,6 +316,24 @@ fn recent_lines(conn: &Connection, call_id: i64) -> Result<Vec<HistoryLine>> {
         .collect::<rusqlite::Result<Vec<_>>>()?;
     lines.reverse();
     Ok(lines)
+}
+
+/// Starts a session of the call, the one its lines are saved in from now on. A session the
+/// app quit during, which nothing ended, ends at its last line first (at its start if it
+/// has none).
+fn begin_session(conn: &Connection, call_id: i64, at: i64) -> Result<()> {
+    conn.execute(
+        "UPDATE call_sessions SET ended_at = COALESCE(
+             (SELECT MAX(created_at) FROM messages WHERE session_id = call_sessions.id),
+             started_at)
+         WHERE call_id = ?1 AND ended_at IS NULL",
+        [call_id],
+    )?;
+    conn.execute(
+        "INSERT INTO call_sessions (call_id, started_at) VALUES (?1, ?2)",
+        params![call_id, at],
+    )?;
+    Ok(())
 }
 
 /// Reopens an earlier call of this project, so new lines join it.
@@ -352,25 +444,14 @@ pub fn open_call<R: Runtime>(
     let found = for_project(found, &project.agents);
     let server = started?;
 
+    // The keychain before the database: a password prompt mustn't hold up every other read.
+    let connected = extensions::connections::connected(&app, &vault)?;
     let conn = db.conn();
     // Read before the call is recorded, so a failed read leaves no call without its agents.
     let picks = agent_picks::saved(&conn)?;
     let call_voice = voice::for_call(&conn, provider)?;
-    let connected = extensions::connections::connected(&app, &vault)?;
     let call_extensions = extensions::on_for(&conn, &project.extensions, &connected)?;
-    let call_id = match resume_call_id {
-        Some(call_id) => {
-            reopen(&conn, project_id, call_id)?;
-            call_id
-        }
-        None => {
-            conn.execute(
-                "INSERT INTO calls (project_id, started_at) VALUES (?1, ?2)",
-                params![project_id, now_ms()],
-            )?;
-            conn.last_insert_rowid()
-        }
-    };
+    let call_id = start(&conn, project_id, resume_call_id)?;
     call_agents.set(
         call_id,
         OpenedWith {
@@ -385,6 +466,29 @@ pub fn open_call<R: Runtime>(
         },
     );
     opening.opened(call_id);
+    Ok(call_id)
+}
+
+/// A new call on the project, or `resume_call_id` reopened, with a session begun.
+fn start(conn: &Connection, project_id: i64, resume_call_id: Option<i64>) -> Result<i64> {
+    // One clock read: a new call and its first session start at the same moment.
+    let now = now_ms();
+    let tx = conn.unchecked_transaction()?;
+    let call_id = match resume_call_id {
+        Some(call_id) => {
+            reopen(&tx, project_id, call_id)?;
+            call_id
+        }
+        None => {
+            tx.execute(
+                "INSERT INTO calls (project_id, started_at) VALUES (?1, ?2)",
+                params![project_id, now],
+            )?;
+            tx.last_insert_rowid()
+        }
+    };
+    begin_session(&tx, call_id, now)?;
+    tx.commit()?;
     Ok(call_id)
 }
 
@@ -423,27 +527,27 @@ pub fn call_token<R: Runtime>(
     // A call opened in this run has its own list; any other gets the last one found.
     let opened = match call_agents.get(call_id) {
         Some(opened) => opened,
-        None => OpenedWith {
-            voice: voice::for_token(&app, &db, &vault)?,
-            server: call_server::current(&app, &db, &vault, &local)?,
-            agents: for_project(
-                agents::usable(&found.cached().unwrap_or_default()),
-                &project.agents,
-            ),
-            agents_off: !project.agents.on,
-            picks: agent_picks::saved(&db.conn())?,
-            // The worker that has the Zep key was started with an opened call.
-            memory_user: String::new(),
-            memory_incognito: false,
-            extensions: extensions::on_for(
-                &db.conn(),
-                &project.extensions,
-                &extensions::connections::connected(&app, &vault)?,
-            )?,
-        },
+        None => {
+            // The keychain before the database, as in `open_call`.
+            let connected = extensions::connections::connected(&app, &vault)?;
+            OpenedWith {
+                voice: voice::for_token(&app, &db, &vault)?,
+                server: call_server::current(&app, &db, &vault, &local)?,
+                agents: for_project(
+                    agents::usable(&found.cached().unwrap_or_default()),
+                    &project.agents,
+                ),
+                agents_off: !project.agents.on,
+                picks: agent_picks::saved(&db.conn())?,
+                // The worker that has the Zep key was started with an opened call.
+                memory_user: String::new(),
+                memory_incognito: false,
+                extensions: extensions::on_for(&db.conn(), &project.extensions, &connected)?,
+            }
+        }
     };
     // Read fresh for each room, so a reconnect starts from the list as it is now.
-    let extension_data = extensions::for_call(&db.conn(), project_id, &opened.extensions)?;
+    let extension_data = extensions::for_call(&db.conn(), project_id, call_id, &opened.extensions)?;
     let metadata = dispatch_metadata(&project, &opened, &settings, &history, &extension_data);
     let server = opened.server;
     Ok(CallToken {
@@ -452,14 +556,23 @@ pub fn call_token<R: Runtime>(
     })
 }
 
+/// Ends the call and its session.
+fn end(conn: &Connection, call_id: i64, at: i64) -> Result<()> {
+    conn.execute(
+        "UPDATE calls SET ended_at = ?1 WHERE id = ?2 AND ended_at IS NULL",
+        params![at, call_id],
+    )?;
+    conn.execute(
+        "UPDATE call_sessions SET ended_at = ?1 WHERE call_id = ?2 AND ended_at IS NULL",
+        params![at, call_id],
+    )?;
+    Ok(())
+}
+
 #[tauri::command(async)]
 pub fn end_call<R: Runtime>(app: AppHandle<R>, db: State<'_, Db>, call_id: i64) -> Result<()> {
     updates::call_ended(&app, call_id);
-    db.conn().execute(
-        "UPDATE calls SET ended_at = ?1 WHERE id = ?2 AND ended_at IS NULL",
-        params![now_ms(), call_id],
-    )?;
-    Ok(())
+    end(&db.conn(), call_id, now_ms())
 }
 
 /// Deletes a call and its transcript (ON DELETE CASCADE).
@@ -477,30 +590,126 @@ fn save(conn: &Connection, call_id: i64, line: &MessageInput) -> Result<()> {
     if !matches!(line.role.as_str(), "user" | "agent") {
         return Err(Error::Invalid(format!("unknown speaker {}", line.role)));
     }
+    // In the call's latest session, also a line that lands just after the call ended.
+    let session: i64 = conn
+        .query_row(
+            "SELECT id FROM call_sessions WHERE call_id = ?1
+             ORDER BY started_at DESC, id DESC LIMIT 1",
+            [call_id],
+            |row| row.get(0),
+        )
+        .optional()?
+        .ok_or(Error::NotFound("call"))?;
     conn.execute(
-        "INSERT INTO messages (call_id, segment_id, role, text, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5)
+        "INSERT INTO messages (call_id, session_id, segment_id, role, text, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
          ON CONFLICT (call_id, segment_id) DO UPDATE SET text = excluded.text",
-        params![call_id, line.segment_id, line.role, line.text, now_ms()],
+        params![
+            call_id,
+            session,
+            line.segment_id,
+            line.role,
+            line.text,
+            now_ms()
+        ],
     )?;
     Ok(())
 }
 
-fn messages(conn: &Connection, call_id: i64) -> Result<Vec<Message>> {
-    conn.prepare(
-        "SELECT id, role, text, created_at FROM messages
-         WHERE call_id = ?1 ORDER BY created_at, id",
-    )?
-    .query_map([call_id], |row| {
-        Ok(Message {
-            id: row.get(0)?,
-            role: row.get(1)?,
-            text: row.get(2)?,
-            created_at: row.get(3)?,
-        })
-    })?
-    .collect::<rusqlite::Result<_>>()
-    .map_err(Into::into)
+fn transcript(conn: &Connection, call_id: i64) -> Result<Transcript> {
+    let sessions = conn
+        .prepare(
+            "SELECT id, started_at, ended_at FROM call_sessions
+             WHERE call_id = ?1 ORDER BY started_at, id",
+        )?
+        .query_map([call_id], |row| {
+            Ok(CallSession {
+                id: row.get(0)?,
+                started_at: row.get(1)?,
+                ended_at: row.get(2)?,
+            })
+        })?
+        .collect::<rusqlite::Result<_>>()?;
+    let messages = conn
+        .prepare(
+            "SELECT id, session_id, role, text, created_at FROM messages
+             WHERE call_id = ?1 AND session_id IS NOT NULL ORDER BY created_at, id",
+        )?
+        .query_map([call_id], |row| {
+            Ok(Message {
+                id: row.get(0)?,
+                session_id: row.get(1)?,
+                role: row.get(2)?,
+                text: row.get(3)?,
+                created_at: row.get(4)?,
+            })
+        })?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(Transcript { sessions, messages })
+}
+
+/// The call's name and who gave it.
+pub(crate) fn name_of(conn: &Connection, call_id: i64) -> Result<CallName> {
+    conn.query_row(
+        "SELECT name, named_by FROM calls WHERE id = ?1",
+        [call_id],
+        |row| {
+            Ok(CallName {
+                name: row.get(0)?,
+                named_by: row
+                    .get::<_, Option<String>>(1)?
+                    .as_deref()
+                    .map(Namer::parse),
+            })
+        },
+    )
+    .optional()?
+    .ok_or(Error::NotFound("call"))
+}
+
+/// Names the call, its words on one line; no words take its name away, so it shows when
+/// it started again. Returns its project with the name as it is now.
+fn rename(conn: &Connection, call_id: i64, name: &str, by: Namer) -> Result<(i64, CallName)> {
+    let name = name.split_whitespace().collect::<Vec<_>>().join(" ");
+    if name.chars().count() > MAX_NAME_LEN {
+        return Err(Error::Invalid(format!(
+            "Keep a call's name under {MAX_NAME_LEN} characters."
+        )));
+    }
+    let (name, by) = if name.is_empty() {
+        (None, None)
+    } else {
+        (Some(name), Some(by.as_str()))
+    };
+    let project_id: i64 = conn
+        .query_row(
+            "UPDATE calls SET name = ?1, named_by = ?2 WHERE id = ?3 RETURNING project_id",
+            params![name, by, call_id],
+            |row| row.get(0),
+        )
+        .optional()?
+        .ok_or(Error::NotFound("call"))?;
+    Ok((project_id, name_of(conn, call_id)?))
+}
+
+/// Names or renames a call, for the user or for Bomby (`by`), and tells every window.
+#[tauri::command(async)]
+pub fn rename_call<R: Runtime>(
+    app: AppHandle<R>,
+    db: State<'_, Db>,
+    call_id: i64,
+    name: String,
+    by: Namer,
+) -> Result<CallName> {
+    let (project_id, now) = rename(&db.conn(), call_id, &name, by)?;
+    let _ = app.emit(
+        RENAMED,
+        CallRenamed {
+            project_id,
+            call_id,
+        },
+    );
+    Ok(now)
 }
 
 /// Saves one transcript line, or updates it if its segment was saved before.
@@ -509,10 +718,10 @@ pub fn save_message(db: State<'_, Db>, call_id: i64, line: MessageInput) -> Resu
     save(&db.conn(), call_id, &line)
 }
 
-/// A call's saved transcript, in order.
+/// A call's saved conversation, its sessions and lines in order.
 #[tauri::command(async)]
-pub fn call_messages(db: State<'_, Db>, call_id: i64) -> Result<Vec<Message>> {
-    messages(&db.conn(), call_id)
+pub fn call_transcript(db: State<'_, Db>, call_id: i64) -> Result<Transcript> {
+    transcript(&db.conn(), call_id)
 }
 
 #[cfg(test)]
@@ -577,19 +786,23 @@ mod tests {
     }
     use livekit_api::access_token::TokenVerifier;
 
+    /// A new call on a new project, with its first session begun.
     fn call(conn: &Connection) -> i64 {
         conn.execute(
             "INSERT INTO projects (name, created_at) VALUES ('samba', 0)",
             [],
         )
         .unwrap();
-        let project = conn.last_insert_rowid();
-        conn.execute(
-            "INSERT INTO calls (project_id, started_at) VALUES (?1, 0)",
-            [project],
+        start(conn, conn.last_insert_rowid(), None).unwrap()
+    }
+
+    fn project_of(conn: &Connection, call_id: i64) -> i64 {
+        conn.query_row(
+            "SELECT project_id FROM calls WHERE id = ?1",
+            [call_id],
+            |r| r.get(0),
         )
-        .unwrap();
-        conn.last_insert_rowid()
+        .unwrap()
     }
 
     fn line(segment: &str, role: &str, text: &str) -> MessageInput {
@@ -609,8 +822,9 @@ mod tests {
         save(&conn, id, &line("s2", "agent", "sure")).unwrap();
         save(&conn, id, &line("s1", "user", "can you fix the login")).unwrap();
 
-        let saved: Vec<_> = messages(&conn, id)
+        let saved: Vec<_> = transcript(&conn, id)
             .unwrap()
+            .messages
             .into_iter()
             .map(|m| (m.role, m.text))
             .collect();
@@ -666,6 +880,115 @@ mod tests {
     }
 
     #[test]
+    fn each_opening_is_a_session_and_each_line_keeps_the_one_it_was_said_in() {
+        let db = Db::in_memory().unwrap();
+        let conn = db.conn();
+        let id = call(&conn);
+        save(&conn, id, &line("s1", "user", "fix the login")).unwrap();
+        end(&conn, id, now_ms()).unwrap();
+        // A last line that lands after the call ended still joins its session.
+        save(&conn, id, &line("s2", "agent", "on it")).unwrap();
+
+        start(&conn, project_of(&conn, id), Some(id)).unwrap();
+        save(&conn, id, &line("s3", "user", "and the signup")).unwrap();
+        // A line said again in a later session keeps the session it was first said in.
+        save(&conn, id, &line("s1", "user", "fix the login page")).unwrap();
+
+        let Transcript { sessions, messages } = transcript(&conn, id).unwrap();
+        assert_eq!(sessions.len(), 2);
+        assert!(sessions[0].ended_at.is_some() && sessions[1].ended_at.is_none());
+        let by_session: Vec<_> = messages
+            .iter()
+            .map(|m| (m.text.as_str(), m.session_id))
+            .collect();
+        assert_eq!(
+            by_session,
+            [
+                ("fix the login page", sessions[0].id),
+                ("on it", sessions[0].id),
+                ("and the signup", sessions[1].id),
+            ]
+        );
+        let started: i64 = conn
+            .query_row("SELECT started_at FROM calls WHERE id = ?1", [id], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(
+            started, sessions[0].started_at,
+            "resuming keeps the call's start"
+        );
+    }
+
+    #[test]
+    fn a_session_the_app_quit_during_ends_at_its_last_line_when_the_call_resumes() {
+        let db = Db::in_memory().unwrap();
+        let conn = db.conn();
+        let id = call(&conn);
+        conn.execute("UPDATE call_sessions SET started_at = 100", [])
+            .unwrap();
+        save(&conn, id, &line("s1", "user", "hello")).unwrap();
+        conn.execute("UPDATE messages SET created_at = 160", [])
+            .unwrap();
+        let quiet = start(&conn, project_of(&conn, id), None).unwrap();
+        conn.execute(
+            "UPDATE call_sessions SET started_at = 200 WHERE call_id = ?1",
+            [quiet],
+        )
+        .unwrap();
+
+        // The app quit: nothing ended either call.
+        start(&conn, project_of(&conn, id), Some(id)).unwrap();
+        start(&conn, project_of(&conn, quiet), Some(quiet)).unwrap();
+        let ends = |call_id| -> Vec<Option<i64>> {
+            transcript(&conn, call_id)
+                .unwrap()
+                .sessions
+                .iter()
+                .map(|s| s.ended_at)
+                .collect()
+        };
+        assert_eq!(ends(id), [Some(160), None]);
+        assert_eq!(ends(quiet), [Some(200), None], "no lines: at its start");
+    }
+
+    #[test]
+    fn a_call_is_named_on_one_line_and_no_words_take_its_name_away() {
+        let db = Db::in_memory().unwrap();
+        let conn = db.conn();
+        let id = call(&conn);
+        let unnamed = CallName {
+            name: None,
+            named_by: None,
+        };
+        assert_eq!(name_of(&conn, id).unwrap(), unnamed);
+
+        let (project, named) = rename(&conn, id, "  Login\n flow ", Namer::Bomby).unwrap();
+        assert_eq!(project, project_of(&conn, id));
+        assert_eq!(
+            named,
+            CallName {
+                name: Some("Login flow".into()),
+                named_by: Some(Namer::Bomby),
+            }
+        );
+        let (_, renamed) = rename(&conn, id, "Signup", Namer::User).unwrap();
+        assert_eq!(renamed.named_by, Some(Namer::User));
+
+        let longest = "x".repeat(MAX_NAME_LEN);
+        assert!(rename(&conn, id, &longest, Namer::User).is_ok());
+        assert!(matches!(
+            rename(&conn, id, &format!("{longest}x"), Namer::Bomby),
+            Err(Error::Invalid(_))
+        ));
+        assert_eq!(rename(&conn, id, " \n ", Namer::User).unwrap().1, unnamed);
+        assert!(matches!(
+            rename(&conn, id + 1, "Nope", Namer::User),
+            Err(Error::NotFound(_))
+        ));
+    }
+
+    #[test]
     fn deleting_a_call_takes_its_transcript_with_it() {
         let db = Db::in_memory().unwrap();
         let conn = db.conn();
@@ -676,7 +999,8 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM messages", [], |r| r.get(0))
             .unwrap();
         assert_eq!(left, 0);
-        assert!(messages(&conn, id).unwrap().is_empty());
+        let left = transcript(&conn, id).unwrap();
+        assert!(left.messages.is_empty() && left.sessions.is_empty());
     }
 
     #[test]
@@ -734,9 +1058,11 @@ mod tests {
             memory_user: "bomby-0123456789abcdef".into(),
             memory_incognito: true,
             voice,
-            extensions: vec!["todos".into()],
+            extensions: vec!["todos".into(), "call_names".into()],
         };
-        let data = extensions::for_call(&conn, 1, &opened.extensions).unwrap();
+        let call_id = start(&conn, 1, None).unwrap();
+        rename(&conn, call_id, "Tempo  bug\n", Namer::User).unwrap();
+        let data = extensions::for_call(&conn, 1, call_id, &opened.extensions).unwrap();
         let metadata: serde_json::Value = serde_json::from_str(&dispatch_metadata(
             &project, &opened, &settings, &history, &data,
         ))
@@ -759,7 +1085,10 @@ mod tests {
                 "memory_user": "bomby-0123456789abcdef",
                 "memory_incognito": true,
                 "history": [{ "role": "agent", "text": "Hi." }],
-                "extensions": { "todos": { "open": [], "more": 0 } },
+                "extensions": {
+                    "todos": { "open": [], "more": 0 },
+                    "call_names": { "name": "Tempo bug", "namedBy": "user" },
+                },
             })
         );
     }

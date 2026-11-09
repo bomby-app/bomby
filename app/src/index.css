@@ -312,6 +312,21 @@
   }
 }
 
+/* Fields show focus with their border alone, never a ring (owner, 2026-11-09): every
+   input, text area, select trigger and input group (which the combobox is built on).
+   Unlayered, so it wins over each component's ring utilities; their focus border stays. */
+:is(
+  input,
+  textarea,
+  select,
+  [data-slot="input-group"],
+  [data-slot="select-trigger"]
+):is(:focus, :focus-visible, :focus-within) {
+  --tw-ring-shadow: 0 0 #0000;
+  --tw-ring-offset-shadow: 0 0 #0000;
+  outline: none;
+}
+
 /* The call transcript: LiveKit Agents UI's AgentChatTranscript, styled from outside through
    its data-slot hooks (components/agents-ui stays as generated). Like the Paper board
    "In use / the conversation": Bomby speaks in highlighter with ink text, the user in

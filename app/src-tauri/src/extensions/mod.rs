@@ -4,11 +4,13 @@
 //! `set_extension`), and a project follows that or picks its own
 //! (`projects::set_project_extensions`). A call opens with the ones it has, and its job's
 //! metadata carries what each needs at the start (`for_call`). Each extension keeps its
-//! data here: `todos.rs`. The hosted MCP ones (Zapier, Composio) sign in instead
+//! data here: `todos.rs`; call names are the call's own (`calls.rs`), and `call_names.rs`
+//! only hands Bomby the name a call starts with. The hosted MCP ones (Zapier, Composio) sign in instead
 //! (docs/decisions/hosted-mcp-extensions-with-oauth.md): `oauth.rs` is the flow,
 //! `connections.rs` keeps the grants, and `tokens.rs` hands the worker their tokens; a call
 //! has one only once it's connected.
 
+pub mod call_names;
 pub mod connections;
 pub mod oauth;
 pub mod todos;
@@ -197,17 +199,19 @@ pub(crate) fn on_for(
         .collect())
 }
 
-/// The job's `extensions` for a call on `project_id` that has `on`: each one's id with what
-/// it needs at the start (`extensions` in `agent/job.py`).
+/// The job's `extensions` for call `call_id` on `project_id` that has `on`: each one's id
+/// with what it needs at the start (`extensions` in `agent/job.py`).
 pub(crate) fn for_call(
     conn: &rusqlite::Connection,
     project_id: i64,
+    call_id: i64,
     on: &[String],
 ) -> Result<serde_json::Map<String, serde_json::Value>> {
     on.iter()
         .map(|id| {
             let data = match id.as_str() {
                 todos::ID => todos::for_call(conn, project_id)?,
+                call_names::ID => call_names::for_call(conn, call_id)?,
                 _ => serde_json::json!({}),
             };
             Ok((id.clone(), data))
@@ -220,7 +224,9 @@ pub fn extensions_settings<R: Runtime>(
     app: AppHandle<R>,
     db: State<'_, Db>,
 ) -> Result<Vec<ExtensionSetting>> {
-    settings(&db.conn(), &connections::sign_ins(&app)?)
+    // The keychain first: it may wait on the user's password, and the database waits for no one.
+    let sign_ins = connections::sign_ins(&app)?;
+    settings(&db.conn(), &sign_ins)
 }
 
 /// Applies from the next call; one under way keeps its extensions.
@@ -231,9 +237,11 @@ pub fn set_extension<R: Runtime>(
     id: String,
     on: bool,
 ) -> Result<Vec<ExtensionSetting>> {
+    // The keychain before the database, as in `extensions_settings`.
+    let sign_ins = connections::sign_ins(&app)?;
     let conn = db.conn();
     save(&conn, &id, on)?;
-    let now = settings(&conn, &connections::sign_ins(&app)?)?;
+    let now = settings(&conn, &sign_ins)?;
     let _ = app.emit(CHANGED, ());
     Ok(now)
 }
@@ -248,7 +256,7 @@ mod tests {
 
     #[test]
     fn the_catalogue_has_the_todos_and_the_hosted_mcp_ones() {
-        assert!(is_known(todos::ID));
+        assert!(is_known(todos::ID) && is_known(call_names::ID));
         assert!(!is_known("hal"));
         assert!(connect_spec(todos::ID).is_none());
         let zapier = connect_spec("zapier").unwrap();
@@ -309,7 +317,10 @@ mod tests {
         let db = Db::in_memory().unwrap();
         let conn = db.conn();
         let follows = ProjectExtensions::default();
-        assert_eq!(on_for(&conn, &follows, &none()).unwrap(), [todos::ID]);
+        assert_eq!(
+            on_for(&conn, &follows, &none()).unwrap(),
+            [todos::ID, call_names::ID]
+        );
 
         let none_of_its_own = ProjectExtensions {
             own: true,
@@ -318,7 +329,7 @@ mod tests {
         assert!(on_for(&conn, &none_of_its_own, &none()).unwrap().is_empty());
 
         save(&conn, todos::ID, false).unwrap();
-        assert!(on_for(&conn, &follows, &none()).unwrap().is_empty());
+        assert_eq!(on_for(&conn, &follows, &none()).unwrap(), [call_names::ID]);
         let its_own = ProjectExtensions {
             own: true,
             on: Some(vec![todos::ID.into(), "from-a-newer-app".into()]),
@@ -332,6 +343,7 @@ mod tests {
         let conn = db.conn();
         save(&conn, "zapier", true).unwrap();
         save(&conn, "composio", true).unwrap();
+        save(&conn, call_names::ID, false).unwrap();
         let follows = ProjectExtensions::default();
         assert_eq!(on_for(&conn, &follows, &none()).unwrap(), [todos::ID]);
         let connected = BTreeSet::from(["composio".to_owned()]);
@@ -339,7 +351,7 @@ mod tests {
             on_for(&conn, &follows, &connected).unwrap(),
             [todos::ID, "composio"]
         );
-        let data = for_call(&conn, 1, &["composio".into()]).unwrap();
+        let data = for_call(&conn, 1, 1, &["composio".into()]).unwrap();
         assert_eq!(data["composio"], serde_json::json!({}));
     }
 

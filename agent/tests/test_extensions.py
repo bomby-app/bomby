@@ -10,6 +10,7 @@ from pydantic import JsonValue
 
 from extensions import EXTENSIONS, CallExtensions, ExtensionContext, ExtensionError
 from extensions.bridge import REFUSED, UNCONFIRMED, UNREACHABLE, RoomBridge
+from extensions.call_names import CALL_NAMES_EXTENSION
 from extensions.catalogue import render
 from extensions.todos import TODOS_EXTENSION
 from job import JobMetadata
@@ -223,3 +224,43 @@ def test_a_refusal_carries_the_apps_words_and_other_failures_one_line() -> None:
     garbled, _ = bridge_answering("not json")
     with pytest.raises(ExtensionError, match=UNCONFIRMED):
         _ = asyncio.run(garbled.call("todos.add", {}))
+
+
+def name_call(bridge: FakeBridge) -> Callable[..., Coroutine[object, object, str]]:
+    [toolset] = CALL_NAMES_EXTENSION.tools(ExtensionContext(bridge=bridge))
+    assert isinstance(toolset, Toolset)
+    [tool] = toolset.tools
+    assert isinstance(tool, FunctionTool) and tool.info.name == "name_call"
+    return cast(Callable[..., Coroutine[object, object, str]], tool)
+
+
+def test_naming_the_call_sends_the_name_and_says_what_it_is_now() -> None:
+    bridge = FakeBridge({"call_names.set": {"name": "Login flow", "namedBy": "bomby"}})
+    result = asyncio.run(name_call(bridge)(name="Login flow"))
+    assert bridge.calls == [("call_names.set", {"name": "Login flow"})]
+    assert result == 'The call is named "Login flow".'
+
+
+def test_naming_with_no_words_or_a_refusal_fails_the_tool() -> None:
+    bridge = FakeBridge({"call_names.set": ExtensionError("Keep it short.")})
+    with pytest.raises(ToolError, match="Say the name"):
+        _ = asyncio.run(name_call(bridge)(name="  "))
+    assert bridge.calls == []
+    with pytest.raises(ToolError, match="Keep it short."):
+        _ = asyncio.run(name_call(bridge)(name="A very long name"))
+
+
+def test_the_call_names_note_is_one_line_with_the_name_it_has() -> None:
+    def note(data: dict[str, JsonValue]) -> str:
+        return CALL_NAMES_EXTENSION.note(
+            ExtensionContext(bridge=FakeBridge({}), style=PLAIN, data=data)
+        )
+
+    unnamed = note({"name": None, "namedBy": None})
+    assert unnamed == (
+        "You can name this call with name_call once you know what it's about, in a "
+        "few words."
+    )
+    assert note({"name": "Login flow", "namedBy": "user"}) == (
+        f'{unnamed} It\'s called "Login flow".'
+    )

@@ -35,9 +35,14 @@ function startOfDay(date: Date): number {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
 }
 
-/** How long a call ran: "Under a minute", "4 min", "1 hr 12 min". */
-export function callLength(startedAt: number, endedAt: number): string {
-  const minutes = Math.floor((endedAt - startedAt) / 60_000)
+/** A call's title: its name, or when it started until it has one. */
+export function callTitle(call: { name: string | null; startedAt: number }) {
+  return call.name ?? callLabel(call.startedAt)
+}
+
+/** How long a call was on, from its length in ms: "Under a minute", "4 min", "1 hr 12 min". */
+export function callLength(ms: number): string {
+  const minutes = Math.floor(ms / 60_000)
   if (minutes < 1) return "Under a minute"
   if (minutes < 60) return `${minutes} min`
   const hours = Math.floor(minutes / 60)

@@ -80,7 +80,7 @@ export function IntroSettings() {
           id="user-name"
           value={name ?? ""}
           disabled={name === null}
-          maxLength={MAX_USER_NAME_LENGTH}
+          maxChars={MAX_USER_NAME_LENGTH}
           placeholder="Optional"
           autoComplete="given-name"
           spellCheck={false}

@@ -1,5 +1,8 @@
 import { createContext, type ReactNode, use, useEffect, useState } from "react"
 
+import { log, onCallRenamed } from "@/features/call/api"
+import { useCoreEvent } from "@/hooks/use-core-event"
+
 import {
   createProject,
   deleteProject,
@@ -12,6 +15,7 @@ import {
   setProjectExtensions,
   updateProject,
 } from "./api"
+import { serialReload } from "./serial-reload"
 
 type ProjectsState = {
   /** null until the first load finishes. */
@@ -23,6 +27,11 @@ type ProjectsState = {
   remove: (id: number) => Promise<void>
   /** Reloads the tree, after something outside this provider changed it (a call). */
   refresh: () => Promise<void>
+  /**
+   * Shows a call's new name at once, from what the rename answered; the read that
+   * `call-renamed` starts follows with the same.
+   */
+  showName: (callId: number, name: string | null) => void
 }
 
 const ProjectsContext = createContext<ProjectsState | null>(null)
@@ -33,15 +42,22 @@ const ProjectsContext = createContext<ProjectsState | null>(null)
  */
 export function ProjectsProvider({ children }: { children: ReactNode }) {
   const [projects, setProjects] = useState<Project[] | null>(null)
-
-  async function reload() {
-    setProjects(await listProjects())
-  }
+  // Every read of the tree goes through this, so a slower answer never replaces a newer one.
+  const [reload] = useState(() => serialReload(listProjects, setProjects))
 
   // The first load from the core; the list lands when it answers.
   useEffect(() => {
-    void listProjects().then(setProjects)
-  }, [])
+    void reload().catch((e: unknown) =>
+      log(`Reading projects failed: ${String(e)}`)
+    )
+  }, [reload])
+
+  // A call renamed by the user in another window, or by Bomby mid-call.
+  useCoreEvent(onCallRenamed, () => {
+    reload().catch((e: unknown) =>
+      log(`Reading projects after a rename failed: ${String(e)}`)
+    )
+  })
 
   const state: ProjectsState = {
     projects,
@@ -70,6 +86,20 @@ export function ProjectsProvider({ children }: { children: ReactNode }) {
       await reload()
     },
     refresh: reload,
+    showName: (callId, name) =>
+      setProjects(
+        (all) =>
+          all?.map((project) =>
+            project.calls.some((call) => call.id === callId)
+              ? {
+                  ...project,
+                  calls: project.calls.map((call) =>
+                    call.id === callId ? { ...call, name } : call
+                  ),
+                }
+              : project
+          ) ?? null
+      ),
   }
 
   return <ProjectsContext value={state}>{children}</ProjectsContext>

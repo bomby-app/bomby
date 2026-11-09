@@ -135,6 +135,32 @@ const MIGRATIONS: &[&str] = &[
         INSERT INTO messages_search (rowid, text) VALUES (new.id, new.text);
     END;
     ",
+    // 9: a call's name and its sessions (docs/decisions/call-names-and-sessions.md). name:
+    // null until the user or Bomby names it; named_by: 'user' or 'bomby'. A session is one
+    // stretch of a call, from opening or resuming it to its end, and each line says which
+    // it was said in. Calls from before have one session, from their start to their end,
+    // with all their lines: earlier resumes left no trace to split them by.
+    "
+    ALTER TABLE calls ADD COLUMN name TEXT;
+    ALTER TABLE calls ADD COLUMN named_by TEXT;
+    CREATE TABLE call_sessions (
+        id         INTEGER PRIMARY KEY,
+        call_id    INTEGER NOT NULL REFERENCES calls(id) ON DELETE CASCADE,
+        started_at INTEGER NOT NULL,
+        ended_at   INTEGER
+    );
+    CREATE INDEX call_sessions_by_call ON call_sessions(call_id, started_at);
+    ALTER TABLE messages ADD COLUMN session_id INTEGER REFERENCES call_sessions(id);
+    INSERT INTO call_sessions (call_id, started_at, ended_at)
+        SELECT id, started_at, ended_at FROM calls;
+    UPDATE messages SET session_id =
+        (SELECT s.id FROM call_sessions s WHERE s.call_id = messages.call_id);
+    ",
+    // 10: a session's lines by index, for ending one the app quit during (calls.rs,
+    // `begin_session`). Apart from 9, which a development build may have run without it.
+    "
+    CREATE INDEX IF NOT EXISTS messages_by_session ON messages(session_id, created_at);
+    ",
 ];
 
 /// The open database, shared by every command through Tauri state.
@@ -155,6 +181,7 @@ impl Db {
         conn.pragma_update(None, "foreign_keys", true)?;
         // WAL keeps reads fast while a call writes transcript lines. In-memory stays "memory".
         conn.pragma_update(None, "journal_mode", "WAL")?;
+        crate::search::add_fold(&conn)?;
         migrate(&mut conn)?;
         Ok(Self(Mutex::new(conn)))
     }
@@ -200,5 +227,45 @@ mod tests {
         assert_eq!(usize::try_from(version).unwrap(), MIGRATIONS.len());
         // Running again is a no-op.
         migrate(&mut conn).unwrap();
+    }
+
+    #[test]
+    fn calls_from_before_sessions_get_one_with_all_their_lines() {
+        let conn = Connection::open_in_memory().unwrap();
+        for sql in &MIGRATIONS[..8] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", 8).unwrap();
+        conn.execute_batch(
+            "INSERT INTO projects (name, created_at) VALUES ('samba', 0);
+             INSERT INTO calls (project_id, started_at, ended_at) VALUES (1, 10, 90);
+             INSERT INTO calls (project_id, started_at) VALUES (1, 100);
+             INSERT INTO messages (call_id, segment_id, role, text, created_at)
+                 VALUES (1, 'a', 'user', 'hi', 20), (1, 'b', 'agent', 'hello', 30),
+                        (2, 'c', 'user', 'again', 110);",
+        )
+        .unwrap();
+        let mut conn = conn;
+        migrate(&mut conn).unwrap();
+
+        let sessions: Vec<(i64, i64, i64, Option<i64>)> = conn
+            .prepare("SELECT id, call_id, started_at, ended_at FROM call_sessions ORDER BY id")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(sessions, [(1, 1, 10, Some(90)), (2, 2, 100, None)]);
+        let lines: Vec<(String, i64)> = conn
+            .prepare("SELECT text, session_id FROM messages ORDER BY id")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(
+            lines,
+            [("hi".into(), 1), ("hello".into(), 1), ("again".into(), 2)]
+        );
     }
 }

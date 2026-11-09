@@ -1,4 +1,5 @@
-import { Play, Trash2 } from "lucide-react"
+import { Pencil, Play, Trash2 } from "lucide-react"
+import { useState } from "react"
 
 import { ErrorCard } from "@/components/error-card"
 import { Mascot } from "@/components/mascot"
@@ -11,7 +12,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import {
@@ -29,10 +29,11 @@ import {
 
 import { deleteCall } from "../call/api"
 import { CallGate } from "../call/call-gate"
+import { CallNameInput } from "../call/call-name"
 import { useCall } from "../call/call-provider"
 import { useCallReadiness } from "../call/use-call-readiness"
 import type { CallSummary, Project } from "./api"
-import { callLabel, callLength } from "./names"
+import { callLabel, callLength, callTitle } from "./names"
 import { useProjects } from "./projects-provider"
 
 /**
@@ -90,35 +91,80 @@ function CallRow({
 }) {
   const { active } = useCall()
   const live = active?.callId === call.id
+  const [renaming, setRenaming] = useState(false)
+  const state = live
+    ? "On a call now"
+    : call.endedAt
+      ? callLength(call.activeMs)
+      : "Ended early"
+  // A named call says when it started under its name; until then, that's its name.
+  const detail = call.name ? `${callLabel(call.startedAt)} · ${state}` : state
 
   return (
     <li className="flex items-center gap-3 py-2 pr-2 pl-3">
-      <button
-        type="button"
-        onClick={onOpen}
-        className="flex min-w-0 flex-1 items-center gap-3 rounded-md py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <Mascot state={live ? "listening" : "idle"} size={28} />
-        <span className="flex min-w-0 flex-col">
-          <span className="truncate text-sm font-medium">
-            {callLabel(call.startedAt)}
+      {renaming ? (
+        <div className="flex min-w-0 flex-1 items-center gap-3 py-1">
+          <Mascot state={live ? "listening" : "idle"} size={28} />
+          <CallNameInput
+            call={call}
+            onDone={() => setRenaming(false)}
+            className="max-w-full"
+          />
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={onOpen}
+          className="flex min-w-0 flex-1 items-center gap-3 rounded-md py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Mascot state={live ? "listening" : "idle"} size={28} />
+          <span className="flex min-w-0 flex-col">
+            <span className="truncate text-sm font-medium">
+              {callTitle(call)}
+            </span>
+            <span className="truncate text-xs text-muted-foreground">
+              {detail}
+            </span>
           </span>
-          <span className="text-xs text-muted-foreground">
-            {live
-              ? "On a call now"
-              : call.endedAt
-                ? callLength(call.startedAt, call.endedAt)
-                : "Ended early"}
-          </span>
-        </span>
-      </button>
+        </button>
+      )}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Rename call"
+            disabled={renaming}
+            onClick={() => setRenaming(true)}
+          >
+            <Pencil />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Rename call</TooltipContent>
+      </Tooltip>
       <ResumeButton projectId={projectId} callId={call.id} />
       <DeleteCallButton call={call} />
     </li>
   )
 }
 
-/** Continues an earlier call; the agent hears its last lines. One call at a time. */
+/**
+ * Resuming an earlier call, for every place that offers it: whether it can now (the keys
+ * are there, and no call is on or starting), what's missing if not, and whether this one
+ * is waking up. One call at a time.
+ */
+export function useResume(projectId: number, callId: number) {
+  const { active, starting, start } = useCall()
+  const { ready, missing } = useCallReadiness()
+  return {
+    can: ready && active === null && starting === null,
+    missing,
+    waking: starting?.resumeCallId === callId,
+    resume: () => void start(projectId, callId),
+  }
+}
+
+/** Continues an earlier call; the agent hears its last lines. */
 export function ResumeButton({
   projectId,
   callId,
@@ -126,19 +172,18 @@ export function ResumeButton({
   projectId: number
   callId: number
 }) {
-  const { active, starting, start } = useCall()
-  const { ready, missing } = useCallReadiness()
+  const { can, missing, waking, resume } = useResume(projectId, callId)
   return (
     <CallGate missing={missing}>
       <Button
         size="sm"
         // Bubblegum: resuming brings the conversation back (owner's call, docs/brand.md).
         variant="claude"
-        disabled={!ready || active !== null || starting !== null}
-        onClick={() => void start(projectId, callId)}
+        disabled={!can}
+        onClick={resume}
       >
         <Play />
-        {starting?.resumeCallId === callId ? "Waking up..." : "Resume"}
+        {waking ? "Waking up..." : "Resume"}
       </Button>
     </CallGate>
   )
@@ -153,8 +198,49 @@ export function DeleteCallButton({
   onDeleted?: () => void
 }) {
   const { active } = useCall()
+  const [asking, setAsking] = useState(false)
+  return (
+    <>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Delete call"
+            disabled={active?.callId === call.id}
+            onClick={() => setAsking(true)}
+          >
+            <Trash2 />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Delete call</TooltipContent>
+      </Tooltip>
+      <DeleteCallDialog
+        call={call}
+        open={asking}
+        onOpenChange={setAsking}
+        onDeleted={onDeleted}
+      />
+    </>
+  )
+}
+
+/** Asks before deleting a call and its conversation, from wherever Delete was chosen. */
+export function DeleteCallDialog({
+  call,
+  open,
+  onOpenChange,
+  onDeleted,
+}: {
+  call: CallSummary
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onDeleted?: () => void
+}) {
   const { refresh } = useProjects()
-  const label = callLabel(call.startedAt)
+  const what = call.name
+    ? `“${call.name}”`
+    : `the call from ${callLabel(call.startedAt)}`
 
   async function confirm() {
     await deleteCall(call.id)
@@ -163,25 +249,10 @@ export function DeleteCallButton({
   }
 
   return (
-    <AlertDialog>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Delete call"
-              disabled={active?.callId === call.id}
-            >
-              <Trash2 />
-            </Button>
-          </AlertDialogTrigger>
-        </TooltipTrigger>
-        <TooltipContent>Delete call</TooltipContent>
-      </Tooltip>
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete the call from {label}?</AlertDialogTitle>
+          <AlertDialogTitle>Delete {what}?</AlertDialogTitle>
           <AlertDialogDescription>
             Its conversation goes with it. This can't be undone.
           </AlertDialogDescription>

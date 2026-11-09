@@ -1,6 +1,7 @@
 import type { ReactNode } from "react"
 
 import { AgentsPanel } from "@/features/call/agents-panel"
+import { CallName } from "@/features/call/call-name"
 import { type ActiveCall, useCall } from "@/features/call/call-provider"
 import { CallView } from "@/features/call/call-view"
 import { SavedCallView } from "@/features/call/saved-call-view"
@@ -147,7 +148,7 @@ function ProjectLayout({
 }
 
 type ProjectView = {
-  title: string
+  title: ReactNode
   /** Before the panels' toggles: settings, delete. */
   secondary?: ReactNode
   /** The page's main action, at the header's right end: Call, Resume, the call's agents. */
@@ -169,8 +170,18 @@ function projectView(
     (selection?.kind === "project" ||
       (selection?.kind === "call" && selection.callId === active.callId))
   if (live) {
+    // Not in the tree yet in the moment the call starts.
+    const summary = project.calls.find((c) => c.id === active.callId) ?? {
+      id: active.callId,
+      name: null,
+      startedAt: active.startedAt,
+    }
     return {
-      title: `${project.name} · On a call`,
+      title: (
+        <CallTitle project={project}>
+          <CallName key={summary.id} call={summary} fallback="On a call" />
+        </CallTitle>
+      ),
       primary: <AgentsPanel />,
       body: (
         <div className="min-h-0 flex-1">
@@ -181,7 +192,15 @@ function projectView(
   }
   if (call) {
     return {
-      title: `${project.name} · ${callLabel(call.startedAt)}`,
+      title: (
+        <CallTitle project={project}>
+          <CallName
+            key={call.id}
+            call={call}
+            fallback={callLabel(call.startedAt)}
+          />
+        </CallTitle>
+      ),
       secondary: (
         <DeleteCallButton
           call={call}
@@ -216,4 +235,23 @@ function projectView(
       </div>
     ),
   }
+}
+
+/** "samba · Login flow": the project, then the call's name to click and rename. */
+function CallTitle({
+  project,
+  children,
+}: {
+  project: Project
+  children: ReactNode
+}) {
+  return (
+    <>
+      <span className="max-w-1/2 truncate">{project.name}</span>
+      <span aria-hidden className="shrink-0 text-muted-foreground">
+        ·
+      </span>
+      {children}
+    </>
+  )
 }

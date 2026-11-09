@@ -2,6 +2,7 @@ import { useState } from "react"
 
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
 import { Textarea } from "@/components/ui/textarea"
+import { charCount, holdToChars } from "@/lib/chars"
 
 import { MAX_INSTRUCTIONS_LENGTH } from "./api"
 
@@ -26,7 +27,7 @@ export function InstructionsField({
   disabled?: boolean
   onInput?: () => void
 }) {
-  const [length, setLength] = useState(defaultValue.length)
+  const [length, setLength] = useState(() => charCount(defaultValue))
 
   return (
     <Field>
@@ -45,12 +46,21 @@ export function InstructionsField({
         defaultValue={defaultValue}
         disabled={disabled}
         rows={4}
-        maxLength={MAX_INSTRUCTIONS_LENGTH}
         placeholder="What the project is, and anything your agents should know about it."
         className="max-h-64 resize-none"
+        // Held to the limit as the core counts characters: `maxLength` counts an emoji as two.
         onInput={(e) => {
-          setLength(e.currentTarget.value.length)
+          holdToChars(
+            e.currentTarget,
+            MAX_INSTRUCTIONS_LENGTH,
+            (e.nativeEvent as InputEvent).isComposing
+          )
+          setLength(charCount(e.currentTarget.value))
           onInput?.()
+        }}
+        onCompositionEnd={(e) => {
+          holdToChars(e.currentTarget, MAX_INSTRUCTIONS_LENGTH, false)
+          setLength(charCount(e.currentTarget.value))
         }}
       />
       <FieldDescription>
