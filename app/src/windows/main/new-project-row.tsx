@@ -1,6 +1,6 @@
 import { SquarePen } from "lucide-react"
 
-import { Kbd, KbdGroup } from "@/components/ui/kbd"
+import { ShortcutKeys } from "@/components/shortcut-keys"
 import {
   SidebarMenu,
   SidebarMenuButton,
@@ -18,11 +18,10 @@ export function NewProjectRow({ onClick }: { onClick: () => void }) {
         <SidebarMenuButton onClick={onClick}>
           <SquarePen />
           <span>New project</span>
-          <KbdGroup className="ml-auto opacity-0 transition-opacity group-focus-within/menu-item:opacity-100 group-hover/menu-item:opacity-100">
-            {NEW_PROJECT_SHORTCUT.keys.map((key) => (
-              <Kbd key={key}>{key}</Kbd>
-            ))}
-          </KbdGroup>
+          <ShortcutKeys
+            shortcut={NEW_PROJECT_SHORTCUT}
+            className="ml-auto opacity-0 transition-opacity group-focus-within/menu-item:opacity-100 group-hover/menu-item:opacity-100"
+          />
         </SidebarMenuButton>
       </SidebarMenuItem>
     </SidebarMenu>

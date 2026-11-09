@@ -1,7 +1,7 @@
 import { Settings } from "lucide-react"
 
+import { ShortcutKeys } from "@/components/shortcut-keys"
 import { Button } from "@/components/ui/button"
-import { Kbd, KbdGroup } from "@/components/ui/kbd"
 import {
   Tooltip,
   TooltipContent,
@@ -26,11 +26,7 @@ export function SettingsButton() {
       </TooltipTrigger>
       <TooltipContent side="top">
         Settings
-        <KbdGroup>
-          {SETTINGS_SHORTCUT.keys.map((key) => (
-            <Kbd key={key}>{key}</Kbd>
-          ))}
-        </KbdGroup>
+        <ShortcutKeys shortcut={SETTINGS_SHORTCUT} />
       </TooltipContent>
     </Tooltip>
   )

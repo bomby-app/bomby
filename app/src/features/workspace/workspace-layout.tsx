@@ -10,8 +10,8 @@ import {
 } from "react"
 import { useDefaultLayout, usePanelRef } from "react-resizable-panels"
 
+import { ShortcutKeys } from "@/components/shortcut-keys"
 import { Button } from "@/components/ui/button"
-import { Kbd, KbdGroup } from "@/components/ui/kbd"
 import {
   ResizableHandle,
   ResizablePanel,
@@ -318,13 +318,7 @@ function PanelToggle({
       </TooltipTrigger>
       <TooltipContent>
         {label}
-        {section.shortcut && (
-          <KbdGroup>
-            {section.shortcut.keys.map((key) => (
-              <Kbd key={key}>{key}</Kbd>
-            ))}
-          </KbdGroup>
-        )}
+        {section.shortcut && <ShortcutKeys shortcut={section.shortcut} />}
       </TooltipContent>
     </Tooltip>
   )
