@@ -15,7 +15,11 @@ setup: Setup | null,
 /**
  * Where to install it from (`Known::install_page`).
  */
-installPage: string, };
+installPage: string, 
+/**
+ * What shows whether it starts (`Known::check`); the sign-in comes from the probe.
+ */
+check: string, };
 
 /**
  * What the model picker shows: an agent's setup, and the settings it lets the user pick

@@ -54,6 +54,8 @@ struct Known {
     /// Its own page on installing it, which Install opens. Each is also allowed in the
     /// windows' `opener:allow-open-url` (`capabilities/`).
     install_page: &'static str,
+    /// A command that shows whether it starts, for when it didn't.
+    check: &'static str,
 }
 
 const KNOWN: &[Known] = &[
@@ -68,6 +70,7 @@ const KNOWN: &[Known] = &[
             "/usr/local/bin/claude",
         ],
         install_page: "https://code.claude.com/docs/en/quickstart",
+        check: "claude --version",
     },
     Known {
         id: "codex",
@@ -79,6 +82,7 @@ const KNOWN: &[Known] = &[
             "/usr/local/bin/codex",
         ],
         install_page: "https://learn.chatgpt.com/docs/codex/cli",
+        check: "codex doctor",
     },
     Known {
         id: "opencode",
@@ -90,6 +94,7 @@ const KNOWN: &[Known] = &[
             "/usr/local/bin/opencode",
         ],
         install_page: "https://opencode.ai/docs/",
+        check: "opencode --version",
     },
     Known {
         id: "omp",
@@ -101,6 +106,7 @@ const KNOWN: &[Known] = &[
             "/usr/local/bin/omp",
         ],
         install_page: "https://omp.sh/docs/quickstart",
+        check: "omp --version",
     },
     Known {
         id: "goose",
@@ -112,6 +118,7 @@ const KNOWN: &[Known] = &[
             "/usr/local/bin/goose",
         ],
         install_page: "https://goose-docs.ai/docs/quickstart/",
+        check: "goose --version",
     },
 ];
 
@@ -129,6 +136,8 @@ pub struct AgentStatus {
     setup: Option<Setup>,
     /// Where to install it from (`Known::install_page`).
     install_page: &'static str,
+    /// What shows whether it starts (`Known::check`); the sign-in comes from the probe.
+    check: &'static str,
 }
 
 /// Runs `command` and returns its output if it finishes within `timeout`; kills it
@@ -266,6 +275,7 @@ fn status_of(known: &'static Known, path: Option<PathBuf>) -> AgentStatus {
         path: path.map(|p| p.display().to_string()),
         setup: None,
         install_page: known.install_page,
+        check: known.check,
     }
 }
 
@@ -691,6 +701,7 @@ mod tests {
         binary: "nowhere",
         places: &[],
         install_page: "https://example.com/nowhere",
+        check: "nowhere --version",
     };
 
     #[test]
@@ -721,6 +732,7 @@ mod tests {
             version: None,
             setup: None,
             install_page: "https://example.com/install",
+            check: "nowhere --version",
         }
     }
 

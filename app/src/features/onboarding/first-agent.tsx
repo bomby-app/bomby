@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/popover"
 import { AgentLogo } from "@/features/agents/agent-logos"
 import type { AgentStatus } from "@/features/agents/api"
+import { FixSteps } from "@/features/agents/fix-steps"
 import { InstallButton } from "@/features/agents/install-button"
 import { ModelPicker } from "@/features/agents/model-picker"
 import { SetUpButton } from "@/features/agents/set-up-button"
@@ -124,7 +125,13 @@ function AgentCard({
       className="mt-7"
       tile={<AgentTile id={agent?.id ?? "claude"} />}
       name={agent?.name ?? "Claude Code"}
-      status={<StatusLine tone={toneOf(phase)} text={statusOf(agent, phase)} />}
+      status={
+        <StatusLine
+          tone={toneOf(phase)}
+          text={statusOf(agent, phase)}
+          info={agent && <FixSteps agent={agent} />}
+        />
+      }
       action={agent && <Action agent={agent} phase={phase} />}
     />
   )

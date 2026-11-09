@@ -29,6 +29,7 @@
       ]
     },
     "clipboard-manager:allow-read-text",
+    "clipboard-manager:allow-write-text",
     "allow-credentials-info",
     "allow-save-credentials",
     "allow-clear-credentials",
