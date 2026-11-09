@@ -45,6 +45,7 @@ export const TODOS_TAB = {
   id: "todos",
   label: "To-dos",
   icon: <ListTodo />,
+  keywords: ["to-do list", "todo", "tasks"],
 }
 
 /** Drops what this page keeps of a deleted project's to-dos and its panel. */

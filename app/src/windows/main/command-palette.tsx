@@ -41,14 +41,6 @@ import { useStore } from "@/lib/store"
 import { openSettings, SETTINGS_SHORTCUT } from "../settings/open-settings"
 import { NEW_PROJECT_SHORTCUT } from "./shortcuts"
 
-/** Words a panel's command also answers to, beyond its name. */
-const PANEL_KEYWORDS: Record<string, string[]> = {
-  changes: ["git", "diff"],
-  files: ["folder", "tree"],
-  terminal: ["shell", "console"],
-  todos: ["to-do list", "todo", "tasks"],
-}
-
 type PaletteCommand = {
   id: string
   label: string
@@ -266,7 +258,7 @@ function paletteCommands({
         id: `panel ${panel.id}`,
         label: panel.label,
         icon: panel.icon,
-        keywords: PANEL_KEYWORDS[panel.id],
+        keywords: panel.keywords,
         shortcut: panel.shortcut,
         run: () => panels.show(panel.id),
       })

@@ -12,4 +12,6 @@ export type ExtraTab = {
   /** Its toggle's icon. */
   icon: ReactNode
   content: ReactNode
+  /** Words the command palette also finds it by, beyond its label. */
+  keywords?: string[]
 }

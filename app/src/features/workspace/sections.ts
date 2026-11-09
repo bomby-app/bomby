@@ -11,4 +11,6 @@ export type Section = {
   /** Beside the icon on its toggle, and the label in its header, when above 0. */
   count?: number
   shortcut?: Shortcut
+  /** Words the command palette also finds it by, beyond its label. */
+  keywords?: string[]
 }

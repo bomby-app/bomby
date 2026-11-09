@@ -124,22 +124,35 @@ export function WorkspaceLayout({
             id: "changes",
             label: "Changes",
             icon: <GitCompareArrows />,
+            keywords: ["git", "diff"],
             count: changes.data?.files.length,
           },
         ]
       : []),
     ...(folder !== undefined
       ? [
-          { id: "files", label: "Files", icon: <FolderClosed /> },
+          {
+            id: "files",
+            label: "Files",
+            icon: <FolderClosed />,
+            keywords: ["folder", "tree"],
+          },
           {
             id: "terminal",
             label: "Terminal",
             icon: <SquareTerminal />,
             shortcut: TERMINAL_SHORTCUT,
+            keywords: ["shell", "console"],
           },
         ]
       : []),
-    ...tabs.map(({ id, label, icon, count }) => ({ id, label, icon, count })),
+    ...tabs.map(({ id, label, icon, count, keywords }) => ({
+      id,
+      label,
+      icon,
+      count,
+      keywords,
+    })),
   ]
   const available = sections.length > 0
   const ids = sections.map((s) => s.id)
