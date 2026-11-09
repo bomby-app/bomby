@@ -37,7 +37,7 @@ import {
  * `.call-transcript` styles both.
  *
  * `sessions` are the saved ones; `live` are the lines of the session on now, which come
- * last with no divider. Without `live`, a call with one session shows no divider at all.
+ * last with no divider. Without `live`, a call that was never resumed shows no divider.
  */
 export function SessionTranscript({
   sessions,
@@ -61,7 +61,10 @@ export function SessionTranscript({
   const [open, setOpen] = useState(
     () => new Set(folded ? [] : sessions.map((s) => s.session.id))
   )
-  const dividers = live !== undefined || sessions.length > 1
+  // Pills once there's more than the call's first opening to tell apart: a resume shown,
+  // even one whose opening before it was silent.
+  const dividers =
+    live !== undefined || sessions.length > 1 || sessions.some((s) => !s.first)
 
   function toggle(id: number) {
     setOpen((was) => {
@@ -79,7 +82,7 @@ export function SessionTranscript({
       <MessageScroller className={className}>
         <MessageScrollerViewport>
           <MessageScrollerContent aria-busy={agentState === "thinking"}>
-            {sessions.map(({ session, lines }, index) => {
+            {sessions.map(({ session, first, lines }) => {
               const shown = !dividers || open.has(session.id)
               return (
                 <Fragment key={session.id}>
@@ -87,7 +90,7 @@ export function SessionTranscript({
                     <MessageScrollerItem messageId={dividerId(session.id)}>
                       <SessionDivider
                         messageId={dividerId(session.id)}
-                        label={sessionLabel(session, index === 0)}
+                        label={sessionLabel(session, first)}
                         lines={lines.length}
                         open={shown}
                         onToggle={() => toggle(session.id)}

@@ -1,3 +1,5 @@
+import { charCount } from "@/lib/chars"
+
 import type { Words } from "./view-state"
 
 /**
@@ -8,10 +10,9 @@ import type { Words } from "./view-state"
 export const TITLE_MAX = 120
 export const NOTES_MAX = 1000
 
-/** Characters as the core counts them: code points, so an emoji is one. */
+/** A to-do's words as the core counts them, once trimmed (`lib/chars.ts`). */
 export function length(text: string): number {
-  // Code points on purpose: the core's `chars().count()`, not what a reader calls one.
-  return Array.from(text.trim()).length
+  return charCount(text.trim())
 }
 
 /** What's left of `max`, shown once it gets close; null before then. */

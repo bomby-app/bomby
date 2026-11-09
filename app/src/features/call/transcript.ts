@@ -43,9 +43,18 @@ export function toReceived(saved: SavedMessage): ReceivedMessage {
 }
 
 /** One session of a call in its transcript: the session, and its lines as Agents UI has them. */
-export type SessionLines = { session: CallSession; lines: ReceivedMessage[] }
+export type SessionLines = {
+  session: CallSession
+  /** It's the call's first session, the one it started with, said anything or not. */
+  first: boolean
+  lines: ReceivedMessage[]
+}
 
-/** A saved call's sessions with their lines, in order. One where nothing was said is left out. */
+/**
+ * A saved call's sessions with their lines, in order. One where nothing was said is left
+ * out, but each one kept still knows whether it was the call's first: a call whose first
+ * opening was silent starts its transcript with a resume.
+ */
 export function bySession({ sessions, messages }: Transcript): SessionLines[] {
   const lines = new Map<number, ReceivedMessage[]>()
   for (const message of messages) {
@@ -53,9 +62,9 @@ export function bySession({ sessions, messages }: Transcript): SessionLines[] {
     said.push(toReceived(message))
     lines.set(message.sessionId, said)
   }
-  return sessions.flatMap((session) => {
+  return sessions.flatMap((session, index) => {
     const said = lines.get(session.id)
-    return said ? [{ session, lines: said }] : []
+    return said ? [{ session, first: index === 0, lines: said }] : []
   })
 }
 

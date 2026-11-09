@@ -7,6 +7,7 @@ import {
 } from "react"
 
 import { Input } from "@/components/ui/input"
+import { holdToChars } from "@/lib/chars"
 
 /**
  * An input for a value that's saved as it's edited: Enter or leaving the field saves it,
@@ -14,7 +15,8 @@ import { Input } from "@/components/ui/input"
  * failed save puts the saved value back. `onDone` follows once the field is left, after
  * any save, also when nothing changed. While a save is on its way the field is read-only,
  * so nothing typed then is lost or saved twice. Enter that ends an input method's
- * composition (Japanese, Chinese) stays the composition's.
+ * composition (Japanese, Chinese) stays the composition's. `maxChars` limits it as the
+ * core counts characters, where `maxLength` would count an emoji as two.
  *
  * The field is uncontrolled: it starts at `value` and the browser keeps what's typed, so a
  * save always reads what's in the field, never a copy of it in state. Remount it (a `key`)
@@ -24,14 +26,23 @@ export function InlineEditInput({
   value,
   onSave,
   onDone,
+  maxChars,
   ...props
 }: Omit<
   ComponentProps<typeof Input>,
-  "value" | "defaultValue" | "onChange" | "onBlur" | "onKeyDown"
+  | "value"
+  | "defaultValue"
+  | "onChange"
+  | "onBlur"
+  | "onKeyDown"
+  | "maxLength"
+  | "onInput"
+  | "onCompositionEnd"
 > & {
   value: string
   onSave: (value: string) => Promise<boolean>
   onDone?: () => void
+  maxChars?: number
 }) {
   const [saving, setSaving] = useState(false)
   // Read where the blur happens, before React has re-rendered the field read-only.
@@ -76,6 +87,18 @@ export function InlineEditInput({
       defaultValue={value}
       onBlur={(event) => void commit(event)}
       onKeyDown={onKeyDown}
+      onInput={(event) => {
+        if (maxChars !== undefined)
+          holdToChars(
+            event.currentTarget,
+            maxChars,
+            (event.nativeEvent as InputEvent).isComposing
+          )
+      }}
+      onCompositionEnd={(event) => {
+        if (maxChars !== undefined)
+          holdToChars(event.currentTarget, maxChars, false)
+      }}
     />
   )
 }

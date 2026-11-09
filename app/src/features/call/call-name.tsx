@@ -64,7 +64,7 @@ export function CallNameInput({
       value={opened}
       onDone={onDone}
       placeholder={callLabel(call.startedAt)}
-      maxLength={NAME_MAX}
+      maxChars={NAME_MAX}
       aria-label="Call name"
       spellCheck={false}
       autoComplete="off"

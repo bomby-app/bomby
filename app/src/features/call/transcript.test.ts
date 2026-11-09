@@ -24,10 +24,26 @@ describe("a call's transcript by session", () => {
       messages: [line(1, 1, "a"), line(2, 1, "b"), line(3, 3, "c")],
     })
     expect(
-      groups.map((g) => [g.session.id, g.lines.map((l) => l.message)])
+      groups.map((g) => [g.session.id, g.first, g.lines.map((l) => l.message)])
     ).toEqual([
-      [1, ["a", "b"]],
-      [3, ["c"]],
+      [1, true, ["a", "b"]],
+      [3, false, ["c"]],
+    ])
+  })
+
+  it("keeps a resume a resume when the call's first opening was silent", () => {
+    const sessions: CallSession[] = [
+      { id: 1, startedAt: today(9), endedAt: today(9, 1) },
+      { id: 2, startedAt: today(11), endedAt: today(11, 5) },
+      { id: 3, startedAt: today(12), endedAt: null },
+    ]
+    const groups = bySession({
+      sessions,
+      messages: [line(1, 2, "a"), line(2, 3, "b")],
+    })
+    expect(groups.map((g) => [g.session.id, g.first])).toEqual([
+      [2, false],
+      [3, false],
     ])
   })
 
