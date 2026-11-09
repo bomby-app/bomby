@@ -109,6 +109,27 @@ deny:
 advisories:
     cargo-deny --manifest-path src-tauri/Cargo.toml check advisories
 
+# Check every program and library in a built app runs on the oldest macOS Bomby supports (tauri.conf.json)
+[group('check')]
+check-macos app="src-tauri/target/release/bundle/macos/Bomby.app":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    min=$(jq -r .bundle.macOS.minimumSystemVersion "{{ justfile_directory() }}/app/src-tauri/tauri.conf.json")
+    app="{{ app }}"; [[ $app = /* ]] || app="{{ justfile_directory() }}/app/$app"
+    plist=$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$app/Contents/Info.plist")
+    [[ $plist == "$min" ]] || { echo "Info.plist says macOS $plist, tauri.conf.json $min"; exit 1; }
+    bad=0; count=0
+    while IFS= read -r -d '' f; do
+      v=$(otool -l "$f" 2>/dev/null | awk '/LC_BUILD_VERSION/{f=1} f&&/minos/{print $2; exit}')
+      [[ -n $v ]] || continue
+      count=$((count + 1))
+      if [[ $(printf '%s\n%s\n' "$v" "$min" | sort -V | tail -1) != "$min" ]]; then
+        echo "needs macOS $v: ${f#"$app"/}"; bad=1
+      fi
+    done < <(find "$app" -type f \( -perm -u+x -o -name '*.dylib' -o -name '*.so' \) -print0)
+    [[ $bad == 0 ]] || { echo "Some files need a newer macOS than $min"; exit 1; }
+    echo "$count programs and libraries run on macOS $min or later"
+
 # Build the frontend as a release does (tauri.conf.json's beforeBuildCommand), into dist/
 [group('check')]
 [working-directory: 'app']

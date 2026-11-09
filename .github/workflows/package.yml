@@ -67,6 +67,9 @@ jobs:
       - name: Build the app, with the frozen agent
         run: just app build --bundles app
 
+      - name: Check every binary runs on the oldest supported macOS
+        run: just app check-macos "$PWD/$APP"
+
       - name: Check the frozen agent runs
         run: just agent check-frozen "$PWD/$APP/Contents/Resources/agent/bomby-agent"
 

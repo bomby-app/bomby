@@ -139,6 +139,11 @@ jobs:
           spctl --assess --type execute --verbose=4 "$APP"
           spctl --assess --type open --context context:primary-signature --verbose=4 "$DMG"
 
+      # Every program and library must run on the oldest macOS Bomby supports
+      # (minimumSystemVersion in tauri.conf.json), not only on the runner's.
+      - name: Check every binary runs on the oldest supported macOS
+        run: just app check-macos "$PWD/$APP"
+
       - name: Check the signed agent runs
         run: just agent check-frozen "$PWD/$APP/Contents/Resources/agent/bomby-agent"
 

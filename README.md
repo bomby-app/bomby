@@ -19,7 +19,7 @@
 
 Bomby is a Mac app you talk to. Say what you want done, and Bomby hands it to the coding agent already on your computer, keeps the conversation going while it works, and tells you how it went.
 
-Bomby is in beta and runs on Apple Silicon Macs.
+Bomby is in beta and runs on Apple Silicon Macs with macOS 14 or later.
 
 ## What it does
 
@@ -59,7 +59,7 @@ Claude Code is the default; ask for another one by name ("ask goose to..."). A p
 
 ### What you need
 
-- A Mac with Apple Silicon.
+- A Mac with Apple Silicon, on macOS 14 or later.
 - At least one agent from the list above. No agent yet? Install Claude Code:
 
   ```bash

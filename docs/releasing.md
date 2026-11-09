@@ -1,6 +1,6 @@
 # Releasing
 
-How a signed Bomby build is made. The workflow is `.github/workflows/release.yml`; the why is in [the decision](decisions/ship-the-agent-and-adapter-as-sidecars.md). Releases are macOS on Apple Silicon only. Changes that could break packaging are built unsigned first, on their pull request (`.github/workflows/package.yml`).
+How a signed Bomby build is made. The workflow is `.github/workflows/release.yml`; the why is in [the decision](decisions/ship-the-agent-and-adapter-as-sidecars.md). Releases are macOS 14 or later on Apple Silicon only: `minimumSystemVersion` in `tauri.conf.json` sets it, the LiveKit server is built for it (cgo would otherwise target the runner's macOS), and `just app check-macos` fails the build if any bundled program or library needs a newer macOS. Changes that could break packaging are built unsigned first, on their pull request (`.github/workflows/package.yml`).
 
 ## How it works
 

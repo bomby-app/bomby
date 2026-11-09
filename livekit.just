@@ -3,6 +3,8 @@
 version := "1.13.10"
 sha256 := "d1b93ced314b14654faceeb99627a79114b8ebe002bb5d620be4a185db83a4b2"
 binaries := justfile_directory() / "app/src-tauri/binaries"
+# The oldest macOS Bomby runs on (tauri.conf.json); cgo otherwise targets the build Mac's own.
+macos := `jq -r .bundle.macOS.minimumSystemVersion app/src-tauri/tauri.conf.json`
 # The source and Go's caches, kept out of Cargo's target/: CI's Rust cache trims that folder,
 # which would leave Go a partial module cache.
 work := justfile_directory() / ".cache/livekit-server"
@@ -24,7 +26,9 @@ build:
       *) echo "No LiveKit server build for $triple"; exit 1 ;;
     esac
     out="{{ binaries }}/livekit-server-$triple"
-    if [[ -x $out ]] && "$out" --version | grep -qx "livekit-server version {{ version }}"; then
+    minos() { otool -l "$1" | awk '/LC_BUILD_VERSION/{f=1} f&&/minos/{print $2; exit}'; }
+    if [[ -x $out ]] && "$out" --version | grep -qx "livekit-server version {{ version }}" \
+      && [[ $(minos "$out") == "{{ macos }}" ]]; then
       exit 0
     fi
     rm -rf "{{ work }}/src" && mkdir -p "{{ work }}/src" "{{ binaries }}"
@@ -33,10 +37,15 @@ build:
     tar -xzf "{{ work }}/src.tar.gz" -C "{{ work }}/src" --strip-components 1
     # cgo stays on: LiveKit's CPU stats need it on macOS (protocol/utils/hwstats).
     cd "{{ work }}/src"
+    # Built for the oldest macOS Bomby supports, not the build Mac's: cgo links with the
+    # SDK's version unless told otherwise (macOS 27 on the release runner).
     GOPATH="{{ work }}/go" GOFLAGS=-modcacherw CGO_ENABLED=1 GOOS=darwin GOARCH=$arch \
+      MACOSX_DEPLOYMENT_TARGET={{ macos }} CGO_CFLAGS="-mmacosx-version-min={{ macos }}" \
+      CGO_LDFLAGS="-mmacosx-version-min={{ macos }}" \
       go build -trimpath -ldflags "-s -w" -o "$out" ./cmd/server
     cp LICENSE "{{ binaries }}/livekit-server-LICENSE.txt"
     "$out" --version
+    echo "minimum macOS $(minos "$out")"
 
 # Print the version the app bundles
 version:
