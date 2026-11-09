@@ -33,6 +33,7 @@ const COMMANDS: &[&str] = &[
     "end_call",
     "save_message",
     "call_messages",
+    "search",
     "delete_call",
     "voice_settings",
     "set_voice_provider",

@@ -113,6 +113,28 @@ const MIGRATIONS: &[&str] = &[
         UNIQUE (project_id, number)
     );
     ",
+    // 8: what was said in calls, indexed for search (search.rs): FTS5 over messages' text,
+    // by trigrams, so any part of a word in any language matches, any case and accents
+    // aside. The triggers keep it current as lines are saved, grow and go with their call.
+    "
+    CREATE VIRTUAL TABLE messages_search USING fts5(
+        text, content = 'messages', content_rowid = 'id',
+        tokenize = 'trigram remove_diacritics 1'
+    );
+    INSERT INTO messages_search (messages_search) VALUES ('rebuild');
+    CREATE TRIGGER messages_search_insert AFTER INSERT ON messages BEGIN
+        INSERT INTO messages_search (rowid, text) VALUES (new.id, new.text);
+    END;
+    CREATE TRIGGER messages_search_delete AFTER DELETE ON messages BEGIN
+        INSERT INTO messages_search (messages_search, rowid, text)
+        VALUES ('delete', old.id, old.text);
+    END;
+    CREATE TRIGGER messages_search_update AFTER UPDATE OF text ON messages BEGIN
+        INSERT INTO messages_search (messages_search, rowid, text)
+        VALUES ('delete', old.id, old.text);
+        INSERT INTO messages_search (rowid, text) VALUES (new.id, new.text);
+    END;
+    ",
 ];
 
 /// The open database, shared by every command through Tauri state.

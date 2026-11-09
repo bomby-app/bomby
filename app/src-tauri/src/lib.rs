@@ -18,6 +18,7 @@ mod local_server;
 mod notifications;
 mod process;
 mod projects;
+mod search;
 mod settings;
 mod setup;
 mod sync;
@@ -123,6 +124,7 @@ pub fn run() {
             calls::save_message,
             calls::call_messages,
             calls::delete_call,
+            search::search,
             voice::voice_settings,
             voice::set_voice_provider,
             voice::set_voice,

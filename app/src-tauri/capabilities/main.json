@@ -45,6 +45,7 @@
     "allow-end-call",
     "allow-save-message",
     "allow-call-messages",
+    "allow-search",
     "allow-app-log",
     "allow-delete-call",
     "clipboard-manager:allow-read-text",
