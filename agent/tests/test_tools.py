@@ -13,7 +13,13 @@ from harnesses import CLAUDE_CODE, HARNESSES, OMP, OPENCODE, AgentName, Harness
 from sections import PLAIN
 from task_board import ATTRIBUTE, TaskBoard
 from tools import agents_note
-from tools.start_task import SHORTENED, fit_report, start_task
+from tools.start_task import (
+    SHORTENED,
+    TOO_LONG,
+    estimate_tokens,
+    fit_report,
+    start_task,
+)
 from voice_providers import GEMINI, OPENAI, RIME, VoiceProvider
 
 
@@ -238,9 +244,9 @@ def finished_report(provider: VoiceProvider, report: str) -> str:
 
 def test_on_gpt_live_a_long_report_is_cut_to_what_it_can_take() -> None:
     result = finished_report(OPENAI, LONG_REPORT)
-    limit = OPENAI.late_result_chars
+    limit = OPENAI.late_result_tokens
     assert limit is not None
-    assert len(result) <= limit
+    assert estimate_tokens(result) <= limit
     assert result.startswith("The wiki covers the team's clients.")
     assert result.endswith(SHORTENED)
     assert result.removesuffix(SHORTENED).endswith("."), "cut at a sentence's end"
@@ -256,10 +262,19 @@ def test_on_gpt_live_a_short_report_is_untouched() -> None:
 
 
 def test_a_report_without_sentences_is_cut_at_a_word() -> None:
-    cut = fit_report("word " * 300, 500)
-    assert len(cut) <= 500
+    cut = fit_report("word " * 300, 100)
+    assert estimate_tokens(cut) <= 100
     assert cut.removesuffix(SHORTENED).endswith("word")
 
 
-def test_a_long_task_still_leaves_the_start_of_the_report() -> None:
-    assert len(fit_report(LONG_REPORT, -1000)) > len(SHORTENED)
+def test_a_japanese_report_is_counted_by_its_characters_not_its_length() -> None:
+    # About a token a character: 600 characters is far over budget though under 1,600.
+    report = "ウィキはチームの顧客について書かれています。" * 30
+    cut = fit_report(report, 300)
+    assert estimate_tokens(cut) <= 300
+    assert cut.removesuffix(SHORTENED).endswith("。")
+
+
+def test_a_task_that_leaves_no_room_sends_a_short_note_instead() -> None:
+    assert fit_report(LONG_REPORT, 20) == TOO_LONG
+    assert fit_report(LONG_REPORT, -500) == TOO_LONG

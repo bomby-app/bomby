@@ -40,8 +40,8 @@ const BUN: &[(&str, &str, &str)] = &[
     ),
 ];
 
-// curl retries a timeout, 408, 429 and 5xx itself; this outlasts its 240 s of retries.
-const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(420);
+// Slow is fine, a stall isn't (see `download`); this only stops one that never ends.
+const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(900);
 const FAILED: &str = "Try again in a minute!";
 const STEP_TIMEOUT: Duration = Duration::from_secs(300);
 
@@ -161,23 +161,8 @@ fn runtime(dir: &Path, log: &Path) -> Result<PathBuf> {
     let url =
         format!("https://github.com/oven-sh/bun/releases/download/bun-v{BUN_VERSION}/{asset}.zip");
     let status = dir.join("bun.status");
-    let mut download = Command::new("curl");
-    download
-        // curl 8.7 won't retry an HTTP error over HTTP/2, which GitHub uses.
-        .args([
-            "-fsSL",
-            "--http1.1",
-            "--max-time",
-            "120",
-            "--retry",
-            "3",
-            "--retry-max-time",
-            "240",
-        ])
-        .args(["-w", "%{http_code}", "-o"])
-        .arg(&zip)
-        .arg(&url);
-    let downloaded = run_for(download, log, DOWNLOAD_TIMEOUT, Some(&status));
+    let _ = fs::remove_file(&zip);
+    let downloaded = run_for(download(&url, &zip), log, DOWNLOAD_TIMEOUT, Some(&status));
     let _ = fs::remove_file(&status);
     downloaded?;
     if sha256_of(&zip)? != *sha256 {
@@ -199,6 +184,20 @@ fn runtime(dir: &Path, log: &Path) -> Result<PathBuf> {
     let _ = fs::remove_dir_all(&unpacked);
     let _ = fs::remove_file(&zip);
     Ok(bun)
+}
+
+/// curl fetching `url` into `zip`, its HTTP code on stdout. It gives up on a stall (under
+/// 1 KB/s for 30 s), not on a slow line, and retries a stall, a timeout, 408, 429 and 5xx.
+fn download(url: &str, zip: &Path) -> Command {
+    let mut curl = Command::new("curl");
+    curl
+        // curl 8.7 won't retry an HTTP error over HTTP/2, which GitHub uses.
+        .args(["-fsSL", "--http1.1", "--retry", "3"])
+        .args(["--speed-limit", "1024", "--speed-time", "30"])
+        .args(["-w", "%{http_code}", "-o"])
+        .arg(zip)
+        .arg(url);
+    curl
 }
 
 fn sha256_of(file: &Path) -> Result<String> {
@@ -279,20 +278,27 @@ fn run_for(
     }
     match exit {
         Some(exit) if exit.success() => Ok(()),
-        _ => Err(Error::Invalid(failure(status))),
+        Some(exit) => Err(Error::Invalid(failure(status, exit.code()))),
+        None => Err(Error::Invalid(format!("{FAILED} (too slow)"))),
     }
 }
 
-/// `FAILED`, with curl's HTTP code in brackets, or "no connection" when nothing answered.
-fn failure(status: Option<&Path>) -> String {
+/// curl's exit code for a timeout, a stall included.
+const CURL_TIMED_OUT: i32 = 28;
+
+/// `FAILED`, with the HTTP error, "no connection" when nothing answered, or "too slow".
+fn failure(status: Option<&Path>, exit: Option<i32>) -> String {
     let code = status
         .and_then(|path| fs::read_to_string(path).ok())
         .map(|code| code.trim().to_owned())
         .filter(|code| code.len() == 3 && code.bytes().all(|b| b.is_ascii_digit()));
     match code.as_deref() {
+        Some(code) if code.starts_with('4') || code.starts_with('5') => {
+            format!("{FAILED} ({code})")
+        }
+        _ if status.is_some() && exit == Some(CURL_TIMED_OUT) => format!("{FAILED} (too slow)"),
         Some("000") => format!("{FAILED} (no connection)"),
-        Some(code) => format!("{FAILED} ({code})"),
-        None => FAILED.to_owned(),
+        _ => FAILED.to_owned(),
     }
 }
 
@@ -315,6 +321,14 @@ mod tests {
 
         assert!(fail("504").ends_with("Try again in a minute! (504)"));
         assert!(fail("000").ends_with("Try again in a minute! (no connection)"));
+        let mut stalled = Command::new("sh");
+        stalled.args(["-c", "printf 302; exit 28"]);
+        let message = run_for(stalled, &log, STEP_TIMEOUT, Some(&status)).unwrap_err();
+        assert!(
+            message
+                .to_string()
+                .ends_with("Try again in a minute! (too slow)")
+        );
         assert!(
             run(Command::new("false"), &log)
                 .unwrap_err()
@@ -322,6 +336,21 @@ mod tests {
                 .ends_with("minute!")
         );
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_slow_download_runs_on_and_a_stalled_one_is_retried() {
+        let curl = download("https://example.com/bun.zip", Path::new("/tmp/bun.zip"));
+        let args: Vec<_> = curl.get_args().map(|a| a.to_string_lossy()).collect();
+        let after = |flag: &str| args.iter().position(|a| a == flag).map(|i| &args[i + 1]);
+
+        assert!(
+            !args.iter().any(|a| a == "--max-time"),
+            "no limit on a slow line"
+        );
+        assert_eq!(after("--speed-limit").map(|a| a.as_ref()), Some("1024"));
+        assert_eq!(after("--speed-time").map(|a| a.as_ref()), Some("30"));
+        assert_eq!(after("--retry").map(|a| a.as_ref()), Some("3"));
     }
 
     #[test]

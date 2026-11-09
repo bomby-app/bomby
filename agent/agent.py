@@ -81,7 +81,7 @@ async def entrypoint(ctx: JobContext) -> None:
     # The voice model, its voice and, on a resumed call, the conversation so far.
     options = CallOptions.from_job(job, os.environ)
     runners = CallRunners.for_job(
-        job, short_reports=options.provider.late_result_chars is not None
+        job, short_reports=options.provider.late_result_tokens is not None
     )
     model_name = options.provider.model
     ctx.log_context_fields = {"room": ctx.room.name, "model": model_name}

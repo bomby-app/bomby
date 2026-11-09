@@ -134,8 +134,8 @@ class VoiceProvider(ABC):
     """Whether a second model, the backend, reasons and calls the tools, with its own
     instructions (GPT-Live's response model), so the voice model never sees the tools.
     Gemini and Prism do both themselves and get none."""
-    late_result_chars: ClassVar[int | None] = None
-    """Most characters a late `start_task` result may take, its task included; `None` for no limit."""
+    late_result_tokens: ClassVar[int | None] = None
+    """Most estimated tokens a late `start_task` result may take, its task included; `None` for no limit."""
     backend_style: ClassVar[Style] = MARKDOWN
     """With `delegates`, how the backend's instructions are written
     (`prompts/<id>/backend.md` and what each call adds)."""
