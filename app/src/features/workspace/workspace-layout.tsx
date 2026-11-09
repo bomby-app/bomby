@@ -28,7 +28,7 @@ import { cn } from "@/lib/utils"
 
 import { folderChanges, folderInfo } from "./api"
 import type { ExtraTab } from "./extra-tab"
-import { projectPanels } from "./panel-requests"
+import { panelRequest, projectPanels } from "./panel-requests"
 import type { Section } from "./sections"
 import { useFolderVersion, useReading } from "./use-folder"
 
@@ -71,10 +71,20 @@ export function WorkspaceLayout({
   const column = usePanelRef()
   const contents = useRef<HTMLDivElement>(null)
   // The panels open, in the order they stack, and the one taking the whole column.
-  const [open, setOpen] = useState<string[]>([])
+  // A panel asked for before this page opened (`panelRequest`) starts open.
+  const [requested] = useState(() => {
+    const request = panelRequest.get()
+    return request?.projectId === project.id ? request.id : null
+  })
+  const [open, setOpen] = useState<string[]>(requested ? [requested] : [])
   const [maximized, setMaximized] = useState<string | null>(null)
   // Every panel that has opened: each mounts the first time and stays.
-  const [mounted, setMounted] = useState<ReadonlySet<string>>(new Set())
+  const [mounted, setMounted] = useState<ReadonlySet<string>>(
+    () => new Set(requested ? [requested] : [])
+  )
+  useEffect(() => {
+    if (requested) panelRequest.set(null)
+  }, [requested])
   // The column's width when it was last shown, which its contents keep while it's hidden.
   const [width, setWidth] = useState(0)
   const [shown, setShown] = useState(false)

@@ -12,3 +12,19 @@ export type ProjectPanels = {
 
 /** The open project's panels; null while no project's page is open. */
 export const projectPanels = createStore<ProjectPanels | null>(null)
+
+/**
+ * A panel to open with a project's page that isn't open yet (the to-do toast's Show, from
+ * another project): its workspace starts with it open, then lets it go.
+ */
+export const panelRequest = createStore<{
+  projectId: number
+  id: string
+} | null>(null)
+
+/** Shows the panel `id` of `projectId`'s page: now if it's open, else once it opens. */
+export function showProjectPanel(projectId: number, id: string) {
+  const panels = projectPanels.get()
+  if (panels?.projectId === projectId) panels.show(id)
+  else panelRequest.set({ projectId, id })
+}

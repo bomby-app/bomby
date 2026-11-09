@@ -27,7 +27,10 @@ import {
   useOpenCount,
 } from "@/features/todos/todos-view"
 import type { ExtraTab } from "@/features/workspace/extra-tab"
-import { projectPanels } from "@/features/workspace/panel-requests"
+import {
+  projectPanels,
+  showProjectPanel,
+} from "@/features/workspace/panel-requests"
 import { WorkspaceLayout } from "@/features/workspace/workspace-layout"
 
 import { AppHeader } from "./app-header"
@@ -71,7 +74,14 @@ export function MainPanel({
   }
 
   const view = projectView(project, selection, active, call, onSelect)
-  return <ProjectLayout key={project.id} project={project} view={view} />
+  return (
+    <ProjectLayout
+      key={project.id}
+      project={project}
+      view={view}
+      onSelect={onSelect}
+    />
+  )
 }
 
 /**
@@ -81,9 +91,11 @@ export function MainPanel({
 function ProjectLayout({
   project,
   view,
+  onSelect,
 }: {
   project: Project
   view: ProjectView
+  onSelect: (selection: Selection) => void
 }) {
   const extensions = useExtensions()
   const todosOn = isOn("todos", project.extensions, extensions)
@@ -102,9 +114,11 @@ function ProjectLayout({
       {todosOn && (
         <TodoDialogs
           projectId={project.id}
+          // From anywhere: the toast outlives moving to another project.
           onShow={() => {
-            const panels = projectPanels.get()
-            if (panels?.projectId === project.id) panels.show("todos")
+            showProjectPanel(project.id, "todos")
+            if (projectPanels.get()?.projectId !== project.id)
+              onSelect({ kind: "project", projectId: project.id })
           }}
         />
       )}
