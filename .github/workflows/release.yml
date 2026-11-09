@@ -169,7 +169,10 @@ jobs:
         run: |
           version=$(jq -r .version app/src-tauri/tauri.conf.json)
           tag="v$version"
-          files=("$DMG" "$APP.tar.gz" "$RUNNER_TEMP/latest.json")
+          # The DMG twice: by version, and as Bomby.dmg, a name that never changes, so
+          # releases/latest/download/Bomby.dmg always downloads the newest one.
+          cp "$DMG" "$RUNNER_TEMP/Bomby.dmg"
+          files=("$DMG" "$RUNNER_TEMP/Bomby.dmg" "$APP.tar.gz" "$RUNNER_TEMP/latest.json")
           if draft=$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null); then
             if [ "$draft" != "true" ]; then
               echo "::error::$tag is already published; bump the version in tauri.conf.json"
