@@ -79,6 +79,7 @@ pub fn run() {
             tauri::async_runtime::spawn(agents::refresh_in_background(app.handle().clone()));
             adapters::update_in_background(app.handle());
             updates::check_in_background(app.handle());
+            windows::place_main(app.handle())?;
             Ok(())
         })
         // Closing the main window hides it: the app, and any call in it, keeps running in

@@ -83,7 +83,9 @@ export function CommandPalette({
       onOpenChange={onOpenChange}
       title="Search"
       description="Find a project or a conversation, or run a command."
-      className="sm:max-w-xl"
+      // Its top is fixed where the palette at its tallest (the field and a full list) sits
+      // centered in the window, so it grows down as results come, and never moves.
+      className="top-[max(1rem,calc(50%-(min(26rem,60vh)+3.25rem)/2))] sm:max-w-xl"
     >
       {/* Mounted only while open, so every opening starts empty. */}
       {open && (

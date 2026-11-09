@@ -26,7 +26,7 @@ Checked 2026-11-03/04 against Tauri 2.12.5, `tauri-codegen` 2.7.4, `wry` 0.57.1,
 
 ## Windows and commands
 
-- `main` comes from config; `src/windows.rs` builds others with `WebviewWindowBuilder`. Each loads its own Vite page listed in `build.rolldownOptions.input` (Vite 8).
+- `main` comes from config, hidden (`visible: false`): at startup `place_main` (`src/windows.rs`) sizes it to 80% of its screen's work area (`Monitor::work_area`, physical pixels, Tauri 2.12.5), at most 1600 × 1040 and at least the config's minimum, centers it there and shows it; a window it can't place still shows. Size and place aren't remembered between launches. `src/windows.rs` builds the other windows with `WebviewWindowBuilder`. Each loads its own Vite page listed in `build.rolldownOptions.input` (Vite 8).
 - `open_settings` creates its window hidden, centers it on the main window in physical pixels, then shows it. It is async because synchronous window creation can deadlock Windows.
 - `zoomHotkeysEnabled` / `zoom_hotkeys_enabled(true)` enables Cmd/Ctrl + = - 0 and needs `core:webview:allow-set-webview-zoom` on macOS/Linux.
 - `windows/mount.tsx` suppresses the web context menu except in text fields and selections, preserving Cut/Copy/Paste there. Window close from JS needs `core:window:allow-close`.
