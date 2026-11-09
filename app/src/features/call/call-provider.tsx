@@ -31,6 +31,7 @@ import {
   saveMessage,
 } from "./api"
 import { MuteShortcut } from "./mute"
+import { forgetSavedCall } from "./saved-call-view"
 import { lineId, roleOf } from "./transcript"
 
 export type ActiveCall = {
@@ -112,6 +113,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const finish = useCallback(
     async (id: number) => {
       setActive(null)
+      forgetSavedCall(id)
       await endCall(id)
       await refresh()
     },
@@ -142,6 +144,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       opened = await openCall(projectId, resumeCallId)
       tokens.join(opened)
       const history = resumeCallId ? await callMessages(opened) : []
+      forgetSavedCall(opened)
       setActive({ projectId, callId: opened, startedAt: Date.now(), history })
       await session.start({ signal: aborter.signal })
       await refresh() // the new call shows in the tree

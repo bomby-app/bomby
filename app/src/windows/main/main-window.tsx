@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { startTransition, Suspense, useEffect, useMemo, useState } from "react"
 
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { CallProvider } from "@/features/call/call-provider"
@@ -39,7 +39,13 @@ function Workspace() {
   // What each extension answers Bomby over RPC while a call is on.
   const hostedRpc = useHostedMcpRpc()
   const extensionRpc = useMemo(() => [TODOS_RPC, ...hostedRpc], [hostedRpc])
-  const [selection, setSelection] = useState<Selection>(null)
+  const [selection, setSelected] = useState<Selection>(null)
+  // Moving to another page is a Transition, so the page before it stays until the next is
+  // ready, a past call's lines read (`SavedCallView` suspends), rather than showing it
+  // empty first (react.dev, Suspense, "Preventing already revealed content from hiding").
+  function setSelection(next: Selection) {
+    startTransition(() => setSelected(next))
+  }
   const [creating, setCreating] = useState(false)
   const [searching, setSearching] = useState(false)
 
@@ -76,11 +82,14 @@ function Workspace() {
             onSearch={() => setSearching(true)}
           />
           <SidebarInset className="overflow-hidden">
-            <MainPanel
-              selection={selection}
-              onSelect={setSelection}
-              onNewProject={() => setCreating(true)}
-            />
+            {/* Above every page, so it's always revealed and a Transition keeps it. */}
+            <Suspense fallback={null}>
+              <MainPanel
+                selection={selection}
+                onSelect={setSelection}
+                onNewProject={() => setCreating(true)}
+              />
+            </Suspense>
           </SidebarInset>
         </SidebarProvider>
         <CommandPalette
