@@ -1,3 +1,13 @@
-[pre-start]
+# pre-start runs as a pipeline: each step waits for the one before it.
+
+# Copy gitignored files (agent/.env, caches) from the main worktree first,
+# so install and check see them.
+[[pre-start]]
 copy = "wt step copy-ignored"
+
+[[pre-start]]
 install = "just install"
+
+# Check last, once dependencies are in place.
+[[pre-start]]
+check = "just check"
