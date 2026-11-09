@@ -27,8 +27,9 @@ logger = logging.getLogger("bomby.extensions")
 
 SOCKET_ENV = "BOMBY_TOKENS"
 SECRET_ENV = "BOMBY_TOKENS_SECRET"
-# The core may refresh with the vendor first, which is a round trip or two over the web.
-TIMEOUT_S = 20
+# The core may refresh with the vendor first, which it gives up on after 15 s
+# (`REQUEST_TIMEOUT` in `oauth.rs`), so a slow vendor comes back as its line, not a timeout.
+TIMEOUT_S = 30
 # The most a reply may weigh: a token and its expiry, or a line for the user.
 MAX_REPLY = 64 * 1024
 

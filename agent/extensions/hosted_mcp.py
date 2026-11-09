@@ -8,7 +8,13 @@ beside `open_<id>_link`, which opens a sign-in link a tool handed back in the us
 browser, through the app (`<id>.open_link` over RPC, `bridge.py`).
 
 The core includes one in a call only once it's connected, so a call that has it can always
-ask for a token.
+ask for a token. When it can't get one anyway (the sign-in expired, the app didn't answer),
+the request goes out without it and the server turns it away, which fails only that request;
+the tool then raises the core's line ("Connect Zapier again in Settings.") for the model, and
+the connection stays up for when a token comes back.
+
+`TransportStreams` is the MCP SDK's private type for what `MCPServer.client_streams` yields;
+LiveKit's own servers import it the same way (`livekit/agents/llm/mcp.py`).
 """
 
 import logging
@@ -21,7 +27,7 @@ from urllib.parse import urlsplit
 
 import httpx2
 from livekit.agents.llm import ToolError, Toolset, function_tool
-from livekit.agents.llm.mcp import MCPServer, MCPToolset
+from livekit.agents.llm.mcp import MCPServer, MCPTool, MCPToolOptions, MCPToolset
 from mcp.client._transport import TransportStreams
 from mcp.client.streamable_http import streamable_http_client
 
@@ -68,16 +74,25 @@ def allowed(url: str, hosts: tuple[str, ...]) -> bool:
 @final
 class BearerAuth(httpx2.Auth):
     """Sends the extension's access token, asking the core for a newer one before it
-    expires and once more when the server turns one away."""
+    expires and once more when the server turns one away. It never raises: without a token
+    the request goes out without one, and `failure` keeps the core's line for the tool that
+    asked."""
 
     def __init__(self, tokens: Tokens, extension: str) -> None:
         self._tokens = tokens
         self._extension = extension
         self._token: Token | None = None
         self._expires_at: float | None = None
+        self.failure: str | None = None
+        """Why the last request had no token, until one comes again."""
 
-    async def _fetch(self, stale: str | None) -> str:
-        token = await self._tokens.get(self._extension, stale)
+    async def _fetch(self, stale: str | None) -> str | None:
+        try:
+            token = await self._tokens.get(self._extension, stale)
+        except TokenError as e:
+            self.failure = str(e)
+            return None
+        self.failure = None
         self._token = token
         self._expires_at = (
             time.monotonic() + token.expires_in
@@ -86,7 +101,7 @@ class BearerAuth(httpx2.Auth):
         )
         return token.token
 
-    async def _current(self) -> str:
+    async def _current(self) -> str | None:
         if self._token is None:
             return await self._fetch(None)
         if (
@@ -96,15 +111,22 @@ class BearerAuth(httpx2.Auth):
             return await self._fetch(self._token.token)
         return self._token.token
 
+    @staticmethod
+    def _authorize(request: httpx2.Request, token: str | None) -> None:
+        if token is None:
+            _ = request.headers.pop("Authorization", None)
+        else:
+            request.headers["Authorization"] = f"Bearer {token}"
+
     @override
     async def async_auth_flow(
         self, request: httpx2.Request
     ) -> AsyncGenerator[httpx2.Request, httpx2.Response]:
         sent = await self._current()
-        request.headers["Authorization"] = f"Bearer {sent}"
+        self._authorize(request, sent)
         response = yield request
-        if response.status_code == 401:
-            request.headers["Authorization"] = f"Bearer {await self._fetch(sent)}"
+        if response.status_code == 401 and sent is not None:
+            self._authorize(request, await self._fetch(sent))
             yield request
 
 
@@ -112,10 +134,37 @@ class BearerAuth(httpx2.Auth):
 class HostedMcpServer(MCPServer):
     """A vendor's MCP server over Streamable HTTP, with the core's tokens."""
 
-    def __init__(self, url: str, auth: httpx2.Auth) -> None:
+    def __init__(self, url: str, auth: BearerAuth) -> None:
         super().__init__(client_session_timeout_seconds=REQUEST_TIMEOUT_S)
         self.url = url
         self._auth = auth
+
+    @override
+    async def list_tools(
+        self, *, tool_options: dict[str, MCPToolOptions] | None = None
+    ) -> list[MCPTool]:
+        tools = await super().list_tools(tool_options=tool_options)
+        return [self._explained(tool) for tool in tools]
+
+    def _explained(self, tool: MCPTool) -> MCPTool:
+        """`tool`, raising the core's line when its request went out without a token."""
+        auth, info = self._auth, tool.info
+
+        async def call(raw_arguments: dict[str, object]) -> object:
+            try:
+                return await tool(raw_arguments)
+            except Exception as e:
+                if auth.failure is not None:
+                    raise ToolError(auth.failure) from e
+                raise
+
+        return function_tool(
+            call,
+            raw_schema=info.raw_schema,
+            flags=info.flags,
+            on_duplicate=info.on_duplicate,
+            duplicate_scope=info.duplicate_scope,
+        )
 
     @override
     def client_streams(self) -> AbstractAsyncContextManager[TransportStreams]:

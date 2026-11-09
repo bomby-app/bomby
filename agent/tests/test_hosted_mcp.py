@@ -36,9 +36,13 @@ class FakeTokens:
         self.issued = 0
         self.asks: list[tuple[str, str | None]] = []
         self.expires_in = expires_in
+        self.refusal: str | None = None
+        """While set, the core's line instead of a token."""
 
     async def get(self, extension: str, stale: str | None = None) -> Token:
         self.asks.append((extension, stale))
+        if self.refusal is not None:
+            raise TokenError(self.refusal)
         if self.issued == 0 or stale == f"t{self.issued}":
             self.issued += 1
         return Token(token=f"t{self.issued}", expires_in=self.expires_in)
@@ -176,6 +180,30 @@ def test_a_token_about_to_expire_is_swapped_before_the_request() -> None:
     assert tokens.asks == [("zapier", None), ("zapier", "t1")]
 
 
+def test_without_a_token_the_request_goes_out_bare_and_the_line_is_kept() -> None:
+    tokens = FakeTokens()
+    tokens.refusal = "Connect Zapier again in Settings."
+    auth = BearerAuth(tokens, "zapier")
+    seen: list[str | None] = []
+
+    def handle(request: httpx2.Request) -> httpx2.Response:
+        seen.append(request.headers.get("Authorization"))
+        return httpx2.Response(401)
+
+    async def run() -> int:
+        async with httpx2.AsyncClient(
+            auth=auth, transport=httpx2.MockTransport(handle)
+        ) as client:
+            return (await client.get("https://mcp.test/")).status_code
+
+    assert asyncio.run(run()) == 401
+    assert seen == [None], "sent once, without a token, and not retried"
+    assert auth.failure == "Connect Zapier again in Settings."
+    tokens.refusal = None
+    _ = asyncio.run(run())
+    assert auth.failure is None, "a token again clears the line"
+
+
 @pytest.fixture
 def socket_dir() -> Iterator[str]:
     # Short: a Unix socket's path is limited to 104 bytes on macOS.
@@ -217,7 +245,7 @@ def test_the_socket_asks_with_the_runs_secret_and_reads_the_token(
     assert seen == [{"secret": "sekrit", "extension": "zapier", "stale": "old"}]
 
 
-def test_the_cores_refusal_reaches_the_model_as_is(socket_dir: str) -> None:
+def test_the_cores_refusal_comes_back_as_is(socket_dir: str) -> None:
     path = os.path.join(socket_dir, "s")
     _, start = serve_once(path, b'{"error": "Connect Zapier again in Settings."}')
 
@@ -315,3 +343,34 @@ def test_the_servers_tools_load_and_run_with_the_cores_token(
     assert "sent to me@example.com" in result
     assert ("zapier", "t1") in tokens.asks
     assert "Bearer t2" in app.seen
+
+
+def test_a_lost_sign_in_mid_call_reaches_the_model_and_the_call_recovers(
+    mcp_server: tuple[str, list[str], RequireBearer],
+) -> None:
+    url, valid, _ = mcp_server
+    tokens = FakeTokens()
+
+    async def run() -> tuple[str, str]:
+        toolset = MCPToolset(
+            id="zapier_mcp",
+            mcp_server=HostedMcpServer(url, BearerAuth(tokens, "zapier")),
+        )
+        try:
+            _ = await toolset.setup()
+            [tool] = [t for t in toolset.tools if isinstance(t, RawFunctionTool)]
+            send = cast(Callable[..., Awaitable[str]], tool)
+            # The vendor turns the token away and the core can't refresh it.
+            valid[0] = "t2"
+            tokens.refusal = "Zapier's sign-in expired. Connect it again in Settings."
+            with pytest.raises(ToolError) as refused:
+                _ = await send({"to": "me@example.com"})
+            # Connected again: the same connection carries on.
+            tokens.refusal = None
+            return str(refused.value), await send({"to": "me@example.com"})
+        finally:
+            await toolset.aclose()
+
+    message, result = asyncio.run(run())
+    assert message == "Zapier's sign-in expired. Connect it again in Settings."
+    assert "sent to me@example.com" in result
