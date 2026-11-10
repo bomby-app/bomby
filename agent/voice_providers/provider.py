@@ -147,6 +147,12 @@ class VoiceProvider(ABC):
         super().__init_subclass__()
         check_options(cls.__name__, cls.options)
 
+    @property
+    def tool_style(self) -> Style:
+        """How its tools' results are written: for the model that calls them, the backend
+        for a provider that `delegates`."""
+        return self.backend_style if self.delegates else self.prompt_style
+
     def recall_hint(self, style: Style) -> str:
         """How the memory note in the prompt says to look up the rest: with the recall tool
         for a model that calls its tools itself."""

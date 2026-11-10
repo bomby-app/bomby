@@ -160,7 +160,7 @@ async def entrypoint(ctx: JobContext) -> None:
     extensions = CallExtensions.for_call(
         job.extensions if job else {},
         RoomBridge(ctx.room),
-        provider.backend_style if provider.delegates else provider.prompt_style,
+        provider.tool_style,
         SocketTokens.from_env(),
     )
     logger.info("extensions %s", ", ".join(extensions.ids) or "none")

@@ -143,6 +143,7 @@ class Memory:
         user_name: str = "",
         saves: bool = True,
         style: Style = MARKDOWN,
+        recall_style: Style = MARKDOWN,
     ) -> None:
         self._client: AsyncZep = client
         self._user_uuid: str = user_uuid
@@ -150,8 +151,10 @@ class Memory:
         self._user_name: str = user_name
         # False on an incognito call: nothing is ever written.
         self._saves: bool = saves
-        # How the voice model reads facts, in its prompt and recall's results.
+        # How facts are written: in the voice model's prompt, and in recall's results for
+        # the model that calls the tool (the backend, for a provider that delegates).
         self._style: Style = style
+        self._recall_style: Style = recall_style
         self._on_unavailable: Callable[[], Awaitable[None]] | None = None
         self._flagged: bool = False
         self._profile_update: asyncio.Task[None] | None = None
@@ -198,6 +201,7 @@ class Memory:
                     options.user_name,
                     saves,
                     options.provider.prompt_style,
+                    options.provider.tool_style,
                 )
                 remembered = await memory.remembered()
         except Exception as e:
@@ -242,7 +246,7 @@ class Memory:
             return "You can't remember that right now."
         if not facts:
             return "Nothing remembered about that. Ask the user."
-        return "\n".join(_fact(edge, self._style) for edge in facts)
+        return "\n".join(_fact(edge, self._recall_style) for edge in facts)
 
     async def _summary(self) -> str:
         try:
