@@ -44,7 +44,7 @@ export type ActiveCall = {
 }
 
 /** What a start is for: a project, and the call to resume if any. */
-export type CallRequest = { projectId: number; resumeCallId?: number }
+type CallRequest = { projectId: number; resumeCallId?: number }
 
 type CallState = {
   /** The call the session is on, from its start until the session disconnects. */

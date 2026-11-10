@@ -32,7 +32,7 @@ export function roleOf(message: ReceivedMessage): "user" | "agent" | null {
  * like a live one. The transcript only reads `from.isLocal` to put the user's lines on the
  * right, so that is all the stand-in participant carries.
  */
-export function toReceived(saved: SavedMessage): ReceivedMessage {
+function toReceived(saved: SavedMessage): ReceivedMessage {
   return {
     id: String(saved.id),
     timestamp: saved.createdAt,

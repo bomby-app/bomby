@@ -4,7 +4,7 @@ import type { SVGProps } from "react"
 // Logos of the agents Bomby works with, for Settings > Agents, drawn in `currentColor` so
 // they follow the theme like text. An agent without one here gets a neutral icon.
 
-export function ClaudeCodeLogo(props: SVGProps<SVGSVGElement>) {
+function ClaudeCodeLogo(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" {...props}>
       <path

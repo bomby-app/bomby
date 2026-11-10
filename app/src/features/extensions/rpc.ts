@@ -18,7 +18,7 @@ export class Refusal extends Error {}
 export type RpcCall = { projectId: number; callId: number }
 
 /** One operation: the request's payload (parsed JSON) and the call it's on, to an answer. */
-export type RpcHandler = (payload: unknown, call: RpcCall) => Promise<unknown>
+type RpcHandler = (payload: unknown, call: RpcCall) => Promise<unknown>
 
 /** An extension's operations, by name: `todos` with `add` answers `bomby.todos.add`. */
 export type ExtensionRpc = { id: string; handlers: Record<string, RpcHandler> }

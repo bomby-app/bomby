@@ -42,7 +42,7 @@ function text(value: unknown, what: string): string | undefined {
 }
 
 /** What `todos.list` answers (`Listing` in `agent/extensions/todos.py`). */
-export type Listing = { todos: TodoLine[]; omitted: number }
+type Listing = { todos: TodoLine[]; omitted: number }
 
 /**
  * The newest that fit in one answer, oldest first, and how many older ones were left out:

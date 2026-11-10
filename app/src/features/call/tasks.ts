@@ -33,7 +33,7 @@ export function useTasks(): Task[] {
 }
 
 /** A task's full request: still being read, read, or the agent couldn't say. */
-export type TaskRequest =
+type TaskRequest =
   | { state: "reading" }
   | { state: "read"; text: string }
   | { state: "failed" }

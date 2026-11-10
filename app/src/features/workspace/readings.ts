@@ -25,7 +25,7 @@ type Slot = {
   touched: number
 }
 
-export type Readings = {
+type Readings = {
   snapshot: (key: string) => Reading<unknown>
   subscribe: (key: string, listener: () => void) => () => void
   /**

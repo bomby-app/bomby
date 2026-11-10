@@ -82,7 +82,7 @@ export function onCallRenamed(
 }
 
 /** A room's agent job crashed, with why (src-tauri/src/calls.rs, `AGENT_CRASHED`). */
-export type AgentCrashed = { room: string; reason: string }
+type AgentCrashed = { room: string; reason: string }
 
 /** Calls `handler` when a call's agent job crashes. Returns the unlisten. */
 export function onAgentCrashed(handler: (crash: AgentCrashed) => void) {

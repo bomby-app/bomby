@@ -40,7 +40,7 @@ const WorkspaceColumn = lazy(() =>
 )
 
 /** Shows or hides the Terminal panel. */
-export const TERMINAL_SHORTCUT = commandShortcut("j")
+const TERMINAL_SHORTCUT = commandShortcut("j")
 
 /** The column's width when it first opens, and the least it can be dragged to. */
 const OPEN_SIZE = "42%"

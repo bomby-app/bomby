@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils"
 import { log, renameCall } from "./api"
 
 /** The core's limit on a call's name (`MAX_NAME_LEN` in `src-tauri/src/calls.rs`). */
-export const NAME_MAX = 60
+const NAME_MAX = 60
 
 /** The call as renaming it needs it. */
 type NamedCall = { id: number; name: string | null; startedAt: number }

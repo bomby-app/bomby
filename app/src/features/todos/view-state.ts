@@ -26,7 +26,7 @@ export type Draft = Words & {
  */
 export type Composing = Words & { announce: boolean }
 
-export type TodosViewState = {
+type TodosViewState = {
   search: string
   filter: Filter
   showDone: boolean
