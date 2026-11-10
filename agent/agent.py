@@ -61,11 +61,24 @@ class Assistant(Agent):
         _ = self.session.generate_reply(instructions=greeting)  # pyright: ignore[reportUnknownMemberType]
 
 
+def never_full() -> float:
+    """The worker's load, as LiveKit asks for it: none, however busy the Mac is.
+
+    LiveKit's own measures the whole machine's CPU and, outside dev mode, reports the
+    worker full above 0.7 of it. The server doesn't dispatch a call to a full worker and
+    never tries again, so a call started while a build ran failed with "Agent did not join
+    the room". That check shares load between a fleet's workers; one user's one worker has
+    nobody to pass a call to (docs/livekit-notes.md)."""
+    return 0.0
+
+
 # One user, one call at a time: keep one job process warm instead of the default pool
 # (livekit-agents warms several in production mode; 17 on this Mac, each a full Python).
 # Its health check server listens on this machine only, on any free port, so it never
 # clashes with another worker or shows up on the network.
-server = AgentServer(num_idle_processes=1, host="127.0.0.1", port=0)
+server = AgentServer(
+    num_idle_processes=1, host="127.0.0.1", port=0, load_fnc=never_full
+)
 
 # Explicit dispatch: the app names this agent in each call's token, with the project in
 # the dispatch metadata. Rooms without it get no agent.
