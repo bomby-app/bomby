@@ -46,7 +46,7 @@ Sources:
 ## Language
 
 - Native-audio Live selects spoken language automatically; system instructions can restrict it. The tone prompts (`prompts/gemini/<tone>.md`) keep English unless the user switches.
-- `agent.py` passes input transcription hint `AudioTranscriptionConfig(language_codes=["en-US"])` after noisy audio produced incorrect transcripts.
+- `voice_providers/gemini.py` passes input transcription hint `AudioTranscriptionConfig(language_codes=["en-US"])` after noisy audio produced incorrect transcripts.
 - Gemini sends user transcription around the start of its answer, so the user's line appears with the agent's turn. LiveKit realtime models provide no interim user transcript; a separate STT would be needed to avoid the delay, and the owner chose not to add one.
 
 ## Prompting

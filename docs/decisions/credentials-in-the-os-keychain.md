@@ -10,7 +10,7 @@ The app needs the LiveKit server URL, API key and API secret to mint call tokens
 
 - The core keeps them in the OS secure store (Keychain, Credential Manager, Secret Service) through the `keyring` crate, as one entry.
 - The page can save, replace or remove them, and can see the URL, the key and whether a secret is saved. The secret never comes back to the page.
-- Only the settings window may call the credentials commands (`capabilities/settings.json`).
+- The settings window may call the credentials commands, and so may the main window, for the first-run splash's keys step (`capabilities/*.json`).
 
 ## Why
 

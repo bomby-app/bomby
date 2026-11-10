@@ -13,5 +13,5 @@ The owner wanted to choose how Bomby talks: Sharp, Chatty or Playful, in Setting
 
 ## Consequences
 
-- A change to what Bomby does is made in all three, each in its own voice; `test_every_tone_keeps_the_same_rules_and_sections` keeps the rules and sections the same.
+- A change to what Bomby does is made in all three, each in its own voice; `test_every_tone_keeps_its_providers_rules_and_sections` keeps a provider's rules and sections the same across its tones.
 - A new tone is a file, a `Tone` value in `settings.rs` and `call_options.py`, and a Select item.

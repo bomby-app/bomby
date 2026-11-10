@@ -8,10 +8,10 @@ We need full Claude Code (shell, files, git, web, the user's settings and hooks)
 
 ## Decision
 
-Run `claude-agent-acp` as a child process (pinned in `agent/adapters/`) and drive it over ACP v1 from `ClaudeRunner`. Pass Claude the shell environment minus the agent's `.env` keys, `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` and `CLAUDECODE`, so it signs in with the user's Claude plan login rather than billing an API key.
+Run `claude-agent-acp` as a child process (pinned in `agent/adapters/`) and drive it over ACP v1 from `AcpRunner`. Pass Claude the shell environment minus the agent's `.env` keys, `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` and `CLAUDECODE`, so it signs in with the user's Claude plan login rather than billing an API key.
 
 ## Consequences
 
-- The adapter is an npm tool the machine must have (`just tools`).
+- The adapter is an npm package compiled into one program: Set up installs it on the user's Mac ([decision](install-adapters-on-setup.md)), and `just agent install` builds the repo's copy for console runs.
 - Claude loads the user's global `CLAUDE.md`, hooks and settings. That is the point (full Claude), but hooks run for every task.
 - Stay on ACP v1: the adapter's v2 is a draft and the Python SDK speaks v1.
