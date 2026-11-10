@@ -142,10 +142,18 @@ export function WorkspaceColumn({
     )
   }
 
+  // Outside a repository there are no changes, whatever was read when it was one: Changes
+  // says so, and the tree marks nothing.
+  const repo = info.data?.repo
+  const repoChanges = repo ? changes.data : null
   // A failed read with nothing read before it fills Changes and Files with its error. Once
   // they have shown something, they keep showing it, and a toast says the latest read
-  // failed (once per error, while one of them is in sight).
-  const { blocking: failed, stale } = failureOf(info, changes)
+  // failed (once per error, while one of them is in sight). Changes aren't read outside a
+  // repository, so an old failure of theirs doesn't count there.
+  const { blocking: failed, stale } = failureOf(
+    info,
+    ...(repo ? [changes] : [])
+  )
   const staleInSight =
     shown && (visible("changes") || visible("files")) ? stale : null
   useEffect(() => {
@@ -167,11 +175,13 @@ export function WorkspaceColumn({
           actions: folderPicker,
           body: failed ? (
             <ErrorCard message={failed} className="m-auto max-w-xs" />
+          ) : repo === false && folder !== undefined ? (
+            <NotARepository folder={folder} others={folders.length > 1} />
           ) : (
-            changes.data && (
+            repoChanges && (
               <Suspense>
                 <ChangesView
-                  changes={changes.data}
+                  changes={repoChanges}
                   branch={info.data?.branch ?? null}
                 />
               </Suspense>
@@ -193,7 +203,7 @@ export function WorkspaceColumn({
                   projectId={projectId}
                   folder={folder}
                   version={version}
-                  statuses={treeStatuses(changes.data)}
+                  statuses={treeStatuses(repoChanges)}
                 />
               </Suspense>
             ),
@@ -485,6 +495,29 @@ function TerminalTabs({
         <Plus />
       </HeaderButton>
     </>
+  )
+}
+
+/** Changes for a folder outside git: what it is, and where changes would come from. */
+function NotARepository({
+  folder,
+  others,
+}: {
+  folder: string
+  /** The project has other folders, which the picker in the header chooses. */
+  others: boolean
+}) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-1.5 px-6 text-center">
+      <p className="text-sm font-medium">
+        {folderName(folder)} isn't a git repository.
+      </p>
+      <p className="text-sm text-muted-foreground">
+        {others
+          ? "Pick another folder above, or its changes show here once it is one."
+          : "Its changes show here once it is one."}
+      </p>
+    </div>
   )
 }
 

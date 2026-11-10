@@ -159,6 +159,7 @@ Short, everyday sentences with contractions. Name the actor: Claude does the wor
 | Call failed | Lost the connection. Try again? |
 | Agent couldn't start | Bomby couldn't start the call. Try again? |
 | Memory unreachable on a call | I have no memory! / I can't reach it right now. The call works as usual. (the owner's words, 2026-11-06) |
+| Changes, for a folder outside git | samba isn't a git repository. / Pick another folder above, or its changes show here once it is one. (with one folder: Its changes show here once it is one.) |
 | A project's folder is gone | The folder samba isn't there any more. Add it again in Project settings. |
 | No mic access | Bomby needs your mic. Turn it on in System Settings. |
 | Call ended | Talk soon. |

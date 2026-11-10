@@ -1,4 +1,3 @@
-import { FolderClosed, GitCompareArrows, SquareTerminal } from "lucide-react"
 import {
   lazy,
   type ReactNode,
@@ -29,7 +28,7 @@ import { cn } from "@/lib/utils"
 import { folderChanges, folderInfo } from "./api"
 import type { ExtraTab } from "./extra-tab"
 import { panelRequest, projectPanels } from "./panel-requests"
-import type { Section } from "./sections"
+import { folderSections, type Section } from "./sections"
 import { useFolderVersion, useReading } from "./use-folder"
 
 // The panels' code (Pierre's diffs with Shiki, the terminal) loads the first time one
@@ -48,8 +47,8 @@ const MIN_SIZE = 320
 
 /**
  * A project's page with its panels in a column on the right, as in the Claude app (owner,
- * 2026-11-08): Changes (git repositories only), Files and Terminal for a project with
- * folders, and each extension's (`tabs`, such as To-dos). Each has a toggle in the header
+ * 2026-11-08): Changes, Files and Terminal for a project with folders (Changes says so
+ * when the folder chosen isn't in a git repository), and each extension's (`tabs`, such as To-dos). Each has a toggle in the header
  * and opens on its own, with its own header; several open stack in the column, which shows
  * while any is open and is dragged wider or narrower at its edge. A panel mounts the first
  * time it opens and stays while it's closed, so terminals keep running, at their size and
@@ -101,51 +100,32 @@ export function WorkspaceLayout({
     project.id,
     folderPanels ? folder : undefined
   )
-  // Cheap: whether the folder is in a repository, for the Changes toggle, and its branch.
+  // Cheap: whether the folder is in a repository, and its branch.
   const info = useReading(
     `info ${folder}`,
     version,
     () => folderInfo(project.id, folder ?? ""),
     folder !== undefined
   )
+  const repo = info.data?.repo
   // The diff of every changed file, for Changes and the file tree's marks: read only once
-  // one of them has opened.
+  // one of them has opened, and only in a repository, the only place it can have any.
   const changes = useReading(
     `changes ${folder}`,
     version,
     () => folderChanges(project.id, folder ?? ""),
-    folder !== undefined && (mounted.has("changes") || mounted.has("files"))
+    folder !== undefined &&
+      repo === true &&
+      (mounted.has("changes") || mounted.has("files"))
   )
 
   const sections: Section[] = [
-    ...(folder !== undefined && info.data?.repo
-      ? [
-          {
-            id: "changes",
-            label: "Changes",
-            icon: <GitCompareArrows />,
-            keywords: ["git", "diff"],
-            count: changes.data?.files.length,
-          },
-        ]
-      : []),
-    ...(folder !== undefined
-      ? [
-          {
-            id: "files",
-            label: "Files",
-            icon: <FolderClosed />,
-            keywords: ["folder", "tree"],
-          },
-          {
-            id: "terminal",
-            label: "Terminal",
-            icon: <SquareTerminal />,
-            shortcut: TERMINAL_SHORTCUT,
-            keywords: ["shell", "console"],
-          },
-        ]
-      : []),
+    ...folderSections({
+      folder,
+      repo,
+      changes: changes.data?.files.length,
+      terminalShortcut: TERMINAL_SHORTCUT,
+    }),
     ...tabs.map(({ id, label, icon, count, keywords }) => ({
       id,
       label,
