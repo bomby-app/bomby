@@ -85,11 +85,11 @@ impl Connections {
             .clone()
     }
 
-    fn http(&self) -> std::result::Result<&reqwest::Client, OAuthError> {
+    fn http(&self, version: &str) -> std::result::Result<&reqwest::Client, OAuthError> {
         if let Some(http) = self.http.get() {
             return Ok(http);
         }
-        let http = oauth::client()?;
+        let http = oauth::client(version)?;
         Ok(self.http.get_or_init(|| http))
     }
 
@@ -238,7 +238,7 @@ pub async fn connect_extension<R: Runtime>(
     let _ = app.emit(CHANGED, ());
     let outcome = async {
         let http = connections
-            .http()
+            .http(&app.package_info().version.to_string())
             .map_err(|e| Error::Invalid(e.to_string()))?;
         let opener = app.clone();
         let open = move |url: &str| {
@@ -313,7 +313,9 @@ pub async fn fresh_token<R: Runtime>(
     }
     let connections = app.state::<Connections>();
     let vault = app.state::<Vault>();
-    let http = connections.http().map_err(|e| e.to_string())?;
+    let http = connections
+        .http(&app.package_info().version.to_string())
+        .map_err(|e| e.to_string())?;
     let now = now_ms();
     let answer = connections
         .token(

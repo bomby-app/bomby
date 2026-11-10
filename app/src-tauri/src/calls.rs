@@ -32,7 +32,7 @@ use crate::{
 /// Sent to every window when a call is named or renamed, by the user or by Bomby.
 pub const RENAMED: &str = "call-renamed";
 /// A few words, short enough for a sidebar row. The page holds the same limit
-/// (`features/call/limits.ts`).
+/// (`NAME_MAX` in `features/call/call-name.tsx`).
 const MAX_NAME_LEN: usize = 60;
 /// The agent's name in `agent/agent.py` (`AGENT_NAME`), which the token dispatches.
 const AGENT_NAME: &str = "bomby";

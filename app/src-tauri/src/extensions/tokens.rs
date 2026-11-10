@@ -42,6 +42,8 @@ const MAX_SOCKET_PATH: usize = 100;
 /// The most requests answered at once; more connections are closed unanswered. A call asks
 /// for one token per extension at a time, so this is far above real use.
 const MAX_AT_ONCE: usize = 16;
+/// How long the socket waits before accepting again after an accept failed.
+const ACCEPT_RETRY: Duration = Duration::from_millis(100);
 
 /// A token, with its seconds left, or a line for the voice model.
 pub type Answer = std::result::Result<(String, Option<i64>), String>;
@@ -163,6 +165,8 @@ async fn serve(listener: UnixListener, secret: String, fetch: Fetch) {
     let permits = Arc::new(Semaphore::new(MAX_AT_ONCE));
     loop {
         let Ok((stream, _)) = listener.accept().await else {
+            // Out of file descriptors, say: wait for some to free up rather than spin.
+            tokio::time::sleep(ACCEPT_RETRY).await;
             continue;
         };
         // Over the limit: closed unanswered, which the worker reads as the app not answering.

@@ -28,9 +28,9 @@ use crate::process;
 use crate::sync;
 use crate::voice::VoiceProvider;
 
-/// How long a fresh worker gets to register with LiveKit.
 /// The worker's log in the app's log folder, rewritten per start.
 pub const LOG_FILE: &str = "agent.log";
+/// How long a fresh worker gets to register with LiveKit.
 const READY_TIMEOUT: Duration = Duration::from_secs(60);
 /// How long the worker gets to exit after SIGTERM before SIGKILL.
 const STOP_TIMEOUT: Duration = Duration::from_secs(5);

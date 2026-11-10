@@ -367,7 +367,6 @@ dependencies = [
  "libc",
  "livekit-api",
  "livekit-protocol",
- "notify",
  "notify-debouncer-mini",
  "portable-pty",
  "regex",

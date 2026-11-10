@@ -42,7 +42,7 @@ const CALLBACK_PATH: &str = "/callback";
 /// How long one connection to the loopback redirect gets to send its request.
 const CALLBACK_READ_TIMEOUT: Duration = Duration::from_secs(10);
 /// Bomby's logo for the vendors' lists of signed-in clients: Paper page `app assets`, frame
-/// `client-logo · 512 · OAuth logo_uri` (docs/brand.md). It loads once the repo is public.
+/// `client-logo · 512 · OAuth logo_uri` (docs/brand.md).
 const LOGO_URI: &str =
     "https://raw.githubusercontent.com/bomby-app/bomby/main/.github/assets/logo.png";
 
@@ -124,7 +124,9 @@ impl Grant {
     }
 }
 
-pub fn client() -> Result<reqwest::Client> {
+/// The HTTP client for a sign-in and its tokens. `version` is the app's
+/// (`package_info()`, from tauri.conf.json), for the User-Agent.
+pub fn client(version: &str) -> Result<reqwest::Client> {
     // reqwest is built without a crypto provider; the updater installs ring's the same way.
     if rustls::crypto::CryptoProvider::get_default().is_none() {
         let _ = rustls::crypto::ring::default_provider().install_default();
@@ -133,7 +135,7 @@ pub fn client() -> Result<reqwest::Client> {
         .timeout(REQUEST_TIMEOUT)
         // A redirect could carry a request, the code or a token somewhere unchecked.
         .redirect(reqwest::redirect::Policy::none())
-        .user_agent(concat!("Bomby/", env!("CARGO_PKG_VERSION")))
+        .user_agent(format!("Bomby/{version}"))
         .build()
         .map_err(|e| failed(format!("Couldn't start the sign-in: {e}")))
 }
@@ -1096,7 +1098,7 @@ mod tests {
     #[tokio::test]
     async fn signs_in_end_to_end_through_the_loopback_redirect() {
         let vendor = fake_vendor(Fake::default()).await;
-        let http = client().unwrap();
+        let http = client("0.0.0").unwrap();
         let opened = Arc::new(Mutex::new(String::new()));
         let o = opened.clone();
         let grant = sign_in(
@@ -1109,7 +1111,7 @@ mod tests {
                 let q: HashMap<_, _> = url.query_pairs().into_owned().collect();
                 let back = format!("{}?code=c0de&state={}", q["redirect_uri"], q["state"]);
                 tokio::spawn(async move {
-                    let page = client()
+                    let page = client("0.0.0")
                         .unwrap()
                         .get(back)
                         .send()
@@ -1178,7 +1180,7 @@ mod tests {
 
     #[tokio::test]
     async fn only_a_spent_grant_means_signing_in_again() {
-        let http = client().unwrap();
+        let http = client("0.0.0").unwrap();
         for code in ["invalid_grant", "invalid_client", "unauthorized_client"] {
             let vendor = fake_vendor(Fake {
                 refresh: Err(("400 Bad Request", Some(code))),
@@ -1205,7 +1207,7 @@ mod tests {
 
     #[tokio::test]
     async fn any_other_refusal_keeps_the_grant() {
-        let http = client().unwrap();
+        let http = client("0.0.0").unwrap();
         for answer in [
             ("400 Bad Request", Some("temporarily_unavailable")),
             ("401 Unauthorized", None),
@@ -1228,7 +1230,7 @@ mod tests {
 
     #[tokio::test]
     async fn refuses_a_server_without_s256_another_issuer_or_a_redirect() {
-        let http = client().unwrap();
+        let http = client("0.0.0").unwrap();
         for fake in [
             Fake {
                 s256: false,
