@@ -7,16 +7,26 @@ import {
   type ProjectExtensions,
 } from "./api"
 
+// Reads overlap (one per change, from every window): only the latest lands.
+let reads = 0
+
 /**
  * Every extension with whether Settings has it on, for this page: read from the core once,
  * then again whenever a window turns one on or off. null until the core first answers, or
  * if it can't.
  */
 const store = createStore<ExtensionSetting[] | null>(null, () => {
-  const read = () =>
-    extensionsSettings().then(store.set, () => {
-      // Without the list, the page shows no extension; the next change reads again.
-    })
+  const read = () => {
+    const mine = ++reads
+    return extensionsSettings().then(
+      (settings) => {
+        if (mine === reads) store.set(settings)
+      },
+      () => {
+        // Without the list, the page shows no extension; the next change reads again.
+      }
+    )
+  }
   void onExtensionsChanged(() => void read()).then(read)
 })
 
@@ -26,6 +36,8 @@ export function useExtensions(): ExtensionSetting[] | null {
 
 /** Puts the core's answer in the store, so this page shows it before the event lands. */
 export function setExtensions(settings: ExtensionSetting[]) {
+  // A read still on its way predates this answer.
+  reads++
   store.set(settings)
 }
 
