@@ -311,15 +311,22 @@ class AcpRunner:
     async def aclose(self) -> None:
         """Close every session, then the adapter process. No new work after this."""
         self._closed = True
-        for s in list(self._sessions.values()):
-            async with s.open_lock:
-                session_id, conn, s.id, s.conn = s.id, s.conn, None, None
-                # Closed, not deleted: the call's sessions stay in the agent's history.
-                # One whose process is gone is gone with it.
-                if session_id is not None and conn is not None and conn is self._conn:
-                    await close_session(conn, session_id, self._capabilities)
-        async with self._lock:
-            await self._teardown()
+        try:
+            for s in list(self._sessions.values()):
+                async with s.open_lock:
+                    session_id, conn, s.id, s.conn = s.id, s.conn, None, None
+                    # Closed, not deleted: the call's sessions stay in the agent's history.
+                    # One whose process is gone is gone with it.
+                    if (
+                        session_id is not None
+                        and conn is not None
+                        and conn is self._conn
+                    ):
+                        await close_session(conn, session_id, self._capabilities)
+        finally:
+            # Whatever closing a session did, the process doesn't outlive the call.
+            async with self._lock:
+                await self._teardown()
 
     async def _open(self, s: _Session) -> tuple[ClientSideConnection, str]:
         try:
@@ -649,5 +656,12 @@ class CallRunners:
         return runner
 
     async def aclose(self) -> None:
-        for runner in self._runners.values():
-            await runner.aclose()
+        # Side by side, and each on its own: one that fails to close doesn't leave the
+        # others' processes running, and the call's shutdown time isn't spent in a queue.
+        results = await asyncio.gather(
+            *(runner.aclose() for runner in self._runners.values()),
+            return_exceptions=True,
+        )
+        for id, result in zip(self._runners, results, strict=True):
+            if isinstance(result, BaseException):
+                logger.error("closing %s failed", id, exc_info=result)

@@ -187,6 +187,13 @@ async def entrypoint(ctx: JobContext) -> None:
     # Keeps a provider that closes quiet conversations open until the call ends.
     keeping = asyncio.create_task(options.provider.keep_alive(model))
 
+    # Once it stops, the provider ends a quiet call on its own: the log says why.
+    def keeping_ended(task: asyncio.Task[None]) -> None:
+        if not task.cancelled() and (error := task.exception()) is not None:
+            logger.warning("keeping the conversation open stopped: %r", error)
+
+    keeping.add_done_callback(keeping_ended)
+
     async def stop_keeping() -> None:
         _ = keeping.cancel()
 

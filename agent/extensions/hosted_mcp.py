@@ -246,6 +246,5 @@ __all__ = [
     "Connect",
     "HostedMcp",
     "HostedMcpServer",
-    "TokenError",
     "allowed",
 ]

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from livekit.agents.llm import ToolError
 
-from acp_client import CallRunners
+from acp_client import AcpRunner, CallRunners
 from harnesses import CLAUDE_CODE, CODEX, HARNESSES, OMP, OPENCODE, installed
 from harnesses.harness import ADAPTERS, Harness
 from job import Pick, read_metadata
@@ -108,6 +108,30 @@ def test_only_installed_agents_are_available(tmp_path: Path) -> None:
     with pytest.raises(ToolError, match="Claude isn't ready right now"):
         _ = runners.get(CLAUDE_CODE)
     asyncio.run(runners.aclose())
+
+
+def test_a_runner_that_fails_to_close_doesnt_keep_the_others_open(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    runners = CallRunners(
+        Project(name="test", folders=(tmp_path,)),
+        {"claude": executable(tmp_path, "claude"), "omp": executable(tmp_path, "omp")},
+        os.environ,
+    )
+    opened = [runners.get(CLAUDE_CODE), runners.get(OMP)]
+    closed: list[AcpRunner] = []
+
+    async def aclose(runner: AcpRunner) -> None:
+        closed.append(runner)
+        if runner is opened[0]:
+            raise RuntimeError("stuck")
+
+    monkeypatch.setattr(AcpRunner, "aclose", aclose)
+
+    asyncio.run(runners.aclose())
+
+    assert closed == opened
+    assert "closing claude failed" in caplog.text
 
 
 @pytest.mark.parametrize(
