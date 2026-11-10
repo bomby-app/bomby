@@ -18,7 +18,7 @@ from mcp.server.mcpserver import MCPServer as McpTestServer
 from pydantic import JsonValue
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from acp_client.runner import APP_KEYS
+from acp_client.environment import APP_KEYS
 from extensions import EXTENSIONS, CallExtensions, ExtensionContext
 from extensions.catalogue import render
 from extensions.composio import COMPOSIO_EXTENSION

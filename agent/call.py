@@ -5,7 +5,7 @@ provider."""
 import asyncio
 from dataclasses import dataclass
 
-from acp_client import CallRunners
+from acp_client.runner import CallRunners
 from memory import Memory
 from task_board import TaskBoard
 from voice_providers import GEMINI, VoiceProvider

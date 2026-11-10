@@ -21,7 +21,6 @@ from typing import final
 from acp import RequestError, text_block
 from acp.client.connection import ClientSideConnection
 from acp.schema import AgentCapabilities, InitializeResponse, NewSessionResponse
-from dotenv import dotenv_values
 from livekit.agents.llm import ToolError
 
 from harnesses import HARNESSES, installed
@@ -31,12 +30,12 @@ from project import Project
 from sections import join, section
 
 from .client import HarnessClient, Reply, connect
+from .environment import AGENT_ROOT, launch
 from .sessions import close_session, discard_session
 from .settings import Applied, apply, model_setting, needs_pick
 
 logger = logging.getLogger("bomby.acp_client.runner")
 
-AGENT_ROOT = Path(__file__).resolve().parent.parent
 # What every harness is told about working behind a voice assistant.
 BRIEFING = (AGENT_ROOT / "prompts" / "harness-briefing.md").read_text().rstrip()
 # Must match the line in harness-briefing.md (a test checks).
@@ -45,52 +44,12 @@ SHORT_REPORT_RULE = (
     "- stay under about 100 words, even when the task is to find information: give what"
     + " the user asked for and leave out the rest, which they can ask for next"
 )
-# Never passed to any harness: the desktop app starts this agent with the user's LiveKit,
-# voice provider and Zep keys in its environment (not in .env), and GEMINI_API_KEY may
-# come from the user's own shell. Each harness blocks its own on top.
-APP_KEYS = frozenset(
-    {
-        "LIVEKIT_URL",
-        "LIVEKIT_API_KEY",
-        "LIVEKIT_API_SECRET",
-        "GOOGLE_API_KEY",
-        "GEMINI_API_KEY",
-        "OPENAI_API_KEY",
-        "RIME_API_KEY",
-        "ZEP_API_KEY",
-        # The core's token socket for the hosted MCP extensions (`extensions/tokens.py`).
-        "BOMBY_TOKENS",
-        "BOMBY_TOKENS_SECRET",
-    }
-)
 DEFAULT_SESSION = "main"
 # How long starting an adapter (spawning it and `initialize`) and opening a session
 # (`session/new`, its mode and the picks) may each take, as long as the setup probe gives
 # them (`probe.py`). One that doesn't answer in time is stopped, so the next request
 # starts a fresh one.
 START_TIMEOUT_S: float = 30
-
-
-def child_environment(
-    environ: Mapping[str, str], dotenv_keys: set[str], harness: Harness
-) -> dict[str, str]:
-    """The environment a harness runs with: the shell's, minus this agent's `.env`
-    secrets, the app's keys and whatever the harness must not see."""
-    blocked = APP_KEYS | harness.blocked_env
-    return {
-        k: v for k, v in environ.items() if k not in dotenv_keys and k not in blocked
-    }
-
-
-def launch(
-    harness: Harness, program: Path, environ: Mapping[str, str]
-) -> tuple[str, tuple[str, ...], dict[str, str]]:
-    """How to start `harness` from `program`, with this agent's environment minus its
-    secrets."""
-    dotenv_keys = set(dotenv_values(AGENT_ROOT / ".env"))
-    return harness.launch(
-        str(program), child_environment(environ, dotenv_keys, harness), environ
-    )
 
 
 # What the voice model hears when a harness fails; the details go to the log, and

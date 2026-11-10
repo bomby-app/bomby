@@ -8,7 +8,7 @@ from livekit.agents import Agent, AgentServer, AgentSession, JobContext, cli
 
 import dev_env
 import lifeline
-from acp_client import CallRunners
+from acp_client.runner import CallRunners
 from call import Call
 from call_options import CallOptions
 from extensions import CallExtensions

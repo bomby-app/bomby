@@ -12,15 +12,15 @@ from acp.schema import PermissionOption
 from livekit.agents.llm import ToolError
 
 import acp_client.runner as runner_module
-from acp_client import AcpRunner
 from acp_client.client import pick_allow
+from acp_client.environment import child_environment
 from acp_client.runner import (
     BRIEFING,
     REPORT_RULE,
     SHORT_REPORT_RULE,
+    AcpRunner,
     Turn,
     briefing,
-    child_environment,
     no_model_picked,
     no_report,
     not_ready,

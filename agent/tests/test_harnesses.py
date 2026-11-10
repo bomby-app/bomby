@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from livekit.agents.llm import ToolError
 
-from acp_client import AcpRunner, CallRunners
+from acp_client.runner import AcpRunner, CallRunners
 from harnesses import CLAUDE_CODE, CODEX, HARNESSES, OMP, OPENCODE, installed
 from harnesses.harness import ADAPTERS, Harness
 from job import Pick, read_metadata
@@ -82,7 +82,7 @@ def test_an_adapter_override_in_agent_env_is_used_but_not_passed_on(
     def dotenv_values(_: object) -> dict[str, str]:
         return {"CLAUDE_ACP_BIN": "/x/acp"}
 
-    monkeypatch.setattr("acp_client.runner.dotenv_values", dotenv_values)
+    monkeypatch.setattr("acp_client.environment.dotenv_values", dotenv_values)
     runners = CallRunners(
         Project(name="test", folders=(tmp_path,)),
         {"claude": executable(tmp_path, "claude")},
