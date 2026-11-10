@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils"
 
 import { agentStatus } from "./agent-status"
 import type { ActiveCall } from "./call-provider"
+import { reportDeviceError } from "./device-errors"
 import { SessionTranscript } from "./session-transcript"
 import { lineId } from "./transcript"
 
@@ -121,6 +122,7 @@ export function CallView({ call }: { call: ActiveCall }) {
             isConnected={session.isConnected}
             onIsChatOpenChange={setChatOpen}
             onDisconnect={session.end}
+            onDeviceError={reportDeviceError}
           />
         </div>
       </div>
