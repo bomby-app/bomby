@@ -10,9 +10,10 @@ export type About = {
 version: string, status: UpdateStatus, };
 
 /**
- * The zip that was written, for the page: its name, to show. Its path stays in the core.
+ * The zip that was written, for the page: its name, to show, and what to do when Finder
+ * couldn't show it (the zip is saved all the same). Its path stays in the core.
  */
-export type DiagnosticsExport = { fileName: string, };
+export type DiagnosticsExport = { fileName: string, finderError: string | null, };
 
 /**
  * Where updating stands.

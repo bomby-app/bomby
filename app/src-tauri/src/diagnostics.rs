@@ -53,13 +53,18 @@ const MIN_SECRET_LEN: usize = 8;
 /// How many names (`<stem>.zip`, `<stem> 2.zip`, ...) and temporary files to try.
 const MAX_ATTEMPTS: u32 = 1000;
 
-/// The zip that was written, for the page: its name, to show. Its path stays in the core.
+/// The zip that was written, for the page: its name, to show, and what to do when Finder
+/// couldn't show it (the zip is saved all the same). Its path stays in the core.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "about.ts"))]
 pub struct DiagnosticsExport {
     pub file_name: String,
+    pub finder_error: Option<String>,
 }
+
+/// What the page says when Finder can't show the zip.
+const FINDER_FAILED: &str = "Finder couldn't show the file. Look on your Desktop.";
 
 /// Exports, one at a time, and the last zip written this run, for Show in Finder; the page
 /// never sends a path. Tauri state.
@@ -93,13 +98,17 @@ pub async fn export_diagnostics<R: Runtime>(app: AppHandle<R>) -> Result<Diagnos
                         "Bomby couldn't save the diagnostics to your Desktop. Try again?".into(),
                     )
                 })?;
-            let _ = tauri_plugin_opener::reveal_item_in_dir(&path);
+            // Saved is saved: Finder failing to show it is said, not an error.
+            let finder_error = reveal(&app, &path).err();
             let file_name = path
                 .file_name()
                 .map(|name| name.to_string_lossy().into_owned())
                 .unwrap_or_default();
             *sync::lock(&exports.last) = Some(path);
-            Ok(DiagnosticsExport { file_name })
+            Ok(DiagnosticsExport {
+                file_name,
+                finder_error,
+            })
         })
     })
     .await?
@@ -107,15 +116,22 @@ pub async fn export_diagnostics<R: Runtime>(app: AppHandle<R>) -> Result<Diagnos
 
 /// Shows the last zip in Finder again.
 #[tauri::command(async)]
-pub fn show_diagnostics(exports: State<'_, Exports>) -> Result<()> {
+pub fn show_diagnostics<R: Runtime>(app: AppHandle<R>, exports: State<'_, Exports>) -> Result<()> {
     let path = sync::lock(&exports.last)
         .clone()
         .filter(|path| path.is_file())
         .ok_or_else(|| {
             Error::Invalid("The diagnostics file isn't there any more. Export it again.".into())
         })?;
-    tauri_plugin_opener::reveal_item_in_dir(&path)
-        .map_err(|_| Error::Invalid("Finder couldn't show the file. Look on your Desktop.".into()))
+    reveal(&app, &path).map_err(Error::Invalid)
+}
+
+/// Shows `path` in Finder. The cause goes to app.log; the page gets what to do.
+fn reveal<R: Runtime>(app: &AppHandle<R>, path: &Path) -> std::result::Result<(), String> {
+    tauri_plugin_opener::reveal_item_in_dir(path).map_err(|e| {
+        let _ = app_log::append(app, &format!("show diagnostics in Finder: {e}"));
+        FINDER_FAILED.to_owned()
+    })
 }
 
 fn export<R: Runtime>(app: &AppHandle<R>, vault: &Vault, server: &LocalServer) -> Result<PathBuf> {
@@ -449,24 +465,51 @@ static SHAPES: LazyLock<Regex> = LazyLock::new(|| {
 
 /// `name=value`, `name: value`, `"name": "value"` and the same JSON-escaped inside a JSON
 /// string (`\"name\": \"value\"`, as LiveKit Agents' JSON log lines hold a message), where
-/// the name says it's secret. A quoted value goes whole, spaces and all.
+/// the name says it's secret. A quoted value goes whole, spaces, escaped quotes and all.
 static NAMED: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(concat!(
+    let quoted: Vec<String> = (0..=MAX_ESCAPE_DEPTH).map(quoted_at).collect();
+    Regex::new(&format!(
+        "{}{}({}|{}|{})",
         r"(?i)\b([A-Za-z0-9_.-]*(?:api[_-]?key|secret|token|password|passwd|authorization|credential)[A-Za-z0-9_.-]*)",
         r#"(\\*["']?\s*[:=]\s*)"#,
-        "(",
-        // JSON-escaped string, inside a JSON string: \"...\".
-        r#"\\+"(?:[^"\\]|\\[^"])*\\+"|"#,
-        // Double-quoted string, with escapes.
-        r#""(?:[^"\\]|\\.)*"|"#,
-        // Single-quoted string (Python's repr).
-        r"'[^'\n]*'|",
+        // A double-quoted string, plain or JSON-escaped inside a JSON string.
+        quoted.join("|"),
+        // Single-quoted string (Python's repr), with escapes.
+        r"'(?:[^'\\\n]|\\.)*'",
         // A bare value.
         r#"[^\s"'\\&,;)}\]]+"#,
-        ")",
     ))
     .expect("a valid pattern")
 });
+
+/// How deep a JSON string inside JSON strings `NAMED` reads: 0 is a plain `"..."`, 1 one
+/// inside a JSON string (`\"...\"`), 2 one more (`\\\"...\\\"`), and 3.
+const MAX_ESCAPE_DEPTH: u32 = 3;
+
+/// A double-quoted JSON string `depth` JSON strings deep, whole. Its quotes are
+/// `2^depth - 1` backslashes and a `"`. Inside it, a quote of its own is escaped once more,
+/// so it reads with `2^(depth + 1) - 1` backslashes, and escaped backslashes add
+/// `2^(depth + 1)` at a time: counting a run of backslashes before a `"` tells an escaped
+/// quote inside the value from the one that closes it. Every part but a quote ends on a
+/// character that is neither, so a run is always counted whole.
+fn quoted_at(depth: u32) -> String {
+    let quote = (1usize << depth) - 1;
+    let pair = 1usize << (depth + 1);
+    let run = |count: usize| {
+        if count == 0 {
+            String::new()
+        } else {
+            format!(r"\\{{{count}}}")
+        }
+    };
+    let pairs = format!(r"(?:\\{{{pair}}})*");
+    let delimiter = format!(r#"{pairs}{}""#, run(quote));
+    let inner_quote = format!(r#"{pairs}{}""#, run(pair - 1));
+    format!(
+        r#"{}"(?:[^"\\]|\\+[^"\\]|{inner_quote})*{delimiter}"#,
+        run(quote)
+    )
+}
 
 /// Whether a name counts something ("tokens", "prompt_tokens", "token_count"): its number
 /// stays. Any other name's value goes, numbers too.
@@ -482,13 +525,11 @@ fn redact_named(caps: &Captures<'_>) -> String {
         .find(['"', '\''])
         .filter(|_| value.starts_with(['"', '\'', '\\']))
         .map_or(0, |at| at + 1);
+    // A quoted value closes as it opens.
     let close = if open == 0 {
         value.len()
     } else {
-        value[..value.len() - 1]
-            .trim_end_matches('\\')
-            .len()
-            .max(open)
+        (value.len() - open).max(open)
     };
     let inner = &value[open..close];
     let keep = inner.is_empty()
@@ -613,7 +654,7 @@ mod tests {
                 let mut file = archive.by_index(i).unwrap();
                 let mut text = String::new();
                 file.read_to_string(&mut text).unwrap();
-                (file.name().to_owned(), text)
+                (file.name().unwrap().into_owned(), text)
             })
             .collect()
     }
@@ -961,6 +1002,34 @@ mod tests {
             r#"{"password":"[redacted]", "user": "me"} and {'secret': '[redacted]'} and api_secret="[redacted]""#
         );
         assert!(!out.contains("beta") && !out.contains("two") && !out.contains("four"));
+    }
+
+    #[test]
+    fn an_escaped_quote_inside_a_value_never_closes_it() {
+        // A JSON-escaped line whose password holds an escaped quote: all of it goes.
+        let out = redact(r#"{\"password\":\"alpha\\\" beta gamma\"}"#, &[]);
+        assert_eq!(out, r#"{\"password\":\"[redacted]\"}"#);
+        // The same in plain JSON, and in Python's repr.
+        let out = redact(
+            r#"{"password":"alpha\" beta gamma"} {'secret': 'one\' two'}"#,
+            &[],
+        );
+        assert_eq!(out, r#"{"password":"[redacted]"} {'secret': '[redacted]'}"#);
+    }
+
+    #[test]
+    fn a_value_goes_whole_at_every_depth_and_what_follows_stays() {
+        // An escaped quote inside, an escaped backslash at the end, then another field.
+        let wrap = |line: &str| format!(r#"{{"message": "{}"}}"#, json_escaped(line));
+        let mut line = r#"{"password":"alpha\" beta\\", "user": "me"}"#.to_owned();
+        let mut expected = r#"{"password":"[redacted]", "user": "me"}"#.to_owned();
+        for depth in 0..=MAX_ESCAPE_DEPTH {
+            let out = redact(&line, &[]);
+            assert_eq!(out, expected, "depth {depth}");
+            assert_eq!(redact(&out, &[]), out, "depth {depth} again");
+            line = wrap(&line);
+            expected = wrap(&expected);
+        }
     }
 
     #[test]

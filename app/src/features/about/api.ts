@@ -37,7 +37,8 @@ export function onUpdateStatus(
 /**
  * Collects Bomby's logs and a short summary, keys and tokens taken out, into one zip on the
  * Desktop and shows it in Finder (src-tauri/src/diagnostics.rs). Rejects with a message for
- * the user.
+ * the user when nothing was saved; a zip saved that Finder couldn't show resolves, with
+ * `finderError` saying what to do.
  */
 export function exportDiagnostics(): Promise<DiagnosticsExport> {
   return invoke("export_diagnostics")

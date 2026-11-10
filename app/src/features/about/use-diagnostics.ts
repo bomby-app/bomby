@@ -35,7 +35,13 @@ export async function startExport(): Promise<void> {
   store.set({ ...store.get(), status: { kind: "exporting" } })
   try {
     const saved = await exportDiagnostics()
-    store.set({ status: { kind: "saved" }, fileName: saved.fileName })
+    // Saved even when Finder couldn't show it: the name stays, with what to do.
+    store.set({
+      status: saved.finderError
+        ? { kind: "failed", message: saved.finderError }
+        : { kind: "saved" },
+      fileName: saved.fileName,
+    })
   } catch (e) {
     failed(e)
   }

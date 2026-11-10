@@ -46,7 +46,7 @@ url = "2"
 unicode-normalization = "0.1.26"
 caseless = "0.2.2"
 # Export Diagnostics (diagnostics.rs): the zip, its local time stamp and taking secrets out.
-zip = { version = "4.6.1", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+zip = { version = "9.4.2", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 regex = "1.13.1"
 aho-corasick = "1.1.5"
