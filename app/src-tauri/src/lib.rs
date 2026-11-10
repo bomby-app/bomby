@@ -72,7 +72,7 @@ pub fn run() {
             app.manage(agent_picks::Listings::default());
             app.manage(calls::CallAgents::default());
             app.manage(updates::Updates::default());
-            app.manage(diagnostics::LastExport::default());
+            app.manage(diagnostics::Exports::default());
             app.manage(workspace::terminals::TerminalsState::default());
             app.manage(workspace::watch::Watches::default());
             tray::init(app.handle())?;

@@ -11,7 +11,7 @@
 //! Secrets never go back to the page: it sees whether one is saved. The core uses them to
 //! mint call tokens and passes them to the agent when it starts one.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Mutex;
 
 use keyring::Entry;
@@ -72,6 +72,20 @@ impl Keys {
             VoiceProvider::OpenAi => &mut self.openai_key,
             VoiceProvider::Rime => &mut self.rime_key,
         }
+    }
+
+    /// Every key, secret and token in it, for the vault's redaction history.
+    fn secrets(&self) -> impl Iterator<Item = &str> {
+        [
+            self.livekit.as_ref().map(|k| k.api_secret.as_str()),
+            self.gemini_key.as_deref(),
+            self.openai_key.as_deref(),
+            self.rime_key.as_deref(),
+            self.zep_key.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .chain(self.grants.values().flat_map(Grant::secrets))
     }
 
     fn is_empty(&self) -> bool {
@@ -151,22 +165,60 @@ fn read_keychain<R: Runtime>(app: &AppHandle<R>) -> Result<Keys> {
     }
 }
 
-/// The keychain entry, read on first use and kept for the run. Tauri state.
+/// The keychain entry, read on first use and kept for the run, and every secret the vault
+/// has held this run. Tauri state.
 #[derive(Default)]
-pub struct Vault(Mutex<Option<Keys>>);
+pub struct Vault {
+    keys: Mutex<Option<Keys>>,
+    /// Every key, secret and token read from the keychain or saved this run, kept after it's
+    /// replaced, cleared or disconnected: the logs may still hold it, so Export Diagnostics
+    /// takes them all out (`diagnostics`). Private: only `secrets_this_run` reads it. Locked
+    /// after `keys` when both are.
+    seen: Mutex<BTreeSet<String>>,
+}
 
 impl Vault {
     fn keys<R: Runtime>(&self, app: &AppHandle<R>) -> Result<Keys> {
         self.read(app, Keys::clone)
     }
 
+    /// Adds these secrets to the redaction history.
+    fn remember<'a>(&self, secrets: impl IntoIterator<Item = &'a str>) {
+        let mut seen = sync::lock(&self.seen);
+        for secret in secrets {
+            if !seen.contains(secret) {
+                seen.insert(secret.to_owned());
+            }
+        }
+    }
+
+    /// The cached keys, or `fetch`'s (the keychain's) the first time, remembered for redaction.
+    fn load(
+        &self,
+        cached: &mut Option<Keys>,
+        fetch: impl FnOnce() -> Result<Keys>,
+    ) -> Result<Keys> {
+        if let Some(keys) = cached.take() {
+            return Ok(keys);
+        }
+        let keys = fetch()?;
+        self.remember(keys.secrets());
+        Ok(keys)
+    }
+
     /// Reads part of the keys under the lock, without copying the rest.
     fn read<R: Runtime, T>(&self, app: &AppHandle<R>, take: impl FnOnce(&Keys) -> T) -> Result<T> {
-        let mut cached = sync::lock(&self.0);
-        if cached.is_none() {
-            *cached = Some(read_keychain(app)?);
-        }
-        Ok(take(cached.as_ref().unwrap_or(&Keys::default())))
+        self.read_with(|| read_keychain(app), take)
+    }
+
+    fn read_with<T>(
+        &self,
+        fetch: impl FnOnce() -> Result<Keys>,
+        take: impl FnOnce(&Keys) -> T,
+    ) -> Result<T> {
+        let mut cached = sync::lock(&self.keys);
+        let keys = self.load(&mut cached, fetch)?;
+        Ok(take(cached.insert(keys)))
     }
 
     /// Changes the keys and writes them back, under one lock, and tells every window.
@@ -188,19 +240,26 @@ impl Vault {
         app: &AppHandle<R>,
         change: impl FnOnce(&mut Keys) -> Result<()>,
     ) -> Result<()> {
-        let mut cached = sync::lock(&self.0);
-        let mut keys = match cached.take() {
-            Some(keys) => keys,
-            None => read_keychain(app)?,
-        };
+        self.change_with(|| read_keychain(app), change, |keys| write(app, keys))
+    }
+
+    /// `write_back` with the keychain's read and write passed in. What the change put in is
+    /// remembered for redaction even when saving it fails: it was in memory, and may have
+    /// been handed on.
+    fn change_with(
+        &self,
+        fetch: impl FnOnce() -> Result<Keys>,
+        change: impl FnOnce(&mut Keys) -> Result<()>,
+        save: impl FnOnce(&Keys) -> Result<()>,
+    ) -> Result<()> {
+        let mut cached = sync::lock(&self.keys);
+        let mut keys = self.load(&mut cached, fetch)?;
         let before = keys.clone();
-        if let Err(e) = change(&mut keys).and_then(|()| {
+        let changed = change(&mut keys);
+        self.remember(keys.secrets());
+        if let Err(e) = changed.and_then(|()| {
             // Nothing changed, nothing to write (a refresh that lost a race, say).
-            if keys == before {
-                Ok(())
-            } else {
-                write(app, &keys)
-            }
+            if keys == before { Ok(()) } else { save(&keys) }
         }) {
             *cached = Some(before);
             return Err(e);
@@ -209,29 +268,12 @@ impl Vault {
         Ok(())
     }
 
-    /// Every secret already read from the keychain this run (keys, secrets and tokens), so
-    /// Export Diagnostics can take them out of the logs (`diagnostics`). Never reads the
-    /// keychain itself: a secret never read this run was never handed to anything that logs.
-    pub fn cached_secrets(&self) -> Vec<String> {
-        let cached = sync::lock(&self.0);
-        let Some(keys) = cached.as_ref() else {
-            return Vec::new();
-        };
-        let mut secrets: Vec<String> = [
-            keys.livekit.as_ref().map(|k| k.api_secret.clone()),
-            keys.gemini_key.clone(),
-            keys.openai_key.clone(),
-            keys.rime_key.clone(),
-            keys.zep_key.clone(),
-        ]
-        .into_iter()
-        .flatten()
-        .collect();
-        for grant in keys.grants.values() {
-            secrets.push(grant.access_token.clone());
-            secrets.extend(grant.refresh_token.clone());
-        }
-        secrets
+    /// Every key, secret and token the vault has held this run, sorted and without
+    /// repeats, current or since replaced, cleared or disconnected, so Export Diagnostics
+    /// can take them out of the logs (`diagnostics`). Never reads the keychain itself: a
+    /// secret never read this run was never handed to anything that logs this run.
+    pub fn secrets_this_run(&self) -> Vec<String> {
+        sync::lock(&self.seen).iter().cloned().collect()
     }
 
     pub fn livekit<R: Runtime>(&self, app: &AppHandle<R>) -> Result<Option<LiveKitKeys>> {
@@ -284,6 +326,8 @@ impl Vault {
         expect: Expect<'_>,
         grant: Option<Grant>,
     ) -> Result<bool> {
+        // A grant that loses the race was still fetched, and may have been logged.
+        self.remember(grant.iter().flat_map(Grant::secrets));
         let mut replaced = false;
         self.write_back(app, |keys| {
             if !expect.matches(keys.grants.get(id)) {
@@ -447,6 +491,89 @@ mod tests {
             api_key: "OLD".into(),
             api_secret: "old-secret".into(),
         })
+    }
+
+    fn grant(access: &str, refresh: Option<&str>) -> Grant {
+        Grant {
+            client_id: "client".into(),
+            token_endpoint: "https://auth.example/token".into(),
+            resource: "https://mcp.example".into(),
+            access_token: access.into(),
+            refresh_token: refresh.map(Into::into),
+            expires_at: None,
+            account: None,
+        }
+    }
+
+    #[test]
+    fn the_redaction_history_keeps_secrets_replaced_cleared_or_disconnected() {
+        let vault = Vault::default();
+        let first = Keys {
+            gemini_key: Some("gemini-first".into()),
+            grants: BTreeMap::from([("zapier".into(), grant("access-1", Some("refresh-1")))]),
+            ..Keys::default()
+        };
+        assert!(vault.secrets_this_run().is_empty(), "nothing read yet");
+        let saved = |_: &Keys| Ok(());
+        vault.read_with(|| Ok(first.clone()), |_| ()).unwrap();
+        // Replaced, then cleared; the grant refreshed, then disconnected.
+        vault
+            .change_with(
+                || unreachable!("already read"),
+                |keys| {
+                    keys.gemini_key = Some("gemini-second".into());
+                    keys.grants.insert("zapier".into(), grant("access-2", None));
+                    Ok(())
+                },
+                saved,
+            )
+            .unwrap();
+        vault
+            .change_with(
+                || unreachable!("already read"),
+                |keys| {
+                    keys.gemini_key = None;
+                    keys.grants.clear();
+                    Ok(())
+                },
+                saved,
+            )
+            .unwrap();
+        // A key whose save failed was still in memory.
+        let failed = vault.change_with(
+            || unreachable!("already read"),
+            |keys| {
+                keys.zep_key = Some("zep-unsaved".into());
+                Ok(())
+            },
+            |_| Err(Error::Invalid("keychain locked".into())),
+        );
+        assert!(failed.is_err());
+        // A grant that lost a race.
+        vault.remember(
+            grant("access-lost", Some("refresh-lost"))
+                .secrets()
+                .collect::<Vec<_>>(),
+        );
+        assert_eq!(
+            vault.secrets_this_run(),
+            [
+                "access-1",
+                "access-2",
+                "access-lost",
+                "gemini-first",
+                "gemini-second",
+                "refresh-1",
+                "refresh-lost",
+                "zep-unsaved",
+            ]
+        );
+        assert_eq!(
+            vault
+                .read_with(|| unreachable!(), |keys| keys.zep_key.clone())
+                .unwrap(),
+            None
+        );
     }
 
     #[test]

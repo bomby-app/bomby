@@ -29,6 +29,8 @@ use crate::sync;
 use crate::voice::VoiceProvider;
 
 /// How long a fresh worker gets to register with LiveKit.
+/// The worker's log in the app's log folder, rewritten per start.
+pub const LOG_FILE: &str = "agent.log";
 const READY_TIMEOUT: Duration = Duration::from_secs(60);
 /// How long the worker gets to exit after SIGTERM before SIGKILL.
 const STOP_TIMEOUT: Duration = Duration::from_secs(5);
@@ -156,7 +158,7 @@ fn packaged() -> Result<Command> {
 
 fn start(config: &WorkerConfig, log_dir: &Path, on_crash: OnCrash) -> Result<(Child, ChildStdin)> {
     std::fs::create_dir_all(log_dir)?;
-    let log = Arc::new(Mutex::new(File::create(log_dir.join("agent.log"))?));
+    let log = Arc::new(Mutex::new(File::create(log_dir.join(LOG_FILE))?));
 
     let mut command = command(&["start"])?;
     command
@@ -239,7 +241,7 @@ fn start(config: &WorkerConfig, log_dir: &Path, on_crash: OnCrash) -> Result<(Ch
             Err(Error::Invalid(format!(
                 "The agent didn't start{}. Its log is in {}.",
                 reason.map(|r| format!(": {r}")).unwrap_or_default(),
-                log_dir.join("agent.log").display()
+                log_dir.join(LOG_FILE).display()
             )))
         }
     }

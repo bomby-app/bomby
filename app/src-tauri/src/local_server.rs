@@ -24,7 +24,8 @@ const READY_POLL: Duration = Duration::from_millis(50);
 const STOP_TIMEOUT: Duration = Duration::from_secs(1);
 /// A free port can be taken before the server binds it.
 const ATTEMPTS: usize = 2;
-const LOG_FILE: &str = "livekit.log";
+/// The server's log in the app's log folder, rewritten per start.
+pub const LOG_FILE: &str = "livekit.log";
 const PID_FILE: &str = "livekit-server.pid";
 
 struct Running {
@@ -38,6 +39,9 @@ pub struct LocalServer {
     starting: Mutex<()>,
     /// Bumped by `stop`, so a start it overlapped doesn't keep its server.
     stops: AtomicU64,
+    /// Every secret a server got this run, kept after it stops: `livekit.log` and
+    /// `agent.log` may still hold one, so Export Diagnostics takes them all out.
+    secrets: Mutex<Vec<String>>,
     program: PathBuf,
     data_dir: PathBuf,
     log_dir: PathBuf,
@@ -62,6 +66,7 @@ impl LocalServer {
             running: Mutex::new(None),
             starting: Mutex::new(()),
             stops: AtomicU64::new(0),
+            secrets: Mutex::new(Vec::new()),
             program,
             data_dir,
             log_dir,
@@ -104,6 +109,11 @@ impl LocalServer {
             .map(|running| running.keys.clone())
     }
 
+    /// Every secret a server started with this run (`secrets`).
+    pub fn secrets_this_run(&self) -> Vec<String> {
+        sync::lock(&self.secrets).clone()
+    }
+
     pub fn stop(&self) {
         self.stops.fetch_add(1, Ordering::SeqCst);
         let running = sync::lock(&self.running).take();
@@ -138,6 +148,7 @@ impl LocalServer {
             api_key: API_KEY.to_owned(),
             api_secret: new_secret()?,
         };
+        sync::lock(&self.secrets).push(keys.api_secret.clone());
         let log = File::create(log_path)?;
         let mut command = Command::new(&self.program);
         command

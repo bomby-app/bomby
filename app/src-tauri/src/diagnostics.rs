@@ -5,20 +5,29 @@
 //! The logs: `app.log` (app_log.rs), `agent.log` (agent.rs) and `livekit.log`
 //! (local_server.rs), with any other `*.log`, from the app's log folder
 //! (`~/Library/Logs/app.bomby.desktop`), and the adapters' `install.log` (adapters.rs). A
-//! log that isn't there is left out and named in `diagnostics.txt`, never an error. A log
-//! over `MAX_LOG_BYTES` keeps its end, where the latest run is.
+//! log that isn't there is left out and named in `diagnostics.txt`, never an error; one
+//! that can't be read, or a log folder that can't be listed, is noted there too. A log over
+//! `MAX_LOG_BYTES` keeps its end, where the latest run is.
 //!
 //! No log is meant to hold a secret (keys live in the keychain and the worker's
-//! environment), but a library may print one, so every line is redacted on its way into
-//! the zip: the secrets the core has read this run, word for word, then anything shaped
-//! like a key or token (`redact`).
+//! environment), but a library may print one, so every log is redacted on its way into the
+//! zip (`Redactor`): every key, secret and token the core has held this run, word for word
+//! and JSON-escaped, current or since replaced (`Vault::secrets_this_run`,
+//! `LocalServer::secrets_this_run`), then anything shaped like a key or token. That is all it
+//! promises: anything else stays as logged, so the summary asks the user to look the logs
+//! over before sharing them publicly.
+//!
+//! One export runs at a time (`Exports`), off the async runtime. Each writes a hidden
+//! temporary file of its own, then links it to the first free name, never over a file.
 
-use std::fs::{self, File};
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::borrow::Cow;
+use std::fs::{self, File, OpenOptions};
+use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{LazyLock, Mutex};
 
+use aho_corasick::{AhoCorasick, MatchKind};
 use chrono::{DateTime, Datelike, Local, Timelike};
 use regex::{Captures, Regex};
 use serde::Serialize;
@@ -28,19 +37,21 @@ use zip::{CompressionMethod, ZipWriter};
 
 use crate::credentials::Vault;
 use crate::error::{Error, Result};
-use crate::local_server::LocalServer;
-use crate::{adapters, app_log, sync};
+use crate::local_server::{self, LocalServer};
+use crate::{adapters, agent, app_log, sync};
 
 /// The logs the core writes in the app's log folder, always named in the summary.
-const KNOWN_LOGS: [&str; 3] = ["app.log", "agent.log", "livekit.log"];
-/// The adapters' log, in the zip's `adapters/` folder.
-const INSTALL_LOG: &str = "adapters/install.log";
+const KNOWN_LOGS: [&str; 3] = [app_log::LOG_FILE, agent::LOG_FILE, local_server::LOG_FILE];
+/// The zip's folder for the adapters' log.
+const ADAPTERS_FOLDER: &str = "adapters";
 /// What a log over this keeps: its last 8 MiB.
 const MAX_LOG_BYTES: u64 = 8 * 1024 * 1024;
 /// What stands in for a secret.
 const REDACTED: &str = "[redacted]";
 /// Shorter values aren't taken out word for word: they'd match ordinary text.
 const MIN_SECRET_LEN: usize = 8;
+/// How many names (`<stem>.zip`, `<stem> 2.zip`, ...) and temporary files to try.
+const MAX_ATTEMPTS: u32 = 1000;
 
 /// The zip that was written, for the page: its name, to show. Its path stays in the core.
 #[derive(Debug, Clone, Serialize)]
@@ -50,36 +61,54 @@ pub struct DiagnosticsExport {
     pub file_name: String,
 }
 
-/// The last zip written this run, for Show in Finder; the page never sends a path. Tauri state.
+/// Exports, one at a time, and the last zip written this run, for Show in Finder; the page
+/// never sends a path. Tauri state.
 #[derive(Default)]
-pub struct LastExport(Mutex<Option<PathBuf>>);
+pub struct Exports {
+    /// Held for a whole export.
+    running: Mutex<()>,
+    last: Mutex<Option<PathBuf>>,
+}
 
-/// Writes the zip to the Desktop, then shows it in Finder.
-#[tauri::command(async)]
-pub fn export_diagnostics<R: Runtime>(
-    app: AppHandle<R>,
-    vault: State<'_, Vault>,
-    server: State<'_, LocalServer>,
-    last: State<'_, LastExport>,
-) -> Result<DiagnosticsExport> {
-    // The raw error goes to app.log; the page gets what to do.
-    let path = export(&app, &vault, &server).map_err(|e| {
-        let _ = app_log::append(&app, &format!("export diagnostics: {e}"));
-        Error::Invalid("Bomby couldn't save the diagnostics to your Desktop. Try again?".into())
-    })?;
-    let _ = tauri_plugin_opener::reveal_item_in_dir(&path);
-    let file_name = path
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    *sync::lock(&last.0) = Some(path);
-    Ok(DiagnosticsExport { file_name })
+impl Exports {
+    /// Runs `export` once no other export is running.
+    fn one_at_a_time<T>(&self, export: impl FnOnce() -> T) -> T {
+        let _one = sync::lock(&self.running);
+        export()
+    }
+}
+
+/// Writes the zip to the Desktop, then shows it in Finder. Reading and zipping the logs
+/// blocks, so it runs on a blocking thread, as `adapters::install_adapters` does.
+#[tauri::command]
+pub async fn export_diagnostics<R: Runtime>(app: AppHandle<R>) -> Result<DiagnosticsExport> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let exports = app.state::<Exports>();
+        exports.one_at_a_time(|| {
+            // The raw error goes to app.log; the page gets what to do.
+            let path =
+                export(&app, &app.state::<Vault>(), &app.state::<LocalServer>()).map_err(|e| {
+                    let _ = app_log::append(&app, &format!("export diagnostics: {e}"));
+                    Error::Invalid(
+                        "Bomby couldn't save the diagnostics to your Desktop. Try again?".into(),
+                    )
+                })?;
+            let _ = tauri_plugin_opener::reveal_item_in_dir(&path);
+            let file_name = path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            *sync::lock(&exports.last) = Some(path);
+            Ok(DiagnosticsExport { file_name })
+        })
+    })
+    .await?
 }
 
 /// Shows the last zip in Finder again.
 #[tauri::command(async)]
-pub fn show_diagnostics(last: State<'_, LastExport>) -> Result<()> {
-    let path = sync::lock(&last.0)
+pub fn show_diagnostics(exports: State<'_, Exports>) -> Result<()> {
+    let path = sync::lock(&exports.last)
         .clone()
         .filter(|path| path.is_file())
         .ok_or_else(|| {
@@ -91,8 +120,9 @@ pub fn show_diagnostics(last: State<'_, LastExport>) -> Result<()> {
 
 fn export<R: Runtime>(app: &AppHandle<R>, vault: &Vault, server: &LocalServer) -> Result<PathBuf> {
     let desktop = app.path().desktop_dir()?;
-    let mut secrets = vault.cached_secrets();
-    secrets.extend(server.current().map(|keys| keys.api_secret));
+    let mut secrets = vault.secrets_this_run();
+    secrets.extend(server.secrets_this_run());
+    let redactor = Redactor::new(&secrets)?;
     let now = Local::now();
     let summary = Summary {
         version: app.package_info().version.to_string(),
@@ -106,7 +136,7 @@ fn export<R: Runtime>(app: &AppHandle<R>, vault: &Vault, server: &LocalServer) -
         created: now.format("%Y-%m-%d %H:%M:%S %:z").to_string(),
     };
     let logs = sources(&app.path().app_log_dir()?, adapters::install_log());
-    write_bundle(&desktop, now, &logs, &secrets, &summary)
+    write_bundle(&desktop, now, &logs, &redactor, &summary)
 }
 
 /// One log to collect: its name in the zip and where it is.
@@ -116,21 +146,45 @@ struct Source {
     path: PathBuf,
 }
 
-/// The known logs, any other `*.log` in the log folder, then the adapters' log.
-fn sources(log_dir: &Path, install_log: Option<PathBuf>) -> Vec<Source> {
-    let mut names: Vec<String> = KNOWN_LOGS.iter().map(|&name| name.to_owned()).collect();
-    let mut others: Vec<String> = fs::read_dir(log_dir)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_file()))
-        .map(|entry| entry.file_name().to_string_lossy().into_owned())
-        .filter(|name| name.ends_with(".log") && !KNOWN_LOGS.contains(&name.as_str()))
-        .collect();
+/// The logs to collect, and what listing them ran into, for the summary.
+#[derive(Debug, Default)]
+struct Logs {
+    sources: Vec<Source>,
+    notes: Vec<String>,
+}
+
+/// The known logs, any other `*.log` in the log folder, then the adapters' log. A log
+/// folder that isn't there yet holds no other logs; one that can't be listed is noted.
+fn sources(log_dir: &Path, install_log: Option<PathBuf>) -> Logs {
+    let mut notes = Vec::new();
+    let mut others: Vec<String> = Vec::new();
+    match fs::read_dir(log_dir) {
+        Ok(entries) => {
+            for entry in entries {
+                match entry {
+                    Ok(entry) => {
+                        let name = entry.file_name().to_string_lossy().into_owned();
+                        if name.ends_with(".log")
+                            && !KNOWN_LOGS.contains(&name.as_str())
+                            && entry.file_type().is_ok_and(|kind| kind.is_file())
+                        {
+                            others.push(name);
+                        }
+                    }
+                    Err(e) => notes.push(format!("A file in the log folder couldn't be read: {e}")),
+                }
+            }
+        }
+        Err(e) if e.kind() == ErrorKind::NotFound => {}
+        Err(e) => notes.push(format!(
+            "The log folder couldn't be listed, so only the known logs were looked for: {e}"
+        )),
+    }
     others.sort();
-    names.extend(others);
-    let mut sources: Vec<Source> = names
-        .into_iter()
+    let mut sources: Vec<Source> = KNOWN_LOGS
+        .iter()
+        .map(|&name| name.to_owned())
+        .chain(others)
         .map(|name| Source {
             path: log_dir.join(&name),
             name,
@@ -138,11 +192,11 @@ fn sources(log_dir: &Path, install_log: Option<PathBuf>) -> Vec<Source> {
         .collect();
     if let Some(path) = install_log {
         sources.push(Source {
-            name: INSTALL_LOG.to_owned(),
+            name: format!("{ADAPTERS_FOLDER}/{}", adapters::LOG_FILE),
             path,
         });
     }
-    sources
+    Logs { sources, notes }
 }
 
 /// What `diagnostics.txt` says about this Mac and this copy of Bomby.
@@ -160,58 +214,110 @@ struct Collected {
     included: Vec<String>,
     missing: Vec<String>,
     trimmed: Vec<String>,
+    notes: Vec<String>,
 }
 
-/// Writes the zip into `dir` under a name that's free, through a hidden temporary file so
-/// Finder never shows half of one.
+/// Writes the zip into `dir` under a name that's free, through a hidden temporary file of
+/// its own so Finder never shows half of one, and never over another file.
 fn write_bundle(
     dir: &Path,
     now: DateTime<Local>,
-    logs: &[Source],
-    secrets: &[String],
+    logs: &Logs,
+    redactor: &Redactor,
     summary: &Summary,
 ) -> Result<PathBuf> {
-    let path = free_path(dir, &file_stem(now));
-    let file_name = path
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    let partial = dir.join(format!(".{file_name}.partial"));
-    let written = write_zip(&partial, now, logs, secrets, summary)
-        .and_then(|()| fs::rename(&partial, &path).map_err(Error::from));
-    if written.is_err() {
-        let _ = fs::remove_file(&partial);
+    let stem = file_stem(now);
+    let (partial, file) = create_partial(dir, &stem)?;
+    let written =
+        write_zip(file, now, logs, redactor, summary).and_then(|()| publish(&partial, dir, &stem));
+    // Published or not, the temporary name goes; the zip keeps its own.
+    let _ = fs::remove_file(&partial);
+    written
+}
+
+/// A new hidden file beside where the zip goes, created exclusively, so two exports never
+/// write the same one.
+fn create_partial(dir: &Path, stem: &str) -> Result<(PathBuf, File)> {
+    let pid = std::process::id();
+    for attempt in 0..MAX_ATTEMPTS {
+        let path = dir.join(format!(".{stem} {pid}-{attempt}.partial"));
+        match OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(file) => return Ok((path, file)),
+            Err(e) if e.kind() == ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(e.into()),
+        }
     }
-    written.map(|()| path)
+    Err(Error::Invalid(
+        "No free name for the diagnostics' temporary file.".into(),
+    ))
+}
+
+/// Gives the finished zip at `partial` the first free name of `<stem>.zip`, `<stem> 2.zip`
+/// and on, as Finder names copies. A hard link fails rather than replace a file, so a name
+/// taken meanwhile (another export, the user's file) is skipped, never overwritten.
+fn publish(partial: &Path, dir: &Path, stem: &str) -> Result<PathBuf> {
+    for copy in 1..=MAX_ATTEMPTS {
+        let path = dir.join(zip_name(stem, copy));
+        match fs::hard_link(partial, &path) {
+            Ok(()) => return Ok(path),
+            Err(e) if e.kind() == ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(e.into()),
+        }
+    }
+    Err(Error::Invalid(
+        "No free name for the diagnostics on the Desktop.".into(),
+    ))
+}
+
+/// `<stem>.zip`, then `<stem> 2.zip` and on.
+fn zip_name(stem: &str, copy: u32) -> String {
+    if copy <= 1 {
+        format!("{stem}.zip")
+    } else {
+        format!("{stem} {copy}.zip")
+    }
 }
 
 fn write_zip(
-    path: &Path,
+    file: File,
     now: DateTime<Local>,
-    logs: &[Source],
-    secrets: &[String],
+    logs: &Logs,
+    redactor: &Redactor,
     summary: &Summary,
 ) -> Result<()> {
-    let mut zip = ZipWriter::new(File::create(path)?);
+    let mut zip = ZipWriter::new(file);
     let options = SimpleFileOptions::default()
         .compression_method(CompressionMethod::Deflated)
         .last_modified_time(zip_time(now))
         .unix_permissions(0o644);
-    let mut collected = Collected::default();
-    for log in logs {
-        let Some((text, trimmed)) = read_log(&log.path)? else {
-            collected.missing.push(log.name.clone());
-            continue;
+    let mut collected = Collected {
+        notes: logs.notes.clone(),
+        ..Collected::default()
+    };
+    for log in &logs.sources {
+        let (text, trimmed) = match read_log(&log.path) {
+            Ok(Some(read)) => read,
+            Ok(None) => {
+                collected.missing.push(log.name.clone());
+                continue;
+            }
+            Err(e) => {
+                collected
+                    .notes
+                    .push(format!("{} couldn't be read: {e}", log.name));
+                continue;
+            }
         };
         zip.start_file(&log.name, options)?;
-        zip.write_all(redact(&text, secrets).as_bytes())?;
+        zip.write_all(redactor.redact(&text).as_bytes())?;
         collected.included.push(log.name.clone());
         if trimmed {
             collected.trimmed.push(log.name.clone());
         }
     }
     zip.start_file("diagnostics.txt", options)?;
-    zip.write_all(redact(&summary_text(summary, &collected), secrets).as_bytes())?;
+    let text = summary_text(summary, &collected);
+    zip.write_all(redactor.redact(&text).as_bytes())?;
     zip.finish()?.sync_all()?;
     Ok(())
 }
@@ -220,13 +326,14 @@ fn write_zip(
 fn read_log(path: &Path) -> Result<Option<(String, bool)>> {
     let mut file = match File::open(path) {
         Ok(file) => file,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) if e.kind() == ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(e.into()),
     };
-    if !file.metadata()?.is_file() {
+    let metadata = file.metadata()?;
+    if !metadata.is_file() {
         return Ok(None);
     }
-    let len = file.metadata()?.len();
+    let len = metadata.len();
     let trimmed = len > MAX_LOG_BYTES;
     if trimmed {
         file.seek(SeekFrom::Start(len - MAX_LOG_BYTES))?;
@@ -275,24 +382,21 @@ fn summary_text(summary: &Summary, collected: &Collected) -> String {
             list(&collected.trimmed)
         ));
     }
-    text.push_str("\nKeys, secrets and tokens are replaced with [redacted].\n");
+    for note in &collected.notes {
+        text.push_str(&format!("Note: {note}\n"));
+    }
+    text.push_str(
+        "\nThe keys, secrets and tokens Bomby held this run, and text shaped like a key or \
+         token, are replaced with [redacted]. Everything else is as logged, such as folder \
+         names and what was said on a call: look the logs over before you share them \
+         publicly.\n",
+    );
     text
 }
 
 /// "Bomby Diagnostics 2026-11-10 18-05", in the Mac's local time.
 fn file_stem(now: DateTime<Local>) -> String {
     format!("Bomby Diagnostics {}", now.format("%Y-%m-%d %H-%M"))
-}
-
-/// `<stem>.zip` in `dir`, or `<stem> 2.zip` and on when that's taken, as Finder names copies.
-fn free_path(dir: &Path, stem: &str) -> PathBuf {
-    let mut path = dir.join(format!("{stem}.zip"));
-    let mut copy = 2;
-    while path.exists() {
-        path = dir.join(format!("{stem} {copy}.zip"));
-        copy += 1;
-    }
-    path
 }
 
 fn zip_time(now: DateTime<Local>) -> zip::DateTime {
@@ -326,9 +430,9 @@ fn macos_version() -> String {
     }
 }
 
-/// Shapes of secrets, each replaced whole.
-static SHAPES: LazyLock<[Regex; 5]> = LazyLock::new(|| {
-    [
+/// Shapes of secrets, each replaced whole, in one pattern.
+static SHAPES: LazyLock<Regex> = LazyLock::new(|| {
+    let shapes = [
         // JSON Web Tokens: LiveKit's call tokens, OAuth ID and access tokens.
         r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*",
         // Google API keys.
@@ -338,48 +442,138 @@ static SHAPES: LazyLock<[Regex; 5]> = LazyLock::new(|| {
         // The local LiveKit server's secret, 32 bytes in hex (local_server.rs).
         r"\b[0-9a-fA-F]{64}\b",
         // Authorization headers.
-        r"(?i)\b(?:bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}",
-    ]
-    .map(|shape| Regex::new(shape).expect("a valid pattern"))
+        r"(?i:\b(?:bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,})",
+    ];
+    Regex::new(&shapes.map(|shape| format!("(?:{shape})")).join("|")).expect("a valid pattern")
 });
 
-/// `name=value` or `"name": "value"` where the name says it's secret.
+/// `name=value`, `name: value`, `"name": "value"` and the same JSON-escaped inside a JSON
+/// string (`\"name\": \"value\"`, as LiveKit Agents' JSON log lines hold a message), where
+/// the name says it's secret. A quoted value goes whole, spaces and all.
 static NAMED: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r#"(?i)\b([A-Za-z0-9_.-]*(?:api[_-]?key|secret|token|password|passwd|authorization|credential)[A-Za-z0-9_.-]*)(["']?\s*[:=]\s*["']?)([^\s"'&,;)}\]]+)"#,
-    )
+    Regex::new(concat!(
+        r"(?i)\b([A-Za-z0-9_.-]*(?:api[_-]?key|secret|token|password|passwd|authorization|credential)[A-Za-z0-9_.-]*)",
+        r#"(\\*["']?\s*[:=]\s*)"#,
+        "(",
+        // JSON-escaped string, inside a JSON string: \"...\".
+        r#"\\+"(?:[^"\\]|\\[^"])*\\+"|"#,
+        // Double-quoted string, with escapes.
+        r#""(?:[^"\\]|\\.)*"|"#,
+        // Single-quoted string (Python's repr).
+        r"'[^'\n]*'|",
+        // A bare value.
+        r#"[^\s"'\\&,;)}\]]+"#,
+        ")",
+    ))
     .expect("a valid pattern")
 });
 
-/// `text` with the given secrets, and anything shaped like one, replaced by `[redacted]`.
-fn redact(text: &str, secrets: &[String]) -> String {
-    let mut text = text.to_owned();
-    let mut secrets: Vec<&str> = secrets
-        .iter()
-        .map(|secret| secret.trim())
-        .filter(|secret| secret.chars().count() >= MIN_SECRET_LEN)
-        .collect();
-    // Longest first, so a secret that contains another goes whole.
-    secrets.sort_by_key(|secret| std::cmp::Reverse(secret.len()));
-    for secret in secrets {
-        text = text.replace(secret, REDACTED);
+/// Whether a name counts something ("tokens", "prompt_tokens", "token_count"): its number
+/// stays. Any other name's value goes, numbers too.
+fn is_counter(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    name.ends_with("tokens") || name.ends_with("token_count")
+}
+
+/// `NAMED`'s replacement: the value goes, its quotes stay.
+fn redact_named(caps: &Captures<'_>) -> String {
+    let (name, separator, value) = (&caps[1], &caps[2], &caps[3]);
+    let open = value
+        .find(['"', '\''])
+        .filter(|_| value.starts_with(['"', '\'', '\\']))
+        .map_or(0, |at| at + 1);
+    let close = if open == 0 {
+        value.len()
+    } else {
+        value[..value.len() - 1]
+            .trim_end_matches('\\')
+            .len()
+            .max(open)
+    };
+    let inner = &value[open..close];
+    let keep = inner.is_empty()
+        // What's already out: a bare value stops before `]`, so it reads "[redacted".
+        || inner.starts_with(REDACTED.trim_end_matches(']'))
+        || (open == 0 && is_counter(name) && inner.chars().all(|c| c.is_ascii_digit()));
+    if keep {
+        caps[0].to_owned()
+    } else {
+        format!(
+            "{name}{separator}{}{REDACTED}{}",
+            &value[..open],
+            &value[close..]
+        )
     }
-    for shape in SHAPES.iter() {
-        text = shape.replace_all(&text, REDACTED).into_owned();
-    }
-    NAMED
-        .replace_all(&text, |caps: &Captures<'_>| {
-            let value = &caps[3];
-            // Counts ("tokens=1234") and what's already out stay as they are; the value
-            // stops before a `]`, so one already out reads "[redacted".
-            let out = REDACTED.trim_end_matches(']');
-            if value.chars().all(|c| c.is_ascii_digit()) || value.starts_with(out) {
-                caps[0].to_owned()
-            } else {
-                format!("{}{}{REDACTED}", &caps[1], &caps[2])
+}
+
+/// `text` with `replace`'s change, borrowed still when it changed nothing (a match it kept,
+/// such as a count, changes nothing).
+fn apply<'a>(text: Cow<'a, str>, replace: impl FnOnce(&str) -> Cow<'_, str>) -> Cow<'a, str> {
+    let changed = match replace(&text) {
+        Cow::Owned(changed) if changed != *text => Some(changed),
+        _ => None,
+    };
+    changed.map_or(text, Cow::Owned)
+}
+
+/// Takes secrets out of text: built once per export.
+struct Redactor {
+    /// The known secrets, longest first where they overlap; `None` when there are none.
+    known: Option<AhoCorasick>,
+}
+
+impl Redactor {
+    /// Matches each secret as is and JSON-escaped, once and twice (a JSON log line's
+    /// message holding JSON).
+    fn new(secrets: &[String]) -> Result<Self> {
+        let mut forms: Vec<String> = Vec::new();
+        for secret in secrets.iter().map(|secret| secret.trim()) {
+            if secret.chars().count() < MIN_SECRET_LEN {
+                continue;
             }
-        })
-        .into_owned()
+            let once = json_escaped(secret);
+            let twice = json_escaped(&once);
+            forms.extend([secret.to_owned(), once, twice]);
+        }
+        forms.sort();
+        forms.dedup();
+        if forms.is_empty() {
+            return Ok(Self { known: None });
+        }
+        let known = AhoCorasick::builder()
+            .match_kind(MatchKind::LeftmostLongest)
+            .build(&forms)
+            .map_err(|e| Error::Invalid(format!("Couldn't prepare the redaction: {e}")))?;
+        Ok(Self { known: Some(known) })
+    }
+
+    /// `text` with the known secrets, and anything shaped like one, replaced by
+    /// `[redacted]`; borrowed when there was nothing to take out.
+    fn redact<'a>(&self, text: &'a str) -> Cow<'a, str> {
+        let mut out = Cow::Borrowed(text);
+        if let Some(known) = &self.known
+            && known.is_match(text)
+        {
+            let mut replaced = String::with_capacity(text.len());
+            known.replace_all_with(text, &mut replaced, |_, _, dst| {
+                dst.push_str(REDACTED);
+                true
+            });
+            out = Cow::Owned(replaced);
+        }
+        out = apply(out, |text| SHAPES.replace_all(text, REDACTED));
+        apply(out, |text| NAMED.replace_all(text, redact_named))
+    }
+}
+
+/// `value` as it reads inside a JSON string, without the quotes.
+fn json_escaped(value: &str) -> String {
+    let quoted = serde_json::to_string(value).unwrap_or_default();
+    quoted
+        .strip_prefix('"')
+        .and_then(|rest| rest.strip_suffix('"'))
+        .unwrap_or(value)
+        .to_owned()
 }
 
 #[cfg(test)]
@@ -424,16 +618,104 @@ mod tests {
             .collect()
     }
 
+    fn redact(text: &str, secrets: &[String]) -> String {
+        Redactor::new(secrets).unwrap().redact(text).into_owned()
+    }
+
+    fn none() -> Redactor {
+        Redactor::new(&[]).unwrap()
+    }
+
     #[test]
-    fn the_name_is_the_local_minute_and_a_taken_one_gets_a_number() {
+    fn the_name_is_the_local_minute_and_a_taken_one_gets_a_number_never_overwritten() {
         let dir = temp_dir("naming");
         let stem = file_stem(at(8, 5));
         assert_eq!(stem, "Bomby Diagnostics 2026-11-10 08-05");
-        assert_eq!(free_path(&dir, &stem), dir.join(format!("{stem}.zip")));
-        fs::write(dir.join(format!("{stem}.zip")), "").unwrap();
-        assert_eq!(free_path(&dir, &stem), dir.join(format!("{stem} 2.zip")));
-        fs::write(dir.join(format!("{stem} 2.zip")), "").unwrap();
-        assert_eq!(free_path(&dir, &stem), dir.join(format!("{stem} 3.zip")));
+        fs::write(dir.join(format!("{stem}.zip")), "the user's own").unwrap();
+        fs::write(dir.join(format!("{stem} 2.zip")), "an earlier export").unwrap();
+        let path = write_bundle(&dir, at(8, 5), &Logs::default(), &none(), &summary()).unwrap();
+        assert_eq!(path, dir.join(format!("{stem} 3.zip")));
+        assert_eq!(
+            fs::read_to_string(dir.join(format!("{stem}.zip"))).unwrap(),
+            "the user's own"
+        );
+        assert_eq!(
+            fs::read_to_string(dir.join(format!("{stem} 2.zip"))).unwrap(),
+            "an earlier export"
+        );
+        assert_eq!(entries(&path).len(), 1);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn overlapping_exports_each_get_their_own_file_and_name() {
+        let dir = temp_dir("overlap");
+        let logs = temp_dir("overlap-logs");
+        fs::write(logs.join("app.log"), "x\n".repeat(200_000)).unwrap();
+        let exports = Exports::default();
+        let running = std::sync::atomic::AtomicUsize::new(0);
+        let paths: Vec<PathBuf> = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..4)
+                .map(|_| {
+                    scope.spawn(|| {
+                        exports.one_at_a_time(|| {
+                            let at_once = running.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                            assert_eq!(at_once, 0, "one export at a time");
+                            let path = write_bundle(
+                                &dir,
+                                at(9, 30),
+                                &sources(&logs, None),
+                                &none(),
+                                &summary(),
+                            );
+                            running.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                            path.unwrap()
+                        })
+                    })
+                })
+                .collect();
+            handles.into_iter().map(|h| h.join().unwrap()).collect()
+        });
+        let mut names: Vec<String> = paths
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        let stem = file_stem(at(9, 30));
+        let mut expected = [1, 2, 3, 4].map(|copy| zip_name(&stem, copy)).to_vec();
+        expected.sort();
+        assert_eq!(names, expected);
+        for path in &paths {
+            assert_eq!(entries(path).len(), 2, "{} is whole", path.display());
+        }
+        // No temporary file is left.
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 4);
+        fs::remove_dir_all(&dir).unwrap();
+        fs::remove_dir_all(&logs).unwrap();
+    }
+
+    #[test]
+    fn writing_without_the_guard_never_shares_a_temporary_file_or_clobbers_a_name() {
+        let dir = temp_dir("race");
+        let paths: Vec<PathBuf> = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..8)
+                .map(|_| {
+                    scope.spawn(|| {
+                        write_bundle(&dir, at(10, 0), &Logs::default(), &none(), &summary())
+                            .unwrap()
+                    })
+                })
+                .collect();
+            handles.into_iter().map(|h| h.join().unwrap()).collect()
+        });
+        let mut unique = paths.clone();
+        unique.sort();
+        unique.dedup();
+        assert_eq!(unique.len(), 8);
+        for path in &paths {
+            assert_eq!(entries(path).len(), 1);
+        }
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 8);
         fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -443,7 +725,10 @@ mod tests {
         fs::write(dir.join("zeta.log"), "z").unwrap();
         fs::write(dir.join("notes.txt"), "not a log").unwrap();
         fs::create_dir(dir.join("folder.log")).unwrap();
-        let names: Vec<String> = sources(&dir, Some(dir.join("install.log")))
+        let listed = sources(&dir, Some(dir.join("install.log")));
+        assert!(listed.notes.is_empty());
+        let names: Vec<String> = listed
+            .sources
             .into_iter()
             .map(|source| source.name)
             .collect();
@@ -454,10 +739,31 @@ mod tests {
                 "agent.log",
                 "livekit.log",
                 "zeta.log",
-                INSTALL_LOG
+                "adapters/install.log"
             ]
         );
-        assert_eq!(sources(&dir.join("gone"), None).len(), KNOWN_LOGS.len());
+        // A log folder not made yet holds only the known logs, with nothing to note.
+        let gone = sources(&dir.join("gone"), None);
+        assert_eq!(gone.sources.len(), KNOWN_LOGS.len());
+        assert!(gone.notes.is_empty());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_log_folder_that_cant_be_listed_is_noted_in_the_summary() {
+        let dir = temp_dir("unlistable");
+        // A file where the folder should be: listing it fails, and not with NotFound.
+        let not_a_folder = dir.join("logs");
+        fs::write(&not_a_folder, "").unwrap();
+        let logs = sources(&not_a_folder, None);
+        assert_eq!(logs.sources.len(), KNOWN_LOGS.len());
+        assert_eq!(logs.notes.len(), 1, "{:?}", logs.notes);
+        let path = write_bundle(&dir, at(11, 0), &logs, &none(), &summary()).unwrap();
+        let text = &entries(&path)[0].1;
+        assert!(
+            text.contains("Note: The log folder couldn't be listed"),
+            "{text}"
+        );
         fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -470,7 +776,7 @@ mod tests {
             &out,
             at(18, 5),
             &sources(&logs, Some(logs.join("install.log"))),
-            &[],
+            &none(),
             &summary(),
         )
         .unwrap();
@@ -505,7 +811,7 @@ mod tests {
             &out,
             at(9, 0),
             &sources(&out.join("none"), None),
-            &[],
+            &none(),
             &summary(),
         )
         .unwrap();
@@ -545,6 +851,7 @@ mod tests {
             r#"{"api_key": "zep-abc123456", "zep_api_key":"z_abcdefgh"}"#,
             "LIVEKIT_API_SECRET=supersecretvalue",
             "a short word, tokens=1234, prompt_tokens: 56",
+            r#"{"password": ""}"#,
         ]
         .join("\n");
         let out = redact(&text, &secrets);
@@ -573,11 +880,100 @@ mod tests {
             out.contains("a short word, tokens=1234, prompt_tokens: 56"),
             "{out}"
         );
+        // An empty value has nothing to hide.
+        assert!(out.contains(r#"{"password": ""}"#), "{out}");
     }
 
     #[test]
     fn redacting_twice_changes_nothing_more() {
-        let once = redact("secret=abcdefgh and Bearer abcdefghijkl", &[]);
-        assert_eq!(redact(&once, &[]), once);
+        let text = [
+            "secret=abcdefgh and Bearer abcdefghijkl",
+            r#"{"password": "alpha beta"}"#,
+            r#"{"message": "{\"api_key\": \"zep-abc123456\"}"}"#,
+            "known-secret-123 again",
+        ]
+        .join("\n");
+        let secrets = ["known-secret-123".to_owned()];
+        let once = redact(&text, &secrets);
+        assert_eq!(redact(&once, &secrets), once);
+    }
+
+    #[test]
+    fn text_with_nothing_to_take_out_is_borrowed_not_copied() {
+        let redactor = Redactor::new(&["known-secret-123".to_owned()]).unwrap();
+        let text = "1 started\n2 tokens=1234\n";
+        assert!(matches!(redactor.redact(text), Cow::Borrowed(_)));
+        assert!(matches!(none().redact(text), Cow::Borrowed(_)));
+        assert!(matches!(redactor.redact("known-secret-123"), Cow::Owned(_)));
+    }
+
+    #[test]
+    fn secrets_replaced_earlier_in_the_run_are_still_taken_out() {
+        // What the vault and the local server hand over: current and earlier secrets.
+        let secrets = [
+            "gemini-key-old-0123".to_owned(),
+            "gemini-key-new-4567".to_owned(),
+            "refresh-token-gone-89".to_owned(),
+            "gemini-key-old-0123".to_owned(),
+        ];
+        let out = redact(
+            "started with gemini-key-old-0123\nthen gemini-key-new-4567\nrefresh refresh-token-gone-89\n",
+            &secrets,
+        );
+        assert_eq!(
+            out,
+            "started with [redacted]\nthen [redacted]\nrefresh [redacted]\n"
+        );
+    }
+
+    #[test]
+    fn known_secrets_are_taken_out_json_escaped_too() {
+        let secrets = [r#"pa"ss\word-123"#.to_owned()];
+        let raw = r#"key pa"ss\word-123"#;
+        let once = r#"{"message": "key pa\"ss\\word-123"}"#;
+        let twice = r#"{"message": "{\"m\": \"key pa\\\"ss\\\\word-123\"}"}"#;
+        for text in [raw, once, twice] {
+            let out = redact(text, &secrets);
+            assert!(!out.contains("word-123"), "{text} became {out}");
+            assert!(out.contains(REDACTED), "{out}");
+        }
+    }
+
+    #[test]
+    fn named_values_in_escaped_json_go() {
+        // LiveKit Agents logs JSON, with a message that is itself JSON.
+        let line = r#"{"message": "config {\"api_key\": \"zep-abc123456\", \"zep_api_key\":\"z_abcdefgh\", \"model\": \"x\"}", "level": "INFO"}"#;
+        let out = redact(line, &[]);
+        assert_eq!(
+            out,
+            r#"{"message": "config {\"api_key\": \"[redacted]\", \"zep_api_key\":\"[redacted]\", \"model\": \"x\"}", "level": "INFO"}"#
+        );
+    }
+
+    #[test]
+    fn quoted_values_go_whole_spaces_and_all() {
+        let out = redact(
+            r#"{"password":"alpha beta gamma", "user": "me"} and {'secret': 'one two'} and api_secret="three four""#,
+            &[],
+        );
+        assert_eq!(
+            out,
+            r#"{"password":"[redacted]", "user": "me"} and {'secret': '[redacted]'} and api_secret="[redacted]""#
+        );
+        assert!(!out.contains("beta") && !out.contains("two") && !out.contains("four"));
+    }
+
+    #[test]
+    fn only_counters_keep_their_numbers() {
+        let out = redact(
+            "tokens=1234 prompt_tokens: 56 completion_tokens=7 token_count=8 \
+             password=12345678 secret=87654321 api_secret: 11223344 \"pin_token\": 9999",
+            &[],
+        );
+        assert_eq!(
+            out,
+            "tokens=1234 prompt_tokens: 56 completion_tokens=7 token_count=8 \
+             password=[redacted] secret=[redacted] api_secret: [redacted] \"pin_token\": [redacted]"
+        );
     }
 }

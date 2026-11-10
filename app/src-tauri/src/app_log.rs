@@ -10,6 +10,9 @@ use tauri::{AppHandle, Manager, Runtime};
 use crate::db::now_ms;
 use crate::error::Result;
 
+/// Its file in the app's log folder.
+pub const LOG_FILE: &str = "app.log";
+
 /// Appends one line, stamped with the time in milliseconds since the epoch.
 #[tauri::command(async)]
 pub fn app_log<R: Runtime>(app: AppHandle<R>, line: String) -> Result<()> {
@@ -23,7 +26,7 @@ pub fn append<R: Runtime>(app: &AppHandle<R>, line: &str) -> Result<()> {
     let mut file = OpenOptions::new()
         .create(true)
         .append(true)
-        .open(dir.join("app.log"))?;
+        .open(dir.join(LOG_FILE))?;
     writeln!(file, "{} {}", now_ms(), line.replace('\n', " "))?;
     Ok(())
 }

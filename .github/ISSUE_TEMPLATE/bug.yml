@@ -75,5 +75,5 @@ body:
     attributes:
       label: Logs
       description: |
-        The lines around the problem from `~/Library/Logs/app.bomby.desktop/` (`app.log`, `agent.log`, `livekit.log`). Check them for anything private before you paste, like folder names or what you said on the call. Or use Export diagnostics in Settings, About and drag the zip from your Desktop into a comment once the issue is open: keys and tokens are taken out, the rest is as logged.
+        The lines around the problem from `~/Library/Logs/app.bomby.desktop/` (`app.log`, `agent.log`, `livekit.log`). Check them for anything private before you paste, like folder names or what you said on the call. Or use Export diagnostics in Settings, About and drag the zip from your Desktop into a comment once the issue is open: the keys Bomby knows and anything shaped like a key or token are taken out, the rest is as logged, so look it over before you share it.
       render: text

@@ -11,17 +11,11 @@ import { Separator } from "@/components/ui/separator"
 import { SidebarMenuBadge } from "@/components/ui/sidebar"
 import { Wordmark } from "@/components/wordmark"
 
-import {
-  checkForUpdates,
-  type DiagnosticsExport,
-  exportDiagnostics,
-  installUpdate,
-  showDiagnostics,
-  type UpdateStatus,
-} from "./api"
+import { checkForUpdates, installUpdate, type UpdateStatus } from "./api"
 import iconDark from "./app-icon-dark@2x.png"
 import iconLight from "./app-icon-light@2x.png"
 import { useAbout } from "./use-about"
+import { showLastExport, startExport, useDiagnostics } from "./use-diagnostics"
 
 /** Where Bomby lives. Each URL is granted to this window in capabilities/settings.json. */
 const LINKS = [
@@ -124,89 +118,97 @@ function AppIcon() {
   )
 }
 
-/** One card of rows, each opening a page in the browser. */
+/** One card of rows, each opening a page in the browser; one that won't open says so. */
 function LinkList() {
+  const [error, setError] = useState<string | null>(null)
+
+  async function open(link: (typeof LINKS)[number]) {
+    setError(null)
+    try {
+      await openUrl(link.url)
+    } catch {
+      setError(
+        `Your browser didn't open ${link.label}. Go to ${link.value} instead.`
+      )
+    }
+  }
+
   return (
-    <div className="overflow-hidden rounded-lg border bg-card">
-      {LINKS.map((link, index) => (
-        <Fragment key={link.url}>
-          {index > 0 && <Separator />}
-          <button
-            type="button"
-            className="flex w-full items-center gap-4 px-4 py-3 text-left text-sm outline-none hover:bg-accent focus-visible:bg-accent"
-            onClick={() => void openUrl(link.url)}
-          >
-            <span className="shrink-0 font-medium">{link.label}</span>
-            <span className="ml-auto flex min-w-0 items-center gap-1.5 text-muted-foreground">
-              <span className="truncate" title={link.value}>
-                {link.value}
+    <div className="flex flex-col gap-3">
+      <div className="overflow-hidden rounded-lg border bg-card">
+        {LINKS.map((link, index) => (
+          <Fragment key={link.url}>
+            {index > 0 && <Separator />}
+            <button
+              type="button"
+              className="flex w-full items-center gap-4 px-4 py-3 text-left text-sm outline-none hover:bg-accent focus-visible:bg-accent"
+              onClick={() => void open(link)}
+            >
+              <span className="shrink-0 font-medium">{link.label}</span>
+              <span className="ml-auto flex min-w-0 items-center gap-1.5 text-muted-foreground">
+                <span className="truncate" title={link.value}>
+                  {link.value}
+                </span>
+                <ArrowUpRight className="size-4 shrink-0" />
               </span>
-              <ArrowUpRight className="size-4 shrink-0" />
-            </span>
-          </button>
-        </Fragment>
-      ))}
+            </button>
+          </Fragment>
+        ))}
+      </div>
+      {error && <ErrorCard message={error} />}
     </div>
   )
 }
 
 /**
- * Export Diagnostics: Bomby's logs and a short summary in one zip on the Desktop, keys and
- * tokens taken out, which the core shows in Finder. The zip's name, and Show in Finder,
- * stay under the button once it's saved.
+ * Export Diagnostics: Bomby's logs and a short summary in one zip on the Desktop, with the
+ * keys and tokens Bomby knows, and text shaped like them, taken out; the core shows it in
+ * Finder. Its state lives in a page-wide store (use-diagnostics.ts), so leaving About
+ * mid-export loses nothing. The zip's name, and Show in Finder, stay under the button once
+ * it's saved.
  */
 function Diagnostics() {
-  const [saved, setSaved] = useState<DiagnosticsExport | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [pending, startTransition] = useTransition()
-
-  function run(action: () => Promise<void>) {
-    setError(null)
-    startTransition(async () => {
-      try {
-        await action()
-      } catch (e) {
-        setError(String(e))
-      }
-    })
-  }
+  const { status, fileName } = useDiagnostics()
+  const exporting = status.kind === "exporting"
 
   return (
     <div className="flex flex-col items-start gap-3">
       <Button
         variant="outline"
-        disabled={pending}
-        onClick={() =>
-          run(async () => {
-            setSaved(await exportDiagnostics())
-          })
-        }
+        disabled={exporting}
+        onClick={() => void startExport()}
       >
-        {pending ? (
+        {exporting ? (
           <LoaderCircle data-icon="inline-start" className="animate-spin" />
         ) : (
           <FileArchive data-icon="inline-start" />
         )}
         Export diagnostics
       </Button>
-      {saved ? (
+      {fileName ? (
         <output className="block text-sm text-muted-foreground">
           Saved{" "}
           <span className="font-medium text-foreground select-text">
-            {saved.fileName}
+            {fileName}
           </span>{" "}
           to your Desktop.{" "}
-          <InlineLink disabled={pending} onClick={() => run(showDiagnostics)}>
+          <InlineLink
+            disabled={exporting}
+            onClick={() => void showLastExport()}
+          >
             Show in Finder
           </InlineLink>
         </output>
       ) : (
         <p className="text-sm text-muted-foreground">
-          Bomby&apos;s logs in one zip on your Desktop, with keys and tokens
-          taken out. Attach it when you report a problem.
+          Bomby&apos;s logs in one zip on your Desktop, with the keys Bomby
+          knows and anything shaped like a key or token taken out. Look it over
+          before you share it publicly.
         </p>
       )}
-      {error && <ErrorCard message={error} className="w-full" />}
+      {status.kind === "failed" && (
+        <ErrorCard message={status.message} className="w-full" />
+      )}
     </div>
   )
 }
