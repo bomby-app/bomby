@@ -18,6 +18,7 @@ import { useDarkMode } from "@/hooks/use-dark-mode"
 import { cn } from "@/lib/utils"
 
 import type { ChangedFile, Changes } from "./api"
+import { patchCache } from "./patch-cache"
 import { PIERRE_STYLE, pierreTheme, preloadHighlighting } from "./pierre"
 import { splitPath } from "./status"
 import { StatusLetter } from "./status-letter"
@@ -31,27 +32,35 @@ function fingerprint(patch: string): number {
   return hash >>> 0
 }
 
+/** A patch as Pierre draws it, and its fingerprint; none if Pierre found no file in it. */
+function parse(patch: string) {
+  const fileDiff = parsePatchFiles(patch)[0]?.files[0]
+  return fileDiff ? { fileDiff, fingerprint: fingerprint(patch) } : undefined
+}
+
+type Parsed = ReadonlyMap<string, ReturnType<typeof parse>>
+
 /**
- * Pierre's items for the files with a patch. CodeView redraws an item only when its
- * `version` changes, so the version covers both the patch and whether it's collapsed.
+ * Pierre's items for the files with a patch, from each patch's parse. CodeView redraws an
+ * item only when its `version` changes, so the version covers both the patch and whether
+ * it's collapsed.
  */
 function items(
   files: ChangedFile[],
+  parsed: Parsed,
   collapsed: ReadonlySet<string>
 ): CodeViewItem<undefined>[] {
   return files.flatMap((file) => {
-    const fileDiff = file.patch
-      ? parsePatchFiles(file.patch)[0]?.files[0]
-      : undefined
-    if (!fileDiff) return []
+    const diff = file.patch ? parsed.get(file.patch) : undefined
+    if (!diff) return []
     const folded = collapsed.has(file.path)
     return [
       {
         id: file.path,
         type: "diff" as const,
-        fileDiff,
+        fileDiff: diff.fileDiff,
         collapsed: folded,
-        version: fingerprint(file.patch) * 2 + (folded ? 1 : 0),
+        version: diff.fingerprint * 2 + (folded ? 1 : 0),
       },
     ]
   })
@@ -75,6 +84,9 @@ export function ChangesView({
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(
     () => new Set()
   )
+  // Each patch is parsed once while it's shown, not again when a file folds or a refresh
+  // leaves it alone.
+  const [readPatches] = useState(() => patchCache(parse))
   const { files } = changes
 
   if (files.length === 0) {
@@ -89,7 +101,8 @@ export function ChangesView({
     )
   }
 
-  const shown = items(files, collapsed)
+  const parsed = readPatches(files.flatMap((f) => (f.patch ? [f.patch] : [])))
+  const shown = items(files, parsed, collapsed)
   const byPath = new Map(files.map((f) => [f.path, f]))
   const hidden = files.filter((f) => !shown.some((item) => item.id === f.path))
   const allCollapsed = shown.every((item) => collapsed.has(item.id))
