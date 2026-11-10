@@ -294,7 +294,7 @@ function Footnote({
   onLinkError: (message: string) => void
 }) {
   const livekit = keys.server === "theirs" && !keys.theirLiveKit
-  const voice = keys.voice && PROVIDERS[keys.voice]
+  const voice = PROVIDERS[keys.voice]
   const type = (text: string) => (
     <span className="whitespace-nowrap">
       <InlineLink onClick={onType}>{text}</InlineLink>.
@@ -308,7 +308,7 @@ function Footnote({
       (Settings, API keys)
     </>
   )
-  const voicePlace = voice && (
+  const voicePlace = (
     <>
       <Link href={voice.keysUrl} onError={onLinkError}>
         {voice.keysPlace}
@@ -319,16 +319,7 @@ function Footnote({
 
   return (
     <p className="text-center text-sm text-balance text-muted-foreground">
-      {!voice ? (
-        livekit ? (
-          <>
-            Copy your keys from {livekitPlace}, or {type("type them in")} Then
-            pick a voice.
-          </>
-        ) : (
-          <>Pick a voice. You can switch any time in Settings.</>
-        )
-      ) : livekit ? (
+      {livekit ? (
         <>
           Copy them from {livekitPlace} and {voicePlace}, or{" "}
           {type("type them in")}

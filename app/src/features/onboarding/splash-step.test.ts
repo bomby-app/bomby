@@ -36,7 +36,7 @@ const NO_KEYS: Keys = {
   server: "thisMac",
   livekit: true,
   theirLiveKit: false,
-  voice: null,
+  voice: "gemini",
   voiceKeys: { gemini: false, openai: false, rime: false },
   voiceKey: false,
 }
@@ -98,10 +98,9 @@ describe("splashStep", () => {
     expect(step([agent("codex")], ALL_KEYS, onKeys).canContinue).toBe(true)
   })
 
-  it("needs a voice picked and its key, whichever key is saved", () => {
+  it("needs the picked voice's key, whichever key is saved", () => {
     const keys = (keys: Partial<Keys>) =>
       step([agent("codex")], { ...ALL_KEYS, ...keys }, { onKeys: true })
-    expect(keys({ voice: null, voiceKey: false }).canContinue).toBe(false)
     // Rime picked, only Gemini's key saved.
     expect(
       keys({

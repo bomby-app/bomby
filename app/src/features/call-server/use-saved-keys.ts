@@ -24,8 +24,8 @@ export type Keys = {
   /** Ready for a call: this Mac's, or their keys saved. */
   livekit: boolean
   theirLiveKit: boolean
-  /** Who Bomby talks through; null until the user picks one. */
-  voice: VoiceProvider | null
+  /** Who Bomby talks through: the pick, else the first provider with a key, else Gemini. */
+  voice: VoiceProvider
   /** Which providers' keys are saved. */
   voiceKeys: Record<VoiceProvider, boolean>
   /** The picked provider's key is saved. */
@@ -80,7 +80,7 @@ export async function checkKeysAgain(): Promise<void> {
         theirLiveKit,
         voice,
         voiceKeys,
-        voiceKey: voice !== null && voiceKeys[voice],
+        voiceKey: voiceKeys[voice],
       },
       error: null,
     })

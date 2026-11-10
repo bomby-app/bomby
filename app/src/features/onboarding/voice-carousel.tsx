@@ -52,7 +52,7 @@ export function VoiceCarousel({
 }) {
   // Which way the last move went, so the cards slide that way.
   const [dir, setDir] = useState<1 | -1>(1)
-  const shown = keys.voice ?? PROVIDER_ORDER[0]
+  const shown = keys.voice
   const at = PROVIDER_ORDER.indexOf(shown)
   const count = PROVIDER_ORDER.length
 
