@@ -150,7 +150,7 @@ Checked 2026-11-05 in `tauri-plugin-updater` 2.14.0 (`src/updater.rs`, `src/conf
 - **Bundler bug.** `tauri build` cannot compile this `.icon`: actool fails through persistent `ibtoold` (tauri-apps/tauri#16386). `app/scripts/compile-app-icon.sh` kills `ibtoold`, runs actool with stdin closed, retries three times and writes checked-in `Assets.car`.
 - `bundle.macOS.files` copies `Assets.car`; Info.plist sets `CFBundleIconName = Bomby`; `.icon` stays out of `bundle.icon`. After #16386 is fixed, remove the script/file entry/plist workaround and bundle the `.icon` directly.
 - **Settings, About** shows the icon as the Dock does, gloss and depth included: `app/scripts/export-about-icon.sh` (part of `just app icon`) renders `Bomby.icon`'s `Default` and `Dark` renditions at 64 pt, scale 2, into `app/src/features/about/app-icon-{light,dark}@2x.png` with Icon Composer's own `ictool` (`Xcode.app/Contents/Applications/Icon Composer.app/Contents/Executables/ictool`, version 27.2; `xcrun ictool` is actool and refuses `--export-image`). The page shows the one matching its theme.
-- **Older platforms.** `tauri icon` on `app-icon.png` generates ICNS, ICO and PNGs; the recipe removes mobile outputs. Pre-26 macOS uses `CFBundleIconFile = icon.icns`.
+- **Older platforms.** `tauri icon` on `app-icon.png` generates ICNS, ICO and PNGs; the recipe removes the mobile and Windows Store outputs. Pre-26 macOS uses `CFBundleIconFile = icon.icns`.
 
 ## DMG window
 
