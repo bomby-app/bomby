@@ -10,6 +10,11 @@ export type About = {
 version: string, status: UpdateStatus, };
 
 /**
+ * The zip that was written, for the page: its name, to show. Its path stays in the core.
+ */
+export type DiagnosticsExport = { fileName: string, };
+
+/**
  * Where updating stands.
  */
 export type UpdateStatus = { "kind": "development" } | { "kind": "idle" } | { "kind": "checking" } | { "kind": "upToDate" } | { "kind": "available", version: string, } | { "kind": "downloading", version: string, percent: number | null, } | { "kind": "downloaded", version: string, } | { "kind": "restarting" } | { "kind": "failed", message: string, };

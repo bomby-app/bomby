@@ -69,6 +69,7 @@ fmt:
 [working-directory: 'app']
 icon:
     scripts/compile-app-icon.sh
+    scripts/export-about-icon.sh
     bun --bun run tauri icon src-tauri/icons/app-icon.png
     rm -rf src-tauri/icons/android src-tauri/icons/ios
     tiffutil -cathidpicheck src-tauri/icons/dmg-background.png src-tauri/icons/dmg-background@2x.png -out src-tauri/icons/dmg-background.tiff

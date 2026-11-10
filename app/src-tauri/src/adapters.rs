@@ -58,6 +58,11 @@ pub fn bin_dir() -> Option<PathBuf> {
     DIR.get().map(|dir| dir.join("bin"))
 }
 
+/// The adapters' install log, once `init` ran: for Export Diagnostics (`diagnostics`).
+pub fn install_log() -> Option<PathBuf> {
+    DIR.get().map(|dir| dir.join("install.log"))
+}
+
 /// Whether the adapters were built from an older lockfile than this app ships.
 fn stale(dir: &Path) -> bool {
     let built = fs::read_to_string(dir.join("bin").join("bun.lock")).ok();

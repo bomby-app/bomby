@@ -209,6 +209,31 @@ impl Vault {
         Ok(())
     }
 
+    /// Every secret already read from the keychain this run (keys, secrets and tokens), so
+    /// Export Diagnostics can take them out of the logs (`diagnostics`). Never reads the
+    /// keychain itself: a secret never read this run was never handed to anything that logs.
+    pub fn cached_secrets(&self) -> Vec<String> {
+        let cached = sync::lock(&self.0);
+        let Some(keys) = cached.as_ref() else {
+            return Vec::new();
+        };
+        let mut secrets: Vec<String> = [
+            keys.livekit.as_ref().map(|k| k.api_secret.clone()),
+            keys.gemini_key.clone(),
+            keys.openai_key.clone(),
+            keys.rime_key.clone(),
+            keys.zep_key.clone(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        for grant in keys.grants.values() {
+            secrets.push(grant.access_token.clone());
+            secrets.extend(grant.refresh_token.clone());
+        }
+        secrets
+    }
+
     pub fn livekit<R: Runtime>(&self, app: &AppHandle<R>) -> Result<Option<LiveKitKeys>> {
         Ok(self.keys(app)?.livekit)
     }
