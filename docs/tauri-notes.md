@@ -7,7 +7,7 @@ Checked 2026-11-03/04 against Tauri 2.12.5, `tauri-codegen` 2.7.4, `wry` 0.57.1,
 - `app/src` is the React/Vite webview; `app/src-tauri` is the native Rust core. The core owns files, keychain, processes and windows.
 - JS calls `#[tauri::command]` functions with `invoke`; Rust pushes events. Capabilities in `src-tauri/capabilities/*.json` grant every core, plugin and app-command permission.
 - `tauri.conf.json` configures identity, windows, dev server, frontend and bundles. Dev loads Vite at port 1420; build embeds `dist/` and creates native bundles.
-- `main.rs` calls `bomby_lib::run()` in `lib.rs`; the split supports mobile targets.
+- `main.rs` calls `bomby_lib::run()` in `lib.rs`. The lib builds only as the default `rlib`, which the binary links: Tauri's template also asks for `staticlib` and `cdylib`, and marks `run` with `#[cfg_attr(mobile, tauri::mobile_entry_point)]`, only so iOS and Android can load it (v2.tauri.app/start/migrate/from-tauri-1, Prepare for Mobile; the CLI's mobile commands check for them, @tauri-apps/cli 2.12.4). Bomby is macOS only, so it has neither.
 
 ## Microphone
 

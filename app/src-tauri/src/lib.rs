@@ -32,7 +32,6 @@ mod workspace;
 use tauri::Manager;
 use tauri::webview::{PermissionKind, PermissionResponse};
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
     // Only release builds update (updates.rs), so only they load the updater, which won't
