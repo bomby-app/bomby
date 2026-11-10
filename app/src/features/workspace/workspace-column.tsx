@@ -422,7 +422,9 @@ function HeaderButton({
 
 /**
  * The terminals, as quiet tabs in Terminal's header (14 px medium in every state, the
- * chosen one on the accent grey; its × on hover and on the chosen one), then +.
+ * chosen one on the accent grey; its × on hover and on the chosen one), then +. They look
+ * like tabs but are buttons, the chosen one pressed: the terminals live in a layer of
+ * their own, not in panels these could control, and each has a close button beside it.
  */
 function TerminalTabs({
   terminals,
@@ -437,14 +439,16 @@ function TerminalTabs({
   onClose: (terminal: TerminalTab) => void
   onAdd: () => void
 }) {
+  const several = terminals.length > 1
   return (
     <>
+      {/* Always there, empty with one terminal, so the header keeps its spacing. */}
       <div
-        role="tablist"
-        aria-label="Terminals"
+        role={several ? "group" : undefined}
+        aria-label={several ? "Terminals" : undefined}
         className="no-scrollbar flex min-w-0 items-center gap-1 overflow-x-auto"
       >
-        {terminals.length > 1 &&
+        {several &&
           terminals.map((terminal) => {
             const name = terminal.title ?? `Terminal ${terminal.id}`
             const chosen = terminal === current
@@ -455,8 +459,7 @@ function TerminalTabs({
               >
                 <button
                   type="button"
-                  role="tab"
-                  aria-selected={chosen}
+                  aria-pressed={chosen}
                   onClick={() => onChoose(terminal)}
                   className={cn(
                     "flex h-7 items-center rounded-md pr-7 pl-2.5 text-sm font-medium whitespace-nowrap text-muted-foreground outline-none select-none hover:bg-accent hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground",
