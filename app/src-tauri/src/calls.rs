@@ -26,7 +26,8 @@ use crate::setup::Pick;
 use crate::sync;
 use crate::voice::{self, CallVoice};
 use crate::{
-    agent_picks, agents, call_server, credentials, extensions, projects, settings, updates, windows,
+    agent_picks, agent_streams, agents, call_server, credentials, extensions, projects, settings,
+    updates, windows,
 };
 
 /// Sent to every window when a call is named or renamed, by the user or by Bomby.
@@ -432,6 +433,11 @@ pub fn open_call<R: Runtime>(
                         .0
                         .as_ref()
                         .map(extensions::tokens::TokenSocket::env),
+                    streams: app
+                        .state::<agent_streams::AgentStreams>()
+                        .socket
+                        .as_ref()
+                        .map(agent_streams::StreamSocket::env),
                 },
                 &log_dir,
                 report_crashes(&app),

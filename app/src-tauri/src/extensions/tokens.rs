@@ -13,14 +13,11 @@
 //! Tokens never go to the page or through LiveKit.
 
 use std::future::Future;
-use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use base64::Engine;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use serde::Deserialize;
 use tauri::{AppHandle, Runtime};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
@@ -29,7 +26,8 @@ use tokio::sync::Semaphore;
 
 use super::connections;
 use crate::app_log;
-use crate::error::{Error, Result};
+use crate::error::Result;
+use crate::local_socket::{self, same};
 
 pub const SOCKET_ENV: &str = "BOMBY_TOKENS";
 pub const SECRET_ENV: &str = "BOMBY_TOKENS_SECRET";
@@ -37,8 +35,6 @@ pub const SECRET_ENV: &str = "BOMBY_TOKENS_SECRET";
 const READ_TIMEOUT: Duration = Duration::from_secs(5);
 /// The most a request may weigh: a secret, an id and a token.
 const MAX_REQUEST: u64 = 64 * 1024;
-/// A Unix socket's path is limited to 104 bytes on macOS (`sun_path`).
-const MAX_SOCKET_PATH: usize = 100;
 /// The most requests answered at once; more connections are closed unanswered. A call asks
 /// for one token per extension at a time, so this is far above real use.
 const MAX_AT_ONCE: usize = 16;
@@ -79,21 +75,12 @@ impl TokenSocket {
     }
 
     fn start_in(parent: &Path, fetch: Fetch) -> Result<Self> {
-        let mut dir = parent.join(format!("bomby-{}", std::process::id()));
-        if dir.join("tokens.sock").as_os_str().len() > MAX_SOCKET_PATH {
-            dir = Path::new("/tmp").join(format!("bomby-{}", std::process::id()));
-        }
-        // A folder left by an earlier run with this pid goes; then only this user may enter.
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::DirBuilder::new().mode(0o700).create(&dir)?;
-        let path = dir.join("tokens.sock");
-        let listener = std::os::unix::net::UnixListener::bind(&path)?;
-        listener.set_nonblocking(true)?;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
-        let mut bytes = [0u8; 32];
-        getrandom::fill(&mut bytes)
-            .map_err(|e| Error::Invalid(format!("Couldn't make the token secret: {e}")))?;
-        let secret = URL_SAFE_NO_PAD.encode(bytes);
+        let local_socket::PrivateSocket {
+            dir,
+            path,
+            listener,
+        } = local_socket::bind(parent, "bomby", "tokens.sock")?;
+        let secret = local_socket::secret()?;
         let expected = secret.clone();
         tauri::async_runtime::spawn(async move {
             match UnixListener::from_std(listener) {
@@ -132,15 +119,6 @@ pub fn start<R: Runtime>(app: &AppHandle<R>) -> Option<TokenSocket> {
             None
         }
     }
-}
-
-/// Compares in time that doesn't depend on where they differ.
-fn same(a: &str, b: &str) -> bool {
-    a.len() == b.len()
-        && a.bytes()
-            .zip(b.bytes())
-            .fold(0u8, |acc, (x, y)| acc | (x ^ y))
-            == 0
 }
 
 /// The answer to one request line.
@@ -263,7 +241,7 @@ mod tests {
             0o700
         );
         assert_eq!(std::fs::metadata(&path).unwrap().mode() & 0o777, 0o600);
-        assert!(path.len() <= MAX_SOCKET_PATH);
+        assert!(path.len() <= local_socket::MAX_SOCKET_PATH);
 
         let mut stream = UnixStream::connect(&path).await.unwrap();
         let request =

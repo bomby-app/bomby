@@ -65,6 +65,9 @@ pub struct WorkerConfig {
     /// Where the hosted MCP extensions' tokens come from (`extensions::tokens`): the
     /// socket's path and the run's secret, the same for the whole run.
     pub tokens: Option<[(&'static str, String); 2]>,
+    /// Where the Agents panel's live streams go (`agent_streams`): the socket's path and the
+    /// run's secret, the same for the whole run.
+    pub streams: Option<[(&'static str, String); 2]>,
 }
 
 struct Running {
@@ -180,7 +183,7 @@ fn start(config: &WorkerConfig, log_dir: &Path, on_crash: OnCrash) -> Result<(Ch
         Some(key) => command.env("ZEP_API_KEY", key),
         None => command.env_remove("ZEP_API_KEY"),
     };
-    for (name, value) in config.tokens.iter().flatten() {
+    for (name, value) in config.tokens.iter().chain(&config.streams).flatten() {
         command.env(name, value);
     }
     // Its own process group, so stopping it also stops uv's python and the job processes.
