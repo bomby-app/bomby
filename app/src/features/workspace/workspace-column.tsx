@@ -30,6 +30,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { folderName } from "@/lib/text"
 import { cn } from "@/lib/utils"
 
 import type { Changes, FolderInfo } from "./api"
@@ -59,9 +60,6 @@ type TerminalTab = {
 }
 
 /** The last part of a path: what a folder is called. */
-function folderName(path: string): string {
-  return path.split("/").filter(Boolean).at(-1) ?? path
-}
 
 /** The least height an open panel can be dragged to: its header and a few lines. */
 const MIN_PANEL_HEIGHT = 120

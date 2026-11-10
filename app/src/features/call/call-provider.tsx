@@ -18,13 +18,13 @@ import {
 import { AgentSessionProvider } from "@/components/agents-ui/agent-session-provider"
 import { StartAudioButton } from "@/components/agents-ui/start-audio-button"
 import { useCoreEvent } from "@/hooks/use-core-event"
+import { log } from "@/lib/log"
 
 import { useProjects } from "../projects/projects-provider"
 import {
   callToken,
   callTranscript,
   endCall,
-  log,
   onAgentCrashed,
   openCall,
   saveMessage,

@@ -1,7 +1,8 @@
 import { createContext, type ReactNode, use, useEffect, useState } from "react"
 
-import { log, onCallRenamed } from "@/features/call/api"
+import { onCallRenamed } from "@/features/call/api"
 import { useCoreEvent } from "@/hooks/use-core-event"
+import { log } from "@/lib/log"
 
 import {
   createProject,

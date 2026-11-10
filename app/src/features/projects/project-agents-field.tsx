@@ -12,10 +12,10 @@ import {
 import { AgentLogo } from "@/features/agents/agent-logos"
 import type { AgentStatus } from "@/features/agents/api"
 import { isReady, useAgents } from "@/features/agents/use-agents"
+import { andList } from "@/lib/text"
 import { cn } from "@/lib/utils"
 
 import type { ProjectAgents } from "./api"
-import { andList } from "./names"
 
 /**
  * Which agents the project's calls can hand work to (Paper "Project settings · Agents"):

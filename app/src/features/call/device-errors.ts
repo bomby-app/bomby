@@ -1,8 +1,7 @@
 import { Track } from "livekit-client"
 
 import { showErrorToast } from "@/components/error-toast"
-
-import { log } from "./api"
+import { log } from "@/lib/log"
 
 /**
  * The control bar's device errors: the mic failing mid-call, or a mic picked in its menu
