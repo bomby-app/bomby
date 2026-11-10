@@ -66,7 +66,7 @@ function KeysForm({ keys, onSaved }: { keys: Keys; onSaved: () => void }) {
   const typedLiveKit = cloud && changed(livekit.fields, livekit.saved)
   // Only the picked provider's: the splash picks one before offering to type its key.
   const voice = keys.voice
-  const typedVoice = voice !== null && voiceKey.trim() !== ""
+  const typedVoice = voiceKey.trim() !== ""
 
   function save(event: FormEvent) {
     event.preventDefault()
@@ -114,31 +114,29 @@ function KeysForm({ keys, onSaved }: { keys: Keys; onSaved: () => void }) {
             <FieldSeparator />
           </>
         )}
-        {voice && (
-          <FieldSet>
-            <FieldLegend>{PROVIDERS[voice].name}</FieldLegend>
-            <FieldDescription>{PROVIDERS[voice].keysHow}</FieldDescription>
-            <Field>
-              <FieldLabel htmlFor="keys-voice-api-key">API key</FieldLabel>
-              <Input
-                id="keys-voice-api-key"
-                type="password"
-                placeholder={
-                  keys.voiceKeys[voice]
-                    ? "Saved. Type a new one to replace it."
-                    : ""
-                }
-                value={voiceKey}
-                autoComplete="off"
-                spellCheck={false}
-                onChange={(event) => {
-                  setVoiceKey(event.target.value)
-                  setError(null)
-                }}
-              />
-            </Field>
-          </FieldSet>
-        )}
+        <FieldSet>
+          <FieldLegend>{PROVIDERS[voice].name}</FieldLegend>
+          <FieldDescription>{PROVIDERS[voice].keysHow}</FieldDescription>
+          <Field>
+            <FieldLabel htmlFor="keys-voice-api-key">API key</FieldLabel>
+            <Input
+              id="keys-voice-api-key"
+              type="password"
+              placeholder={
+                keys.voiceKeys[voice]
+                  ? "Saved. Type a new one to replace it."
+                  : ""
+              }
+              value={voiceKey}
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(event) => {
+                setVoiceKey(event.target.value)
+                setError(null)
+              }}
+            />
+          </Field>
+        </FieldSet>
         {shownError && <FieldError>{shownError}</FieldError>}
         <div>
           <Button
