@@ -16,7 +16,7 @@ Bumped 2026-11-06 from 1.8.10, with `livekit-plugins-google` 1.8.11 and the `liv
 
 - A `@function_tool` becomes non-blocking on its first `await ctx.update(msg)`. Its final return arrives when the agent is idle through synthetic call id `{call_id}_final` (`voice/tool_executor.py`).
 - `ctx.update(msg, silent=True)` (1.8.9+) records progress without speech.
-- `flags=ToolFlag.CANCELLABLE` exposes `lk_agents_get_running_tasks` and `lk_agents_cancel_task`; cancellation raises `asyncio.CancelledError`. Interrupting speech does not cancel work.
+- `flags=ToolFlag.CANCELLABLE` exposes `lk_agents_get_running_tasks` and `lk_agents_cancel_task`; cancellation raises `asyncio.CancelledError`. Interrupting speech does not cancel work. `lk_agents_cancel_task` cancels the tool call's own asyncio task (`ToolExecutor.cancel`, `utils.aio.cancel_and_wait(task.exe_task)` in `voice/tool_executor.py`, 1.8.11), so inside the tool `asyncio.current_task().cancelling()` is above 0; `start_task` tells that apart from a stop the user asked for, which cancels only the work it waits on.
 - `on_duplicate`: `allow` (default), `reject`, `replace`, `confirm`, matched by tool name.
 - `ctx.foreground()` pauses the session for an interactive step, the future hook for voice permission prompts.
 - Interrupted-turn tool output gets `reply_required=False` (`voice/generation.py`), which Gemini turns into `scheduling: SILENT` ([Gemini notes](gemini-notes.md)).
