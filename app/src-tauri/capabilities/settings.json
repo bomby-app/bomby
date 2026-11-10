@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "settings",
-  "description": "The settings window: setup, intro, agents, voice, memory, extensions, call server, appearance and about (the first-run splash in the main window reads and saves credentials too).",
+  "description": "The settings window: setup, intro, agents, voice, memory, extensions, call server, appearance and about, with Export Diagnostics (the first-run splash in the main window reads and saves credentials too).",
   "windows": [
     "settings"
   ],
@@ -14,7 +14,10 @@
     {
       "identifier": "opener:allow-open-url",
       "allow": [
+        { "url": "https://bomby.app" },
         { "url": "https://github.com/bomby-app/bomby" },
+        { "url": "https://github.com/bomby-app/bomby/blob/main/LICENSE" },
+        { "url": "https://x.com/AbuRadyx" },
         { "url": "https://code.claude.com/docs/en/quickstart" },
         { "url": "https://learn.chatgpt.com/docs/codex/cli" },
         { "url": "https://opencode.ai/docs/" },
@@ -64,6 +67,8 @@
     "allow-disconnect-extension",
     "allow-about",
     "allow-check-for-updates",
-    "allow-install-update"
+    "allow-install-update",
+    "allow-export-diagnostics",
+    "allow-show-diagnostics"
   ]
 }

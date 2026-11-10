@@ -45,6 +45,9 @@ const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(900);
 const FAILED: &str = "Try again in a minute!";
 const STEP_TIMEOUT: Duration = Duration::from_secs(300);
 
+/// The install's log, in the adapters' folder.
+pub const LOG_FILE: &str = "install.log";
+
 static DIR: OnceLock<PathBuf> = OnceLock::new();
 static INSTALLING: Mutex<()> = Mutex::new(());
 
@@ -56,6 +59,11 @@ pub fn init(app_data: &Path) {
 /// The folder of built adapters the voice agent runs, once `init` ran.
 pub fn bin_dir() -> Option<PathBuf> {
     DIR.get().map(|dir| dir.join("bin"))
+}
+
+/// The adapters' install log, once `init` ran: for Export Diagnostics (`diagnostics`).
+pub fn install_log() -> Option<PathBuf> {
+    DIR.get().map(|dir| dir.join(LOG_FILE))
 }
 
 /// Whether the adapters were built from an older lockfile than this app ships.
@@ -101,7 +109,7 @@ pub async fn install_adapters<R: Runtime>(app: AppHandle<R>) -> Result<()> {
 /// program.
 fn install(dir: &Path) -> Result<()> {
     fs::create_dir_all(dir)?;
-    let log = dir.join("install.log");
+    let log = dir.join(LOG_FILE);
     let bun = runtime(dir, &log)?;
 
     let work = dir.join("packages");
@@ -310,7 +318,7 @@ mod tests {
     fn a_failed_download_says_its_http_code_or_that_nothing_answered() {
         let dir = std::env::temp_dir().join(format!("bomby-failure-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
-        let (log, status) = (dir.join("install.log"), dir.join("status"));
+        let (log, status) = (dir.join(LOG_FILE), dir.join("status"));
         let fail = |printed: &str| {
             let mut curl = Command::new("sh");
             curl.args(["-c", &format!("printf {printed}; exit 22")]);

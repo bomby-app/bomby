@@ -1,25 +1,46 @@
 import { openUrl } from "@tauri-apps/plugin-opener"
-import { LoaderCircle } from "lucide-react"
-import { useState, useTransition } from "react"
+import { ArrowUpRight, FileArchive, LoaderCircle } from "lucide-react"
+import { Fragment, useState, useTransition } from "react"
 
-import { AppLogo } from "@/components/app-logo"
+import { BetaBadge } from "@/components/beta-badge"
 import { ErrorCard } from "@/components/error-card"
 import { InlineLink } from "@/components/inline-link"
 import { MascotCard } from "@/components/mascot-card"
 import { Button } from "@/components/ui/button"
+import { Separator } from "@/components/ui/separator"
 import { SidebarMenuBadge } from "@/components/ui/sidebar"
 import { Wordmark } from "@/components/wordmark"
 
 import { checkForUpdates, installUpdate, type UpdateStatus } from "./api"
-import { GitHubMark } from "./github-mark"
+import iconDark from "./app-icon-dark@2x.png"
+import iconLight from "./app-icon-light@2x.png"
 import { useAbout } from "./use-about"
+import { showLastExport, startExport, useDiagnostics } from "./use-diagnostics"
 
-/** Bomby's source, and its releases. Granted to this window in capabilities/settings.json. */
-const REPO = "https://github.com/bomby-app/bomby"
+/** Where Bomby lives. Each URL is granted to this window in capabilities/settings.json. */
+const LINKS = [
+  { label: "Website", value: "bomby.app", url: "https://bomby.app" },
+  {
+    label: "Source code",
+    value: "github.com/bomby-app/bomby",
+    url: "https://github.com/bomby-app/bomby",
+  },
+  {
+    label: "Made by",
+    value: "@AbuRadyx on X",
+    url: "https://x.com/AbuRadyx",
+  },
+  {
+    label: "License",
+    value: "MIT",
+    url: "https://github.com/bomby-app/bomby/blob/main/LICENSE",
+  },
+] as const
 
 /**
- * The About section of the settings window: the app's version, and its updates
- * (docs/releasing.md). Release builds check once at launch; installing waits for the user.
+ * The About section of the settings window, laid out like a macOS About pane: the app icon,
+ * name and version, then updates (docs/releasing.md; release builds check once at
+ * launch, installing waits for the user), where Bomby lives, and Export Diagnostics.
  */
 export function AboutSettings() {
   const info = useAbout()
@@ -47,17 +68,14 @@ export function AboutSettings() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center gap-4">
-        <AppLogo className="size-14" />
-        <div className="flex flex-col gap-1">
-          <Wordmark className="text-2xl leading-7" />
+        <AppIcon />
+        <div className="flex min-w-0 flex-col gap-1">
+          <div className="flex items-center gap-2">
+            <Wordmark className="text-2xl leading-7" />
+            <BetaBadge />
+          </div>
           <p className="text-sm text-muted-foreground select-text">
-            {info ? versionLine(info.version, info.status) : " "}
-          </p>
-          <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            <GitHubMark className="size-3.5" />
-            <InlineLink onClick={() => void openUrl(REPO)}>
-              bomby-app/bomby
-            </InlineLink>
+            {info ? versionLine(info.version, info.status) : "\u00a0"}
           </p>
         </div>
       </div>
@@ -69,6 +87,127 @@ export function AboutSettings() {
           onCheck={check}
           onInstall={install}
         />
+      )}
+      <LinkList />
+      <Diagnostics />
+    </div>
+  )
+}
+
+/**
+ * Bomby's icon as the Dock shows it, gloss and depth and all: Icon Composer's light and
+ * dark renditions of src-tauri/icons/Bomby.icon at 2x (scripts/export-about-icon.sh),
+ * following the page's theme. The 64px box holds the tile with macOS's margin around it.
+ */
+function AppIcon() {
+  return (
+    <div className="size-16 shrink-0" aria-hidden>
+      <img
+        src={iconLight}
+        alt=""
+        draggable={false}
+        className="block size-16 dark:hidden"
+      />
+      <img
+        src={iconDark}
+        alt=""
+        draggable={false}
+        className="hidden size-16 dark:block"
+      />
+    </div>
+  )
+}
+
+/** One card of rows, each opening a page in the browser; one that won't open says so. */
+function LinkList() {
+  const [error, setError] = useState<string | null>(null)
+
+  async function open(link: (typeof LINKS)[number]) {
+    setError(null)
+    try {
+      await openUrl(link.url)
+    } catch {
+      setError(
+        `Your browser didn't open ${link.label}. Go to ${link.value} instead.`
+      )
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="overflow-hidden rounded-lg border bg-card">
+        {LINKS.map((link, index) => (
+          <Fragment key={link.url}>
+            {index > 0 && <Separator />}
+            <button
+              type="button"
+              className="flex w-full items-center gap-4 px-4 py-3 text-left text-sm outline-none hover:bg-accent focus-visible:bg-accent"
+              onClick={() => void open(link)}
+            >
+              <span className="shrink-0 font-medium">{link.label}</span>
+              <span className="ml-auto flex min-w-0 items-center gap-1.5 text-muted-foreground">
+                <span className="truncate" title={link.value}>
+                  {link.value}
+                </span>
+                <ArrowUpRight className="size-4 shrink-0" />
+              </span>
+            </button>
+          </Fragment>
+        ))}
+      </div>
+      {error && <ErrorCard message={error} />}
+    </div>
+  )
+}
+
+/**
+ * Export Diagnostics: Bomby's logs and a short summary in one zip on the Desktop, with the
+ * keys and tokens Bomby knows, and text shaped like them, taken out; the core shows it in
+ * Finder. Its state lives in a page-wide store (use-diagnostics.ts), so leaving About
+ * mid-export loses nothing. The zip's name, and Show in Finder, stay under the button once
+ * it's saved.
+ */
+function Diagnostics() {
+  const { status, fileName } = useDiagnostics()
+  const exporting = status.kind === "exporting"
+
+  return (
+    <div className="flex flex-col items-start gap-3">
+      <Button
+        variant="outline"
+        disabled={exporting}
+        onClick={() => void startExport()}
+      >
+        {exporting ? (
+          <LoaderCircle data-icon="inline-start" className="animate-spin" />
+        ) : (
+          <FileArchive data-icon="inline-start" />
+        )}
+        Export diagnostics
+      </Button>
+      {fileName ? (
+        <output className="block text-sm text-muted-foreground">
+          Saved{" "}
+          <span className="font-medium text-foreground select-text">
+            {fileName}
+          </span>{" "}
+          to your Desktop.{" "}
+          <InlineLink
+            disabled={exporting}
+            onClick={() => void showLastExport()}
+          >
+            Show in Finder
+          </InlineLink>
+        </output>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          Bomby&apos;s logs in one zip on your Desktop, with the keys Bomby
+          knows and anything shaped like a key or token taken out. Look it over
+          before you share it publicly.
+        </p>
+      )}
+      {status.kind === "failed" && (
+        <ErrorCard message={status.message} className="w-full" />
       )}
     </div>
   )

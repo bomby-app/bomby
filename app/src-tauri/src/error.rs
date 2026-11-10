@@ -24,6 +24,8 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("git: {0}")]
     Git(#[from] git2::Error),
+    #[error("zip: {0}")]
+    Zip(#[from] zip::result::ZipError),
     #[error("notification: {0}")]
     Notification(#[from] tauri_plugin_notification::Error),
 }

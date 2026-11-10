@@ -51,7 +51,8 @@ Owner's choices, 2026-11-04:
 
 - Transcript bubbles (Paper board "In use / the conversation"): Bomby in highlighter with ink text, the user in ink with white text (raised grey in dark). Bubblegum stays for Claude's own messages when they show in the call.
 - Resume buttons are bubblegum with ink text: resuming brings a conversation back. So are the pills between a call's sessions in its transcript: a solid bubblegum pill, centred with room above and below, with a chevron that folds the session, a phone and "Started" or a play icon and "Resumed", then a clock with when and how long (owner, 2026-11-09).
-- A small bubblegum **Beta** badge (ink text) follows the wordmark in the sidebar while the app is in beta.
+- A small bubblegum **Beta** badge (ink text) follows the wordmark in the sidebar and in Settings, About while the app is in beta: `app/src/components/beta-badge.tsx`, nothing else draws it.
+- Settings, About is laid out like a macOS About pane: the app icon as the Dock shows it (Icon Composer's render of `Bomby.icon`, light or dark with the theme, never the flat `app-logo`), then the wordmark with the Beta badge and "Version 0.2.0"; under it the update row, one card of links (Website, Source code, Made by, License: the label on the left, the value muted with an arrow up-right on the right, the whole row opens it), and a quiet outline Export diagnostics button.
 
 Ready setup marks are an ink thumbs-up on highlighter. A missing item in Setup is a bubblegum button with ink text that goes to where it is added (Add key, Set up); the ink cross on bubblegum remains for a missing item without an action. In the agents panel each task's status is one ink icon on a disc, its label a tooltip: bubblegum while it waits or joins a running task (queued, added), highlighter for working (spinning), done, failed and stopped (owner, 2026-11-05).
 

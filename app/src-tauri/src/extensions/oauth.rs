@@ -117,6 +117,11 @@ impl Grant {
     pub fn expires_in(&self, now_ms: i64) -> Option<i64> {
         self.expires_at.map(|at| ((at - now_ms) / 1000).max(0))
     }
+
+    /// Its access token and refresh token, for the vault's redaction history.
+    pub fn secrets(&self) -> impl Iterator<Item = &str> {
+        std::iter::once(self.access_token.as_str()).chain(self.refresh_token.as_deref())
+    }
 }
 
 pub fn client() -> Result<reqwest::Client> {

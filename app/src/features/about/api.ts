@@ -1,11 +1,12 @@
 import { invoke } from "@tauri-apps/api/core"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 
-import type { About, UpdateStatus } from "@/generated/about"
+import type { About, DiagnosticsExport, UpdateStatus } from "@/generated/about"
 
-// The core's version and updates (src-tauri/src/updates.rs, docs/releasing.md).
+// The core's version and updates (src-tauri/src/updates.rs, docs/releasing.md), and
+// Export Diagnostics (src-tauri/src/diagnostics.rs).
 
-export type { About, UpdateStatus } from "@/generated/about"
+export type { About, DiagnosticsExport, UpdateStatus } from "@/generated/about"
 
 export function about(): Promise<About> {
   return invoke("about")
@@ -31,4 +32,19 @@ export function onUpdateStatus(
   return listen<UpdateStatus>("update-status", (event) =>
     handler(event.payload)
   )
+}
+
+/**
+ * Collects Bomby's logs and a short summary, keys and tokens taken out, into one zip on the
+ * Desktop and shows it in Finder (src-tauri/src/diagnostics.rs). Rejects with a message for
+ * the user when nothing was saved; a zip saved that Finder couldn't show resolves, with
+ * `finderError` saying what to do.
+ */
+export function exportDiagnostics(): Promise<DiagnosticsExport> {
+  return invoke("export_diagnostics")
+}
+
+/** Shows the last exported zip in Finder again. Rejects with a message for the user. */
+export function showDiagnostics(): Promise<void> {
+  return invoke("show_diagnostics")
 }

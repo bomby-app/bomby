@@ -8,6 +8,8 @@ const COMMANDS: &[&str] = &[
     "about",
     "check_for_updates",
     "install_update",
+    "export_diagnostics",
+    "show_diagnostics",
     "app_log",
     "credentials_info",
     "save_credentials",

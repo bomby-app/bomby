@@ -1,6 +1,6 @@
 import { AppLogo } from "@/components/app-logo"
+import { BetaBadge } from "@/components/beta-badge"
 import { TitlebarSpacer } from "@/components/titlebar-spacer"
-import { Badge } from "@/components/ui/badge"
 import {
   Sidebar,
   SidebarContent,
@@ -43,9 +43,7 @@ export function AppSidebar({
         >
           <AppLogo />
           <Wordmark />
-          <Badge className="h-4 bg-claude px-1.5 font-mono text-label font-semibold text-claude-foreground uppercase">
-            Beta
-          </Badge>
+          <BetaBadge />
         </button>
       </SidebarHeader>
 

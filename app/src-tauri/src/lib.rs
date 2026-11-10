@@ -1,4 +1,4 @@
-//! The Tauri core of the desktop app: windows, the menu bar icon, notifications, updates, the permission prompt for the mic, the app's
+//! The Tauri core of the desktop app: windows, the menu bar icon, notifications, updates, Export Diagnostics, the permission prompt for the mic, the app's
 //! database, extensions and their data, the workspace panel's terminals, git changes and files, and the commands the page calls. Each command's module documents it;
 //! capabilities/ grants them.
 
@@ -12,6 +12,7 @@ mod calls;
 mod credentials;
 mod db;
 mod dev;
+mod diagnostics;
 mod error;
 mod extensions;
 mod local_server;
@@ -71,6 +72,7 @@ pub fn run() {
             app.manage(agent_picks::Listings::default());
             app.manage(calls::CallAgents::default());
             app.manage(updates::Updates::default());
+            app.manage(diagnostics::Exports::default());
             app.manage(workspace::terminals::TerminalsState::default());
             app.manage(workspace::watch::Watches::default());
             tray::init(app.handle())?;
@@ -99,6 +101,8 @@ pub fn run() {
             updates::about,
             updates::check_for_updates,
             updates::install_update,
+            diagnostics::export_diagnostics,
+            diagnostics::show_diagnostics,
             app_log::app_log,
             credentials::credentials_info,
             credentials::save_credentials,
