@@ -5,6 +5,7 @@ import shutil
 import socket
 import tempfile
 import threading
+import time
 from collections.abc import Awaitable, Callable, Coroutine, Iterator, Mapping
 from typing import cast, final
 
@@ -306,7 +307,11 @@ def mcp_server() -> Iterator[tuple[str, list[str], RequireBearer]]:
     web = uvicorn.Server(uvicorn.Config(app, log_level="warning", lifespan="on"))
     thread = threading.Thread(target=web.run, kwargs={"sockets": [sock]}, daemon=True)
     thread.start()
+    deadline = time.monotonic() + 10
     while not web.started:
+        assert thread.is_alive() and time.monotonic() < deadline, (
+            "the test's MCP server didn't start"
+        )
         _ = threading.Event().wait(0.01)
     yield f"http://127.0.0.1:{port}/mcp", valid, app
     web.should_exit = True
