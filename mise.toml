@@ -1,5 +1,5 @@
 [tools]
-# LiveKit CLI (`lk`), 2.18.8+ for `lk agent console` / `lk agent debugger`
+# LiveKit CLI (`lk`), 2.18.8+ for `lk agent console` (`just agent console`)
 "github:livekit/livekit-cli" = "2.18.8"
 # Go builds the bundled LiveKit server (`just livekit build`)
 go = "1.27.3"

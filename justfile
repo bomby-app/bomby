@@ -15,7 +15,7 @@ mod livekit
 default:
     @just --list --unsorted
 
-# Install the tools pinned in mise.toml (lk, go, rust, bun, uv, just) and every part's dependencies, the ACP adapters included
+# Install the tools pinned in mise.toml and every part's dependencies, the ACP adapters included
 install: tools agent::install livekit::build app::install
 
 # Install the tools pinned in mise.toml

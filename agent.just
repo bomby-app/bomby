@@ -1,9 +1,9 @@
 # The voice agent (agent/): LiveKit Agents, Gemini 3.8 Live, OpenAI GPT-Live or Rime Prism, coding agents over ACP.
 #
 # Typical use:
-#     just agent install        resolve the Python dependencies (uv)
+#     just agent install        resolve the Python dependencies (uv) and build the ACP adapters (bun)
 #     just agent console        talk to the agent in the terminal
-#     just agent check          lint, types and tests, before every commit
+#     just agent check          lint, types, tests and the app's catalogues, before every commit
 #
 # Set the console call's project in agent/.env (BOMBY_PROJECT, BOMBY_FOLDERS,
 # BOMBY_INSTRUCTIONS).
