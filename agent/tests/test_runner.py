@@ -11,15 +11,16 @@ import pytest
 from acp.schema import PermissionOption
 from livekit.agents.llm import ToolError
 
-from acp_client import AcpRunner
+import acp_client.runner as runner_module
 from acp_client.client import pick_allow
+from acp_client.environment import child_environment
 from acp_client.runner import (
     BRIEFING,
     REPORT_RULE,
     SHORT_REPORT_RULE,
+    AcpRunner,
     Turn,
     briefing,
-    child_environment,
     no_model_picked,
     no_report,
     not_ready,
@@ -73,32 +74,44 @@ def names(events: list[dict[str, Any]]) -> list[str]:
     return [e["event"] for e in events]
 
 
+def logged(runner: AcpRunner, event: str, **fields: object) -> int:
+    """How many times the fake agent has logged `event` with `fields`."""
+    log = Path(runner.env["FAKE_ACP_LOG"])
+    if not log.exists():
+        return 0
+    count = 0
+    # Only whole lines: the fake may be part-way through writing the last one.
+    for line in log.read_text().splitlines(keepends=True):
+        if not line.endswith("\n"):
+            continue
+        entry = json.loads(line)
+        count += entry["event"] == event and all(
+            entry.get(k) == v for k, v in fields.items()
+        )
+    return count
+
+
+async def until_logged(
+    runner: AcpRunner, event: str, before: int = 0, **fields: object
+) -> None:
+    """Until the fake agent has logged `event` with `fields` more than `before` times. A
+    fixed sleep races a loaded machine."""
+    for _ in range(400):
+        if logged(runner, event, **fields) > before:
+            return
+        await asyncio.sleep(0.05)
+    raise AssertionError(f"the agent never logged {event} {fields}")
+
+
 async def until_prompted(
     runner: AcpRunner, task: str, session: str = "main"
 ) -> asyncio.Task[str]:
     """Start `task` in `session` and return once the fake agent has its prompt."""
-    log = Path(runner.env["FAKE_ACP_LOG"])
-
-    def prompts() -> int:
-        if not log.exists():
-            return 0
-        count = 0
-        # Only whole lines: the fake may be part-way through writing the last one.
-        for line in log.read_text().splitlines(keepends=True):
-            if not line.endswith("\n"):
-                continue
-            event = json.loads(line)
-            count += event["event"] == "prompt" and event.get("text") == task
-        return count
-
-    before = prompts()
+    before = logged(runner, "prompt", text=task)
     running = asyncio.create_task(text(runner.run(task, session)))
-    # A fixed sleep raced a loaded machine: a cancel sent before the prompt landed was lost.
-    for _ in range(400):
-        if prompts() > before:
-            return running
-        await asyncio.sleep(0.05)
-    raise AssertionError("the turn never started")
+    # A cancel sent before the prompt landed was lost.
+    await until_logged(runner, "prompt", before, text=task)
+    return running
 
 
 def test_run_returns_only_the_final_message(tmp_path: Path) -> None:
@@ -378,15 +391,17 @@ def test_a_steered_request_fails_when_the_turn_it_joined_is_stopped(
     async def scenario(runner: AcpRunner) -> str:
         first = await until_prompted(runner, "hang", "page")
         steered = asyncio.create_task(runner.run("make the header blue", "page"))
-        await asyncio.sleep(0.2)  # let the steer reach the agent
+        # Stopped only once it joined: a request too late for the turn takes its own.
+        await until_logged(runner, "steer", text="make the header blue", injected=True)
         _ = first.cancel()
         with pytest.raises(ToolError) as stopped_error:
             _ = await steered
         return str(stopped_error.value)
 
-    message, _ = run_with_fake(tmp_path, scenario)
+    message, events = run_with_fake(tmp_path, scenario)
 
     assert message == stopped(CLAUDE_CODE)
+    assert [e["text"] for e in events if e["event"] == "prompt"] == ["hang"]
 
 
 def test_a_steered_request_fails_when_the_turn_it_joined_stops_early(
@@ -546,6 +561,59 @@ def test_a_failed_turn_and_a_crash_are_reported_briefly_and_the_next_task_restar
     )
     assert failed == crashed == stopped
     assert after == "Done: back"
+
+
+def gone(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    return False
+
+
+@pytest.mark.parametrize("step", ["initialize", "new_session"])
+def test_an_agent_that_never_answers_is_stopped_and_the_next_task_restarts_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    step: str,
+) -> None:
+    monkeypatch.setattr(runner_module, "START_TIMEOUT_S", 0.5)
+
+    async def scenario(runner: AcpRunner) -> tuple[str, str]:
+        async with asyncio.timeout(10):  # a missing deadline fails, not hangs
+            hung = await tool_error(runner)
+            return hung, (await runner.run("reply back")).text
+
+    (hung, after), events = run_with_fake(
+        tmp_path, scenario, env={"FAKE_ACP_HANG": step}
+    )
+
+    assert hung == not_ready(CLAUDE_CODE)
+    assert after == "Done: back"
+    first, second = (e["pid"] for e in events if e["event"] == "initialize")
+    assert first != second
+    assert gone(first)
+    what = "initialize" if step == "initialize" else "session/new"
+    assert f"didn't answer {what} within 0.5 s" in caplog.text
+
+
+@pytest.mark.parametrize("step", ["initialize", "new_session"])
+def test_the_call_ends_promptly_while_an_agent_never_answers(
+    tmp_path: Path, step: str
+) -> None:
+    async def scenario(runner: AcpRunner) -> str:
+        running = asyncio.create_task(tool_error(runner))
+        await until_logged(runner, "hang", step=step)
+        async with asyncio.timeout(10):  # well inside the 30 s deadline
+            await runner.aclose()
+            return await running
+
+    message, events = run_with_fake(tmp_path, scenario, env={"FAKE_ACP_HANG": step})
+
+    assert message == "The call is ending; Claude takes no new work."
+    pid = next(e["pid"] for e in events if e["event"] == "initialize")
+    assert gone(pid)
 
 
 def test_child_environment_drops_dotenv_secrets_and_api_keys() -> None:

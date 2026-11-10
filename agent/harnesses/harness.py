@@ -40,7 +40,7 @@ class Harness:
     program_env: str | None = None
     """Where the adapter reads the agent's program path from ("CLAUDE_CODE_EXECUTABLE")."""
     blocked_env: frozenset[str] = frozenset()
-    """Names never passed to the agent, on top of the app's own keys (`acp_client/runner.py`)."""
+    """Names never passed to the agent, on top of the app's own keys (`acp_client/environment.py`)."""
     system_prompt_append: bool = False
     """Whether it takes extra system-prompt text in `session/new` as `systemPrompt.append`
     (claude-agent-acp's option). The runner's briefing goes there; otherwise it goes with

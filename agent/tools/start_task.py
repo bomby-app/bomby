@@ -9,7 +9,7 @@ import asyncio
 from livekit.agents import RunContext
 from livekit.agents.llm import ToolError, ToolFlag, function_tool
 
-from acp_client import session_name
+from acp_client.runner import session_name
 from call import Call
 from harnesses import DEFAULT_AGENT, HARNESSES, AgentName, Harness
 from sections import MARKDOWN, Style

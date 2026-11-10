@@ -13,6 +13,7 @@ Checked 2026-11-03/04 against `claude-agent-acp` 0.100.0 and `codex-acp` 2.2.2 (
 - The SDK speaks ACP v1 (`PROTOCOL_VERSION = 1`); adapter v2 is a draft.
 - Methods used: `initialize`, `new_session`, `set_session_mode`, `prompt`, `cancel`, `close_session`, `ext_method`, and `session/delete` through the connection's raw `send_request` (no SDK method; `acp_client/sessions.py`, for the probe's sessions and one a call drops because its model pick is missing). `resume_session` and `load_session` are available for roadmap step 4.
 - `spawn_agent_process(client, cmd, *args, env=, cwd=, transport_kwargs=)` merges `env` with a minimal default environment, so the runner passes the full filtered environment. `transport_kwargs={"limit": ...}` tunes line-buffer round trips; longer lines still reassemble.
+- No request has a timeout of its own: `Connection.send_request` awaits the answer until the connection closes (agent-client-protocol 0.12.1, `acp/connection.py`). The runner gives starting an adapter and opening a session 30 s each (`START_TIMEOUT_S` in `acp_client/runner.py`), the probe 30 s for its whole check (`TIMEOUT_S` in `acp_client/probe.py`). Leaving `spawn_agent_process` closes stdin, waits 2 s for the process to exit, then terminates and kills it (`spawn_stdio_transport`, `shutdown_timeout=2.0`, `acp/transports.py`).
 - Drain adapter stderr or it blocks. Unimplemented client methods (fs, terminal, elicitation) return method-not-found; Claude Code does its own file and shell work.
 
 ## Sessions

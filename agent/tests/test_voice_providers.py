@@ -9,7 +9,7 @@ from livekit.agents import llm
 from livekit.plugins.rime.realtime import PrismHistoryUpdateError
 from livekit.plugins.rime.realtime import RealtimeModel as PrismModel
 
-from acp_client.runner import APP_KEYS
+from acp_client.environment import APP_KEYS
 from tools import ALL_TOOLS
 from voice_providers import (
     GEMINI,

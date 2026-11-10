@@ -34,7 +34,7 @@ GPT-Live's natural voices, by API name ([sessions](https://developers.openai.com
 ## Memory and keys
 
 - **Transcripts**: the engine sends running and final `input_audio_transcription_completed` events with the line's `item_id` and `turn_started_at` (`_handle_transcript_delta`, `_end_speech`), as Gemini's and Prism's plugins do, so `agent/memory.py` saves GPT-Live calls unchanged.
-- `OPENAI_API_KEY` is in `APP_KEYS` (`agent/acp_client/runner.py`), so the user's voice key never reaches Codex or OpenCode, which can read it too; they keep their own logins.
+- `OPENAI_API_KEY` is in `APP_KEYS` (`agent/acp_client/environment.py`), so the user's voice key never reaches Codex or OpenCode, which can read it too; they keep their own logins.
 - Keys: `https://platform.openai.com/api-keys`.
 - `livekit-plugins-openai` brings `livekit-agents[images]`, so Pillow too, which only LiveKit's image code imports (`agents/utils/images/image.py`); the frozen agent leaves it out and grew from 192 to 202 MB (2026-11-07).
 
