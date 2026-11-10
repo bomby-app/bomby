@@ -27,6 +27,9 @@ APP_KEYS = frozenset(
         # The core's token socket for the hosted MCP extensions (`extensions/tokens.py`).
         "BOMBY_TOKENS",
         "BOMBY_TOKENS_SECRET",
+        # The core's socket for the Agents panel's live streams (`streams.py`).
+        "BOMBY_STREAMS",
+        "BOMBY_STREAMS_SECRET",
     }
 )
 

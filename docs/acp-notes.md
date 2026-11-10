@@ -36,6 +36,14 @@ Checked 2026-11-03/04 against `claude-agent-acp` 0.100.0 and `codex-acp` 2.2.2 (
 - `AgentMessageChunk.messageId` identifies one message. A new id or `ToolCallStart` marks earlier text as narration; the runner keeps only the last message. After steering, the briefing asks Claude's final message to cover the whole task.
 - The adapter pushes `_auth/status_update`; the SDK strips the leading underscore before `Client.ext_notification`, so match `auth/status_update` (`acp/router.py`).
 
+## Streams
+
+What the Agents panel reads of `session/update` (agent-client-protocol 0.12.1, `acp/schema.py`; [decision](decisions/agent-streams-through-the-core.md)):
+
+- `AgentMessageChunk` with a `TextContentBlock` (`content.text`, optional `message_id`), `ToolCallStart` (`tool_call_id`, `title`, optional `kind` and `status`) and `ToolCallProgress` (the same id, every other field optional: a patch). A `ToolCallStart` without `status` is `pending`. `ToolKind`: read, edit, delete, move, search, execute, think, fetch, switch_mode, other. `ToolCallStatus`: pending, in_progress, completed, failed.
+- Never read: `AgentThoughtChunk`, plans, `content`, `locations`, `raw_input`, `raw_output` and `_meta`, which carry whole files and command output on some agents. A `ToolCallProgress` with none of title, kind and status (only output) isn't sent.
+- What each agent sends (from their sources, not run): message deltas and tool calls with updates on all five; `kind` on all but goose 1.57.0 (always `other`); Claude's and Codex's title for a shell call is the command line itself.
+
 ## Billing and Claude discovery
 
 - Strip `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` so Claude uses the user's plan login. Strip `CLAUDECODE`, which prevents nested launches.

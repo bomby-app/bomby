@@ -37,6 +37,8 @@ from acp.schema import (
 
 from harnesses.harness import Harness
 
+from .streams import Recorder
+
 logger = logging.getLogger("bomby.acp_client.client")
 
 CLIENT_INFO = Implementation(name="bomby", version="0.2.1")
@@ -136,8 +138,9 @@ class HarnessClient(Client):
     its own file and shell work; those methods only refuse, in case they are called anyway.
     """
 
-    def __init__(self, harness: Harness) -> None:
+    def __init__(self, harness: Harness, streams: Recorder | None = None) -> None:
         self._harness = harness
+        self._streams = streams  # the Agents panel's live view; None on console runs
         self.replies: dict[str, Reply] = {}
         self.auth_status: dict[str, Any] | None = None
         """The identity the agent last reported through the `authStatus` extension
@@ -177,6 +180,13 @@ class HarnessClient(Client):
             reply.add(update.message_id, update.content.text)
         elif isinstance(update, ToolCallStart):
             reply.reset()
+        # After the reply, and guarded: the Agents panel's stream must never touch or
+        # delay a result (`streams.py`). It only queues.
+        if self._streams is not None:
+            try:
+                self._streams.record(session_id, update)
+            except Exception:
+                logger.exception("recording %s's update failed", self._harness.id)
 
     @override
     async def ext_method(self, method: str, params: dict[str, Any]) -> dict[str, Any]:

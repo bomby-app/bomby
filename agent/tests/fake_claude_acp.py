@@ -19,6 +19,9 @@ initialize, like an adapter without it. Setup scenarios, by environment variable
 Prompts:
 
 - "reply <text>": narrate, run a tool call, then send "Done: <text>" as the final message
+- "stream <text>": what the Agents panel shows and what it leaves out: a thought, a
+  message, a tool call with a 300-character title, a big raw input, an update with only
+  content and then its completion, a second tool call left running, then "Done: <text>"
 - "silent": narrate, run a tool call, then end the turn with no final message
 - "permission": ask for permission, then report the option the client chose
 - "hang": take steered messages and wait until the client cancels, then stop with
@@ -43,7 +46,10 @@ from acp import (
     run_agent,
     start_tool_call,
     text_block,
+    tool_content,
     update_agent_message,
+    update_agent_thought,
+    update_tool_call,
 )
 from acp.agent.router import build_agent_router
 from acp.interfaces import Client
@@ -281,6 +287,35 @@ class FakeClaude:
             )
             await say("Done: ", "m2")
             await say(text[6:], "m2")
+            return PromptResponse(stop_reason="end_turn")
+
+        if text.startswith("stream "):
+            client = self._client
+            await client.session_update(
+                session_id, update_agent_thought(text_block("Thinking it over."))
+            )
+            await say("Let me look. ")
+            await client.session_update(
+                session_id,
+                start_tool_call(
+                    "t1",
+                    "Run " + "x" * 300,
+                    kind="execute",
+                    raw_input={"secret": "x" * 5000},
+                ),
+            )
+            await client.session_update(
+                session_id,
+                update_tool_call("t1", content=[tool_content(text_block("output"))]),
+            )
+            await client.session_update(
+                session_id, update_tool_call("t1", status="completed")
+            )
+            await client.session_update(
+                session_id, start_tool_call("t2", "Read file", status="in_progress")
+            )
+            await say("Done: ", "m2")
+            await say(text[7:], "m2")
             return PromptResponse(stop_reason="end_turn")
 
         if text == "silent":
