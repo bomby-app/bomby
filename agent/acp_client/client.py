@@ -156,11 +156,13 @@ class HarnessClient(Client):
         **kwargs: Any,
     ) -> RequestPermissionResponse:
         # Sessions run in the harness's bypass mode; this only catches what still asks.
+        # By kind, never title: a title can be a whole command line, with a token in it.
         option = pick_allow(options)
+        kind = tool_call.kind or "a tool"
         if option is None:
-            logger.warning("no allow option for %r, refusing", tool_call.title)
+            logger.warning("no allow option for %s, refusing", kind)
             return RequestPermissionResponse(outcome=DeniedOutcome(outcome="cancelled"))
-        logger.info("approving %r (%s)", tool_call.title, option.kind)
+        logger.info("approving %s (%s)", kind, option.kind)
         return RequestPermissionResponse(
             outcome=AllowedOutcome(outcome="selected", option_id=option.option_id)
         )
