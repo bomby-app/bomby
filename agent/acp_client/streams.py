@@ -1,12 +1,12 @@
-"""What each coding agent is doing while its turn runs, sent live to the app's core for
-the Agents panel (docs/decisions/agent-streams-through-the-core.md).
+"""What each coding agent says and does in a turn, sent live to the app's core for the
+Agents panel (docs/decisions/agent-streams-through-the-core.md).
 
 The client hands every `session/update` of a running turn to `StreamRecorder.record`, which
 keeps only the agent's message text and each tool call's id, title, kind and status, cuts
 them to size, and queues them. Nothing waits on the app: a task's result never depends on
 it. Another task sends the queue to the core over a local socket about every 100 ms; the
-core keeps a running turn's events in memory and passes them to the page. Nothing is kept
-once the turn ends, and nothing is logged.
+core keeps the call's turns in memory and passes them to the page. Nothing is kept once
+the call ends, and nothing is logged.
 
 The core starts the worker with the socket's path in `BOMBY_STREAMS` and the run's secret in
 `BOMBY_STREAMS_SECRET` (`app/src-tauri/src/agent_streams.rs`). Console runs have neither,

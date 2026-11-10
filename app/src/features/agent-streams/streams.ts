@@ -5,6 +5,13 @@ export type ToolStatus = "running" | "error" | "done"
 
 export type Entry =
   | {
+      /** A run begins: a task the agent takes in this session. */
+      kind: "started"
+      key: string
+      /** When the core got it, in ms since 1970. */
+      at: number
+    }
+  | {
       kind: "message"
       key: string
       /** The agent's id for the message, when it gives one. */
@@ -21,9 +28,21 @@ export type Entry =
       status: ToolStatus
     }
   | { kind: "dropped"; key: string }
+  | {
+      /** The run is over, however it ended. */
+      kind: "finished"
+      key: string
+      at: number
+      /** How long it ran, in ms. */
+      took: number
+    }
 
-/** One agent's running turn in one session: what it said and did, in order. */
+/**
+ * One agent in one session of the call: what it said and did, run after run, in order.
+ * A session's runs come one at a time, so they read as one stream.
+ */
 export type AgentStream = {
+  /** The agent and the session, which name the row. */
   id: string
   /** The harness id, for its logo. */
   agent: string
@@ -31,49 +50,71 @@ export type AgentStream = {
   name: string
   session: string
   entries: Entry[]
-  /** The turn is over: it leaves the list. */
-  ended: boolean
+  /** The core's id for the run going on now; null between runs. */
+  run: string | null
+  /** How many tool calls it has made on the call. */
+  steps: number
 }
 
-/** The call's streams, in the order their turns started. */
+/** The call's streams, in the order each agent and session first started. */
 export type Streams = AgentStream[]
 
 /**
- * `streams` after `event` (agent_streams.rs). Text appends to the message it continues;
- * a tool call's events are patches by id, and one for an id not seen yet starts a line;
+ * `streams` after `event` (agent_streams.rs). A run that starts in an agent and session
+ * already listed continues its row. Text appends to the message it continues; a tool call's
+ * events are patches by id, within its run, and one for an id not seen yet starts a line;
  * `dropped` leaves one marker where events are missing; `end` closes every tool call still
- * open and ends the stream. Events of a stream that never started are ignored.
+ * open and ends the run, which stays. Events of a run that isn't going on are ignored.
  */
 export function reduce(streams: Streams, event: StreamEvent): Streams {
   if (event.type === "start") {
-    if (streams.some((s) => s.id === event.stream)) return streams
-    return [
-      // Streams that ended are let go here, once nothing can show them.
-      ...streams.filter((s) => !s.ended),
-      {
-        id: event.stream,
-        agent: event.agent,
-        name: event.name,
-        session: event.session,
-        entries: [],
-        ended: false,
-      },
-    ]
+    if (streams.some((s) => s.run === event.stream)) return streams
+    const id = `${event.agent}/${event.session}`
+    const row = streams.find((s) => s.id === id)
+    const started = (index: number): Entry => ({
+      kind: "started",
+      key: `${id}:${index}`,
+      at: event.at,
+    })
+    if (!row) {
+      return [
+        ...streams,
+        {
+          id,
+          agent: event.agent,
+          name: event.name,
+          session: event.session,
+          entries: [started(0)],
+          run: event.stream,
+          steps: 0,
+        },
+      ]
+    }
+    const next = {
+      ...row,
+      name: event.name,
+      entries: [...row.entries, started(row.entries.length)],
+      run: event.stream,
+    }
+    return streams.map((s) => (s === row ? next : s))
   }
-  const stream = streams.find((s) => s.id === event.stream)
-  if (!stream || stream.ended) return streams
+  const stream = streams.find((s) => s.run === event.stream)
+  if (!stream) return streams
   const next = apply(stream, event)
   return next === stream
     ? streams
     : streams.map((s) => (s === stream ? next : s))
 }
 
-function apply(stream: AgentStream, event: StreamEvent): AgentStream {
+function apply(
+  stream: AgentStream,
+  event: Exclude<StreamEvent, { type: "start" }>
+): AgentStream {
   const entries = stream.entries
   const key = `${stream.id}:${entries.length}`
+  // Where the run going on began: a tool call's id is its run's.
+  const from = entries.map((e) => e.kind).lastIndexOf("started")
   switch (event.type) {
-    case "start":
-      return stream
     case "text": {
       if (!event.text) return stream
       const last = entries.at(-1)
@@ -101,11 +142,12 @@ function apply(stream: AgentStream, event: StreamEvent): AgentStream {
     }
     case "tool": {
       const at = entries.findIndex(
-        (e) => e.kind === "tool" && e.id === event.id
+        (e, i) => i > from && e.kind === "tool" && e.id === event.id
       )
       if (at === -1) {
         return {
           ...stream,
+          steps: stream.steps + 1,
           entries: [
             ...entries,
             {
@@ -136,16 +178,28 @@ function apply(stream: AgentStream, event: StreamEvent): AgentStream {
     case "dropped":
       if (entries.at(-1)?.kind === "dropped") return stream
       return { ...stream, entries: [...entries, { kind: "dropped", key }] }
-    case "end":
+    case "end": {
+      const began = entries[from]
+      const closed = entries.map((e): Entry =>
+        e.kind === "tool" && e.status === "running"
+          ? { ...e, status: "done" }
+          : e
+      )
       return {
         ...stream,
-        ended: true,
-        entries: entries.map((e) =>
-          e.kind === "tool" && e.status === "running"
-            ? { ...e, status: "done" }
-            : e
-        ),
+        run: null,
+        entries: [
+          ...closed,
+          {
+            kind: "finished",
+            key,
+            at: event.at,
+            took:
+              began?.kind === "started" ? Math.max(0, event.at - began.at) : 0,
+          },
+        ],
       }
+    }
   }
 }
 
@@ -156,9 +210,22 @@ function toolStatus(status: string | undefined): ToolStatus {
   return "running"
 }
 
-/** The streams to list: the turns still running. */
-export function running(streams: Streams): AgentStream[] {
-  return streams.filter((s) => !s.ended)
+/** Whether the agent is working in this session now. */
+export function working(stream: AgentStream): boolean {
+  return stream.run !== null
+}
+
+/**
+ * What the agent is on, for its row in the list: its running tool call, else that it's
+ * writing; "Finished" between runs.
+ */
+export function activity(stream: AgentStream): string {
+  if (!working(stream)) return "Finished"
+  const last = stream.entries.at(-1)
+  if (last?.kind === "tool" && last.status === "running") return toolTitle(last)
+  if (last?.kind === "message") return "Writing"
+  if (last?.kind === "started") return "Getting started"
+  return "Working"
 }
 
 /** Running, done and failed, for a tool call without a title, by its kind. */
@@ -178,28 +245,57 @@ const ANY_TOOL: [string, string, string] = [
   "Used a tool",
   "A tool failed",
 ]
+const COMMAND: [string, string, string] = ["Running", "Ran", "Failed to run"]
 
-/**
- * A tool call's line, with its status in the words (Trace's Tool pattern): a command, which
- * agents title with the command line itself, reads "Running pnpm test", "Ran pnpm test" or
- * "Failed to run pnpm test"; another title as the agent wrote it ("Read login.ts"), or
- * "Failed: …"; no title, a phrase for its kind.
- */
-export function toolTitle(tool: {
+type Titled = {
   title: string | null
   toolKind: string | null
   status: ToolStatus
-}): string {
+}
+
+/**
+ * A tool call's line in two parts, with its status in the words (Trace's Tool pattern):
+ * `words`, and `command` when the agent titled a command with the command line itself, to
+ * set as code after them ("Ran" and "pnpm test"). Another title reads as the agent wrote it
+ * ("Read login.ts"), or "Failed: …"; no title, a phrase for its kind.
+ */
+export function toolLine(tool: Titled): {
+  words: string
+  command: string | null
+} {
   const which = { running: 0, done: 1, error: 2 }[tool.status]
   const title = tool.title?.trim()
-  if (!title) return (UNTITLED[tool.toolKind ?? ""] ?? ANY_TOOL)[which]
+  if (!title)
+    return {
+      words: (UNTITLED[tool.toolKind ?? ""] ?? ANY_TOOL)[which],
+      command: null,
+    }
   if (tool.toolKind === "execute" && isCommand(title))
-    return [`Running ${title}`, `Ran ${title}`, `Failed to run ${title}`][which]
-  return tool.status === "error" ? `Failed: ${title}` : title
+    return { words: COMMAND[which], command: title }
+  return {
+    words: tool.status === "error" ? `Failed: ${title}` : title,
+    command: null,
+  }
+}
+
+/** A tool call's line as one string: "Running pnpm test", "Ran pnpm test". */
+export function toolTitle(tool: Titled): string {
+  const { words, command } = toolLine(tool)
+  return command === null ? words : `${words} ${command}`
 }
 
 /** A command line, not a sentence: it doesn't start with a capital ("pnpm test", "./x"). */
 function isCommand(title: string): boolean {
   const first = title[0]
   return first.toLowerCase() === first
+}
+
+/** How long a run took, in a few characters: "8s", "2m 05s", "1h 04m". */
+export function took(ms: number): string {
+  const seconds = Math.round(ms / 1000)
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  const pad = (n: number) => String(n).padStart(2, "0")
+  if (minutes < 60) return `${minutes}m ${pad(seconds % 60)}s`
+  return `${Math.floor(minutes / 60)}h ${pad(minutes % 60)}m`
 }

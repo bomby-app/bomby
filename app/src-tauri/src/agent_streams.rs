@@ -4,10 +4,10 @@
 //! The worker connects once per call to a Unix socket in a folder only this user can open,
 //! with the run's secret (`BOMBY_STREAMS`, `BOMBY_STREAMS_SECRET` in its environment). Its
 //! first line is `{"secret": "…", "room": "bomby-<call id>-<ms>"}`; every line after is a
-//! [`StreamEvent`]. The core holds a running turn's events in memory, so a panel opened
-//! halfway isn't empty, and drops them when the turn ends or the connection closes. The
-//! page follows a call with `watch_agent_streams`: the events held, then live ones, over a
-//! Tauri `Channel`.
+//! [`StreamEvent`]. The core holds the call's turns in memory, the finished ones too, so a
+//! panel opened at any point in the call shows all of it, and drops them when the call
+//! ends (its connection closes). The page follows a call with `watch_agent_streams`: the
+//! events held, then live ones, over a Tauri `Channel`.
 //!
 //! Nothing here is written to disk or a log: tool titles can be whole command lines.
 
@@ -25,6 +25,7 @@ use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::Semaphore;
 
 use crate::app_log;
+use crate::db::now_ms;
 use crate::error::Result;
 use crate::local_socket::{self, same};
 use crate::sync;
@@ -38,27 +39,34 @@ const HELLO_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_LINE: usize = 256 * 1024;
 /// The most connections served at once: one per call's job, and the app runs one call.
 const MAX_CONNECTIONS: usize = 8;
-/// The most streams a call holds at once, one per running turn.
+/// The most turns a call has running at once.
 const MAX_STREAMS: usize = 16;
 /// About how many bytes a stream holds; beyond it, its oldest events go and a `dropped`
 /// marker takes their place.
 const STREAM_BUDGET: usize = 1024 * 1024;
+/// About how many bytes, and how many turns, a call holds in all; beyond either, its oldest
+/// finished turns go.
+const CALL_BUDGET: usize = 8 * 1024 * 1024;
+const MAX_HELD: usize = 256;
 /// How long the socket waits before accepting again after an accept failed.
 const ACCEPT_RETRY: Duration = Duration::from_millis(100);
 
-/// One event of a running turn's stream: the agent's message text (appended to its
-/// message) and its tool calls (patches by id), between the turn's start and end.
+/// One event of a turn's stream: the agent's message text (appended to its message) and
+/// its tool calls (patches by id), between the turn's start and end.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "agent-streams.ts"))]
 pub enum StreamEvent {
     /// A turn started in the call's session `session` of the agent `agent` (a harness id),
-    /// called `name` ("Claude").
+    /// called `name` ("Claude"). `at` is when the core got it, in ms since 1970: the worker
+    /// doesn't send one.
     Start {
         stream: String,
         agent: String,
         name: String,
         session: String,
+        #[serde(default)]
+        at: i64,
     },
     /// Appends to the message `message` (the agent's id for it, if it gave one).
     Text {
@@ -85,8 +93,13 @@ pub enum StreamEvent {
     /// Some events before this one were left out: the agent's queue was full, or the
     /// stream outgrew what the core holds.
     Dropped { stream: String },
-    /// The turn is over, however it ended; its open tool calls are over with it.
-    End { stream: String },
+    /// The turn is over, however it ended; its open tool calls are over with it. `at` as
+    /// in `Start`.
+    End {
+        stream: String,
+        #[serde(default)]
+        at: i64,
+    },
 }
 
 impl StreamEvent {
@@ -96,7 +109,7 @@ impl StreamEvent {
             | Self::Text { stream, .. }
             | Self::Tool { stream, .. }
             | Self::Dropped { stream }
-            | Self::End { stream } => stream,
+            | Self::End { stream, .. } => stream,
         }
     }
 
@@ -107,7 +120,15 @@ impl StreamEvent {
             | Self::Text { stream, .. }
             | Self::Tool { stream, .. }
             | Self::Dropped { stream }
-            | Self::End { stream } => *stream = id,
+            | Self::End { stream, .. } => *stream = id,
+        }
+        self
+    }
+
+    /// The same event, a start or an end marked as got at `now`.
+    fn got_at(mut self, now: i64) -> Self {
+        if let Self::Start { at, .. } | Self::End { at, .. } = &mut self {
+            *at = now;
         }
         self
     }
@@ -145,11 +166,13 @@ impl StreamEvent {
 /// Where a call's events go: false once the page is gone.
 pub type Sink = Arc<dyn Fn(&StreamEvent) -> bool + Send + Sync>;
 
-/// A running turn's events, oldest first, the first always its start.
+/// A turn's events, oldest first, the first always its start and, once it's over, the
+/// last its end.
 struct Held {
     id: String,
     events: VecDeque<StreamEvent>,
     weight: usize,
+    ended: bool,
 }
 
 impl Held {
@@ -189,11 +212,26 @@ impl Held {
 
 #[derive(Default)]
 struct Call {
+    /// In the order their turns started.
     streams: Vec<Held>,
     watchers: HashMap<u64, Sink>,
 }
 
-/// Every call's running streams and who watches them. Tauri state.
+impl Call {
+    /// Over what a call may hold, its oldest finished turns go. A page already watching
+    /// keeps what it was sent; one that opens later starts after them.
+    fn trim(&mut self) {
+        let weight = |streams: &[Held]| streams.iter().map(|s| s.weight).sum::<usize>();
+        while weight(&self.streams) > CALL_BUDGET || self.streams.len() > MAX_HELD {
+            let Some(oldest) = self.streams.iter().position(|s| s.ended) else {
+                return;
+            };
+            self.streams.remove(oldest);
+        }
+    }
+}
+
+/// Every call's streams and who watches them. Tauri state.
 #[derive(Default)]
 pub struct Streams {
     calls: Mutex<HashMap<i64, Call>>,
@@ -201,18 +239,21 @@ pub struct Streams {
 }
 
 impl Streams {
-    /// Takes one event of call `call_id`'s, keeps it while its turn runs, and passes it to
-    /// the call's watchers. An event of a stream that isn't running is ignored.
+    /// Takes one event of call `call_id`'s, keeps it for the rest of the call, and passes
+    /// it to the call's watchers. An event of a turn that never started, or is over, is
+    /// ignored.
     pub fn apply(&self, call_id: i64, event: StreamEvent) {
         let mut calls = sync::lock(&self.calls);
         let call = calls.entry(call_id).or_default();
         let index = call.streams.iter().position(|s| s.id == event.stream());
+        let running = call.streams.iter().filter(|s| !s.ended).count();
         match (&event, index) {
-            (StreamEvent::Start { .. }, None) if call.streams.len() < MAX_STREAMS => {
+            (StreamEvent::Start { .. }, None) if running < MAX_STREAMS => {
                 let mut held = Held {
                     id: event.stream().to_owned(),
                     events: VecDeque::new(),
                     weight: 0,
+                    ended: false,
                 };
                 held.push(event.clone());
                 call.streams.push(held);
@@ -221,35 +262,45 @@ impl Streams {
                 Self::tidy(&mut calls, call_id);
                 return;
             }
+            (_, Some(i)) if call.streams[i].ended => return,
             (StreamEvent::End { .. }, Some(i)) => {
-                call.streams.remove(i);
+                call.streams[i].push(event.clone());
+                call.streams[i].ended = true;
             }
             (_, Some(i)) => call.streams[i].push(event.clone()),
         }
+        call.trim();
         call.watchers.retain(|_, sink| sink(&event));
         Self::tidy(&mut calls, call_id);
     }
 
-    /// Ends every stream of call `call_id` whose id starts with `prefix`: its connection
-    /// closed.
+    /// The connection that sent call `call_id`'s streams whose ids start with `prefix`
+    /// closed, so the call is over: its running turns end, for whoever watches, and
+    /// everything it sent goes.
     pub fn end_all(&self, call_id: i64, prefix: &str) {
-        let ids: Vec<String> = sync::lock(&self.calls)
+        let running: Vec<String> = sync::lock(&self.calls)
             .get(&call_id)
             .map(|call| {
                 call.streams
                     .iter()
-                    .filter(|s| s.id.starts_with(prefix))
+                    .filter(|s| !s.ended && s.id.starts_with(prefix))
                     .map(|s| s.id.clone())
                     .collect()
             })
             .unwrap_or_default();
-        for stream in ids {
-            self.apply(call_id, StreamEvent::End { stream });
+        for stream in running {
+            let at = now_ms();
+            self.apply(call_id, StreamEvent::End { stream, at });
         }
+        let mut calls = sync::lock(&self.calls);
+        if let Some(call) = calls.get_mut(&call_id) {
+            call.streams.retain(|s| !s.id.starts_with(prefix));
+        }
+        Self::tidy(&mut calls, call_id);
     }
 
-    /// Sends `sink` call `call_id`'s running streams as they are so far, then each event as
-    /// it comes. Returns the id `unwatch` stops it with.
+    /// Sends `sink` call `call_id`'s streams as they are so far, the finished turns too,
+    /// then each event as it comes. Returns the id `unwatch` stops it with.
     pub fn watch(&self, call_id: i64, sink: Sink) -> u64 {
         let id = self.next_watch.fetch_add(1, Ordering::Relaxed);
         let mut calls = sync::lock(&self.calls);
@@ -274,7 +325,7 @@ impl Streams {
         calls.retain(|_, call| !call.streams.is_empty() || !call.watchers.is_empty());
     }
 
-    /// A call with nothing running and no one watching goes.
+    /// A call with nothing held and no one watching goes.
     fn tidy(calls: &mut HashMap<i64, Call>, call_id: i64) {
         if calls
             .get(&call_id)
@@ -387,7 +438,7 @@ async fn serve(listener: UnixListener, secret: String, streams: Arc<Streams>) {
 }
 
 /// Reads one connection: its hello within `HELLO_TIMEOUT`, then events until it closes,
-/// which ends the streams it started.
+/// which is the call ending: what it sent is dropped.
 async fn receive(stream: UnixStream, secret: &str, streams: &Streams, connection: u64) {
     let mut reader = BufReader::new(stream);
     let hello = tokio::time::timeout(HELLO_TIMEOUT, read_line(&mut reader)).await;
@@ -407,7 +458,7 @@ async fn receive(stream: UnixStream, secret: &str, streams: &Streams, connection
         // A line the core can't read is skipped: the page shows less, the call goes on.
         if let Ok(event) = serde_json::from_slice::<StreamEvent>(&line) {
             let id = format!("{prefix}{}", event.stream());
-            streams.apply(call_id, event.in_stream(id));
+            streams.apply(call_id, event.in_stream(id).got_at(now_ms()));
         }
     }
     streams.end_all(call_id, &prefix);
@@ -437,8 +488,8 @@ async fn read_line(reader: &mut (impl AsyncBufRead + Unpin)) -> Option<Vec<u8>> 
     }
 }
 
-/// Follows the running streams of call `call_id`: those so far, then each event as it
-/// comes. Returns the id `unwatch_agent_streams` stops it with.
+/// Follows the streams of call `call_id`: its turns so far, finished or running, then each
+/// event as it comes. Returns the id `unwatch_agent_streams` stops it with.
 #[tauri::command(async)]
 pub fn watch_agent_streams(
     state: State<'_, AgentStreams>,
@@ -471,6 +522,7 @@ mod tests {
             agent: "claude".into(),
             name: "Claude".into(),
             session: "main".into(),
+            at: 0,
         }
     }
 
@@ -485,7 +537,13 @@ mod tests {
     fn end(stream: &str) -> StreamEvent {
         StreamEvent::End {
             stream: stream.into(),
+            at: 0,
         }
+    }
+
+    /// The events without when the core got them.
+    fn unstamped(events: &[StreamEvent]) -> Vec<StreamEvent> {
+        events.iter().map(|e| e.clone().got_at(0)).collect()
     }
 
     /// A watcher that keeps what it's sent.
@@ -502,33 +560,73 @@ mod tests {
     }
 
     #[test]
-    fn a_running_turn_is_held_and_dropped_when_it_ends() {
+    fn a_turn_is_held_after_it_ends_until_the_call_does() {
         let streams = Streams::default();
-        streams.apply(1, start("a"));
-        streams.apply(1, text("a", "Hel"));
-        streams.apply(1, text("a", "lo"));
+        streams.apply(1, start("1-a"));
+        streams.apply(1, text("1-a", "Hel"));
+        streams.apply(1, text("1-a", "lo"));
         // A panel opened now sees it so far, the message's pieces as one.
         let (sink, seen) = recorder();
         streams.watch(1, sink);
-        assert_eq!(*seen.lock().unwrap(), vec![start("a"), text("a", "Hello")]);
-        streams.apply(1, end("a"));
-        assert_eq!(seen.lock().unwrap().last(), Some(&end("a")));
-        assert!(streams.held(1).is_empty(), "nothing is kept after the turn");
+        assert_eq!(
+            *seen.lock().unwrap(),
+            vec![start("1-a"), text("1-a", "Hello")]
+        );
+        streams.apply(1, end("1-a"));
+        assert_eq!(seen.lock().unwrap().last(), Some(&end("1-a")));
         // An event of a turn that's over is ignored.
-        streams.apply(1, text("a", "late"));
+        streams.apply(1, text("1-a", "late"));
         assert_eq!(seen.lock().unwrap().len(), 3);
+        // The session's next turn comes after it, and a panel opened later gets both.
+        streams.apply(1, start("1-b"));
+        let (late, replayed) = recorder();
+        streams.watch(1, late);
+        assert_eq!(
+            *replayed.lock().unwrap(),
+            vec![start("1-a"), text("1-a", "Hello"), end("1-a"), start("1-b")]
+        );
+        // The call ends: the running turn ends for who watches, and nothing is kept.
+        streams.end_all(1, "1-");
+        assert_eq!(
+            unstamped(&replayed.lock().unwrap()).last(),
+            Some(&end("1-b"))
+        );
+        assert!(streams.held(1).is_empty(), "nothing is kept after the call");
     }
 
     #[test]
-    fn a_closed_connection_ends_its_streams_only() {
+    fn a_closed_connection_drops_its_turns_only() {
         let streams = Streams::default();
         streams.apply(1, start("1-a"));
+        streams.apply(1, end("1-a"));
+        streams.apply(1, start("1-b"));
         streams.apply(1, start("2-a"));
         let (sink, seen) = recorder();
         streams.watch(1, sink);
         streams.end_all(1, "1-");
-        assert_eq!(seen.lock().unwrap().last(), Some(&end("1-a")));
+        assert_eq!(unstamped(&seen.lock().unwrap()).last(), Some(&end("1-b")));
         assert_eq!(streams.held(1), vec![start("2-a")]);
+    }
+
+    #[test]
+    fn a_call_past_what_it_may_hold_lets_its_oldest_finished_turns_go() {
+        let streams = Streams::default();
+        streams.apply(1, start("running"));
+        for n in 0..MAX_HELD + 3 {
+            let id = format!("t{n}");
+            streams.apply(1, start(&id));
+            streams.apply(1, end(&id));
+        }
+        let held = streams.held(1);
+        let started: Vec<&str> = held
+            .iter()
+            .filter(|e| matches!(e, StreamEvent::Start { .. }))
+            .map(StreamEvent::stream)
+            .collect();
+        assert_eq!(started.len(), MAX_HELD);
+        // The one still running stays, however old; the oldest finished ones went.
+        assert_eq!(started[0], "running");
+        assert_eq!(started[1], "t4");
     }
 
     #[test]
@@ -561,7 +659,7 @@ mod tests {
         streams.apply(1, start("a"));
         streams.watch(1, Arc::new(|_| false));
         streams.apply(1, end("a"));
-        assert!(sync::lock(&streams.calls).is_empty());
+        assert!(sync::lock(&streams.calls)[&1].watchers.is_empty());
     }
 
     #[test]
