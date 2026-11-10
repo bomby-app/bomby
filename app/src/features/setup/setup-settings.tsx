@@ -61,9 +61,7 @@ export function SetupSettings() {
           ready={keys ? keys.voiceKey : null}
           detail={keys ? voiceDetail(keys) : null}
           action={
-            <GoButton to={{ section: "voice", field: "key" }}>
-              {keys?.voice ? "Add key" : "Pick one"}
-            </GoButton>
+            <GoButton to={{ section: "voice", field: "key" }}>Add key</GoButton>
           }
         />
         <StatusRow
@@ -116,15 +114,14 @@ function serverDetail(keys: Keys): string {
     : "LiveKit Cloud needs its keys."
 }
 
-/** The picked provider's logo, or a plain voice mark before there's one. */
+/** The picked provider's logo, or a plain voice mark until the keys are read. */
 function VoiceLogo({ keys }: { keys: Keys | null }) {
-  if (!keys?.voice) return <AudioLines />
+  if (!keys) return <AudioLines />
   const Logo = PROVIDERS[keys.voice].logo
   return <Logo />
 }
 
 function voiceDetail(keys: Keys): string {
-  if (!keys.voice) return "Pick who Bomby talks through."
   const name = PROVIDERS[keys.voice].name
   return keys.voiceKey
     ? `${name}, its key in your keychain.`

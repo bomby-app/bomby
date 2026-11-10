@@ -59,8 +59,6 @@ type TerminalTab = {
   title: string | null
 }
 
-/** The last part of a path: what a folder is called. */
-
 /** The least height an open panel can be dragged to: its header and a few lines. */
 const MIN_PANEL_HEIGHT = 120
 
