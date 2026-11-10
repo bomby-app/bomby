@@ -391,15 +391,17 @@ def test_a_steered_request_fails_when_the_turn_it_joined_is_stopped(
     async def scenario(runner: AcpRunner) -> str:
         first = await until_prompted(runner, "hang", "page")
         steered = asyncio.create_task(runner.run("make the header blue", "page"))
-        await asyncio.sleep(0.2)  # let the steer reach the agent
+        # Stopped only once it joined: a request too late for the turn takes its own.
+        await until_logged(runner, "steer", text="make the header blue", injected=True)
         _ = first.cancel()
         with pytest.raises(ToolError) as stopped_error:
             _ = await steered
         return str(stopped_error.value)
 
-    message, _ = run_with_fake(tmp_path, scenario)
+    message, events = run_with_fake(tmp_path, scenario)
 
     assert message == stopped(CLAUDE_CODE)
+    assert [e["text"] for e in events if e["event"] == "prompt"] == ["hang"]
 
 
 def test_a_steered_request_fails_when_the_turn_it_joined_stops_early(
