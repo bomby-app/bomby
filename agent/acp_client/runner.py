@@ -12,8 +12,8 @@ import asyncio
 import contextlib
 import logging
 import os
-from collections.abc import Awaitable, Callable, Mapping, Sequence
-from contextlib import AsyncExitStack
+from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping, Sequence
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import final
@@ -64,6 +64,11 @@ APP_KEYS = frozenset(
     }
 )
 DEFAULT_SESSION = "main"
+# How long starting an adapter (spawning it and `initialize`) and opening a session
+# (`session/new`, its mode and the picks) may each take, as long as the setup probe gives
+# them (`probe.py`). One that doesn't answer in time is stopped, so the next request
+# starts a fresh one.
+START_TIMEOUT_S: float = 30
 
 
 def child_environment(
@@ -187,6 +192,10 @@ class _RunningTurn:
             raise ToolError(self._error)
 
 
+class _StartTimeout(Exception):
+    """A start step that didn't answer within `START_TIMEOUT_S`; says which."""
+
+
 @final
 class _Session:
     """One named session in the call."""
@@ -240,6 +249,7 @@ class AcpRunner:
         self._conn_failed = False  # a request saw the connection drop
         self._closed = False  # the call ended: refuse new work
         self._sessions: dict[str, _Session] = {}
+        self._deadlines: set[asyncio.Timeout] = set()  # the start steps' running now
 
     @property
     def command(self) -> str:
@@ -311,6 +321,11 @@ class AcpRunner:
     async def aclose(self) -> None:
         """Close every session, then the adapter process. No new work after this."""
         self._closed = True
+        # A start step still waiting gives up now, rather than holding the locks below
+        # until its deadline.
+        for deadline in self._deadlines:
+            if not deadline.expired():
+                deadline.reschedule(-1)
         try:
             for s in list(self._sessions.values()):
                 async with s.open_lock:
@@ -336,7 +351,9 @@ class AcpRunner:
         except Exception as e:
             if self._closed:
                 raise ToolError(self._ending()) from e
-            if isinstance(e, OSError | RequestError | ConnectionError):
+            if isinstance(e, _StartTimeout):
+                logger.warning("%s, so it was stopped", e)
+            elif isinstance(e, OSError | RequestError | ConnectionError):
                 logger.warning("%s could not start: %r", self._harness.id, e)
             else:
                 # Unexpected (an answer the SDK can't read): logged whole.
@@ -363,16 +380,24 @@ class AcpRunner:
                     "append": briefing(self._project, self._short_reports)
                 }
             try:
-                created = await conn.new_session(
-                    cwd=str(self._project.cwd),
-                    additional_directories=self._project.extra_folders or None,
-                    mcp_servers=[],
-                    **options,
-                )
-                await self._bypass_permissions(conn, created)
-                applied = await self._apply_picks(conn, created)
+                async with self._deadline("session/new"):
+                    created = await conn.new_session(
+                        cwd=str(self._project.cwd),
+                        additional_directories=self._project.extra_folders or None,
+                        mcp_servers=[],
+                        **options,
+                    )
+                    await self._bypass_permissions(conn, created)
+                    applied = await self._apply_picks(conn, created)
             except ConnectionError:
                 self._connection_lost(conn)
+                raise
+            except _StartTimeout:
+                # Hung: its other sessions go with it, and the next request starts afresh.
+                self._connection_lost(conn)
+                async with self._lock:
+                    if conn is self._conn:
+                        await self._teardown()
                 raise
             if needs_pick(self._harness, applied, self._picks):
                 logger.warning(
@@ -497,15 +522,17 @@ class AcpRunner:
 
             stack = AsyncExitStack()
             try:
-                conn, process, init = await stack.enter_async_context(
-                    connect(
-                        self._client,
-                        self._command,
-                        self._args,
-                        env=self._env,
-                        cwd=self._project.cwd,
+                # Leaving `connect` on the deadline stops the process it started.
+                async with self._deadline("initialize"):
+                    conn, process, init = await stack.enter_async_context(
+                        connect(
+                            self._client,
+                            self._command,
+                            self._args,
+                            env=self._env,
+                            cwd=self._project.cwd,
+                        )
                     )
-                )
             except BaseException:
                 await stack.aclose()
                 raise
@@ -514,6 +541,22 @@ class AcpRunner:
             self._read_capabilities(init)
             logger.info("%s started (pid %s)", self._command, process.pid)
             return conn
+
+    @asynccontextmanager
+    async def _deadline(self, step: str) -> AsyncGenerator[None]:
+        """Fails `step` with `_StartTimeout` after `START_TIMEOUT_S`; `aclose` ends it
+        sooner."""
+        try:
+            async with asyncio.timeout(START_TIMEOUT_S) as deadline:
+                self._deadlines.add(deadline)
+                try:
+                    yield
+                finally:
+                    self._deadlines.discard(deadline)
+        except TimeoutError as e:
+            raise _StartTimeout(
+                f"{self._command} didn't answer {step} within {START_TIMEOUT_S:g} s"
+            ) from e
 
     def _ending(self) -> str:
         return f"The call is ending; {self._harness.short_name} takes no new work."

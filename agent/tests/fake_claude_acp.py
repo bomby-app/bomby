@@ -13,6 +13,8 @@ initialize, like an adapter without it. Setup scenarios, by environment variable
   of them out
 - FAKE_ACP_AUTH_STATUS=<kind>: advertise `authStatus` and push that kind after initialize
 - FAKE_ACP_CAN_DELETE=1: advertise `session/delete`, which it serves either way
+- FAKE_ACP_HANG=<step>: never answer `initialize` or `session/new` (the step's name), in
+  the first process only, so a fresh one answers
 
 Prompts:
 
@@ -77,6 +79,24 @@ from acp.schema import (
 def log(event: str, **fields: Any) -> None:
     with open(os.environ["FAKE_ACP_LOG"], "a") as f:
         _ = f.write(json.dumps({"event": event, **fields}) + "\n")
+
+
+def first_to_hang() -> bool:
+    """Whether this is the first process to hang: a file beside the log marks one has."""
+    marker = os.environ["FAKE_ACP_LOG"] + ".hung"
+    if os.path.exists(marker):
+        return False
+    with open(marker, "w"):
+        pass
+    return True
+
+
+async def maybe_hang(step: str) -> None:
+    """Hangs forever on `step` when FAKE_ACP_HANG names it, in the first process only."""
+    if os.getenv("FAKE_ACP_HANG") != step or not first_to_hang():
+        return
+    log("hang", step=step)
+    _ = await asyncio.Event().wait()
 
 
 def message(text: str, message_id: str) -> AgentMessageChunk:
@@ -153,7 +173,8 @@ class FakeClaude:
     async def initialize(
         self, protocol_version: int, **_kwargs: Any
     ) -> InitializeResponse:
-        log("initialize", protocol_version=protocol_version)
+        log("initialize", protocol_version=protocol_version, pid=os.getpid())
+        await maybe_hang("initialize")
         # claude-agent-acp advertises session/close and steering the same way.
         capabilities = AgentCapabilities(
             session_capabilities=SessionCapabilities(
@@ -192,6 +213,7 @@ class FakeClaude:
             raise RequestError(-32603, "Internal error", refused)
         if os.getenv("FAKE_ACP_AUTH_REQUIRED"):
             raise RequestError.auth_required()
+        await maybe_hang("new_session")
         session_id = f"s{len(self._sessions) + 1}"
         self._sessions[session_id] = _Session()
         log(
