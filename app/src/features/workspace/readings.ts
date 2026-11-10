@@ -5,8 +5,9 @@
 // (use-folder.ts); this module is the cache itself.
 
 export type Reading<T> = {
-  /** The last answer, kept while a newer one loads. */
+  /** The last answer, kept while a newer one loads and when a newer one fails. */
   data: T | undefined
+  /** Why the latest read failed; `data` is still the last answer, if there was one. */
   error: string | null
   /** Nothing read for this key yet. */
   loading: boolean
@@ -79,9 +80,10 @@ export function createReadings({
     load()
       .then(
         (data) => publish(found, { data, error: null, loading: false }),
+        // The last answer stays beside the error: one bad read doesn't empty a panel.
         (error: unknown) =>
           publish(found, {
-            data: undefined,
+            data: found.value.data,
             error: String(error),
             loading: false,
           })
@@ -111,6 +113,20 @@ export function createReadings({
       else run(key, load)
     },
   }
+}
+
+/**
+ * How a view built on `all` shows a failed read: in place of the view while a failed one
+ * has nothing read yet (`blocking`), or beside the last answers it keeps showing
+ * (`stale`). Both are null while every read is fine.
+ */
+export function failureOf(...all: Reading<unknown>[]): {
+  blocking: string | null
+  stale: string | null
+} {
+  const blocking = all.find((r) => r.error && r.data === undefined)
+  if (blocking) return { blocking: blocking.error, stale: null }
+  return { blocking: null, stale: all.find((r) => r.error)?.error ?? null }
 }
 
 /** The page's readings. */

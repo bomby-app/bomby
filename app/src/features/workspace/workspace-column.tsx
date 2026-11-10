@@ -11,6 +11,7 @@ import {
 } from "react"
 
 import { ErrorCard } from "@/components/error-card"
+import { showErrorToast } from "@/components/error-toast"
 import { Button } from "@/components/ui/button"
 import {
   ResizableHandle,
@@ -33,6 +34,7 @@ import { cn } from "@/lib/utils"
 
 import type { Changes, FolderInfo } from "./api"
 import type { ExtraTab } from "./extra-tab"
+import { failureOf } from "./readings"
 import type { Section } from "./sections"
 import { treeStatuses } from "./status"
 import type { Reading } from "./use-folder"
@@ -144,7 +146,15 @@ export function WorkspaceColumn({
     )
   }
 
-  const failed = info.error ?? changes.error
+  // A failed read with nothing read before it fills Changes and Files with its error. Once
+  // they have shown something, they keep showing it, and a toast says the latest read
+  // failed (once per error, while one of them is in sight).
+  const { blocking: failed, stale } = failureOf(info, changes)
+  const staleInSight =
+    shown && (visible("changes") || visible("files")) ? stale : null
+  useEffect(() => {
+    if (staleInSight) showErrorToast(staleInSight)
+  }, [staleInSight])
   const folderPicker = folders.length > 1 && folder !== undefined && (
     <FolderPicker folders={folders} folder={folder} onFolder={onFolder} />
   )

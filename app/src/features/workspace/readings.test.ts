@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test"
 
-import { createReadings } from "./readings"
+import { createReadings, failureOf, type Reading } from "./readings"
 
 /** A read that finishes when the test says so. */
 function deferred<T>() {
@@ -76,6 +76,26 @@ describe("readings", () => {
     expect(cache.snapshot("a").error).toBe("Error: gone")
   })
 
+  it("keeps the last answer beside a failed read, and drops the error once one succeeds", async () => {
+    const cache = createReadings()
+    cache.refresh("a", () => Promise.resolve("first"))
+    await tick()
+    cache.refresh("a", () => Promise.reject(new Error("busy")))
+    await tick()
+    expect(cache.snapshot("a")).toEqual({
+      data: "first",
+      error: "Error: busy",
+      loading: false,
+    })
+    cache.refresh("a", () => Promise.resolve("again"))
+    await tick()
+    expect(cache.snapshot("a")).toEqual({
+      data: "again",
+      error: null,
+      loading: false,
+    })
+  })
+
   it("drops the readings nobody has shown for longest, never one on screen", async () => {
     const cache = createReadings({ idle: 2 })
     const stop = cache.subscribe("shown", () => {})
@@ -87,5 +107,37 @@ describe("readings", () => {
     // "a" was the least recent unused one; reading it again starts empty.
     expect(cache.snapshot("a").loading).toBe(true)
     stop()
+  })
+})
+
+describe("a failed read", () => {
+  const ok: Reading<number> = { data: 1, error: null, loading: false }
+  const failedFirst: Reading<number> = {
+    data: undefined,
+    error: "No folder.",
+    loading: false,
+  }
+  const failedAgain: Reading<number> = {
+    data: 1,
+    error: "Busy.",
+    loading: false,
+  }
+
+  it("takes the view's place when nothing was read before it", () => {
+    expect(failureOf(failedAgain, failedFirst)).toEqual({
+      blocking: "No folder.",
+      stale: null,
+    })
+  })
+
+  it("sits beside the last answer once one was read", () => {
+    expect(failureOf(ok, failedAgain)).toEqual({
+      blocking: null,
+      stale: "Busy.",
+    })
+  })
+
+  it("is nothing while every read is fine", () => {
+    expect(failureOf(ok, ok)).toEqual({ blocking: null, stale: null })
   })
 })
