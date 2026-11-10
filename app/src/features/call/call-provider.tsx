@@ -30,6 +30,7 @@ import {
   saveMessage,
 } from "./api"
 import { callEndings } from "./call-endings"
+import { callFailure } from "./call-failure"
 import { MuteShortcut } from "./mute"
 import { forgetSavedCall } from "./saved-call-view"
 import { bySession, lineId, roleOf, type SessionLines } from "./transcript"
@@ -176,14 +177,16 @@ export function CallProvider({ children }: { children: ReactNode }) {
   }
 
   // Like the starter's useAgentErrors: a failed agent ends the session, and the project's
-  // page says why.
+  // page says why. The first reason stays: the agent leaving as the call ends is a second
+  // failure, and says less than what ended it.
   const onAgentFailed = useCallback(
     (reasons: string[]) => {
       if (active) {
-        setError({
+        const failed = {
           projectId: active.projectId,
           message: reasons.join(" ") || "Lost the connection. Try again?",
-        })
+        }
+        setError((current) => current ?? failed)
       }
     },
     [active]
@@ -224,7 +227,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
   )
 }
 
-/** Ends the session when the agent fails (it timed out joining, or left), as the starter does. */
+/**
+ * Ends the session when the agent fails (it timed out joining, or left), as the starter
+ * does, and when the agent says the voice model ended the call (`callFailure`): the agent
+ * stays in the room then, so nothing else would end it.
+ */
 function EndOnAgentFailure({
   onFailed,
 }: {
@@ -232,12 +239,17 @@ function EndOnAgentFailure({
 }) {
   const { isConnected, end } = useSessionContext()
   const agent = useAgent()
+  const said = callFailure(agent.attributes)
   useEffect(() => {
-    if (isConnected && agent.state === "failed") {
+    if (!isConnected) return
+    if (said !== null) {
+      onFailed([said])
+      void end()
+    } else if (agent.state === "failed") {
       onFailed(agent.failureReasons)
       void end()
     }
-  }, [agent, isConnected, end, onFailed])
+  }, [agent, said, isConnected, end, onFailed])
   return null
 }
 

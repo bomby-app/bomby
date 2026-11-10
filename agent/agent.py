@@ -4,12 +4,21 @@ import os
 from typing import override
 
 from livekit import rtc
-from livekit.agents import Agent, AgentServer, AgentSession, JobContext, cli
+from livekit.agents import (
+    Agent,
+    AgentServer,
+    AgentSession,
+    CloseEvent,
+    JobContext,
+    cli,
+)
 
 import dev_env
 import lifeline
 from acp_client.runner import CallRunners
 from call import Call
+from call_failure import ServiceErrors
+from call_failure import report as report_failure
 from call_options import CallOptions
 from extensions import CallExtensions
 from extensions.bridge import APP_IDENTITY, REFUSED, RoomBridge
@@ -91,6 +100,8 @@ async def entrypoint(ctx: JobContext) -> None:
     # the app found gets one ACP process per call, started on its first task, to
     # run its named sessions. Shutting the job down closes every session and process.
     job = read_metadata(ctx.job.metadata)
+    # From before the voice model connects: its service may refuse the first request.
+    service_errors = ServiceErrors.listen()
     # The voice model, its voice and, on a resumed call, the conversation so far.
     options = CallOptions.from_job(job, os.environ)
     runners = CallRunners.for_job(
@@ -191,6 +202,13 @@ async def entrypoint(ctx: JobContext) -> None:
     )
     model = options.provider.realtime_model(options.voice, options.options, backend)
     session: AgentSession[Call] = AgentSession(userdata=call, llm=model)
+
+    # The voice model failing for good closes the session and leaves the agent in the room:
+    # the page is told why, and ends the call (`call_failure.py`).
+    def on_close(event: CloseEvent) -> None:
+        report_failure(event, options.provider.name, service_errors, publish)
+
+    _ = session.on("close", on_close)  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
 
     if memory:
         memory.attach(session)
