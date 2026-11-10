@@ -95,6 +95,9 @@ jobs:
       # Every link and anchor between the Markdown files
       - run: just lint-docs
 
+      # Every place that carries Bomby's version says the same as tauri.conf.json
+      - run: just lint-versions
+
   advisories:
     name: advisories
     # Not a required check: a new advisory can turn up on any day, unrelated to the change.

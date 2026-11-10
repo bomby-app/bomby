@@ -78,7 +78,7 @@ Every pull request runs [CI](.github/workflows/ci.yml); the first three must pas
 | --- | --- | --- |
 | `agent` | `just agent check`: ruff, basedpyright, pytest, the providers' and extensions' catalogues current | Linux |
 | `app` | `just app check`: Vite+ (format, lint, types), clippy, rustfmt, the frontend's and the core's tests, the generated types current, cargo-deny's licenses and sources, the frontend's production build | macOS |
-| `repo` | `just lint-workflows` (actionlint, zizmor) and `just lint-docs` (every link and anchor between the Markdown files) | Linux |
+| `repo` | `just lint-workflows` (actionlint, zizmor) `just lint-docs` (every link and anchor between the Markdown files) and `just lint-versions` (every place that carries Bomby's version says the same) | Linux |
 | `advisories` | `just app advisories`: RustSec advisories for the core's dependencies, also every Monday | Linux |
 | `dependency-review` | New dependencies with known vulnerabilities, in any lockfile | GitHub |
 

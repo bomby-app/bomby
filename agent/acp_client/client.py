@@ -39,7 +39,7 @@ from harnesses.harness import Harness
 
 logger = logging.getLogger("bomby.acp_client.client")
 
-CLIENT_INFO = Implementation(name="bomby", version="0.1.0")
+CLIENT_INFO = Implementation(name="bomby", version="0.2.1")
 # The SDK's read buffer per line. It reassembles longer lines anyway; this only saves
 # round trips on large messages. Matches the SDK's agent side.
 STDIO_LIMIT = 50 * 1024 * 1024

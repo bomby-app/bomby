@@ -31,7 +31,7 @@ The signing identity is read from the certificate, so it isn't a secret. Only th
 
 ## Making a release
 
-1. Set `version` in `app/src-tauri/tauri.conf.json`.
+1. Run `just version X.Y.Z` (plain MAJOR.MINOR.PATCH) and commit the result to `main`. `app/src-tauri/tauri.conf.json` holds the version Tauri builds and the workflow releases; the recipe writes the same number into the copies that can't read it (the crate's `Cargo.toml`, the agent's `pyproject.toml`, `CLIENT_INFO`, the version Bomby reports to coding agents over ACP) and updates `Cargo.lock` and `uv.lock` through cargo and uv. `just lint-versions`, run by CI and by the workflow before it builds, fails when any of them differs. `app/package.json` carries no version.
 2. Actions > Release > Run workflow. Nothing else starts it: publishing the draft creates the tag `v<version>`, and a tag trigger would build the release a second time.
 3. Download the DMG from the draft release on the Releases page, open it on a Mac and check that it opens without a warning and that a call works. Then publish the release: from that moment installed copies are offered it. A published release is never changed; the next build needs a new version.
 
