@@ -29,6 +29,7 @@ import {
   openCall,
   saveMessage,
 } from "./api"
+import { callEndings } from "./call-endings"
 import { MuteShortcut } from "./mute"
 import { forgetSavedCall } from "./saved-call-view"
 import { bySession, lineId, roleOf, type SessionLines } from "./transcript"
@@ -106,21 +107,28 @@ export function CallProvider({ children }: { children: ReactNode }) {
   // (@livekit/components-react 2.9.24, `useSession`'s `start`; docs/livekit-notes.md).
   const joining = useRef<AbortController | null>(null)
 
+  // A failed start that had connected ends the call twice (its own end, and the room's
+  // disconnect): the second waits on the first, and neither rejects.
+  const [ending] = useState(() =>
+    callEndings((id, e) => log(`Ending call ${id} failed: ${String(e)}`))
+  )
+
   const finish = useCallback(
-    async (id: number) => {
-      // Its last lines are saved, and the call and its session ended, before the call's
-      // page shows its saved transcript; only then is what this page kept of it dropped,
-      // so the transcript read is whole, the last session's end included.
-      await written(id)
-      try {
-        await endCall(id)
-      } finally {
-        forgetSavedCall(id)
-        setActive((current) => (current?.callId === id ? null : current))
-      }
-      await refresh()
-    },
-    [refresh]
+    (id: number) =>
+      ending(id, async () => {
+        // Its last lines are saved, and the call and its session ended, before the call's
+        // page shows its saved transcript; only then is what this page kept of it dropped,
+        // so the transcript read is whole, the last session's end included.
+        await written(id)
+        try {
+          await endCall(id)
+        } finally {
+          forgetSavedCall(id)
+          setActive((current) => (current?.callId === id ? null : current))
+        }
+        await refresh()
+      }),
+    [ending, refresh]
   )
 
   // However the call ends (End call, the room closing, the agent failing), the room
