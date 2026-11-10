@@ -52,10 +52,12 @@ const ACCEPT_RETRY: Duration = Duration::from_millis(100);
 #[serde(tag = "type", rename_all = "camelCase")]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "agent-streams.ts"))]
 pub enum StreamEvent {
-    /// A turn started in the call's session `session` of the agent `agent` (a harness id).
+    /// A turn started in the call's session `session` of the agent `agent` (a harness id),
+    /// called `name` ("Claude").
     Start {
         stream: String,
         agent: String,
+        name: String,
         session: String,
     },
     /// Appends to the message `message` (the agent's id for it, if it gave one).
@@ -113,7 +115,12 @@ impl StreamEvent {
     /// About what it weighs in memory.
     fn weight(&self) -> usize {
         64 + match self {
-            Self::Start { agent, session, .. } => agent.len() + session.len(),
+            Self::Start {
+                agent,
+                name,
+                session,
+                ..
+            } => agent.len() + name.len() + session.len(),
             Self::Text { message, text, .. } => {
                 message.as_ref().map_or(0, String::len) + text.len()
             }
@@ -462,6 +469,7 @@ mod tests {
         StreamEvent::Start {
             stream: stream.into(),
             agent: "claude".into(),
+            name: "Claude".into(),
             session: "main".into(),
         }
     }
@@ -598,7 +606,7 @@ mod tests {
             .await
             .unwrap();
         wrong
-            .write_all(b"{\"type\":\"start\",\"stream\":\"1\",\"agent\":\"x\",\"session\":\"y\"}\n")
+            .write_all(b"{\"type\":\"start\",\"stream\":\"1\",\"agent\":\"x\",\"name\":\"X\",\"session\":\"y\"}\n")
             .await
             .unwrap();
 
@@ -607,7 +615,7 @@ mod tests {
         right.write_all(hello.as_bytes()).await.unwrap();
         right
             .write_all(
-                b"{\"type\":\"start\",\"stream\":\"1\",\"agent\":\"codex\",\"session\":\"api\"}\nnot json\n{\"type\":\"tool\",\"stream\":\"1\",\"id\":\"t1\",\"title\":\"Run ls\",\"status\":\"in_progress\"}\n",
+                b"{\"type\":\"start\",\"stream\":\"1\",\"agent\":\"codex\",\"name\":\"Codex\",\"session\":\"api\"}\nnot json\n{\"type\":\"tool\",\"stream\":\"1\",\"id\":\"t1\",\"title\":\"Run ls\",\"status\":\"in_progress\"}\n",
             )
             .await
             .unwrap();
@@ -625,7 +633,7 @@ mod tests {
         let mut long = UnixStream::connect(&path).await.unwrap();
         long.write_all(hello.as_bytes()).await.unwrap();
         long.write_all(
-            b"{\"type\":\"start\",\"stream\":\"1\",\"agent\":\"codex\",\"session\":\"api\"}\n",
+            b"{\"type\":\"start\",\"stream\":\"1\",\"agent\":\"codex\",\"name\":\"Codex\",\"session\":\"api\"}\n",
         )
         .await
         .unwrap();

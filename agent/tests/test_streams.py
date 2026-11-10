@@ -123,6 +123,7 @@ def test_a_turn_streams_its_messages_and_tool_calls_and_nothing_else(
             "type": "start",
             "stream": "1",
             "agent": "claude",
+            "name": "Claude",
             "session": "landing-page",
         },
         {"type": "text", "stream": "1", "message": "m1", "text": "Let me look. "},
@@ -205,7 +206,7 @@ def test_a_full_queue_drops_events_and_says_so_but_keeps_start_and_end() -> None
         async with core() as c:
             # Filled before anything is sent, as when the socket is stuck.
             streams = StreamRecorder(c.path, "s", "bomby-1-1", max_pending=3)
-            streams.open("a", "codex", "api")
+            streams.open("a", "codex", "Codex", "api")
             for id in ("t1", "t2", "t3", "t4"):
                 streams.record("a", tool(id))
             streams.close("a")
@@ -231,7 +232,7 @@ def test_a_message_is_cut_to_its_cap_and_the_next_one_starts_afresh() -> None:
     async def main() -> Core:
         async with core() as c:
             streams = StreamRecorder(c.path, "s", "bomby-1-1")
-            streams.open("a", "goose", "main")
+            streams.open("a", "goose", "goose", "main")
 
             def say(text: str, message: str) -> None:
                 chunk = update_agent_message(text_block(text))
@@ -283,8 +284,8 @@ class Broken:
     def __init__(self) -> None:
         self.opened: list[str] = []
 
-    def open(self, session_id: str, agent: str, session: str) -> None:
-        self.opened.append(f"{agent}/{session}/{session_id}")
+    def open(self, session_id: str, agent: str, name: str, session: str) -> None:
+        self.opened.append(f"{agent}/{name}/{session}/{session_id}")
 
     def record(self, session_id: str, update: Any) -> None:
         raise RuntimeError(f"recorder bug on {session_id}: {update!r}")

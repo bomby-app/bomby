@@ -402,7 +402,9 @@ class AcpRunner:
         s.briefed = True
         # The Agents panel's stream is the turn's, so a request steered in shares it.
         if self._streams is not None:
-            self._streams.open(session_id, self._harness.id, s.name)
+            self._streams.open(
+                session_id, self._harness.id, self._harness.short_name, s.name
+            )
         try:
             response = await conn.prompt(
                 session_id=session_id, prompt=[text_block(t) for t in texts]

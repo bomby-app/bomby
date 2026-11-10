@@ -4,7 +4,7 @@
  * One event of a running turn's stream: the agent's message text (appended to its
  * message) and its tool calls (patches by id), between the turn's start and end.
  */
-export type StreamEvent = { "type": "start", stream: string, agent: string, session: string, } | { "type": "text", stream: string, message: string | null, text: string, } | { "type": "tool", stream: string, id: string, title?: string, 
+export type StreamEvent = { "type": "start", stream: string, agent: string, name: string, session: string, } | { "type": "text", stream: string, message: string | null, text: string, } | { "type": "tool", stream: string, id: string, title?: string, 
 /**
  * ACP's kind: read, edit, execute and so on.
  */

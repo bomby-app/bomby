@@ -13,7 +13,7 @@ The core starts the worker with the socket's path in `BOMBY_STREAMS` and the run
 so they don't stream. One connection per call, each line a JSON object: first
 `{"secret": "…", "room": "<the call's room>"}`, then events:
 
-    {"type": "start", "stream": "1", "agent": "claude", "session": "landing-page"}
+    {"type": "start", "stream": "1", "agent": "claude", "name": "Claude", "session": "landing-page"}
     {"type": "text", "stream": "1", "message": "<the agent's message id, or null>", "text": "…"}
     {"type": "tool", "stream": "1", "id": "…", "title"?: "…", "kind"?: "execute", "status"?: "in_progress"}
     {"type": "dropped", "stream": "1"}
@@ -61,9 +61,9 @@ WRITE_TIMEOUT_S = 5
 class Recorder(Protocol):
     """Where the runner and client report a turn's activity. Nothing here may await."""
 
-    def open(self, session_id: str, agent: str, session: str) -> None:
+    def open(self, session_id: str, agent: str, name: str, session: str) -> None:
         """A turn starts in ACP session `session_id`, the call's session `session` of the
-        agent `agent` (a harness id)."""
+        agent `agent` (a harness id), called `name` ("Claude")."""
         ...
 
     def record(self, session_id: str, update: Any) -> None:
@@ -137,7 +137,7 @@ class StreamRecorder:
 
     # The recorder's side: synchronous, guarded, never raises into the caller.
 
-    def open(self, session_id: str, agent: str, session: str) -> None:
+    def open(self, session_id: str, agent: str, name: str, session: str) -> None:
         try:
             if not self._live:
                 return
@@ -149,6 +149,7 @@ class StreamRecorder:
                     "type": "start",
                     "stream": stream.key,
                     "agent": agent,
+                    "name": name,
                     "session": cut(session, MAX_ID),
                 },
                 keep=True,
