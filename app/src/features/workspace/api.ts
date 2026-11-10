@@ -6,6 +6,7 @@ import type {
   FilePreview,
   FolderInfo,
 } from "@/generated/workspace"
+import { log } from "@/lib/log"
 
 // The core's workspace commands (src-tauri/src/workspace/): a project's folder, its git
 // changes and files, a watch that says when they change, and terminals. Every call names
@@ -78,11 +79,6 @@ export async function watchFolder(
     changed,
   })
   return () => quietly("unwatch_folder", { id })
-}
-
-/** A failure the user can't act on goes to the app's log (`app_log`), not the screen. */
-function log(line: string) {
-  void invoke("app_log", { line }).catch(() => {})
 }
 
 function quietly(command: string, args: Record<string, unknown>) {

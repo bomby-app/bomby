@@ -10,9 +10,10 @@ import {
 } from "@/components/ui/tooltip"
 import { callLabel } from "@/features/projects/names"
 import { useProjects } from "@/features/projects/projects-provider"
+import { log } from "@/lib/log"
 import { cn } from "@/lib/utils"
 
-import { log, renameCall } from "./api"
+import { renameCall } from "./api"
 
 /** The core's limit on a call's name (`MAX_NAME_LEN` in `src-tauri/src/calls.rs`). */
 const NAME_MAX = 60

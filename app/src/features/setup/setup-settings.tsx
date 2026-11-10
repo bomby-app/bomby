@@ -6,6 +6,7 @@ import { ErrorCard } from "@/components/error-card"
 import { StatusRow } from "@/components/status-row"
 import { Button } from "@/components/ui/button"
 import { useSettingsNavigation } from "@/lib/settings-navigation"
+import { andList } from "@/lib/text"
 
 import type { AgentStatus } from "../agents/api"
 import { checkAgentsAgain, isReady, useAgents } from "../agents/use-agents"
@@ -134,15 +135,9 @@ function voiceDetail(keys: Keys): string {
 function agentDetail(agents: AgentStatus[]): string {
   const ready = agents.filter(isReady).map((agent) => agent.name)
   if (ready.length > 0)
-    return `${list(ready)} ${ready.length === 1 ? "is" : "are"} ready.`
+    return `${andList(ready)} ${ready.length === 1 ? "is" : "are"} ready.`
   const installed = agents.filter((agent) => agent.path !== null)
   if (installed.length > 0)
-    return `${list(installed.map((agent) => agent.name))} ${installed.length === 1 ? "needs" : "need"} setting up.`
+    return `${andList(installed.map((agent) => agent.name))} ${installed.length === 1 ? "needs" : "need"} setting up.`
   return "None installed yet."
-}
-
-/** "a", "a and b", "a, b and c". */
-function list(names: string[]): string {
-  if (names.length <= 1) return names.join("")
-  return `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`
 }

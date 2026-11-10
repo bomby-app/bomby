@@ -4,7 +4,7 @@ import { FieldLabel } from "@/components/ui/field"
 import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-import { andList } from "@/features/projects/names"
+import { andList } from "@/lib/text"
 
 import type { ProjectExtensions } from "./api"
 import { ExtensionIcon } from "./extension-icon"

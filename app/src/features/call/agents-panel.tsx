@@ -1,6 +1,7 @@
 import {
   ArrowRight,
   Check,
+  CircleQuestionMark,
   CircleSlash,
   Inbox,
   ListEnd,
@@ -200,8 +201,21 @@ const STATUS = {
   stopped: { label: "Stopped", Icon: CircleSlash, disc: HIGHLIGHTER },
 } as const
 
+/**
+ * A status this page doesn't know (a newer agent's): neutral, never a claim that the task
+ * is done.
+ */
+const UNKNOWN_STATUS = {
+  label: "Status unknown",
+  Icon: CircleQuestionMark,
+  disc: "bg-muted text-muted-foreground",
+}
+
 function TaskStatus({ status }: { status: Task["status"] }) {
-  const { label, Icon, disc } = STATUS[status] ?? STATUS.done
+  // Own keys only: a status such as "constructor" must not find the object's prototype.
+  const { label, Icon, disc } = Object.hasOwn(STATUS, status)
+    ? STATUS[status]
+    : UNKNOWN_STATUS
   return (
     <Tooltip>
       <TooltipTrigger asChild>

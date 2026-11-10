@@ -18,11 +18,12 @@ import {
   FieldSet,
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { folderName } from "@/lib/text"
 
 import type { Project } from "./api"
 import { FolderList } from "./folder-list"
 import { InstructionsField, submittedInstructions } from "./instructions-field"
-import { folderName, uniqueName } from "./names"
+import { uniqueName } from "./names"
 import { useProjects } from "./projects-provider"
 
 /** New project: a name, and optionally the folders the agents work in and instructions. */
