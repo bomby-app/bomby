@@ -187,6 +187,7 @@ pub fn run() {
             credentials::save_agent_key,
             credentials::clear_agent_key,
             credentials::read_keys_again,
+            credentials::keychain_asking,
             settings::memory_setting,
             settings::set_memory_setting,
             settings::memory_incognito,

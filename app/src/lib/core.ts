@@ -24,8 +24,34 @@ export const NOT_ANSWERING =
   "Bomby's core isn't answering. Try again; if it keeps happening, quit Bomby and open it again."
 
 /**
+ * What a command that didn't answer in time rejects with while the core waits on the
+ * keychain: on a Mac, macOS asking for the user's password. The screen then says so instead
+ * of {@link NOT_ANSWERING}, and reads again once the keys are read (`keys-changed`).
+ */
+export const KEYCHAIN_ASKING =
+  "macOS is asking for your password so Bomby can read your keys. Answer it, and this fills in."
+
+/** How long the page waits to learn whether the core is waiting on the keychain. */
+const ASKING_CHECK = 2_000
+
+/**
+ * Why a command didn't answer in time: {@link KEYCHAIN_ASKING} when the core is waiting on
+ * the keychain right now, else {@link NOT_ANSWERING}. The question takes no lock in the core,
+ * so it answers even while the keys are held.
+ */
+export async function whyNotAnswering(
+  asking: () => Promise<boolean> = () => invoke<boolean>("keychain_asking")
+): Promise<string> {
+  const unknown = new Promise<boolean>((resolve) =>
+    setTimeout(() => resolve(false), ASKING_CHECK)
+  )
+  const waiting = await Promise.race([asking().catch(() => false), unknown])
+  return waiting ? KEYCHAIN_ASKING : NOT_ANSWERING
+}
+
+/**
  * Calls a core command, like `invoke`, and stops waiting after `timeout` ms, rejecting
- * with {@link NOT_ANSWERING}; the core may still finish the work. `null` waits as long as it takes: only for what waits on the
+ * with why ({@link whyNotAnswering}); the core may still finish the work. `null` waits as long as it takes: only for what waits on the
  * user (a browser sign-in) or a download.
  */
 export function call<T>(
@@ -37,9 +63,13 @@ export function call<T>(
   if (timeout === null) return answer
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => {
-      log(`${command} didn't answer in ${timeout / 1000} s`)
-      // oxlint-disable-next-line prefer-promise-reject-errors -- the core's errors are strings too
-      reject(NOT_ANSWERING)
+      void whyNotAnswering().then((why) => {
+        const waiting =
+          why === KEYCHAIN_ASKING ? ", waiting on the keychain" : ""
+        log(`${command} didn't answer in ${timeout / 1000} s${waiting}`)
+        // oxlint-disable-next-line prefer-promise-reject-errors -- the core's errors are strings too
+        reject(why)
+      })
     }, timeout)
     answer.then(
       (value) => {

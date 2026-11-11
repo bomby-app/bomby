@@ -209,6 +209,9 @@ pub struct Vault {
     /// The first successful read after a failed one, not yet acted on: the agents are checked
     /// again with their keys ([`Vault::take_recovered`]).
     recovered: AtomicBool,
+    /// A keychain read is in flight: macOS may be asking the user for their password
+    /// ([`Vault::asking`]).
+    asking: AtomicBool,
     /// Every key, secret and token read from the keychain or saved this run, kept after it's
     /// replaced, cleared or disconnected: the logs may still hold it, so Export Diagnostics
     /// takes them all out (`diagnostics`). Private: only `secrets_this_run` reads it. A leaf:
@@ -223,6 +226,7 @@ impl Default for Vault {
             cache: Exclusive::new("the keys", Cache::Unread),
             keychain: Exclusive::new("the keychain", ()),
             recovered: AtomicBool::new(false),
+            asking: AtomicBool::new(false),
             seen: Mutex::default(),
         }
     }
@@ -297,7 +301,9 @@ impl Vault {
         if let Some(keys) = self.cached(retry)? {
             return Ok(keys);
         }
+        self.asking.store(true, Ordering::SeqCst);
         let fetched = fetch();
+        self.asking.store(false, Ordering::SeqCst);
         let mut cache = self.cache.lock()?;
         match fetched {
             Ok(keys) => {
@@ -315,9 +321,30 @@ impl Vault {
         }
     }
 
-    /// Reads part of the keys, without copying the rest.
+    /// Reads part of the keys, without copying the rest. After a first read, which can wait
+    /// on macOS asking for the user's password, every window reads which keys are saved again:
+    /// a screen that gave up waiting meanwhile then shows them.
     fn read<R: Runtime, T>(&self, app: &AppHandle<R>, take: impl FnOnce(&Keys) -> T) -> Result<T> {
-        self.read_with(|| self.fetch(app), take)
+        let fetched = AtomicBool::new(false);
+        let read = self.read_with(
+            || {
+                fetched.store(true, Ordering::SeqCst);
+                self.fetch(app)
+            },
+            take,
+        );
+        if fetched.load(Ordering::SeqCst) {
+            // Only fails for an invalid event name or payload.
+            let _ = app.emit(KEYS_CHANGED, ());
+        }
+        read
+    }
+
+    /// Whether a keychain read is waiting right now: on a Mac, most likely macOS asking for
+    /// the user's password, so a screen waiting on the keys says that rather than that Bomby
+    /// isn't answering. Takes no lock.
+    pub fn asking(&self) -> bool {
+        self.asking.load(Ordering::SeqCst)
     }
 
     fn read_with<T>(
@@ -550,6 +577,14 @@ pub async fn read_keys_again<R: Runtime>(app: AppHandle<R>) -> Result<()> {
         Ok(())
     })
     .await
+}
+
+/// Whether Bomby is waiting on the keychain right now, most likely for the user to answer
+/// macOS's password prompt: what the page asks when a read of the core didn't answer in time.
+/// Answers at once, whatever holds the keys.
+#[tauri::command]
+pub async fn keychain_asking<R: Runtime>(app: AppHandle<R>) -> bool {
+    app.state::<Vault>().asking()
 }
 
 /// The saved LiveKit keys without the secret, or `None` when nothing is saved.
@@ -868,6 +903,51 @@ mod tests {
                 .read_with(|| unreachable!(), |keys| keys.zep_key.clone())
                 .unwrap(),
             None
+        );
+    }
+
+    #[test]
+    fn says_its_asking_only_while_the_keychain_answers() {
+        // A screen that gave up waiting says macOS is asking for a password, not that Bomby
+        // isn't answering, and only while it is.
+        let vault = Vault::default();
+        assert!(!vault.asking());
+        vault
+            .read_with(
+                || {
+                    assert!(vault.asking(), "asking while the read waits");
+                    Ok(Keys::default())
+                },
+                |_| (),
+            )
+            .unwrap();
+        assert!(!vault.asking());
+
+        let vault = Vault::default();
+        let denied = || Err(Error::Invalid("User canceled the operation.".into()));
+        let _ = vault.read_with(denied, |_| ());
+        assert!(!vault.asking(), "not after a denied prompt either");
+    }
+
+    #[test]
+    fn a_first_read_tells_every_window_to_read_the_keys_again() {
+        use std::sync::Arc;
+        use std::sync::atomic::AtomicUsize;
+        use tauri::Listener;
+
+        let app = crate::testing::app();
+        let heard = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&heard);
+        app.listen_any(KEYS_CHANGED, move |_| {
+            counter.fetch_add(1, Ordering::SeqCst);
+        });
+        let vault = app.state::<Vault>();
+        vault.zep_key(app.handle()).unwrap();
+        vault.zep_key(app.handle()).unwrap();
+        assert_eq!(
+            heard.load(Ordering::SeqCst),
+            1,
+            "once, after the first read"
         );
     }
 
