@@ -7,10 +7,11 @@ use caseless::Caseless;
 use rusqlite::functions::FunctionFlags;
 use rusqlite::{Connection, params};
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, Manager, Runtime};
 use unicode_normalization::UnicodeNormalization;
 use unicode_normalization::char::is_combining_mark;
 
+use crate::blocking::blocking;
 use crate::db::Db;
 use crate::error::Result;
 
@@ -260,9 +261,13 @@ fn search_in(conn: &Connection, query: &str) -> Result<SearchResults> {
 
 /// Projects whose name has every word of `query`, and calls whose name has every word or
 /// with a line that has every word (each of three characters or more), any case.
-#[tauri::command(async)]
-pub fn search(db: State<'_, Db>, query: String) -> Result<SearchResults> {
-    search_in(&*db.conn()?, &query)
+#[tauri::command]
+pub async fn search<R: Runtime>(app: AppHandle<R>, query: String) -> Result<SearchResults> {
+    blocking(app, move |app| {
+        let db = app.state::<Db>();
+        search_in(&*db.conn()?, &query)
+    })
+    .await
 }
 
 #[cfg(test)]

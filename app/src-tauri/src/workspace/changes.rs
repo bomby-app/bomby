@@ -9,8 +9,9 @@ use std::path::Path;
 
 use git2::{Delta, DiffFindOptions, DiffOptions, ErrorCode, Patch, Repository, Tree};
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, Manager, Runtime};
 
+use crate::blocking::blocking;
 use crate::db::Db;
 use crate::error::Result;
 
@@ -237,21 +238,33 @@ pub(crate) fn changes(folder: &Path) -> Result<Option<Changes>> {
 }
 
 /// Whether one of a project's folders is in a git repository.
-#[tauri::command(async)]
-pub fn folder_info(db: State<'_, Db>, project_id: i64, folder: String) -> Result<FolderInfo> {
-    let folder = super::project_folder(&*db.conn()?, project_id, &folder)?;
-    Ok(info(&folder))
+#[tauri::command]
+pub async fn folder_info<R: Runtime>(
+    app: AppHandle<R>,
+    project_id: i64,
+    folder: String,
+) -> Result<FolderInfo> {
+    blocking(app, move |app| {
+        let db = app.state::<Db>();
+        let folder = super::project_folder(&*db.conn()?, project_id, &folder)?;
+        Ok(info(&folder))
+    })
+    .await
 }
 
 /// What changed in one of a project's folders since the last commit; `None` outside git.
-#[tauri::command(async)]
-pub fn folder_changes(
-    db: State<'_, Db>,
+#[tauri::command]
+pub async fn folder_changes<R: Runtime>(
+    app: AppHandle<R>,
     project_id: i64,
     folder: String,
 ) -> Result<Option<Changes>> {
-    let folder = super::project_folder(&*db.conn()?, project_id, &folder)?;
-    changes(&folder)
+    blocking(app, move |app| {
+        let db = app.state::<Db>();
+        let folder = super::project_folder(&*db.conn()?, project_id, &folder)?;
+        changes(&folder)
+    })
+    .await
 }
 
 #[cfg(test)]

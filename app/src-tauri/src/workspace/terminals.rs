@@ -22,7 +22,9 @@ use std::time::Duration;
 use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 use serde::Deserialize;
 use tauri::ipc::{Channel, InvokeResponseBody};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
+
+use crate::blocking::blocking;
 
 use super::project_folder;
 use crate::app_log;
@@ -328,15 +330,9 @@ pub struct TerminalsState(pub Arc<Terminals>);
 
 /// Starts a shell in one of a project's folders. Its output arrives on `output` as raw
 /// bytes; `exit` gets the shell's exit code (or `null`) once it has gone.
-#[tauri::command(async)]
-#[expect(
-    clippy::too_many_arguments,
-    reason = "a command's arguments are what the page sends plus the state it needs"
-)]
-pub fn terminal_open(
+#[tauri::command]
+pub async fn terminal_open(
     app: AppHandle,
-    db: State<'_, Db>,
-    terminals: State<'_, TerminalsState>,
     project_id: i64,
     folder: String,
     cols: u16,
@@ -344,22 +340,25 @@ pub fn terminal_open(
     output: Channel<InvokeResponseBody>,
     exit: Channel<Option<u32>>,
 ) -> Result<u32> {
-    let folder = project_folder(&*db.conn()?, project_id, &folder)?;
-    terminals
-        .0
-        .spawn(
-            shell(&folder),
-            cols,
-            rows,
-            move |chunk| output.send(InvokeResponseBody::Raw(chunk.to_vec())).is_ok(),
-            move |code| {
-                let _ = exit.send(code);
-            },
-        )
-        .map_err(|e| {
-            let _ = app_log::append(&app, &format!("terminal didn't start: {e}"));
-            Error::Invalid("Bomby couldn't start a terminal. Try again?".into())
-        })
+    blocking(app, move |app| {
+        let folder = project_folder(&*app.state::<Db>().conn()?, project_id, &folder)?;
+        app.state::<TerminalsState>()
+            .0
+            .spawn(
+                shell(&folder),
+                cols,
+                rows,
+                move |chunk| output.send(InvokeResponseBody::Raw(chunk.to_vec())).is_ok(),
+                move |code| {
+                    let _ = exit.send(code);
+                },
+            )
+            .map_err(|e| {
+                let _ = app_log::append(app, &format!("terminal didn't start: {e}"));
+                Error::Invalid("Bomby couldn't start a terminal. Try again?".into())
+            })
+    })
+    .await
 }
 
 /// Text the user typed or pasted, or raw bytes (mouse reports past ASCII).

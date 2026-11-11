@@ -8,8 +8,9 @@ use std::sync::LazyLock;
 
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Runtime, State};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 
+use crate::blocking::blocking;
 use crate::credentials::{KEYS_CHANGED, Vault};
 use crate::db::Db;
 use crate::error::{Error, Result};
@@ -405,61 +406,77 @@ pub(crate) fn for_new_call<R: Runtime>(
     Ok(provider)
 }
 
-#[tauri::command(async)]
-pub fn voice_settings<R: Runtime>(
-    app: AppHandle<R>,
-    db: State<'_, Db>,
-    vault: State<'_, Vault>,
-) -> Result<VoiceSettings> {
-    let keys = vault.voice_keys(&app)?;
-    let conn = db.conn()?;
-    let providers = VoiceProvider::ALL
-        .into_iter()
-        .map(|provider| {
-            Ok(ProviderSettings {
-                provider,
-                has_key: keys.contains_key(&provider),
-                voice: voice(&conn, provider)?,
-                default_voice: provider.default_voice(),
-                voices: provider.voices().to_vec(),
-                options: options(&conn, provider)?,
+#[tauri::command]
+pub async fn voice_settings<R: Runtime>(app: AppHandle<R>) -> Result<VoiceSettings> {
+    blocking(app, move |app| {
+        let db = app.state::<Db>();
+        let vault = app.state::<Vault>();
+        let keys = vault.voice_keys(app)?;
+        let conn = db.conn()?;
+        let providers = VoiceProvider::ALL
+            .into_iter()
+            .map(|provider| {
+                Ok(ProviderSettings {
+                    provider,
+                    has_key: keys.contains_key(&provider),
+                    voice: voice(&conn, provider)?,
+                    default_voice: provider.default_voice(),
+                    voices: provider.voices().to_vec(),
+                    options: options(&conn, provider)?,
+                })
             })
+            .collect::<Result<_>>()?;
+        Ok(VoiceSettings {
+            provider: chosen(&conn, |p| keys.contains_key(&p))?,
+            providers,
         })
-        .collect::<Result<_>>()?;
-    Ok(VoiceSettings {
-        provider: chosen(&conn, |p| keys.contains_key(&p))?,
-        providers,
     })
+    .await
 }
 
 /// Applies from the next call. Every window hears keys-changed, since whether a call can
 /// start depends on the provider's key.
-#[tauri::command(async)]
-pub fn set_voice_provider<R: Runtime>(
+#[tauri::command]
+pub async fn set_voice_provider<R: Runtime>(
     app: AppHandle<R>,
-    db: State<'_, Db>,
     provider: VoiceProvider,
 ) -> Result<()> {
-    save_provider(&*db.conn()?, provider)?;
-    let _ = app.emit(KEYS_CHANGED, ());
-    Ok(())
+    blocking(app, move |app| {
+        let db = app.state::<Db>();
+        save_provider(&*db.conn()?, provider)?;
+        let _ = app.emit(KEYS_CHANGED, ());
+        Ok(())
+    })
+    .await
 }
 
 /// The voice for the provider's next call; a call that's running keeps its voice.
-#[tauri::command(async)]
-pub fn set_voice(db: State<'_, Db>, provider: VoiceProvider, voice: String) -> Result<()> {
-    save_voice(&*db.conn()?, provider, &voice)
+#[tauri::command]
+pub async fn set_voice<R: Runtime>(
+    app: AppHandle<R>,
+    provider: VoiceProvider,
+    voice: String,
+) -> Result<()> {
+    blocking(app, move |app| {
+        let db = app.state::<Db>();
+        save_voice(&*db.conn()?, provider, &voice)
+    })
+    .await
 }
 
 /// A switch's on or off, or a choice's value, for the provider's next call.
-#[tauri::command(async)]
-pub fn set_voice_option(
-    db: State<'_, Db>,
+#[tauri::command]
+pub async fn set_voice_option<R: Runtime>(
+    app: AppHandle<R>,
     provider: VoiceProvider,
     option: String,
     value: OptionValue,
 ) -> Result<()> {
-    save_option(&*db.conn()?, provider, &option, &value)
+    blocking(app, move |app| {
+        let db = app.state::<Db>();
+        save_option(&*db.conn()?, provider, &option, &value)
+    })
+    .await
 }
 
 #[cfg(test)]

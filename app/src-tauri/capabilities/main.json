@@ -52,6 +52,7 @@
     "clipboard-manager:allow-read-text",
     "clipboard-manager:allow-write-text",
     "allow-credentials-info",
+    "allow-read-keys-again",
     "allow-save-credentials",
     "allow-clear-credentials",
     "allow-save-voice-key",

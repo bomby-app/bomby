@@ -11,10 +11,11 @@ use std::time::Duration;
 use git2::Repository;
 use notify_debouncer_mini::notify::{RecommendedWatcher, RecursiveMode};
 use notify_debouncer_mini::{DebounceEventResult, Debouncer, new_debouncer};
-use tauri::State;
 use tauri::ipc::Channel;
+use tauri::{AppHandle, Manager, Runtime, State};
 
 use super::project_folder;
+use crate::blocking::blocking;
 use crate::db::Db;
 use crate::error::{Error, Result};
 use crate::sync;
@@ -69,21 +70,25 @@ fn in_git_folder(path: &Path) -> bool {
 
 /// Watches one of a project's folders; `changed` gets `null` after each burst of changes.
 /// Returns the id `unwatch_folder` stops it with.
-#[tauri::command(async)]
-pub fn watch_folder(
-    db: State<'_, Db>,
-    watches: State<'_, Watches>,
+#[tauri::command]
+pub async fn watch_folder<R: Runtime>(
+    app: AppHandle<R>,
     project_id: i64,
     folder: String,
     changed: Channel<()>,
 ) -> Result<u32> {
-    let folder = project_folder(&*db.conn()?, project_id, &folder)?;
-    let debouncer = watch(&folder, move || {
-        let _ = changed.send(());
-    })?;
-    let id = watches.next.fetch_add(1, Ordering::Relaxed);
-    sync::lock(&watches.open).insert(id, debouncer);
-    Ok(id)
+    blocking(app, move |app| {
+        let db = app.state::<Db>();
+        let watches = app.state::<Watches>();
+        let folder = project_folder(&*db.conn()?, project_id, &folder)?;
+        let debouncer = watch(&folder, move || {
+            let _ = changed.send(());
+        })?;
+        let id = watches.next.fetch_add(1, Ordering::Relaxed);
+        sync::lock(&watches.open).insert(id, debouncer);
+        Ok(id)
+    })
+    .await
 }
 
 /// Calls `changed` after each burst of changes that [`matters`] in `folder`, and in its

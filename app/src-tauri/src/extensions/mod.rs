@@ -20,8 +20,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::LazyLock;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Runtime, State};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 
+use crate::blocking::blocking;
 use crate::db::Db;
 use crate::error::{Error, Result};
 use crate::settings;
@@ -219,31 +220,35 @@ pub(crate) fn for_call(
         .collect()
 }
 
-#[tauri::command(async)]
-pub fn extensions_settings<R: Runtime>(
-    app: AppHandle<R>,
-    db: State<'_, Db>,
-) -> Result<Vec<ExtensionSetting>> {
-    // The keychain first: it may wait on the user's password, and the database waits for no one.
-    let sign_ins = connections::sign_ins(&app)?;
-    settings(&*db.conn()?, &sign_ins)
+#[tauri::command]
+pub async fn extensions_settings<R: Runtime>(app: AppHandle<R>) -> Result<Vec<ExtensionSetting>> {
+    blocking(app, move |app| {
+        let db = app.state::<Db>();
+        // The keychain first: it may wait on the user's password, and the database waits for no one.
+        let sign_ins = connections::sign_ins(app)?;
+        settings(&*db.conn()?, &sign_ins)
+    })
+    .await
 }
 
 /// Applies from the next call; one under way keeps its extensions.
-#[tauri::command(async)]
-pub fn set_extension<R: Runtime>(
+#[tauri::command]
+pub async fn set_extension<R: Runtime>(
     app: AppHandle<R>,
-    db: State<'_, Db>,
     id: String,
     on: bool,
 ) -> Result<Vec<ExtensionSetting>> {
-    // The keychain before the database, as in `extensions_settings`.
-    let sign_ins = connections::sign_ins(&app)?;
-    let conn = db.conn()?;
-    save(&conn, &id, on)?;
-    let now = settings(&conn, &sign_ins)?;
-    let _ = app.emit(CHANGED, ());
-    Ok(now)
+    blocking(app, move |app| {
+        let db = app.state::<Db>();
+        // The keychain before the database, as in `extensions_settings`.
+        let sign_ins = connections::sign_ins(app)?;
+        let conn = db.conn()?;
+        save(&conn, &id, on)?;
+        let now = settings(&conn, &sign_ins)?;
+        let _ = app.emit(CHANGED, ());
+        Ok(now)
+    })
+    .await
 }
 
 #[cfg(test)]

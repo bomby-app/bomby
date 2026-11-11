@@ -15,9 +15,10 @@ use livekit_api::access_token::{AccessToken, VideoGrants};
 use livekit_protocol::{RoomAgentDispatch, RoomConfiguration};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Manager, Runtime, State};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 use crate::agent::{AgentWorker, JobCrash, OnNews, WorkerConfig, WorkerNews};
+use crate::blocking::blocking;
 use crate::credentials::LiveKitKeys;
 use crate::db::{Db, now_ms};
 use crate::error::{Error, Result};
@@ -400,33 +401,41 @@ fn token(keys: &LiveKitKeys, room: &str, metadata: String) -> Result<String> {
 /// Opens a call on a project, or reopens one of its earlier calls (`resume_call_id`), after
 /// making sure the agent worker runs (it can take a few seconds the first time). Joining is
 /// `call_token`'s job.
-#[tauri::command(async)]
-#[allow(clippy::too_many_arguments)] // Tauri passes each state as an argument.
-pub fn open_call<R: Runtime>(
+#[tauri::command]
+pub async fn open_call<R: Runtime>(
     app: AppHandle<R>,
-    db: State<'_, Db>,
-    worker: State<'_, AgentWorker>,
-    vault: State<'_, credentials::Vault>,
-    local: State<'_, LocalServer>,
-    call_agents: State<'_, CallAgents>,
     project_id: i64,
     resume_call_id: Option<i64>,
 ) -> Result<i64> {
+    blocking(app, move |app| open(app, project_id, resume_call_id)).await
+}
+
+/// [`open_call`]'s work, on a blocking thread.
+fn open<R: Runtime>(
+    app: &AppHandle<R>,
+    project_id: i64,
+    resume_call_id: Option<i64>,
+) -> Result<i64> {
+    let db = app.state::<Db>();
+    let worker = app.state::<AgentWorker>();
+    let vault = app.state::<credentials::Vault>();
+    let local = app.state::<LocalServer>();
+    let call_agents = app.state::<CallAgents>();
     // Holds off an update's restart while the call opens; refused if one is under way.
-    let opening = updates::CallOpening::begin(&app)?;
+    let opening = updates::CallOpening::begin(app)?;
     let project = projects::for_call(&*db.conn()?, project_id)?;
     folders_are_there(&project)?;
-    let provider = voice::for_new_call(&app, &db, &vault)?;
-    let voice_keys = vault.voice_keys(&app)?;
-    let agent_keys = vault.agent_keys(&app)?;
+    let provider = voice::for_new_call(app, &db, &vault)?;
+    let voice_keys = vault.voice_keys(app)?;
+    let agent_keys = vault.agent_keys(app)?;
     // Read before the server starts, so this Mac's server starts only for a call that can open.
-    let (memory_user, zep_key) = memory_for_call(&app, &db, &vault)?;
+    let (memory_user, zep_key) = memory_for_call(app, &db, &vault)?;
     let memory_incognito = settings::incognito(&*db.conn()?)?;
     // Finds the agents (a login shell) while the server and worker start.
     let (found, started) = thread::scope(|scope| {
-        let lookup = scope.spawn(|| agents::usable_now(&app));
+        let lookup = scope.spawn(|| agents::usable_now(app));
         let started = (|| -> Result<LiveKitKeys> {
-            let server = call_server::for_new_call(&app, &db, &vault, &local)?;
+            let server = call_server::for_new_call(app, &db, &vault, &local)?;
             let log_dir = app.path().app_log_dir()?;
             worker.ensure(
                 WorkerConfig {
@@ -446,7 +455,7 @@ pub fn open_call<R: Runtime>(
                         .map(agent_streams::StreamSocket::env),
                 },
                 &log_dir,
-                follow_worker(&app),
+                follow_worker(app),
             )?;
             Ok(server)
         })();
@@ -457,7 +466,7 @@ pub fn open_call<R: Runtime>(
     let server = started?;
 
     // The keychain before the database: a password prompt mustn't hold up every other read.
-    let connected = extensions::connections::connected(&app, &vault)?;
+    let connected = extensions::connections::connected(app, &vault)?;
     let conn = db.conn()?;
     // Read before the call is recorded, so a failed read leaves no call without its agents.
     let picks = agent_picks::saved(&conn)?;
@@ -508,9 +517,9 @@ fn start(conn: &Connection, project_id: i64, resume_call_id: Option<i64>) -> Res
 /// settings and its last lines (none on a new call). It only reads: LiveKit's session fetches
 /// tokens on its own too (on mount, and on end and disconnects, to have the next one ready),
 /// so getting one must not change anything (docs/livekit-notes.md).
-#[tauri::command(async)]
-pub fn call_token<R: Runtime>(app: AppHandle<R>, call_id: i64) -> Result<CallToken> {
-    token_for(&app, call_id)
+#[tauri::command]
+pub async fn call_token<R: Runtime>(app: AppHandle<R>, call_id: i64) -> Result<CallToken> {
+    blocking(app, move |app| token_for(app, call_id)).await
 }
 
 /// [`call_token`]'s answer.
@@ -591,12 +600,16 @@ fn end(conn: &Connection, call_id: i64, at: i64) -> Result<()> {
     Ok(())
 }
 
-#[tauri::command(async)]
-pub fn end_call<R: Runtime>(app: AppHandle<R>, db: State<'_, Db>, call_id: i64) -> Result<()> {
-    updates::call_ended(&app, call_id);
-    end(&*db.conn()?, call_id, now_ms())?;
-    agents::after_call(&app);
-    Ok(())
+#[tauri::command]
+pub async fn end_call<R: Runtime>(app: AppHandle<R>, call_id: i64) -> Result<()> {
+    blocking(app, move |app| {
+        let db = app.state::<Db>();
+        updates::call_ended(app, call_id);
+        end(&*db.conn()?, call_id, now_ms())?;
+        agents::after_call(app);
+        Ok(())
+    })
+    .await
 }
 
 /// Deletes a call and its transcript (ON DELETE CASCADE).
@@ -605,9 +618,13 @@ fn delete(conn: &Connection, call_id: i64) -> Result<()> {
     Ok(())
 }
 
-#[tauri::command(async)]
-pub fn delete_call(db: State<'_, Db>, call_id: i64) -> Result<()> {
-    delete(&*db.conn()?, call_id)
+#[tauri::command]
+pub async fn delete_call<R: Runtime>(app: AppHandle<R>, call_id: i64) -> Result<()> {
+    blocking(app, move |app| {
+        let db = app.state::<Db>();
+        delete(&*db.conn()?, call_id)
+    })
+    .await
 }
 
 fn save(conn: &Connection, call_id: i64, line: &MessageInput) -> Result<()> {
@@ -717,35 +734,50 @@ fn rename(conn: &Connection, call_id: i64, name: &str, by: Namer) -> Result<(i64
 }
 
 /// Names or renames a call, for the user or for Bomby (`by`), and tells every window.
-#[tauri::command(async)]
-pub fn rename_call<R: Runtime>(
+#[tauri::command]
+pub async fn rename_call<R: Runtime>(
     app: AppHandle<R>,
-    db: State<'_, Db>,
     call_id: i64,
     name: String,
     by: Namer,
 ) -> Result<CallName> {
-    let (project_id, now) = rename(&*db.conn()?, call_id, &name, by)?;
-    let _ = app.emit(
-        RENAMED,
-        CallRenamed {
-            project_id,
-            call_id,
-        },
-    );
-    Ok(now)
+    blocking(app, move |app| {
+        let db = app.state::<Db>();
+        let (project_id, now) = rename(&*db.conn()?, call_id, &name, by)?;
+        let _ = app.emit(
+            RENAMED,
+            CallRenamed {
+                project_id,
+                call_id,
+            },
+        );
+        Ok(now)
+    })
+    .await
 }
 
 /// Saves one transcript line, or updates it if its segment was saved before.
-#[tauri::command(async)]
-pub fn save_message(db: State<'_, Db>, call_id: i64, line: MessageInput) -> Result<()> {
-    save(&*db.conn()?, call_id, &line)
+#[tauri::command]
+pub async fn save_message<R: Runtime>(
+    app: AppHandle<R>,
+    call_id: i64,
+    line: MessageInput,
+) -> Result<()> {
+    blocking(app, move |app| {
+        let db = app.state::<Db>();
+        save(&*db.conn()?, call_id, &line)
+    })
+    .await
 }
 
 /// A call's saved conversation, its sessions and lines in order.
-#[tauri::command(async)]
-pub fn call_transcript(db: State<'_, Db>, call_id: i64) -> Result<Transcript> {
-    transcript(&*db.conn()?, call_id)
+#[tauri::command]
+pub async fn call_transcript<R: Runtime>(app: AppHandle<R>, call_id: i64) -> Result<Transcript> {
+    blocking(app, move |app| {
+        let db = app.state::<Db>();
+        transcript(&*db.conn()?, call_id)
+    })
+    .await
 }
 
 #[cfg(test)]

@@ -856,6 +856,10 @@ pub(crate) fn record_check<R: Runtime>(
     fingerprint: &Fingerprint,
     started: &Started,
 ) {
+    // Checked without the agents' keys: not what a launch with them would find.
+    if app.state::<Vault>().unreadable() {
+        return;
+    }
     let recorded = app.state::<Db>().conn().and_then(|conn| {
         app.state::<Agents>()
             .record_check(&conn, id, setup, fingerprint, started)
@@ -948,10 +952,13 @@ pub async fn agents_status<R: Runtime>(app: AppHandle<R>) -> Result<Vec<AgentSta
 pub async fn refresh_agents<R: Runtime>(app: AppHandle<R>) -> Result<Vec<AgentStatus>> {
     // A full check: every agent started again, with a session, and its models asked again
     // on next open.
-    app.state::<Agents>().forget_checks();
-    app.state::<agent_picks::Listings>().forget();
-    agent_checks::forget_all(&*app.state::<Db>().conn()?)?;
-    refresh_in_background(app).await
+    crate::blocking::blocking(app, |app| {
+        app.state::<Agents>().forget_checks();
+        app.state::<agent_picks::Listings>().forget();
+        agent_checks::forget_all(&*app.state::<Db>().conn()?)?;
+        Ok(refresh(app, None))
+    })
+    .await
 }
 
 #[cfg(test)]

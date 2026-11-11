@@ -174,6 +174,10 @@ fn remember<R: Runtime>(
     asked: &Asked,
 ) -> Result<()> {
     let fingerprint = Fingerprint::of(&asked.program, &setup.setup_files, picks, &asked.keys);
+    // Checked without the agents' keys: not what a launch with them would find.
+    if app.state::<crate::credentials::Vault>().unreadable() {
+        return Ok(());
+    }
     app.state::<Agents>().record_check(
         &*app.state::<Db>().conn()?,
         agent,

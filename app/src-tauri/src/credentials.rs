@@ -17,14 +17,16 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use keyring::Entry;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Runtime, State};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 
+use crate::blocking::blocking;
 use crate::error::{Error, Result};
 use crate::extensions::oauth::{Expect, Grant};
-use crate::sync;
+use crate::sync::{self, Exclusive};
 use crate::voice::VoiceProvider;
 
 /// Sent to every window after a key is saved or removed, with no payload.
@@ -181,17 +183,49 @@ enum Store {
     Memory,
 }
 
+/// What the vault knows of the saved keys.
+enum Cache {
+    /// Nothing read yet.
+    Unread,
+    Read(Keys),
+    /// The read failed (denied, say), and why: not asked again, so not prompted again, until
+    /// the user acts (a save, or Try again: [`Vault::read_again`]).
+    Unreadable(String),
+}
+
 /// The keychain entry, read on first use and kept for the run, and every secret the vault
 /// has held this run. Tauri state.
-#[derive(Default)]
+///
+/// No lock is held across a keychain call but `keychain`, which only the first read and each
+/// change take: a password prompt the user hasn't answered holds up nothing that already has
+/// the keys. Both locks are [`Exclusive`]: a thread can't take one twice.
 pub struct Vault {
     store: Store,
-    keys: Mutex<Option<Keys>>,
+    /// Held only to look or swap.
+    cache: Exclusive<Cache>,
+    /// Held across every keychain read and write, so first reads at the same time share one
+    /// prompt and two changes never interleave. Taken before `cache`.
+    keychain: Exclusive<()>,
+    /// The first successful read after a failed one, not yet acted on: the agents are checked
+    /// again with their keys ([`Vault::take_recovered`]).
+    recovered: AtomicBool,
     /// Every key, secret and token read from the keychain or saved this run, kept after it's
     /// replaced, cleared or disconnected: the logs may still hold it, so Export Diagnostics
-    /// takes them all out (`diagnostics`). Private: only `secrets_this_run` reads it. Locked
-    /// after `keys` when both are.
+    /// takes them all out (`diagnostics`). Private: only `secrets_this_run` reads it. A leaf:
+    /// nothing is locked while it's held.
     seen: Mutex<BTreeSet<String>>,
+}
+
+impl Default for Vault {
+    fn default() -> Self {
+        Self {
+            store: Store::Keychain,
+            cache: Exclusive::new("the keys", Cache::Unread),
+            keychain: Exclusive::new("the keychain", ()),
+            recovered: AtomicBool::new(false),
+            seen: Mutex::default(),
+        }
+    }
 }
 
 impl Vault {
@@ -247,21 +281,41 @@ impl Vault {
         }
     }
 
-    /// The cached keys, or `fetch`'s (the keychain's) the first time, remembered for redaction.
-    fn load(
-        &self,
-        cached: &mut Option<Keys>,
-        fetch: impl FnOnce() -> Result<Keys>,
-    ) -> Result<Keys> {
-        if let Some(keys) = cached.take() {
-            return Ok(keys);
+    /// The keys, if read; the failure when the read failed, unless `retry`.
+    fn cached(&self, retry: bool) -> Result<Option<Keys>> {
+        match &*self.cache.lock()? {
+            Cache::Read(keys) => Ok(Some(keys.clone())),
+            Cache::Unreadable(why) if !retry => Err(Error::Unreadable(why.clone())),
+            Cache::Unreadable(_) | Cache::Unread => Ok(None),
         }
-        let keys = fetch()?;
-        self.remember(keys.secrets());
-        Ok(keys)
     }
 
-    /// Reads part of the keys under the lock, without copying the rest.
+    /// The keys, read with `fetch` (the keychain) the first time, and again when the last
+    /// read failed and this one may `retry`. The caller holds `keychain`.
+    fn load(&self, fetch: impl FnOnce() -> Result<Keys>, retry: bool) -> Result<Keys> {
+        // Another thread may have read them while this one waited for the keychain.
+        if let Some(keys) = self.cached(retry)? {
+            return Ok(keys);
+        }
+        let fetched = fetch();
+        let mut cache = self.cache.lock()?;
+        match fetched {
+            Ok(keys) => {
+                self.remember(keys.secrets());
+                if matches!(*cache, Cache::Unreadable(_)) {
+                    self.recovered.store(true, Ordering::SeqCst);
+                }
+                *cache = Cache::Read(keys.clone());
+                Ok(keys)
+            }
+            Err(e) => {
+                *cache = Cache::Unreadable(e.to_string());
+                Err(Error::Unreadable(e.to_string()))
+            }
+        }
+    }
+
+    /// Reads part of the keys, without copying the rest.
     fn read<R: Runtime, T>(&self, app: &AppHandle<R>, take: impl FnOnce(&Keys) -> T) -> Result<T> {
         self.read_with(|| self.fetch(app), take)
     }
@@ -271,9 +325,31 @@ impl Vault {
         fetch: impl FnOnce() -> Result<Keys>,
         take: impl FnOnce(&Keys) -> T,
     ) -> Result<T> {
-        let mut cached = sync::lock(&self.keys);
-        let keys = self.load(&mut cached, fetch)?;
-        Ok(take(cached.insert(keys)))
+        if let Some(keys) = self.cached(false)? {
+            return Ok(take(&keys));
+        }
+        let _keychain = self.keychain.lock()?;
+        Ok(take(&self.load(fetch, false)?))
+    }
+
+    /// Whether the saved keys couldn't be read this run (and haven't been since). A check
+    /// made meanwhile ran without the agents' keys, so it isn't remembered.
+    pub fn unreadable(&self) -> bool {
+        self.cache
+            .lock()
+            .is_ok_and(|cache| matches!(*cache, Cache::Unreadable(_)))
+    }
+
+    /// Reads the keys again after a failed read (Try again); an error when it fails again.
+    pub fn read_again<R: Runtime>(&self, app: &AppHandle<R>) -> Result<()> {
+        let _keychain = self.keychain.lock()?;
+        self.load(|| self.fetch(app), true).map(drop)
+    }
+
+    /// Whether the keys were just read after a failed read, once: the agents were checked
+    /// without them and are checked again.
+    fn take_recovered(&self) -> bool {
+        self.recovered.swap(false, Ordering::SeqCst)
     }
 
     /// Changes the keys and writes them back, under one lock, and tells every window.
@@ -286,7 +362,19 @@ impl Vault {
         // Every window re-reads which keys are saved (no key goes with it). Only fails for
         // an invalid event name or payload.
         let _ = app.emit(KEYS_CHANGED, ());
+        self.check_agents_if_recovered(app);
         Ok(())
+    }
+
+    /// After the keys were read following a failed read: the looks since ran without the
+    /// agents' keys, so the agents are checked again, in the background.
+    fn check_agents_if_recovered<R: Runtime>(&self, app: &AppHandle<R>) {
+        if self.take_recovered() {
+            let app = app.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                crate::agents::refresh_after_change(&app);
+            });
+        }
     }
 
     /// Changes the keys and writes them back, under one lock.
@@ -300,26 +388,25 @@ impl Vault {
 
     /// `write_back` with the keychain's read and write passed in. What the change put in is
     /// remembered for redaction even when saving it fails: it was in memory, and may have
-    /// been handed on.
+    /// been handed on. A change is the user acting, so a read that failed is tried again.
     fn change_with(
         &self,
         fetch: impl FnOnce() -> Result<Keys>,
         change: impl FnOnce(&mut Keys) -> Result<()>,
         save: impl FnOnce(&Keys) -> Result<()>,
     ) -> Result<()> {
-        let mut cached = sync::lock(&self.keys);
-        let mut keys = self.load(&mut cached, fetch)?;
+        let _keychain = self.keychain.lock()?;
+        let mut keys = self.load(fetch, true)?;
         let before = keys.clone();
         let changed = change(&mut keys);
         self.remember(keys.secrets());
-        if let Err(e) = changed.and_then(|()| {
-            // Nothing changed, nothing to write (a refresh that lost a race, say).
-            if keys == before { Ok(()) } else { save(&keys) }
-        }) {
-            *cached = Some(before);
-            return Err(e);
+        changed?;
+        // Nothing changed, nothing to write (a refresh that lost a race, say).
+        if keys != before {
+            // Written before it's kept: a failed save leaves the keys as they were.
+            save(&keys)?;
+            *self.cache.lock()? = Cache::Read(keys);
         }
-        *cached = Some(keys);
         Ok(())
     }
 
@@ -450,17 +537,33 @@ fn may_save_agent_key(name: &str, offered: bool, saved: bool) -> bool {
     agent_key_name_allowed(name) && (offered || saved)
 }
 
+/// Reads the keys from the keychain again after a read that failed this run (denied at the
+/// prompt, say): Try again on the error. Every window then reads which keys are saved, and
+/// the agents are checked again with theirs.
+#[tauri::command]
+pub async fn read_keys_again<R: Runtime>(app: AppHandle<R>) -> Result<()> {
+    blocking(app, move |app| {
+        let vault = app.state::<Vault>();
+        vault.read_again(app)?;
+        let _ = app.emit(KEYS_CHANGED, ());
+        vault.check_agents_if_recovered(app);
+        Ok(())
+    })
+    .await
+}
+
 /// The saved LiveKit keys without the secret, or `None` when nothing is saved.
-#[tauri::command(async)]
-pub fn credentials_info<R: Runtime>(
-    app: AppHandle<R>,
-    vault: State<'_, Vault>,
-) -> Result<Option<CredentialsInfo>> {
-    Ok(vault.livekit(&app)?.map(|s| CredentialsInfo {
-        url: s.url,
-        api_key: s.api_key,
-        has_secret: !s.api_secret.is_empty(),
-    }))
+#[tauri::command]
+pub async fn credentials_info<R: Runtime>(app: AppHandle<R>) -> Result<Option<CredentialsInfo>> {
+    blocking(app, move |app| {
+        let vault = app.state::<Vault>();
+        Ok(vault.livekit(app)?.map(|s| CredentialsInfo {
+            url: s.url,
+            api_key: s.api_key,
+            has_secret: !s.api_secret.is_empty(),
+        }))
+    })
+    .await
 }
 
 /// Merges the page's input with what is saved: trims, checks, and keeps the saved secret
@@ -495,149 +598,174 @@ fn merge(input: CredentialsInput, saved: Option<LiveKitKeys>) -> Result<LiveKitK
     })
 }
 
-#[tauri::command(async)]
-pub fn save_credentials<R: Runtime>(
+#[tauri::command]
+pub async fn save_credentials<R: Runtime>(
     app: AppHandle<R>,
-    vault: State<'_, Vault>,
     input: CredentialsInput,
 ) -> Result<()> {
-    vault.update(&app, |keys| {
-        keys.livekit = Some(merge(input, keys.livekit.take())?);
-        Ok(())
+    blocking(app, move |app| {
+        let vault = app.state::<Vault>();
+        vault.update(app, |keys| {
+            keys.livekit = Some(merge(input, keys.livekit.take())?);
+            Ok(())
+        })
     })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn clear_credentials<R: Runtime>(app: AppHandle<R>, vault: State<'_, Vault>) -> Result<()> {
-    vault.update(&app, |keys| {
-        keys.livekit = None;
-        Ok(())
+#[tauri::command]
+pub async fn clear_credentials<R: Runtime>(app: AppHandle<R>) -> Result<()> {
+    blocking(app, move |app| {
+        let vault = app.state::<Vault>();
+        vault.update(app, |keys| {
+            keys.livekit = None;
+            Ok(())
+        })
     })
+    .await
 }
 
 /// Saves a voice provider's key; whether one is saved comes with `voice::voice_settings`.
 /// The key itself stays in the core.
-#[tauri::command(async)]
-pub fn save_voice_key<R: Runtime>(
+#[tauri::command]
+pub async fn save_voice_key<R: Runtime>(
     app: AppHandle<R>,
-    vault: State<'_, Vault>,
     provider: VoiceProvider,
     key: String,
 ) -> Result<()> {
-    let key = key.trim();
-    if key.is_empty() || key.contains(char::is_whitespace) {
-        return Err(Error::Invalid(format!(
-            "Paste the whole {} API key.",
-            provider.name()
-        )));
-    }
-    vault.update(&app, |keys| {
-        *keys.voice_key(provider) = Some(key.to_owned());
-        Ok(())
+    blocking(app, move |app| {
+        let vault = app.state::<Vault>();
+        let key = key.trim();
+        if key.is_empty() || key.contains(char::is_whitespace) {
+            return Err(Error::Invalid(format!(
+                "Paste the whole {} API key.",
+                provider.name()
+            )));
+        }
+        vault.update(app, |keys| {
+            *keys.voice_key(provider) = Some(key.to_owned());
+            Ok(())
+        })
     })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn clear_voice_key<R: Runtime>(
-    app: AppHandle<R>,
-    vault: State<'_, Vault>,
-    provider: VoiceProvider,
-) -> Result<()> {
-    vault.update(&app, |keys| {
-        *keys.voice_key(provider) = None;
-        Ok(())
+#[tauri::command]
+pub async fn clear_voice_key<R: Runtime>(app: AppHandle<R>, provider: VoiceProvider) -> Result<()> {
+    blocking(app, move |app| {
+        let vault = app.state::<Vault>();
+        vault.update(app, |keys| {
+            *keys.voice_key(provider) = None;
+            Ok(())
+        })
     })
+    .await
 }
 
 /// Whether a Zep key is saved. The key itself stays in the core.
-#[tauri::command(async)]
-pub fn has_zep_key<R: Runtime>(app: AppHandle<R>, vault: State<'_, Vault>) -> Result<bool> {
-    Ok(vault.zep_key(&app)?.is_some())
+#[tauri::command]
+pub async fn has_zep_key<R: Runtime>(app: AppHandle<R>) -> Result<bool> {
+    blocking(app, move |app| {
+        let vault = app.state::<Vault>();
+        Ok(vault.zep_key(app)?.is_some())
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn save_zep_key<R: Runtime>(
-    app: AppHandle<R>,
-    vault: State<'_, Vault>,
-    key: String,
-) -> Result<()> {
-    let key = key.trim();
-    if key.is_empty() || key.contains(char::is_whitespace) {
-        return Err(Error::Invalid("Paste the whole Zep API key.".into()));
-    }
-    vault.update(&app, |keys| {
-        keys.zep_key = Some(key.to_owned());
-        Ok(())
+#[tauri::command]
+pub async fn save_zep_key<R: Runtime>(app: AppHandle<R>, key: String) -> Result<()> {
+    blocking(app, move |app| {
+        let vault = app.state::<Vault>();
+        let key = key.trim();
+        if key.is_empty() || key.contains(char::is_whitespace) {
+            return Err(Error::Invalid("Paste the whole Zep API key.".into()));
+        }
+        vault.update(app, |keys| {
+            keys.zep_key = Some(key.to_owned());
+            Ok(())
+        })
     })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn clear_zep_key<R: Runtime>(app: AppHandle<R>, vault: State<'_, Vault>) -> Result<()> {
-    vault.update(&app, |keys| {
-        keys.zep_key = None;
-        Ok(())
+#[tauri::command]
+pub async fn clear_zep_key<R: Runtime>(app: AppHandle<R>) -> Result<()> {
+    blocking(app, move |app| {
+        let vault = app.state::<Vault>();
+        vault.update(app, |keys| {
+            keys.zep_key = None;
+            Ok(())
+        })
     })
+    .await
 }
 
 /// Which variables have a key saved, by agent id: names only, never a key.
-#[tauri::command(async)]
-pub fn agent_keys<R: Runtime>(
-    app: AppHandle<R>,
-    vault: State<'_, Vault>,
-) -> Result<BTreeMap<String, Vec<String>>> {
-    Ok(agent_key_names(&vault.agent_keys(&app)?))
+#[tauri::command]
+pub async fn agent_keys<R: Runtime>(app: AppHandle<R>) -> Result<BTreeMap<String, Vec<String>>> {
+    blocking(app, move |app| {
+        let vault = app.state::<Vault>();
+        Ok(agent_key_names(&vault.agent_keys(app)?))
+    })
+    .await
 }
 
 /// Saves a coding agent's key under the variable `name`: one the agent asks for (its row's
 /// key fields, from the probe), or one already saved for it, which this replaces. It reaches
 /// only that agent, from its next start; the agent is checked again with it.
-#[tauri::command(async)]
-pub fn save_agent_key<R: Runtime>(
+#[tauri::command]
+pub async fn save_agent_key<R: Runtime>(
     app: AppHandle<R>,
-    vault: State<'_, Vault>,
     agent: String,
     name: String,
     key: String,
 ) -> Result<()> {
-    let key = key.trim();
-    if key.is_empty() || key.contains(char::is_whitespace) {
-        return Err(Error::Invalid("Paste the whole key.".into()));
-    }
-    let offered = crate::agents::offers_key(&app, &agent, &name);
-    vault.update(&app, |keys| {
-        let saved = keys.agent_keys.entry(agent.clone()).or_default();
-        if !may_save_agent_key(&name, offered, saved.contains_key(&name)) {
-            return Err(Error::Invalid(format!(
-                "{} doesn't ask for {name}.",
-                crate::agents::name(&agent).unwrap_or("This agent")
-            )));
+    blocking(app, move |app| {
+        let vault = app.state::<Vault>();
+        let key = key.trim();
+        if key.is_empty() || key.contains(char::is_whitespace) {
+            return Err(Error::Invalid("Paste the whole key.".into()));
         }
-        saved.insert(name, key.to_owned());
+        let offered = crate::agents::offers_key(app, &agent, &name);
+        vault.update(app, |keys| {
+            let saved = keys.agent_keys.entry(agent.clone()).or_default();
+            if !may_save_agent_key(&name, offered, saved.contains_key(&name)) {
+                return Err(Error::Invalid(format!(
+                    "{} doesn't ask for {name}.",
+                    crate::agents::name(&agent).unwrap_or("This agent")
+                )));
+            }
+            saved.insert(name, key.to_owned());
+            Ok(())
+        })?;
+        crate::agents::keys_changed(app, &agent);
         Ok(())
-    })?;
-    crate::agents::keys_changed(&app, &agent);
-    Ok(())
+    })
+    .await
 }
 
 /// Removes a coding agent's saved key: the agent goes back to finding its own.
-#[tauri::command(async)]
-pub fn clear_agent_key<R: Runtime>(
+#[tauri::command]
+pub async fn clear_agent_key<R: Runtime>(
     app: AppHandle<R>,
-    vault: State<'_, Vault>,
     agent: String,
     name: String,
 ) -> Result<()> {
-    vault.update(&app, |keys| {
-        if let Some(vars) = keys.agent_keys.get_mut(&agent) {
-            vars.remove(&name);
-            if vars.is_empty() {
-                keys.agent_keys.remove(&agent);
+    blocking(app, move |app| {
+        let vault = app.state::<Vault>();
+        vault.update(app, |keys| {
+            if let Some(vars) = keys.agent_keys.get_mut(&agent) {
+                vars.remove(&name);
+                if vars.is_empty() {
+                    keys.agent_keys.remove(&agent);
+                }
             }
-        }
+            Ok(())
+        })?;
+        crate::agents::keys_changed(app, &agent);
         Ok(())
-    })?;
-    crate::agents::keys_changed(&app, &agent);
-    Ok(())
+    })
+    .await
 }
 
 #[cfg(test)]
@@ -741,6 +869,93 @@ mod tests {
                 .unwrap(),
             None
         );
+    }
+
+    #[test]
+    fn a_failed_read_isnt_asked_again_until_the_user_acts() {
+        let vault = Vault::default();
+        let denied = || Err(Error::Invalid("User canceled the operation.".into()));
+        assert!(matches!(
+            vault.read_with(denied, |_| ()),
+            Err(Error::Unreadable(_))
+        ));
+        assert!(vault.unreadable());
+        // Every later read answers at once, without asking (and prompting) again.
+        assert!(matches!(
+            vault.read_with(|| unreachable!("not asked again"), |_| ()),
+            Err(Error::Unreadable(_))
+        ));
+        // A save is the user acting: asked again, and kept once read.
+        let keys = Keys {
+            zep_key: Some("zep-1".into()),
+            ..Keys::default()
+        };
+        vault
+            .change_with(
+                || Ok(keys.clone()),
+                |keys| {
+                    keys.gemini_key = Some("gemini-1".into());
+                    Ok(())
+                },
+                |_| Ok(()),
+            )
+            .unwrap();
+        assert!(!vault.unreadable());
+        assert!(vault.take_recovered(), "the agents are checked again");
+        assert!(!vault.take_recovered(), "once");
+        assert_eq!(
+            vault
+                .read_with(
+                    || unreachable!(),
+                    |k| (k.zep_key.clone(), k.gemini_key.clone())
+                )
+                .unwrap(),
+            (Some("zep-1".into()), Some("gemini-1".into()))
+        );
+    }
+
+    #[test]
+    fn no_lock_but_the_keychains_is_held_while_the_keychain_answers() {
+        let vault = Vault::default();
+        vault
+            .read_with(
+                || {
+                    assert!(vault.keychain.held_here());
+                    assert!(!vault.cache.held_here(), "readers aren't held up");
+                    Ok(Keys::default())
+                },
+                |_| (),
+            )
+            .unwrap();
+        vault
+            .change_with(
+                || unreachable!("already read"),
+                |keys| {
+                    keys.zep_key = Some("zep".into());
+                    Ok(())
+                },
+                |_| {
+                    assert!(!vault.cache.held_here());
+                    Ok(())
+                },
+            )
+            .unwrap();
+        // Read while a change runs (a change that reads, say): from the cache, no wait.
+        vault
+            .change_with(
+                || unreachable!(),
+                |_| {
+                    assert_eq!(
+                        vault
+                            .read_with(|| unreachable!(), |k| k.zep_key.clone())
+                            .unwrap(),
+                        Some("zep".into())
+                    );
+                    Ok(())
+                },
+                |_| Ok(()),
+            )
+            .unwrap();
     }
 
     #[test]

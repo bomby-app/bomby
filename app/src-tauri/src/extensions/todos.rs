@@ -6,8 +6,9 @@
 
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Runtime, State};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 
+use crate::blocking::blocking;
 use crate::db::{Db, now_ms};
 use crate::error::{Error, Result};
 
@@ -337,48 +338,61 @@ fn changed<R: Runtime>(app: &AppHandle<R>, project_id: i64) {
     let _ = app.emit(CHANGED, TodosChanged { project_id });
 }
 
-#[tauri::command(async)]
-pub fn list_todos(db: State<'_, Db>, project_id: i64) -> Result<Vec<Todo>> {
-    list(&*db.conn()?, project_id)
+#[tauri::command]
+pub async fn list_todos<R: Runtime>(app: AppHandle<R>, project_id: i64) -> Result<Vec<Todo>> {
+    blocking(app, move |app| {
+        let db = app.state::<Db>();
+        list(&*db.conn()?, project_id)
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn add_todos<R: Runtime>(
+#[tauri::command]
+pub async fn add_todos<R: Runtime>(
     app: AppHandle<R>,
-    db: State<'_, Db>,
     project_id: i64,
     items: Vec<NewTodo>,
     by: Author,
 ) -> Result<Vec<Todo>> {
-    let added = add(&mut *db.conn()?, project_id, items, by)?;
-    changed(&app, project_id);
-    Ok(added)
+    blocking(app, move |app| {
+        let db = app.state::<Db>();
+        let added = add(&mut *db.conn()?, project_id, items, by)?;
+        changed(app, project_id);
+        Ok(added)
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn update_todo<R: Runtime>(
+#[tauri::command]
+pub async fn update_todo<R: Runtime>(
     app: AppHandle<R>,
-    db: State<'_, Db>,
     project_id: i64,
     number: i64,
     change: TodoChange,
     by: Author,
 ) -> Result<Todo> {
-    let todo = update(&*db.conn()?, project_id, number, change, by)?;
-    changed(&app, project_id);
-    Ok(todo)
+    blocking(app, move |app| {
+        let db = app.state::<Db>();
+        let todo = update(&*db.conn()?, project_id, number, change, by)?;
+        changed(app, project_id);
+        Ok(todo)
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn remove_todo<R: Runtime>(
+#[tauri::command]
+pub async fn remove_todo<R: Runtime>(
     app: AppHandle<R>,
-    db: State<'_, Db>,
     project_id: i64,
     number: i64,
 ) -> Result<Todo> {
-    let todo = remove(&*db.conn()?, project_id, number)?;
-    changed(&app, project_id);
-    Ok(todo)
+    blocking(app, move |app| {
+        let db = app.state::<Db>();
+        let todo = remove(&*db.conn()?, project_id, number)?;
+        changed(app, project_id);
+        Ok(todo)
+    })
+    .await
 }
 
 #[cfg(test)]

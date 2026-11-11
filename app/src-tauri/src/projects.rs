@@ -7,8 +7,9 @@ use std::path::Path;
 
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{AppHandle, Manager, Runtime};
 
+use crate::blocking::blocking;
 use crate::db::{Db, now_ms};
 use crate::error::{Error, Result};
 use crate::extensions::{self, ProjectExtensions};
@@ -377,44 +378,76 @@ fn delete(conn: &Connection, id: i64) -> Result<()> {
     Ok(())
 }
 
-#[tauri::command(async)]
-pub fn list_projects(db: State<'_, Db>) -> Result<Vec<Project>> {
-    list(&*db.conn()?)
+#[tauri::command]
+pub async fn list_projects<R: Runtime>(app: AppHandle<R>) -> Result<Vec<Project>> {
+    blocking(app, move |app| {
+        let db = app.state::<Db>();
+        list(&*db.conn()?)
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn create_project(db: State<'_, Db>, input: ProjectInput) -> Result<Project> {
-    create(&mut *db.conn()?, input)
+#[tauri::command]
+pub async fn create_project<R: Runtime>(app: AppHandle<R>, input: ProjectInput) -> Result<Project> {
+    blocking(app, move |app| {
+        let db = app.state::<Db>();
+        create(&mut *db.conn()?, input)
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn update_project(db: State<'_, Db>, id: i64, input: ProjectInput) -> Result<Project> {
-    update(&mut *db.conn()?, id, input)
+#[tauri::command]
+pub async fn update_project<R: Runtime>(
+    app: AppHandle<R>,
+    id: i64,
+    input: ProjectInput,
+) -> Result<Project> {
+    blocking(app, move |app| {
+        let db = app.state::<Db>();
+        update(&mut *db.conn()?, id, input)
+    })
+    .await
 }
 
 /// Applies from the next call; one under way keeps its agents.
-#[tauri::command(async)]
-pub fn set_project_agents(db: State<'_, Db>, id: i64, agents: ProjectAgents) -> Result<Project> {
-    let mut conn = db.conn()?;
-    save_agents(&mut conn, id, &agents)?;
-    load(&conn, id)
+#[tauri::command]
+pub async fn set_project_agents<R: Runtime>(
+    app: AppHandle<R>,
+    id: i64,
+    agents: ProjectAgents,
+) -> Result<Project> {
+    blocking(app, move |app| {
+        let db = app.state::<Db>();
+        let mut conn = db.conn()?;
+        save_agents(&mut conn, id, &agents)?;
+        load(&conn, id)
+    })
+    .await
 }
 
 /// Applies from the next call; one under way keeps its extensions.
-#[tauri::command(async)]
-pub fn set_project_extensions(
-    db: State<'_, Db>,
+#[tauri::command]
+pub async fn set_project_extensions<R: Runtime>(
+    app: AppHandle<R>,
     id: i64,
     extensions: ProjectExtensions,
 ) -> Result<Project> {
-    let mut conn = db.conn()?;
-    save_extensions(&mut conn, id, &extensions)?;
-    load(&conn, id)
+    blocking(app, move |app| {
+        let db = app.state::<Db>();
+        let mut conn = db.conn()?;
+        save_extensions(&mut conn, id, &extensions)?;
+        load(&conn, id)
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn delete_project(db: State<'_, Db>, id: i64) -> Result<()> {
-    delete(&*db.conn()?, id)
+#[tauri::command]
+pub async fn delete_project<R: Runtime>(app: AppHandle<R>, id: i64) -> Result<()> {
+    blocking(app, move |app| {
+        let db = app.state::<Db>();
+        delete(&*db.conn()?, id)
+    })
+    .await
 }
 
 #[cfg(test)]

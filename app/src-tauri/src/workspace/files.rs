@@ -8,10 +8,11 @@ use std::path::Path;
 
 use git2::Repository;
 use serde::Serialize;
-use tauri::State;
 use tauri::ipc::Response;
+use tauri::{AppHandle, Manager, Runtime};
 
 use super::{inside, project_folder};
+use crate::blocking::blocking;
 use crate::db::Db;
 use crate::error::{Error, Result};
 
@@ -165,39 +166,51 @@ pub(crate) fn image(folder: &Path, file: &str) -> Result<Vec<u8>> {
 }
 
 /// One directory of a project's folder: `dir` is `""` for the folder itself.
-#[tauri::command(async)]
-pub fn folder_entries(
-    db: State<'_, Db>,
+#[tauri::command]
+pub async fn folder_entries<R: Runtime>(
+    app: AppHandle<R>,
     project_id: i64,
     folder: String,
     dir: String,
 ) -> Result<Vec<Entry>> {
-    let folder = project_folder(&*db.conn()?, project_id, &folder)?;
-    entries(&folder, &dir)
+    blocking(app, move |app| {
+        let db = app.state::<Db>();
+        let folder = project_folder(&*db.conn()?, project_id, &folder)?;
+        entries(&folder, &dir)
+    })
+    .await
 }
 
 /// An image in a project's folder, as raw bytes (an `ArrayBuffer` on the page).
-#[tauri::command(async)]
-pub fn folder_image(
-    db: State<'_, Db>,
+#[tauri::command]
+pub async fn folder_image<R: Runtime>(
+    app: AppHandle<R>,
     project_id: i64,
     folder: String,
     file: String,
 ) -> Result<Response> {
-    let folder = project_folder(&*db.conn()?, project_id, &folder)?;
-    Ok(Response::new(image(&folder, &file)?))
+    blocking(app, move |app| {
+        let db = app.state::<Db>();
+        let folder = project_folder(&*db.conn()?, project_id, &folder)?;
+        Ok(Response::new(image(&folder, &file)?))
+    })
+    .await
 }
 
 /// A file in a project's folder, for the preview.
-#[tauri::command(async)]
-pub fn folder_file(
-    db: State<'_, Db>,
+#[tauri::command]
+pub async fn folder_file<R: Runtime>(
+    app: AppHandle<R>,
     project_id: i64,
     folder: String,
     file: String,
 ) -> Result<FilePreview> {
-    let folder = project_folder(&*db.conn()?, project_id, &folder)?;
-    preview(&folder, &file)
+    blocking(app, move |app| {
+        let db = app.state::<Db>();
+        let folder = project_folder(&*db.conn()?, project_id, &folder)?;
+        preview(&folder, &file)
+    })
+    .await
 }
 
 #[cfg(test)]

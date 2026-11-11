@@ -21,6 +21,7 @@ use url::Url;
 
 use super::oauth::{self, Expect, Grant, OAuthError};
 use super::{CHANGED, ConnectSpec, ExtensionSetting, SignIns};
+use crate::blocking::blocking;
 use crate::credentials::Vault;
 use crate::db::{Db, now_ms};
 use crate::error::{Error, Result};
@@ -57,13 +58,16 @@ struct Keychain<'a, R: Runtime> {
     vault: &'a Vault,
 }
 
+/// Reached from async code (a sign-in, a token refresh) on the app's multi-thread runtime:
+/// `block_in_place` hands this worker's other tasks to the rest while the vault waits on the
+/// keychain (docs/tauri-notes.md, Windows and commands).
 impl<R: Runtime> Grants for Keychain<'_, R> {
     fn get(&self, id: &str) -> Result<Option<Grant>> {
-        self.vault.grant(self.app, id)
+        tokio::task::block_in_place(|| self.vault.grant(self.app, id))
     }
 
     fn replace(&self, id: &str, expect: Expect<'_>, grant: Option<Grant>) -> Result<bool> {
-        self.vault.replace_grant(self.app, id, expect, grant)
+        tokio::task::block_in_place(|| self.vault.replace_grant(self.app, id, expect, grant))
     }
 }
 
@@ -268,7 +272,7 @@ pub async fn connect_extension<R: Runtime>(
     }
     .await;
     connections.end(&id, run);
-    let now = changed(&app);
+    let now = blocking(app, |app| changed(app)).await;
     outcome.and(now)
 }
 
@@ -297,7 +301,7 @@ pub async fn disconnect_extension<R: Runtime>(
             &id,
         )
         .await?;
-    changed(&app)
+    blocking(app, |app| changed(app)).await
 }
 
 /// An access token for the worker (`Connections::token`), with the vendor's refresh. The

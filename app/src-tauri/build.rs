@@ -22,6 +22,7 @@ const COMMANDS: &[&str] = &[
     "agent_keys",
     "save_agent_key",
     "clear_agent_key",
+    "read_keys_again",
     "memory_setting",
     "set_memory_setting",
     "memory_incognito",

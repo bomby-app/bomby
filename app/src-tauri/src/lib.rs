@@ -9,6 +9,7 @@ mod agent_picks;
 mod agent_streams;
 mod agents;
 mod app_log;
+mod blocking;
 mod call_server;
 mod calls;
 mod credentials;
@@ -125,6 +126,7 @@ pub fn run() {
             credentials::agent_keys,
             credentials::save_agent_key,
             credentials::clear_agent_key,
+            credentials::read_keys_again,
             settings::memory_setting,
             settings::set_memory_setting,
             settings::memory_incognito,

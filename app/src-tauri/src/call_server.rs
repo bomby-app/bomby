@@ -1,7 +1,8 @@
 //! Which LiveKit server calls use: this Mac's or the user's own.
 
-use tauri::{AppHandle, Emitter, Runtime, State};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 
+use crate::blocking::blocking;
 use crate::credentials::{KEYS_CHANGED, LiveKitKeys, Vault};
 use crate::db::Db;
 use crate::error::{Error, Result};
@@ -50,23 +51,27 @@ pub fn current<R: Runtime>(
     }
 }
 
-#[tauri::command(async)]
-pub fn livekit_server<R: Runtime>(
-    app: AppHandle<R>,
-    db: State<'_, Db>,
-    vault: State<'_, Vault>,
-) -> Result<LiveKitServer> {
-    chosen(&app, &db, &vault)
+#[tauri::command]
+pub async fn livekit_server<R: Runtime>(app: AppHandle<R>) -> Result<LiveKitServer> {
+    blocking(app, move |app| {
+        let db = app.state::<Db>();
+        let vault = app.state::<Vault>();
+        chosen(app, &db, &vault)
+    })
+    .await
 }
 
 /// Applies from the next call: each call keeps the server it opened with.
-#[tauri::command(async)]
-pub fn set_livekit_server<R: Runtime>(
+#[tauri::command]
+pub async fn set_livekit_server<R: Runtime>(
     app: AppHandle<R>,
-    db: State<'_, Db>,
     server: LiveKitServer,
 ) -> Result<()> {
-    settings::save_livekit_server(&*db.conn()?, server)?;
-    let _ = app.emit(KEYS_CHANGED, ());
-    Ok(())
+    blocking(app, move |app| {
+        let db = app.state::<Db>();
+        settings::save_livekit_server(&*db.conn()?, server)?;
+        let _ = app.emit(KEYS_CHANGED, ());
+        Ok(())
+    })
+    .await
 }
