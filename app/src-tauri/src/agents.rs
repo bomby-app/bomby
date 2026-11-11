@@ -37,7 +37,7 @@ use crate::db::{Db, now_ms};
 use crate::dev;
 use crate::error::Result;
 use crate::process;
-use crate::setup::{self, Pick, Setup, Step};
+use crate::setup::{self, Listed, Pick, Setup, Step};
 use crate::sync;
 
 /// The event every window gets with the new list when a look finds something different.
@@ -335,6 +335,8 @@ pub struct Started {
     /// In ns since 1970, as file modification times are compared.
     pub at: u128,
     pub revisions: HashMap<String, u64>,
+    /// How often each agent's picks had changed ([`Agents::picked`]).
+    pub picks: HashMap<String, u64>,
 }
 
 impl Started {
@@ -365,14 +367,14 @@ impl Look {
 
 /// Every known agent with its status and setup, the probe applying each one's picks and
 /// keys from `look`. An agent whose remembered check still holds isn't started; every check
-/// the probe makes goes to `record`, with what it depends on. The probe and each agent's
+/// the probe makes goes to `record`, with what it depends on and what it lets the user pick. The probe and each agent's
 /// own checks run side by side, so a look takes about as long as the shell and the slowest
 /// of them.
 fn detect_all(
     previous: &HashMap<String, PathBuf>,
     look: &Look,
     checked: &HashSet<String>,
-    record: &(dyn Fn(&str, &Setup, &Fingerprint, &Started) + Sync),
+    record: &(dyn Fn(&str, &Listed, &Fingerprint, &Started) + Sync),
 ) -> Vec<AgentStatus> {
     let found = find_all(previous);
     let now = now_ms();
@@ -399,7 +401,7 @@ fn detect_all(
                 if let Some(listed) = setups.get(id) {
                     let files = &listed.setup.setup_files;
                     let fingerprint = look.fingerprint(id, program, files);
-                    record(id, &listed.setup, &fingerprint, &look.started);
+                    record(id, listed, &fingerprint, &look.started);
                 }
             }
             setups
@@ -514,10 +516,18 @@ impl Agents {
 
     /// When a check starts now, and what it may be recorded against.
     pub fn start_check(&self) -> Started {
+        let state = self.lock();
         Started {
             at: agent_checks::now_ns(),
-            revisions: self.lock().revisions.clone(),
+            revisions: state.revisions.clone(),
+            picks: state.picks.clone(),
         }
+    }
+
+    /// Whether agent `id`'s picks are as they were when a check `started`, so what it found
+    /// can be picked still holds.
+    pub fn unpicked(&self, started: &Started, id: &str) -> bool {
+        self.lock().picks.get(id) == started.picks.get(id)
     }
 
     /// Records a check of `id` that `started`, unless what was known of `id` changed since
@@ -653,7 +663,7 @@ impl Agents {
         &self,
         seen: Option<Vec<(String, PathBuf)>>,
         look: impl FnOnce() -> Look,
-        record: &(dyn Fn(&str, &Setup, &Fingerprint, &Started) + Sync),
+        record: &(dyn Fn(&str, &Listed, &Fingerprint, &Started) + Sync),
     ) -> (Vec<AgentStatus>, bool) {
         let checked = self.lock().checked.clone();
         self.detect_with(seen, |previous| {
@@ -842,8 +852,9 @@ fn refresh<R: Runtime>(
     app: &AppHandle<R>,
     seen: Option<Vec<(String, PathBuf)>>,
 ) -> Vec<AgentStatus> {
-    let record = |id: &str, setup: &Setup, fingerprint: &Fingerprint, started: &Started| {
-        record_check(app, id, setup, fingerprint, started);
+    let record = |id: &str, listed: &Listed, fingerprint: &Fingerprint, started: &Started| {
+        record_check(app, id, &listed.setup, fingerprint, started);
+        agent_picks::keep_listing(app, id, listed, started);
     };
     let (found, changed) = app
         .state::<Agents>()

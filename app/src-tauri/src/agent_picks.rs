@@ -223,6 +223,9 @@ fn recheck_with<R: Runtime>(
     // A `let`, so the database is free again before the probe, and for `remember`.
     let picks = saved_for(&*app.state::<Db>().conn()?, agent)?;
     let asked = ask(&picks)?;
+    if let Some(listed) = &asked.listed {
+        keep_listing(app, agent, listed, &asked.started);
+    }
     match &asked.listed {
         // Shown, never remembered: the check ran with keys that just changed, and a
         // session doesn't prove a key works (goose opens one with a wrong key and fails only
@@ -241,8 +244,10 @@ fn recheck_with<R: Runtime>(
 }
 
 /// What each agent let the user pick, as it last answered, for the whole launch: asking
-/// starts the agent, seconds each time, so the model picker asks each agent once, and every
-/// pick keeps the answer current. Forgotten only on a full check (`refresh_agents`).
+/// starts the agent, seconds each time, so the model picker asks each agent at most once, and
+/// not at all when a look or recheck already opened a session in it ([`keep_listing`]); every
+/// pick keeps the answer current. Forgotten on a full check (`refresh_agents`), and for one
+/// agent when its keys change.
 #[derive(Default)]
 pub struct Listings(Mutex<HashMap<String, Listed>>);
 
@@ -255,6 +260,13 @@ impl Listings {
         sync::lock(&self.0).insert(agent.to_owned(), listed.clone());
     }
 
+    /// Keeps `listed` for `agent` unless the picker already has an answer, which is newer.
+    fn keep_unless_known(&self, agent: &str, listed: &Listed) {
+        sync::lock(&self.0)
+            .entry(agent.to_owned())
+            .or_insert_with(|| listed.clone());
+    }
+
     /// Every agent is asked again when its picker next opens.
     pub fn forget(&self) {
         sync::lock(&self.0).clear();
@@ -263,6 +275,23 @@ impl Listings {
     /// `agent` is asked again when its picker next opens.
     fn forget_one(&self, agent: &str) {
         sync::lock(&self.0).remove(agent);
+    }
+}
+
+/// Keeps `listed`, what a check with a session (a look, a recheck) found agent `id` lets the
+/// user pick, for its model picker, so opening the picker doesn't start the agent a second
+/// time: goose reads its keychain item each time it starts, which can be a macOS password
+/// prompt (docs/acp-notes.md#goose-keys). Never over an answer the picker already has, nor
+/// one asked with keys or picks that changed since the check `started`.
+pub(crate) fn keep_listing<R: Runtime>(
+    app: &AppHandle<R>,
+    id: &str,
+    listed: &Listed,
+    started: &Started,
+) {
+    let agents = app.state::<Agents>();
+    if listed.setup.session && agents.unrevised(started, id) && agents.unpicked(started, id) {
+        app.state::<Listings>().keep_unless_known(id, listed);
     }
 }
 
@@ -486,6 +515,54 @@ mod tests {
                 .is_empty()
         );
         assert!(!app.state::<Db>().held_here());
+    }
+
+    #[test]
+    fn a_check_with_a_session_fills_the_model_picker_so_it_doesnt_start_the_agent_again() {
+        // Each start of goose can be a macOS password prompt for its keychain.
+        let app = crate::testing::app_with(Agents::showing(
+            "goose",
+            "/Users/me/.local/bin/goose",
+            Setup::default(),
+        ));
+        let listed = |model: &str| Listed {
+            setup: Setup {
+                session: true,
+                model: Some(model.into()),
+                ..Setup::default()
+            },
+            settings: Vec::new(),
+        };
+        let agents = app.state::<Agents>();
+        let listings = app.state::<Listings>();
+
+        // Not when the picks changed while it ran: it listed what no longer holds.
+        let started = agents.start_check();
+        agents.picked("goose", &listed("picked").setup);
+        keep_listing(app.handle(), "goose", &listed("old"), &started);
+        assert!(listings.get("goose").is_none());
+
+        // Not without a session: nothing was listed.
+        let started = agents.start_check();
+        let sessionless = Listed {
+            setup: Setup::default(),
+            settings: Vec::new(),
+        };
+        keep_listing(app.handle(), "goose", &sessionless, &started);
+        assert!(listings.get("goose").is_none());
+
+        keep_listing(app.handle(), "goose", &listed("Kimi"), &started);
+        assert_eq!(listings.get("goose"), Some(listed("Kimi")));
+        // Never over the picker's own answer, which is newer.
+        keep_listing(app.handle(), "goose", &listed("later"), &started);
+        assert_eq!(listings.get("goose"), Some(listed("Kimi")));
+
+        // A recheck after a key change lists with the new key, for the picker too.
+        recheck_with(app.handle(), "goose", |_| {
+            Ok(asked(&app, Some(listed("with key").setup)))
+        })
+        .unwrap();
+        assert_eq!(listings.get("goose"), Some(listed("with key")));
     }
 
     #[test]

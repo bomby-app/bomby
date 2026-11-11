@@ -83,10 +83,11 @@ def test_a_harness_can_add_a_setting_the_agent_lists_without_a_category(
     assert ids(setup) == ["provider", "model", "effort"]
 
 
-def test_the_background_check_leaves_the_option_lists_out(tmp_path: Path) -> None:
+def test_a_check_with_a_session_lists_what_can_be_picked(tmp_path: Path) -> None:
+    # So the model picker needn't start the agent again (goose asks for its keychain).
     setup, _ = run_probe(tmp_path, {**CAN_DELETE, "FAKE_ACP_MODEL": "m1"})
 
-    assert setup.settings == ()
+    assert ids(setup) == ["model", "effort"]
 
 
 def test_saved_picks_are_applied_in_order_and_the_settings_follow(
@@ -210,14 +211,12 @@ def test_listing_opens_and_closes_a_session_the_agent_cant_delete(
     assert events == ["initialize", "new_session", "close_session"]
 
 
-def test_a_session_asked_for_is_opened_and_closed_without_the_option_lists(
-    tmp_path: Path,
-) -> None:
+def test_a_session_asked_for_is_opened_and_closed(tmp_path: Path) -> None:
     # The app asks once per launch, so omp's setup is checked, not assumed.
     setup, events = run_probe(tmp_path, {"FAKE_ACP_MODEL": "m1"}, open_session=True)
 
     assert (setup.step, setup.model, setup.session) == ("ready", "Fake m1", True)
-    assert setup.settings == ()
+    assert ids(setup) == ["model", "effort"]
     assert events == ["initialize", "new_session", "close_session"]
 
 

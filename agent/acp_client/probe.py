@@ -8,6 +8,9 @@ A session lands in the agent's history, so the background check opens one only w
 agent can delete it again, or when the app asks for one (`open_session`): it does once per launch
 for an agent that can't (omp), so even that one's setup and model are checked, not assumed.
 The model picker, which the user opens, gets one either way. Either is closed afterwards.
+Whenever a session was opened, what can be picked comes back too, so the app keeps it for the
+model picker instead of starting the agent again when the picker opens (goose reads its
+keychain each time it starts, docs/acp-notes.md#goose-keys).
 
 An agent that fails still comes back with the keys it asks for, as far as the probe can tell
 without a session: its key fields stay on its row, since a missing key, or macOS asking
@@ -101,7 +104,7 @@ class Setup:
     """Whether a session was opened, so `model` and `skipped` are known. The background
     check opens none in an agent that can't delete it (omp)."""
     settings: tuple[Setting, ...] = ()
-    """What the user can pick, with the picks applied; only when listing."""
+    """What the user can pick, with the picks applied; whenever a session was opened."""
     keys: tuple[KeyField, ...] = ()
     """The keys Settings offers to save: the agent's ACP `env_var` auth methods', else its
     harness's (`key_vars`), for its provider where they follow one."""
@@ -122,9 +125,9 @@ async def probe(
     open_session: bool = False,
 ) -> Setup:
     """Checks `harness`, started from `program` the way a call would start it, with the
-    user's `picks` applied in order. `listing` is for the model picker: it returns the
-    settings that can be picked, opening a session even in an agent that can't delete it.
-    `open_session` opens one there too, without the settings."""
+    user's `picks` applied in order. `listing` is for the model picker: it opens a session
+    even in an agent that can't delete it, to list the settings that can be picked.
+    `open_session` opens one there too."""
     # Out of what it says back before that's cut short, so no part of a key is left.
     secrets = secrets_to_redact(environ)
     # What `initialize` answered, if it got that far: its keys show on a failure too.
@@ -196,9 +199,8 @@ async def probe_all(
     listing: Collection[str] = (),
     sessions: Collection[str] = (),
 ) -> dict[str, Setup]:
-    """Checks every agent at once, each with its own `picks`, listing the settings of
-    those in `listing`, and opening a session in those in `sessions` even if they can't
-    delete it."""
+    """Checks every agent at once, each with its own `picks`, opening a session in those in
+    `listing` or `sessions` even if they can't delete it."""
     ids = list(agents)
     secrets = secrets_to_redact(environ)
     setups = await asyncio.gather(
@@ -294,7 +296,7 @@ async def _check(
             session=True,
             model=model,
             skipped=applied.skipped,
-            settings=applied.settings if listing else (),
+            settings=applied.settings,
             keys=key_fields(harness, init.auth_methods or [], applied.settings, picks),
             setup_files=files,
         )
