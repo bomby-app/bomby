@@ -118,7 +118,8 @@ function TaskRow({
   onOpen: () => void
 }) {
   return (
-    <li className="flex items-center gap-1">
+    // Stop sits on the title's line, level with the status disc, not at the row's middle.
+    <li className="flex items-start gap-1">
       <button
         type="button"
         onClick={onOpen}
@@ -146,7 +147,7 @@ function TaskRow({
               aria-label={`Stop ${task.session}`}
               disabled={stops.stopping(task)}
               onClick={() => stops.stop(task.id)}
-              className="mr-1 text-muted-foreground"
+              className="mt-2 mr-1 text-muted-foreground"
             >
               <StopIcon stopping={stops.stopping(task)} />
             </Button>
