@@ -56,6 +56,8 @@ type CallState = {
   /** Why the last call failed to start or was cut off, and on which project. */
   error: { projectId: number; message: string } | null
   start: (projectId: number, resumeCallId?: number) => Promise<void>
+  /** Gives up on the call being started; one the core opens meanwhile is ended. */
+  cancel: () => void
 }
 
 const CallContext = createContext<CallState | null>(null)
@@ -127,7 +129,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
           forgetSavedCall(id)
           setActive((current) => (current?.callId === id ? null : current))
         }
-        await refresh()
+        // The tree catches up; a read that fails must not hold up or fail the end.
+        void refresh().catch((e: unknown) =>
+          log(`Reading projects after call ${id} ended failed: ${String(e)}`)
+        )
       }),
     [ending, refresh]
   )
@@ -148,20 +153,31 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
   async function start(projectId: number, resumeCallId?: number) {
     setError(null)
-    setStarting({ projectId, resumeCallId })
+    const request: CallRequest = { projectId, resumeCallId }
+    setStarting(request)
     const aborter = new AbortController()
     joining.current = aborter
     let opened: number | null = null
     try {
+      // Cancel (`cancel`) can come while the core opens the call or reads its lines,
+      // neither of which it can stop: the start goes no further once they answer.
       opened = await openCall(projectId, resumeCallId)
+      aborter.signal.throwIfAborted()
       tokens.join(opened)
       const history = resumeCallId
         ? bySession(await callTranscript(opened))
         : []
+      aborter.signal.throwIfAborted()
       forgetSavedCall(opened)
       setActive({ projectId, callId: opened, startedAt: Date.now(), history })
       await session.start({ signal: aborter.signal })
-      await refresh() // the new call shows in the tree
+      // The new call shows in the tree. Only joining can fail a start: a tree read that
+      // fails right after must not end a call that's on.
+      void refresh().catch((e: unknown) =>
+        log(
+          `Reading projects after call ${opened} started failed: ${String(e)}`
+        )
+      )
     } catch (e) {
       // Cancelled because the call already ended: whatever ended it said why.
       if (!aborter.signal.aborted) setError({ projectId, message: String(e) })
@@ -172,8 +188,14 @@ export function CallProvider({ children }: { children: ReactNode }) {
       }
     } finally {
       if (joining.current === aborter) joining.current = null
-      setStarting(null)
+      // Not a newer start's, after a cancel.
+      setStarting((current) => (current === request ? null : current))
     }
+  }
+
+  function cancel() {
+    joining.current?.abort()
+    setStarting(null)
   }
 
   // Like the starter's useAgentErrors: a failed agent ends the session, and the project's
@@ -209,7 +231,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   })
 
   return (
-    <CallContext value={{ active, starting, error, start }}>
+    <CallContext value={{ active, starting, error, start, cancel }}>
       <AgentSessionProvider session={session}>
         {children}
         {active && <CallRecorder call={active} />}

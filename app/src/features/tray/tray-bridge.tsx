@@ -24,7 +24,7 @@ export function TrayBridge({
 }: {
   onOpenProject: (projectId: number) => void
 }) {
-  const { active, starting, error, start } = useCall()
+  const { active, starting, error, start, cancel } = useCall()
   const session = useSessionContext()
   const agent = useAgent(session)
   const tasks = useTasks()
@@ -58,7 +58,11 @@ export function TrayBridge({
     // One call at a time; when a call can't start, the project's page says why.
     if (ready && !active && !starting) void start(projectId)
   })
-  useCoreEvent(onEndCall, () => void session.end())
+  // While a call is still starting, End call gives up on it.
+  useCoreEvent(onEndCall, () => {
+    if (starting !== null && active === null) cancel()
+    else void session.end()
+  })
 
   return null
 }
