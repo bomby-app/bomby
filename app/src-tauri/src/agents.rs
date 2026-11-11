@@ -482,8 +482,9 @@ struct Detection {
     checked: HashSet<String>,
     /// Agents a call found not ready, to check again once it ends.
     unready_on_call: HashSet<String>,
-    /// How often what's known of each agent changed under a running check (its keys, or a
-    /// call that found it not ready), so a check that started before isn't recorded.
+    /// How often what's known of each agent changed under a running check (its keys, a
+    /// call that found it not ready, or Check again), so a check that started before isn't
+    /// recorded.
     revisions: HashMap<String, u64>,
 }
 
@@ -519,8 +520,14 @@ impl Agents {
     }
 
     /// Has the next look check every agent with a session again, omp too (a full check).
+    /// What's known of every agent changes, so a look already running records no check,
+    /// listing or key fields back over the forget: the fresh look checks them again.
     pub fn forget_checks(&self) {
-        self.lock().checked.clear();
+        let mut state = self.lock();
+        state.checked.clear();
+        for known in KNOWN {
+            *state.revisions.entry(known.id.to_owned()).or_default() += 1;
+        }
     }
 
     /// Agent `id` wasn't ready on a call: it's checked again once the call ends.
@@ -1897,6 +1904,39 @@ mod tests {
         agents.invalidate(&conn, "omp").unwrap();
         agents
             .record_check(&conn, "goose", &setup, &fingerprint, &omp_started)
+            .unwrap();
+        assert!(agent_checks::all(&conn).unwrap().contains_key("goose"));
+    }
+
+    #[test]
+    fn a_check_that_started_before_check_again_isnt_recorded_back_over_it() {
+        // Check again forgets every remembered check while a look is still probing: that
+        // look must not record its old answer back, or the fresh look reuses it and the
+        // user gets the old answer they asked to check again (Greptile on PR #43).
+        let db = Db::in_memory().unwrap();
+        let conn = db.conn().unwrap();
+        let agents = Agents::default();
+        let setup = Setup {
+            setup_files: vec!["/Users/me/.config/goose/config.yaml".into()],
+            ..ready("Kimi")
+        };
+        let fingerprint =
+            Fingerprint::of(Path::new("/no/such/goose"), &setup.setup_files, &[], &[]);
+
+        let before = agents.start_check();
+        agents.forget_checks();
+        agents
+            .record_check(&conn, "goose", &setup, &fingerprint, &before)
+            .unwrap();
+        assert!(
+            agent_checks::all(&conn).unwrap().is_empty(),
+            "the look that ran before Check again records nothing back"
+        );
+
+        // The fresh look's check is recorded.
+        let after = agents.start_check();
+        agents
+            .record_check(&conn, "goose", &setup, &fingerprint, &after)
             .unwrap();
         assert!(agent_checks::all(&conn).unwrap().contains_key("goose"));
     }
