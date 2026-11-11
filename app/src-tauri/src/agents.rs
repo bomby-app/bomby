@@ -961,7 +961,9 @@ pub async fn refresh_agents<R: Runtime>(app: AppHandle<R>) -> Result<Vec<AgentSt
         app.state::<Agents>().forget_checks();
         app.state::<agent_picks::Listings>().forget();
         agent_checks::forget_all(&*app.state::<Db>().conn()?)?;
-        Ok(refresh(app, None))
+        // From a look that starts now: one already running read the checks and keys from
+        // before this, so its answer isn't the fresh check the user asked for.
+        Ok(refresh(app, Some(Vec::new())))
     })
     .await
 }
