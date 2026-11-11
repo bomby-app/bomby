@@ -5,6 +5,7 @@ import { CheckAgainButton } from "@/components/check-again-button"
 import { ErrorCard } from "@/components/error-card"
 import { StatusRow } from "@/components/status-row"
 
+import { AgentKeys } from "./agent-keys"
 import { AgentLogo } from "./agent-logos"
 import { type AgentStatus, versionNumber } from "./api"
 import { FixSteps } from "./fix-steps"
@@ -13,6 +14,7 @@ import { modelName } from "./model-picker"
 import { ModelSettings, skippedNote } from "./model-settings"
 import { SetUpButton } from "./set-up-button"
 import { useAdapterInstall } from "./use-adapter-install"
+import { useSavedAgentKeys } from "./use-agent-keys"
 import { forgetListedSettings, useAgentSettings } from "./use-agent-settings"
 import { checkAgentsAgain, isReady, setupStep, useAgents } from "./use-agents"
 
@@ -22,8 +24,9 @@ import { checkAgentsAgain, isReady, setupStep, useAgents } from "./use-agents"
  * what their setup probe found (docs/decisions/check-agent-setup-with-an-acp-probe.md). The
  * core looks at launch, so the list shows at once, and again on Check again. Each row shows
  * what the agent needs (`setupStep`), or, once it's ready, the model it runs on, which opens
- * the row to change it; one that isn't installed offers its own install page. Whatever the
- * core reports is listed; a new agent needs no change here.
+ * the row to change it, and the keys it asks for, if any; one that isn't installed offers
+ * its own install page. Whatever the core reports is listed; a new agent needs no change
+ * here.
  */
 export function AgentsSettings() {
   const { agents, error } = useAgents()
@@ -92,8 +95,9 @@ function action(agent: AgentStatus): ReactNode {
 
 /**
  * One agent: what it needs, or once it's set up (or waiting for its model), a row that opens
- * on its model and effort, to change at any time. The same row through a pick, so it stays
- * open for the effort.
+ * on its model and effort, to change at any time. One that asks for keys opens on them too,
+ * whatever its step: a missing key is often what it needs. The same row through a pick, so
+ * it stays open for the effort.
  */
 function AgentRow({
   agent,
@@ -107,6 +111,8 @@ function AgentRow({
   const settings = useAgentSettings(agent.id)
   const step = setupStep(agent)
   const pickable = step === "pick" || step === "ready"
+  const { saved } = useSavedAgentKeys(agent.id)
+  const keys = (agent.setup?.keys.length ?? 0) > 0 || saved.length > 0
   return (
     <StatusRow
       logo={<AgentLogo id={agent.id} />}
@@ -115,14 +121,21 @@ function AgentRow({
       detail={detail(agent)}
       action={action(agent)}
       expand={
-        pickable
+        pickable || keys
           ? {
               open,
               onOpenChange: (next) => {
-                if (next) settings.load()
+                if (next && pickable) settings.load()
                 onOpenChange(next)
               },
-              content: <ModelSettings name={agent.name} settings={settings} />,
+              content: (
+                <div className="flex flex-col gap-5">
+                  {pickable && (
+                    <ModelSettings name={agent.name} settings={settings} />
+                  )}
+                  <AgentKeys agent={agent} />
+                </div>
+              ),
             }
           : undefined
       }

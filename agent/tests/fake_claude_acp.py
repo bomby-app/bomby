@@ -7,6 +7,8 @@ initialize, like an adapter without it. Setup scenarios, by environment variable
 - FAKE_ACP_REFUSE_SESSION=<text>: `session/new` fails with <text> as the error's data
 - FAKE_ACP_AUTH_REQUIRED=1: `session/new` fails with `auth_required`
 - FAKE_ACP_AUTH_METHODS=<description>: initialize offers one auth method with it
+- FAKE_ACP_ENV_VAR_AUTH=<NAME>: initialize offers an `env_var` auth method for the
+  variable <NAME>
 - FAKE_ACP_MODEL=<model>: sessions offer a model option set to it, beside "m2", an effort
   option (low, high) and an uncategorized provider (p1, p2; on p2 the only model is
   "p2-model"), all settable, but the provider "p3", listed, is refused; `none` leaves all
@@ -60,6 +62,7 @@ from acp.schema import (
     AgentCapabilities,
     AgentMessageChunk,
     AllowedOutcome,
+    AuthEnvVar,
     AuthMethodAgent,
     CloseSessionResponse,
     DeleteSessionRequest,
@@ -181,7 +184,9 @@ class FakeClaude:
     async def initialize(
         self, protocol_version: int, **_kwargs: Any
     ) -> InitializeResponse:
-        log("initialize", protocol_version=protocol_version, pid=os.getpid())
+        # Which key variables it was started with, by name: never a value.
+        keys = sorted(k for k in os.environ if k.endswith("_API_KEY"))
+        log("initialize", protocol_version=protocol_version, pid=os.getpid(), keys=keys)
         await maybe_hang("initialize")
         # claude-agent-acp advertises session/close and steering the same way.
         capabilities = AgentCapabilities(
@@ -207,6 +212,15 @@ class FakeClaude:
             if description
             else []
         )
+        if name := os.getenv("FAKE_ACP_ENV_VAR_AUTH"):
+            methods.append(
+                EnvVarAuthMethod(
+                    type="env_var",
+                    id="fake-key",
+                    name="Fake key",
+                    vars=[AuthEnvVar(name=name, label="Fake API key")],
+                )
+            )
         return InitializeResponse(
             protocol_version=PROTOCOL_VERSION,
             agent_capabilities=capabilities,

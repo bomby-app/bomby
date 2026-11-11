@@ -62,6 +62,17 @@ START_TIMEOUT_S: float = 30
 STOP_TIMEOUT_S: float = 10
 
 
+# What the core looks for in the worker's log (`app/src-tauri/src/agent.rs`, `NOT_READY_LINE`):
+# a harness that wasn't ready on a call, by id in the `not_ready` field, so the app checks
+# it again once the call ends instead of trusting a check it remembered
+# (docs/decisions/remember-the-launch-check.md).
+NOT_READY_LINE = "coding agent not ready"
+
+
+def report_not_ready(harness: Harness) -> None:
+    logger.warning(NOT_READY_LINE, extra={"not_ready": harness.id})
+
+
 # What the voice model hears when a harness fails; the details go to the log, and
 # Settings shows what to fix (the setup probe).
 def not_ready(harness: Harness) -> str:
@@ -349,6 +360,7 @@ class AcpRunner:
             else:
                 # Unexpected (an answer the SDK can't read): logged whole.
                 logger.exception("%s could not start", self._harness.id)
+            report_not_ready(self._harness)
             raise ToolError(not_ready(self._harness)) from e
 
     async def _open_session(self, s: _Session) -> tuple[ClientSideConnection, str]:
@@ -398,6 +410,7 @@ class AcpRunner:
                 )
                 await discard_session(conn, created.session_id, self._capabilities)
                 # With no model to pick at all, its own setup lacks one, as Settings says.
+                report_not_ready(self._harness)
                 raise ToolError(
                     no_model_picked(self._harness)
                     if model_setting(applied.settings)

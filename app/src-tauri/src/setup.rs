@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::agent;
 use crate::agents::run;
+use crate::credentials::{AGENT_KEYS_ENV, AgentKeys, agent_keys_env};
 
 /// Starting every agent and opening a session takes seconds; `uv run` can add a sync, and
 /// the packaged agent's first start after an install takes about 30 s.
@@ -47,6 +48,33 @@ pub struct Setup {
     /// Whether the probe opened a session, so `model` and `skipped` are known.
     #[serde(default)]
     pub session: bool,
+    /// The keys Settings offers to save for it, which reach only this agent
+    /// (docs/decisions/agent-keys-through-the-environment.md).
+    #[serde(default)]
+    pub keys: Vec<KeyField>,
+    /// The files that hold its own setup: a ready check is remembered until one changes
+    /// (`agent_checks`). None for an agent that's checked at every launch.
+    #[serde(default)]
+    pub setup_files: Vec<String>,
+}
+
+/// A key the agent asks for, saved under the environment variable `name` (`KeyField` in
+/// `agent/acp_client/probe.py`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(
+    test,
+    derive(ts_rs::TS),
+    ts(export, export_to = "agents.ts", rename_all = "camelCase")
+)]
+#[serde(rename_all(serialize = "camelCase", deserialize = "snake_case"))]
+pub struct KeyField {
+    /// The environment variable: "OPENROUTER_API_KEY".
+    pub name: String,
+    /// What the field is called: "OpenRouter API key".
+    pub label: String,
+    /// A secret, typed in a password field.
+    pub secret: bool,
+    pub optional: bool,
 }
 
 /// What an agent needs before a call can use it, as the probe decides it (`Step` in
@@ -139,7 +167,8 @@ pub struct Pick {
     pub value: String,
 }
 
-/// Probes `agents` (id and program), all at once, each with its `picks` applied.
+/// Probes `agents` (id and program), all at once, each with its `picks` applied and the
+/// `keys` the user saved for it in its environment (never on the command line).
 /// `listing` is the agent whose settings the model picker lists; the others come back with
 /// none. `sessions` are those it opens a session in even if they can't delete it, so their
 /// setup and model are checked, not assumed (once per launch, `agents.rs`). `None` when the
@@ -149,6 +178,7 @@ pub fn probe(
     picks: &HashMap<String, Vec<Pick>>,
     listing: Option<&str>,
     sessions: &[String],
+    keys: &AgentKeys,
 ) -> Option<HashMap<String, Listed>> {
     if agents.is_empty() {
         return Some(HashMap::new());
@@ -161,7 +191,11 @@ pub fn probe(
         "sessions": sessions,
     })
     .to_string();
-    let command = agent::command(&["probe", &metadata]).ok()?;
+    let mut command = agent::command(&["probe", &metadata]).ok()?;
+    match agent_keys_env(keys) {
+        Some(keys) => command.env(AGENT_KEYS_ENV, keys),
+        None => command.env_remove(AGENT_KEYS_ENV),
+    };
     let output = run(command, TIMEOUT)?;
     if !output.status.success() {
         return None;
@@ -247,6 +281,11 @@ mod tests {
         assert_eq!(goose.setup.model.as_deref(), Some("Kimi K3.1 Pro"));
         assert_eq!(goose.setup.skipped[0].why, Why::Refused);
         assert!(goose.setup.session);
+        assert_eq!(goose.setup.keys[0].name, "OPENROUTER_API_KEY");
+        assert_eq!(
+            goose.setup.setup_files,
+            ["/Users/me/.config/goose/config.yaml"]
+        );
         assert_eq!(goose.settings[0].options[0].group.as_deref(), Some("Kimi"));
 
         // Every key the probe sends, at every level, reaches the page.

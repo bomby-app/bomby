@@ -87,6 +87,22 @@ Probed 2026-11-04: `initialize` then `session/new` in an empty folder, no prompt
 - `_auth/status_update` is the adapter's interim `authStatus` extension (`dist/auth-status.d.ts`): advertised by an empty `agentCapabilities._meta.authStatus`, pushed after `initialize` (never before its response) and on each `session/new`. `kind` is `account`, `api_key`, `gateway`, `external` or `none`; `label` is a display string such as "Claude Max". Silence means unknown.
 - `session/new` saves a session in the agent's history even without a prompt (Codex, OpenCode, omp, goose; Claude saves only once prompted). Claude, Codex, OpenCode and goose advertise `sessionCapabilities.delete`; omp only `close`. Codex's delete archives the thread (`threadArchive`: it moves to `~/.codex/archived_sessions`, out of the resume list, still on disk). `omp acp --no-session` still saves the session (omp 18.16.0). SDK 0.12.1 has `DeleteSessionRequest` in `acp/schema.py` and `session/delete` in `acp/meta.py`, but no `delete_session` method on `ClientSideConnection`.
 
+## Agent keys
+
+ACP has an `env_var` auth method (SDK 0.12.1, `acp/schema.py`: `EnvVarAuthMethod` with `vars: list[AuthEnvVar]`, each `name`, `label`, `secret` (default true), `optional` (default false), and the method's `link`). Of the agents Bomby runs, none advertises one (2026-11-11): claude-agent-acp's are terminal and gateway methods, codex-acp 2.2.2's `api-key` is an agent method with `_meta["api-key"].provider` (`dist/index.js`, `ApiKeyAuthMethod`), goose's is `goose-provider`.
+
+### goose keys
+
+Checked in goose's source at tag `v1.59.0` (repo `aaif-goose/goose`, `crates/goose/src/`) and live through the probe on 1.59.0, 2026-11-11:
+
+- The CLI is ad-hoc signed (`codesign -dv`: `flags=adhoc,linker-signed`, no team). Its secrets are one keychain item, service `goose`, account `secrets` (`config/base.rs:32-34`).
+- `Config::get_secret` reads the upper-case environment variable first; on a miss it calls `all_secrets()`, which loads the whole item and caches it per process (`base.rs:942-957`, `secrets_cache`). `get_secrets(primary, others)` reads every key from the environment when the primary is there (`base.rs:975-996`). The cache is cleared on each `session/set_config_option` for `provider` (`acp/server/dispatch.rs:170`).
+- `session/new` builds the current provider's inventory identity, which reads every secret `ConfigKey` of that provider, optional ones too (`providers/inventory/mod.rs:887-904`, `default_inventory_identity`). So with only the primary key in the environment, `anthropic` (`ANTHROPIC_CUSTOM_HEADERS`, `inventory/registrations.rs:134`) and `openai` (`OPENAI_CUSTOM_HEADERS`) still read the keychain; `openrouter`, `google`, `xai`, `tetrate` and the declarative providers don't.
+- `GOOSE_DISABLE_KEYRING` set to anything turns the keychain off for the process (`base.rs:219`): secrets come from the environment, then `~/.config/goose/secrets.yaml`, and `keyring::Entry` is never created. Live, with it set and no key anywhere, `session/new` answered in about 1 s and set the session up on the configured provider; switching `provider` to one without a key was refused at once (`-32603`).
+- `session/new` doesn't check the key: the provider's model list comes from goose's config, so a missing key shows only on a prompt.
+- Over ACP goose advertises one auth method, `AuthMethod::Agent("goose-provider", "Configure Provider")` (`acp/server.rs:1801-1804`); the `provider` option lists ids and names only. Key names are only in goose's own `_goose/unstable/providers/list` (`config_keys`, `crates/goose-sdk-types/src/custom_requests.rs`), which reads every provider's secrets when asked for all of them.
+- Provider ids and their key variables: `ConfigKey::new` in `providers/*.rs` and `api_key_env` in `crates/goose-providers/src/declarative/definitions/*.json`. Some ids aren't what you'd guess: `custom_deepseek`, `fireworks-ai`, `alibaba` (`DASHSCOPE_API_KEY`).
+
 ## Session settings
 
 ACP's way to pick a model, effort or mode (SDK 0.12.1, `acp/schema.py`): `session/new` answers with `configOptions`, each with an `id`, a `name`, a `category` (`mode`, `model`, `model_config`, `thought_level`, or a custom object), a `currentValue` and its options, flat or in named groups. `session/set_config_option` (`ClientSideConnection.set_config_option`) changes one and answers with the whole list again, so a setting that depends on another comes back up to date: OpenCode lists an effort only once a model with variants is picked, and goose's models follow its provider.

@@ -9,6 +9,7 @@ import type { AgentStatus, Listed, SettingPick } from "@/generated/agents"
 
 export type {
   AgentStatus,
+  KeyField,
   Listed,
   Setting,
   SettingOption,
@@ -47,6 +48,29 @@ export function pickAgentSettings(
   pick: SettingPick
 ): Promise<Listed> {
   return invoke("pick_agent_settings", { agent, pick })
+}
+
+/** Which variables have a key saved, by agent id: names only, never a key. */
+export function agentKeys(): Promise<Partial<Record<string, string[]>>> {
+  return invoke("agent_keys")
+}
+
+/**
+ * Saves `agent`'s key under `name`, one of its row's key fields. It reaches only that
+ * agent; the agent is checked again with it, and its row follows through `agents-changed`.
+ * Every window hears keys-changed.
+ */
+export function saveAgentKey(
+  agent: string,
+  name: string,
+  key: string
+): Promise<void> {
+  return invoke("save_agent_key", { agent, name, key })
+}
+
+/** Removes `agent`'s key saved under `name`; every window hears keys-changed. */
+export function clearAgentKey(agent: string, name: string): Promise<void> {
+  return invoke("clear_agent_key", { agent, name })
 }
 
 /** Installs every ACP adapter into the app's folder; resolves once the agents are rechecked. */

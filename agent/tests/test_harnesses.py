@@ -7,7 +7,7 @@ import pytest
 from livekit.agents.llm import ToolError
 
 from acp_client.runner import AcpRunner, CallRunners
-from harnesses import CLAUDE_CODE, CODEX, HARNESSES, OMP, OPENCODE, installed
+from harnesses import CLAUDE_CODE, CODEX, GOOSE, HARNESSES, OMP, OPENCODE, installed
 from harnesses.harness import ADAPTERS, Harness
 from job import Pick, read_metadata
 from project import Project
@@ -163,3 +163,25 @@ def test_an_agent_that_requires_a_pick_is_offered_only_once_something_is_picked(
     if OPENCODE not in available:
         with pytest.raises(ToolError, match="OpenCode isn't ready right now"):
             _ = runners.get(OPENCODE)
+
+
+def test_gooses_key_fields_follow_its_provider_and_turn_its_keychain_off() -> None:
+    keys = GOOSE.key_vars
+    assert keys is not None and keys.setting == "provider"
+    assert [k.name for k in keys.offered("openrouter")] == ["OPENROUTER_API_KEY"]
+    assert [k.name for k in keys.offered("anthropic")] == ["ANTHROPIC_API_KEY"]
+    # Signed in another way: nothing to save.
+    assert keys.offered("github_copilot") == ()
+    assert keys.offered(None) == ()
+    # "Goose (Default)" goes by the provider the session resolves it to.
+    assert keys.defaults == frozenset({"goose"})
+    assert GOOSE.saved_keys_env == {"GOOSE_DISABLE_KEYRING": "1"}
+    assert GOOSE.setup_files == ("~/.config/goose/config.yaml",)
+
+
+def test_only_goose_names_setup_files_or_key_variables() -> None:
+    # Every other agent is checked at every launch, and its keys come from ACP alone.
+    for harness in HARNESSES.values():
+        if harness.id != "goose":
+            assert (harness.setup_files, harness.key_vars) == ((), None), harness.id
+            assert not harness.saved_keys_env, harness.id

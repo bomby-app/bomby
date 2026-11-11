@@ -29,6 +29,17 @@
           }
         ]
       }
+    ],
+    "keys": [
+      {
+        "name": "OPENROUTER_API_KEY",
+        "label": "OpenRouter API key",
+        "secret": false,
+        "optional": true
+      }
+    ],
+    "setup_files": [
+      "/Users/me/.config/goose/config.yaml"
     ]
   }
 }

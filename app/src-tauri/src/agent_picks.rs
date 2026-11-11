@@ -11,10 +11,11 @@ use std::sync::Mutex;
 use rusqlite::{Connection, params};
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
-use crate::agents::{self, Agents, CHANGED};
+use crate::agent_checks::{self, Fingerprint};
+use crate::agents::{self, Agents, CHANGED, Started};
 use crate::db::Db;
 use crate::error::{Error, Result};
-use crate::setup::{self, Listed, Pick, Why};
+use crate::setup::{self, Listed, Pick, Setup, Skipped, Why};
 use crate::sync;
 
 /// Every agent's picks, in the order they're applied. An agent on its defaults has none.
@@ -77,14 +78,151 @@ fn program<R: Runtime>(app: &AppHandle<R>, agent: &str) -> Result<PathBuf> {
 
 const UNREACHABLE: &str = "Bomby couldn't reach the agent. Try again?";
 
-/// What `agent` lets the user pick, with `picks` applied, asked of the agent itself (one
-/// short-lived probe, a few seconds).
-fn list<R: Runtime>(app: &AppHandle<R>, agent: &str, picks: &[Pick]) -> Result<Listed> {
-    let path = program(app, agent)?;
-    let picks = HashMap::from([(agent.to_owned(), picks.to_vec())]);
-    setup::probe(&[(agent.to_owned(), path)], &picks, Some(agent), &[])
-        .and_then(|mut listed| listed.remove(agent))
-        .ok_or_else(|| Error::Invalid(UNREACHABLE.into()))
+/// A live answer from `agent`, with what it was asked with, so it's recorded against
+/// exactly that.
+struct Asked {
+    /// `None` when the probe couldn't run.
+    listed: Option<Listed>,
+    program: PathBuf,
+    /// The variables with a key saved for it, as it was started.
+    keys: Vec<String>,
+    started: Started,
+}
+
+/// What `agent` lets the user pick, with `picks` applied and its saved keys in its
+/// environment, asked of the agent itself (one short-lived probe, a few seconds). With
+/// `listing` off, only its setup, from a session.
+fn ask<R: Runtime>(
+    app: &AppHandle<R>,
+    agent: &str,
+    picks: &[Pick],
+    listing: bool,
+) -> Result<Asked> {
+    let program = program(app, agent)?;
+    // Before anything it reads: what changes after this is the next check's.
+    let started = app.state::<Agents>().start_check();
+    let keys = agents::saved_keys(app);
+    let by_agent = HashMap::from([(agent.to_owned(), picks.to_vec())]);
+    let (listing, sessions) = if listing {
+        (Some(agent), Vec::new())
+    } else {
+        (None, vec![agent.to_owned()])
+    };
+    let listed = setup::probe(
+        &[(agent.to_owned(), program.clone())],
+        &by_agent,
+        listing,
+        &sessions,
+        &keys,
+    )
+    .and_then(|mut listed| listed.remove(agent));
+    Ok(Asked {
+        listed,
+        program,
+        keys: keys
+            .get(agent)
+            .map(|v| v.keys().cloned().collect())
+            .unwrap_or_default(),
+        started,
+    })
+}
+
+/// [`ask`] for the model picker. An answer without a session is a failed check: it's
+/// settled ([`settle_failure`]) and the error says why.
+fn list<R: Runtime>(app: &AppHandle<R>, agent: &str, picks: &[Pick]) -> Result<(Listed, Asked)> {
+    let mut asked = ask(app, agent, picks, true)?;
+    match asked.listed.take() {
+        Some(listed) if listed.setup.session => Ok((listed, asked)),
+        failed => {
+            let db = app.state::<Db>();
+            let shown = settle_failure(
+                &db.conn(),
+                &app.state::<Agents>(),
+                agent,
+                failed.as_ref().map(|l| &l.setup),
+            )?;
+            show(app, shown);
+            Err(Error::Invalid(
+                failed
+                    .and_then(|l| l.setup.problem)
+                    .unwrap_or_else(|| UNREACHABLE.into()),
+            ))
+        }
+    }
+}
+
+/// A live check of `agent` that failed (`setup` without a session, or `None` when the probe
+/// couldn't run): whatever was remembered of it goes, and its row shows the failure, so
+/// calls leave it out as after a look. The new list when the row changed.
+fn settle_failure(
+    conn: &Connection,
+    agents: &Agents,
+    agent: &str,
+    setup: Option<&Setup>,
+) -> Result<Option<Vec<agents::AgentStatus>>> {
+    agent_checks::forget(conn, agent)?;
+    Ok(setup.and_then(|setup| agents.replace_setup(agent, setup)))
+}
+
+/// Keeps `setup`, a live answer from a session of `agent` with `picks` saved, for the
+/// launch check, against what it was `asked` with, or forgets what it had (`agent_checks`).
+fn remember<R: Runtime>(
+    app: &AppHandle<R>,
+    agent: &str,
+    setup: &Setup,
+    picks: &[Pick],
+    asked: &Asked,
+) -> Result<()> {
+    let fingerprint = Fingerprint::of(&asked.program, &setup.setup_files, picks, &asked.keys);
+    app.state::<Agents>().record_check(
+        &app.state::<Db>().conn(),
+        agent,
+        setup,
+        &fingerprint,
+        &asked.started,
+    )
+}
+
+/// Agent `id`'s keys changed: its model list is forgotten now, so the next ask gets one made
+/// with them, and nothing asked or checked before is kept or recorded ([`Agents::invalidate`]).
+pub(crate) fn keys_changed(
+    agents: &Agents,
+    listings: &Listings,
+    conn: &Connection,
+    id: &str,
+) -> Result<()> {
+    listings.forget_one(id);
+    agents.invalidate(conn, id)
+}
+
+/// Checks `agent` again, alone, with its saved picks and keys, and shows the answer in its
+/// row, kept over a look that started before (its keys changed). Logged when it fails.
+pub fn recheck<R: Runtime>(app: &AppHandle<R>, agent: &str) {
+    let lock = app.state::<Agents>().one_at_a_time(agent);
+    let _one = sync::lock(&lock);
+    app.state::<Listings>().forget_one(agent);
+    let checked = saved_for(&app.state::<Db>().conn(), agent).and_then(|picks| {
+        let asked = ask(app, agent, &picks, false)?;
+        match &asked.listed {
+            Some(listed) if listed.setup.session => {
+                remember(app, agent, &listed.setup, &picks, &asked)?;
+                Ok(app.state::<Agents>().picked(agent, &listed.setup))
+            }
+            // It didn't get as far as a session: the row shows why, as a look would.
+            failed => settle_failure(
+                &app.state::<Db>().conn(),
+                &app.state::<Agents>(),
+                agent,
+                failed.as_ref().map(|l| &l.setup),
+            ),
+        }
+    });
+    match checked {
+        Ok(shown) => show(app, shown),
+        Err(e) => {
+            let _ = crate::app_log::append(app, &format!("checking {agent} again: {e}"));
+        }
+    }
 }
 
 /// What each agent let the user pick, as it last answered, for the whole launch: asking
@@ -105,6 +243,11 @@ impl Listings {
     /// Every agent is asked again when its picker next opens.
     pub fn forget(&self) {
         sync::lock(&self.0).clear();
+    }
+
+    /// `agent` is asked again when its picker next opens.
+    fn forget_one(&self, agent: &str) {
+        sync::lock(&self.0).remove(agent);
     }
 }
 
@@ -130,13 +273,13 @@ pub async fn agent_settings<R: Runtime>(app: AppHandle<R>, agent: String) -> Res
             return Ok(listed);
         }
         let picks = saved_for(&app.state::<Db>().conn(), &agent)?;
-        let listed = list(&app, &agent, &picks)?;
-        if listed.setup.session {
+        let (listed, asked) = list(&app, &agent, &picks)?;
+        remember(&app, &agent, &listed.setup, &picks, &asked)?;
+        // Asked with keys that changed meanwhile: shown to this caller, kept nowhere.
+        let agents = app.state::<Agents>();
+        if agents.unrevised(&asked.started, &agent) {
             app.state::<Listings>().keep(&agent, &listed);
-            show(
-                &app,
-                app.state::<Agents>().replace_setup(&agent, &listed.setup),
-            );
+            show(&app, agents.replace_setup(&agent, &listed.setup));
         }
         Ok(listed)
     })
@@ -163,47 +306,61 @@ pub async fn pick_agent_settings<R: Runtime>(
         let mut picks = saved_for(&db.conn(), &agent)?;
         picks.retain(|p| p.setting != pick.setting);
         picks.push(pick.clone());
-        let mut listed = list(&app, &agent, &picks)?;
-        if !listed.setup.session {
-            // It didn't get as far as a session (it timed out, say).
-            return Err(Error::Invalid(
-                listed.setup.problem.unwrap_or_else(|| UNREACHABLE.into()),
-            ));
-        }
-        if let Some(why) = not_taken(&listed, &pick, &agent) {
-            return Err(Error::Invalid(why));
+        // One that didn't get as far as a session (it timed out, say) fails in `list`.
+        let (mut listed, asked) = list(&app, &agent, &picks)?;
+        if let Some(skipped) = not_taken(&listed, &pick) {
+            // Refused for want of a key (a provider without its key): its row offers that
+            // key, so the user can save it and pick again.
+            let offered = app.state::<Agents>().offer_keys(&agent, &listed.setup.keys);
+            let asks_for_key = offered.is_some();
+            show(&app, offered);
+            return Err(Error::Invalid(why_not_taken(skipped, &agent, asks_for_key)));
         }
         let saved = to_save(picks, &listed, &pick);
         save(&mut db.conn(), &agent, &saved)?;
+        remember(&app, &agent, &listed.setup, &saved, &asked)?;
         // A pick that fell away with this one isn't the user's any more: no note for it.
         listed
             .setup
             .skipped
             .retain(|s| saved.iter().any(|p| p.setting == s.setting));
-        app.state::<Listings>().keep(&agent, &listed);
-        show(&app, app.state::<Agents>().picked(&agent, &listed.setup));
+        let agents = app.state::<Agents>();
+        if agents.unrevised(&asked.started, &agent) {
+            app.state::<Listings>().keep(&agent, &listed);
+            show(&app, agents.picked(&agent, &listed.setup));
+        }
         Ok(listed)
     })
     .await?
 }
 
-/// Why the agent didn't take `pick`, if it didn't: "Codex wouldn't take that model".
-fn not_taken(listed: &Listed, pick: &Pick, agent: &str) -> Option<String> {
-    let skipped = listed
+/// The note on `pick`, if the agent didn't take it.
+fn not_taken<'a>(listed: &'a Listed, pick: &Pick) -> Option<&'a Skipped> {
+    listed
         .setup
         .skipped
         .iter()
-        .find(|s| s.setting == pick.setting)?;
+        .find(|s| s.setting == pick.setting)
+}
+
+/// Why the agent didn't take a pick: "Codex wouldn't take that model". `asks_for_key` when
+/// it refused it and its row now offers a key it lacked.
+fn why_not_taken(skipped: &Skipped, agent: &str, asks_for_key: bool) -> String {
     let (name, setting) = (
         agents::name(agent).unwrap_or(agent),
         skipped.name.to_lowercase(),
     );
-    Some(match skipped.why {
+    match skipped.why {
+        Why::Refused if asks_for_key => {
+            format!(
+                "{name} wouldn't take that {setting} without its key. Save the key below, then pick it again."
+            )
+        }
         Why::Refused => {
             format!("{name} wouldn't take that {setting}, so nothing changed. Pick another.")
         }
         Why::Gone => format!("{name} doesn't offer that {setting} any more. Pick another."),
-    })
+    }
 }
 
 /// What to save once `new` held, in the agent's own order: all of `picks` but those that
@@ -284,15 +441,142 @@ mod tests {
         };
         let new = pick("model", "b");
 
+        let refused = listed(vec![skipped("model", Why::Refused)]);
+        let note = not_taken(&refused, &new).unwrap();
         assert_eq!(
-            not_taken(&listed(vec![skipped("model", Why::Refused)]), &new, "codex").as_deref(),
-            Some("Codex wouldn't take that model, so nothing changed. Pick another.")
+            why_not_taken(note, "codex", false),
+            "Codex wouldn't take that model, so nothing changed. Pick another."
         );
         assert_eq!(
-            not_taken(&listed(vec![skipped("effort", Why::Gone)]), &new, "codex"),
+            why_not_taken(note, "goose", true),
+            "goose wouldn't take that model without its key. Save the key below, then pick it again."
+        );
+        assert_eq!(
+            not_taken(&listed(vec![skipped("effort", Why::Gone)]), &new),
             None,
             "another setting falling away doesn't undo this pick"
         );
+    }
+
+    fn key(name: &str) -> setup::KeyField {
+        setup::KeyField {
+            name: name.into(),
+            label: name.into(),
+            secret: true,
+            optional: false,
+        }
+    }
+
+    fn goose_row(setup: setup::Setup) -> Agents {
+        Agents::showing("goose", "/b/goose", setup)
+    }
+
+    #[test]
+    fn a_key_change_forgets_the_model_list_before_anyone_asks_again() {
+        let db = Db::in_memory().unwrap();
+        let (agents, listings) = (Agents::default(), Listings::default());
+        let old = Listed {
+            setup: setup::Setup::default(),
+            settings: Vec::new(),
+        };
+        listings.keep("goose", &old);
+        // A picker that asked with the old key, still on its way.
+        let asked_before = agents.start_check();
+
+        keys_changed(&agents, &listings, &db.conn(), "goose").unwrap();
+
+        assert_eq!(
+            listings.get("goose"),
+            None,
+            "the next ask lists with the new key"
+        );
+        assert!(
+            !agents.unrevised(&asked_before, "goose"),
+            "the answer on its way isn't kept or shown"
+        );
+        assert!(agents.unrevised(&agents.start_check(), "goose"));
+    }
+
+    #[test]
+    fn a_provider_refused_for_its_key_offers_that_key_on_the_row() {
+        let on_openrouter = setup::Setup {
+            session: true,
+            keys: vec![key("OPENROUTER_API_KEY")],
+            ..setup::Setup::default()
+        };
+        let agents = goose_row(on_openrouter);
+        assert!(!agents.offers_key("goose", "ANTHROPIC_API_KEY"));
+
+        // The refused pick's answer asks for Anthropic's key.
+        assert!(
+            agents
+                .offer_keys("goose", &[key("ANTHROPIC_API_KEY")])
+                .is_some()
+        );
+        assert_eq!(
+            agents.offered_keys("goose"),
+            ["OPENROUTER_API_KEY", "ANTHROPIC_API_KEY"]
+        );
+        assert!(
+            agents.offers_key("goose", "ANTHROPIC_API_KEY"),
+            "so it can be saved"
+        );
+        assert_eq!(
+            agents.offer_keys("goose", &[key("ANTHROPIC_API_KEY")]),
+            None,
+            "offered already"
+        );
+    }
+
+    #[test]
+    fn a_failed_live_check_forgets_the_remembered_one_and_shows_on_the_row() {
+        let db = Db::in_memory().unwrap();
+        let conn = db.conn();
+        let ready = setup::Setup {
+            session: true,
+            setup_files: vec!["/Users/me/.config/goose/config.yaml".into()],
+            ..setup::Setup::default()
+        };
+        let fingerprint = Fingerprint::of(
+            std::path::Path::new("/b/goose"),
+            &ready.setup_files,
+            &[],
+            &[],
+        );
+        agent_checks::record(&conn, "goose", &ready, &fingerprint, 0).unwrap();
+        let agents = goose_row(ready);
+        assert_eq!(agents::usable(&agents.cached().unwrap()).len(), 1);
+
+        let timed_out = setup::Setup {
+            step: setup::Step::Unreachable,
+            problem: Some("It didn't answer in time".into()),
+            ..setup::Setup::default()
+        };
+        let shown = settle_failure(&conn, &agents, "goose", Some(&timed_out)).unwrap();
+
+        assert!(
+            agent_checks::all(&conn).unwrap().is_empty(),
+            "the next launch checks it"
+        );
+        assert!(
+            agents::usable(&shown.unwrap()).is_empty(),
+            "calls leave it out"
+        );
+
+        // A probe that couldn't run at all forgets it too.
+        let again = setup::Setup {
+            setup_files: vec!["/x".into()],
+            ..timed_out.clone()
+        };
+        let ready_again = setup::Setup {
+            step: setup::Step::Ready,
+            session: true,
+            ..again
+        };
+        agent_checks::record(&conn, "goose", &ready_again, &fingerprint, 0).unwrap();
+        assert!(!agent_checks::all(&conn).unwrap().is_empty());
+        assert_eq!(settle_failure(&conn, &agents, "goose", None).unwrap(), None);
+        assert!(agent_checks::all(&conn).unwrap().is_empty());
     }
 
     #[test]

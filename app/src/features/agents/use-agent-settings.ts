@@ -1,17 +1,14 @@
-import { useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 
 import { agentSettings, type Listed, pickAgentSettings } from "./api"
+import {
+  keepListing,
+  keptListing,
+  listingGeneration,
+  onAgentListingForgotten,
+} from "./listing-cache"
 
-/**
- * Each agent's last answer: asking takes seconds (the agent starts), so it's asked once and
- * kept, kept up to date by every pick, until the user refreshes (`forgetListedSettings`).
- */
-const lastListed = new Map<string, Listed>()
-
-/** Forgets every agent's settings, so each is asked again when next opened (Refresh models). */
-export function forgetListedSettings(): void {
-  lastListed.clear()
-}
+export { forgetAgentListing, forgetListedSettings } from "./listing-cache"
 
 /** An agent's settings as it last listed them, and what the user does with them. */
 export type AgentSettings = {
@@ -35,35 +32,58 @@ export type AgentSettings = {
  */
 export function useAgentSettings(agent: string): AgentSettings {
   const [listed, setListed] = useState<Listed | null>(
-    () => lastListed.get(agent) ?? null
+    () => keptListing(agent) ?? null
   )
   const [busy, setBusy] = useState<AgentSettings["busy"]>(null)
   const [error, setError] = useState<string | null>(null)
 
-  function shown(next: Listed) {
-    // Only a real answer is kept: one without a session (a timeout) is asked again.
-    if (next.session) lastListed.set(agent, next)
-    setListed(next)
-    setError(null)
-    setBusy(null)
-  }
+  // Waits on the agent for `request`'s answer. One to a question asked before the agent's
+  // keys changed is dropped.
+  const settle = useCallback(
+    (request: () => Promise<Listed>, waiting: "loading" | "saving") => {
+      const generation = listingGeneration(agent)
+      setBusy(waiting)
+      request().then(
+        (next) => {
+          if (!keepListing(agent, generation, next)) return
+          setListed(next)
+          setError(null)
+          setBusy(null)
+        },
+        (e: unknown) => {
+          if (generation !== listingGeneration(agent)) return
+          // Back to what the agent last confirmed, not the pick that didn't save.
+          setListed(keptListing(agent) ?? null)
+          setError(String(e))
+          setBusy(null)
+        }
+      )
+    },
+    [agent]
+  )
 
-  function failed(e: unknown) {
-    // Back to what the agent last confirmed, not the pick that didn't save.
-    setListed(lastListed.get(agent) ?? null)
-    setError(String(e))
-    setBusy(null)
-  }
+  // Its keys changed: a picker showing its answer, or waiting on one (which is dropped now),
+  // asks again. The core answers once its own check with the new keys is done.
+  const showing = listed !== null || busy !== null
+  useEffect(
+    () =>
+      onAgentListingForgotten((forgotten) => {
+        if (forgotten !== agent) return
+        setError(null)
+        setListed(null)
+        if (showing) settle(() => agentSettings(agent), "loading")
+      }),
+    [agent, showing, settle]
+  )
 
   function load() {
     // A pick still on its way answers for both.
     if (busy) return
-    const kept = lastListed.get(agent)
+    const kept = keptListing(agent)
     setListed(kept ?? null)
     setError(null)
     if (kept) return
-    setBusy("loading")
-    agentSettings(agent).then(shown, failed)
+    settle(() => agentSettings(agent), "loading")
   }
 
   function pick(setting: string, value: string) {
@@ -72,9 +92,8 @@ export function useAgentSettings(agent: string): AgentSettings {
       s.id === setting ? { ...s, current: value } : s
     )
     setListed({ ...listed, settings })
-    setBusy("saving")
     setError(null)
-    pickAgentSettings(agent, { setting, value }).then(shown, failed)
+    settle(() => pickAgentSettings(agent, { setting, value }), "saving")
   }
 
   return { listed, busy, error, load, pick }

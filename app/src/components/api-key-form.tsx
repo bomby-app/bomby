@@ -25,6 +25,7 @@ type Status =
  */
 export function ApiKeyForm({
   id,
+  label = "API key",
   saved,
   keysUrl,
   hint,
@@ -34,9 +35,11 @@ export function ApiKeyForm({
 }: {
   /** The field's id. */
   id: string
+  /** What the field is called. */
+  label?: string
   saved: boolean
-  /** Where the user gets a key. */
-  keysUrl: string
+  /** Where the user gets a key, if Bomby knows. */
+  keysUrl?: string
   /** Shown under the field while no key is saved. */
   hint?: string
   /** Takes focus once, while no key is saved. */
@@ -85,20 +88,22 @@ export function ApiKeyForm({
       <FieldGroup className="gap-3">
         <Field>
           <div className="flex items-center justify-between gap-2">
-            <FieldLabel htmlFor={id}>API key</FieldLabel>
-            <InlineLink
-              className="text-sm"
-              onClick={() => {
-                setLinkError(null)
-                openUrl(keysUrl).catch(() =>
-                  setLinkError(
-                    `Couldn't open ${keysUrl}. Open it in your browser.`
+            <FieldLabel htmlFor={id}>{label}</FieldLabel>
+            {keysUrl && (
+              <InlineLink
+                className="text-sm"
+                onClick={() => {
+                  setLinkError(null)
+                  openUrl(keysUrl).catch(() =>
+                    setLinkError(
+                      `Couldn't open ${keysUrl}. Open it in your browser.`
+                    )
                   )
-                )
-              }}
-            >
-              Get an API key
-            </InlineLink>
+                }}
+              >
+                Get an API key
+              </InlineLink>
+            )}
           </div>
           <Input
             id={id}

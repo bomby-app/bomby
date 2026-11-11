@@ -22,7 +22,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use crate::credentials::LiveKitKeys;
+use crate::credentials::{AGENT_KEYS_ENV, AgentKeys, LiveKitKeys, agent_keys_env};
 use crate::error::{Error, Result};
 use crate::process;
 use crate::sync;
@@ -42,6 +42,9 @@ const RECENT_LINES: usize = 50;
 /// `ipc/job_proc_lazy_main.py`, `_on_entry_done`), with the job's `room` and `exc_info`. In
 /// `start` mode the JSON line's `message` is this, a newline, then the traceback.
 const CRASH_LINE: &str = "unhandled exception while running the job task";
+/// What the voice agent logs when a coding agent wasn't ready on a call
+/// (`NOT_READY_LINE` in `agent/acp_client/runner.py`), with the agent's id in `not_ready`.
+const NOT_READY_LINE: &str = "coding agent not ready";
 
 /// A call's job that crashed: its room, and why, in one line.
 #[derive(Debug, PartialEq, Eq)]
@@ -50,8 +53,17 @@ pub struct JobCrash {
     pub reason: String,
 }
 
-/// Told about every job that crashes, from the thread reading the worker's output.
-pub type OnCrash = Arc<dyn Fn(JobCrash) + Send + Sync>;
+/// What the worker's output tells the core.
+#[derive(Debug, PartialEq, Eq)]
+pub enum WorkerNews {
+    /// A call's job crashed.
+    Crashed(JobCrash),
+    /// A coding agent, by id, wasn't ready on a call.
+    NotReady(String),
+}
+
+/// Told the news in the worker's output, from the thread reading it.
+pub type OnNews = Arc<dyn Fn(WorkerNews) + Send + Sync>;
 
 /// Everything the worker needs to run. A change to any of it means a restart.
 #[derive(PartialEq, Eq)]
@@ -62,6 +74,8 @@ pub struct WorkerConfig {
     pub voice_keys: BTreeMap<VoiceProvider, String>,
     /// Whenever one is saved; each call's metadata says whether it remembers.
     pub zep_key: Option<String>,
+    /// Every coding agent's saved keys; the voice agent hands each agent only its own.
+    pub agent_keys: AgentKeys,
     /// Where the hosted MCP extensions' tokens come from (`extensions::tokens`): the
     /// socket's path and the run's secret, the same for the whole run.
     pub tokens: Option<[(&'static str, String); 2]>,
@@ -84,8 +98,8 @@ pub struct AgentWorker(Mutex<Option<Running>>);
 
 impl AgentWorker {
     /// Makes sure a worker with `config` is running and registered. A worker started here
-    /// reports its crashed jobs to `on_crash`.
-    pub fn ensure(&self, config: WorkerConfig, log_dir: &Path, on_crash: OnCrash) -> Result<()> {
+    /// tells `on_news` what its output reports.
+    pub fn ensure(&self, config: WorkerConfig, log_dir: &Path, on_news: OnNews) -> Result<()> {
         let mut slot = sync::lock(&self.0);
         if let Some(running) = slot.as_mut() {
             let alive = matches!(running.child.try_wait(), Ok(None));
@@ -96,7 +110,7 @@ impl AgentWorker {
         if let Some(old) = slot.take() {
             stop(old.child);
         }
-        let (child, lifeline) = start(&config, log_dir, on_crash)?;
+        let (child, lifeline) = start(&config, log_dir, on_news)?;
         *slot = Some(Running {
             child,
             _lifeline: lifeline,
@@ -159,7 +173,7 @@ fn packaged() -> Result<Command> {
     }
 }
 
-fn start(config: &WorkerConfig, log_dir: &Path, on_crash: OnCrash) -> Result<(Child, ChildStdin)> {
+fn start(config: &WorkerConfig, log_dir: &Path, on_news: OnNews) -> Result<(Child, ChildStdin)> {
     std::fs::create_dir_all(log_dir)?;
     let log = Arc::new(Mutex::new(File::create(log_dir.join(LOG_FILE))?));
 
@@ -182,6 +196,10 @@ fn start(config: &WorkerConfig, log_dir: &Path, on_crash: OnCrash) -> Result<(Ch
     match &config.zep_key {
         Some(key) => command.env("ZEP_API_KEY", key),
         None => command.env_remove("ZEP_API_KEY"),
+    };
+    match agent_keys_env(&config.agent_keys) {
+        Some(keys) => command.env(AGENT_KEYS_ENV, keys),
+        None => command.env_remove(AGENT_KEYS_ENV),
     };
     for (name, value) in config.tokens.iter().chain(&config.streams).flatten() {
         command.env(name, value);
@@ -212,7 +230,7 @@ fn start(config: &WorkerConfig, log_dir: &Path, on_crash: OnCrash) -> Result<(Ch
     .flatten()
     {
         let (log, ready_tx, recent) = (Arc::clone(&log), ready_tx.clone(), Arc::clone(&recent));
-        let on_crash = Arc::clone(&on_crash);
+        let on_news = Arc::clone(&on_news);
         thread::spawn(move || {
             for line in BufReader::new(stream)
                 .lines()
@@ -221,8 +239,8 @@ fn start(config: &WorkerConfig, log_dir: &Path, on_crash: OnCrash) -> Result<(Ch
                 if line.contains(READY_LINE) {
                     let _ = ready_tx.send(());
                 }
-                if let Some(crash) = job_crash(&line) {
-                    on_crash(crash);
+                if let Some(news) = news(&line) {
+                    on_news(news);
                 }
                 if let Ok(mut file) = log.lock() {
                     let _ = writeln!(file, "{line}");
@@ -272,6 +290,22 @@ fn last_error<'a>(lines: impl DoubleEndedIterator<Item = &'a str>) -> Option<Str
     })
 }
 
+/// What `line` tells the core, if anything: a crashed job, or a coding agent not ready.
+fn news(line: &str) -> Option<WorkerNews> {
+    job_crash(line)
+        .map(WorkerNews::Crashed)
+        .or_else(|| not_ready(line).map(WorkerNews::NotReady))
+}
+
+/// The coding agent `line` says wasn't ready on a call, if it says so.
+fn not_ready(line: &str) -> Option<String> {
+    let entry: serde_json::Value = serde_json::from_str(line).ok()?;
+    if entry.get("message")?.as_str()? != NOT_READY_LINE {
+        return None;
+    }
+    Some(entry.get("not_ready")?.as_str()?.to_owned())
+}
+
 /// The crash `line` reports, if it's livekit-agents saying a job crashed. The reason drops
 /// the exception's type: "project folder does not exist: ...", not "ValueError: ...".
 fn job_crash(line: &str) -> Option<JobCrash> {
@@ -313,7 +347,7 @@ mod tests {
     use std::collections::VecDeque;
     use std::sync::Mutex;
 
-    use super::{JobCrash, RECENT_LINES, job_crash, last_error, remember};
+    use super::{JobCrash, RECENT_LINES, WorkerNews, job_crash, last_error, news, remember};
 
     #[test]
     fn keeps_only_the_last_lines() {
@@ -352,8 +386,24 @@ mod tests {
                 reason: "project folder does not exist: /Users/me/gone".into(),
             })
         );
+        assert!(matches!(news(line), Some(WorkerNews::Crashed(_))));
         let other = r#"{"message": "worker failed", "level": "ERROR", "room": "bomby-4-1"}"#;
         assert_eq!(job_crash(other), None);
         assert_eq!(job_crash("not json"), None);
+    }
+
+    #[test]
+    fn reads_which_coding_agent_wasnt_ready_on_a_call() {
+        // As `report_not_ready` in agent/acp_client/runner.py logs it, trimmed.
+        let line = r#"{"level": "WARNING", "name": "bomby.acp_client.runner", "message": "coding agent not ready", "not_ready": "goose", "room": "bomby-4-1"}"#;
+        assert_eq!(news(line), Some(WorkerNews::NotReady("goose".into())));
+        let other =
+            r#"{"level": "WARNING", "message": "goose could not start", "room": "bomby-4-1"}"#;
+        assert_eq!(news(other), None);
+        assert_eq!(
+            news("coding agent not ready"),
+            None,
+            "only the worker's JSON lines"
+        );
     }
 }
