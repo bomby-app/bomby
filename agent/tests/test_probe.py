@@ -338,6 +338,7 @@ def test_the_command_line_answers_by_agent_id(
             "settings": [],
             "keys": [],
             "setup_files": [],
+            "timed_out": False,
         }
     }
 
@@ -632,3 +633,62 @@ def test_a_probe_that_cant_set_up_fails_its_agent_only(
 
 def test_metadata_the_probe_cant_read_answers_no_agents() -> None:
     assert probe_cli.main('{"agents": "not a map"}') == "{}"
+
+
+def test_an_agent_that_doesnt_answer_in_time_still_offers_its_keys(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # goose waiting on macOS's password prompt for its keychain: saving a key is the way out.
+    monkeypatch.setattr(probe_module, "TIMEOUT_S", 1)
+    hang = {**CAN_DELETE, "FAKE_ACP_HANG": "new_session"}
+    harness = dataclasses.replace(KEYED, setup_files=("~/.config/fake/config.yaml",))
+
+    picked, events = run_probe(tmp_path, hang, harness, (Pick("provider", "p2"),))
+
+    assert picked.step == "unreachable"
+    assert picked.problem == "It didn't answer in time"
+    assert picked.timed_out
+    assert [k.name for k in picked.keys] == ["P2_API_KEY"]
+    assert picked.setup_files == (str(Path.home() / ".config/fake/config.yaml"),)
+    assert events == ["initialize", "hang"]
+
+
+def test_an_agent_that_doesnt_answer_in_time_offers_the_keys_it_named_over_acp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(probe_module, "TIMEOUT_S", 1)
+    env = {
+        **CAN_DELETE,
+        "FAKE_ACP_HANG": "new_session",
+        "FAKE_ACP_ENV_VAR_AUTH": "FAKE_API_KEY",
+    }
+
+    setup, _ = run_probe(tmp_path, env, KEYED)
+
+    assert setup.timed_out
+    assert setup.keys == (KeyField("FAKE_API_KEY", "Fake API key"),)
+
+
+def test_without_a_pick_or_a_session_keys_that_follow_a_setting_are_unknown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Which provider goose is on only a session tells: the app keeps the row's last fields.
+    monkeypatch.setattr(probe_module, "TIMEOUT_S", 1)
+
+    setup, _ = run_probe(
+        tmp_path, {**CAN_DELETE, "FAKE_ACP_HANG": "new_session"}, KEYED
+    )
+
+    assert (setup.step, setup.timed_out, setup.keys) == ("unreachable", True, ())
+
+
+def test_an_agent_that_wont_start_offers_the_keys_its_pick_asks_for(
+    tmp_path: Path,
+) -> None:
+    setup = asyncio.run(
+        probe(KEYED, tmp_path / "missing", dict(os.environ), (Pick("provider", "p3"),))
+    )
+
+    assert setup.step == "unreachable"
+    assert not setup.timed_out
+    assert [k.name for k in setup.keys] == ["P3_API_KEY"]

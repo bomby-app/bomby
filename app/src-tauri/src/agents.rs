@@ -478,10 +478,14 @@ impl Detection {
         }
         let found = self.found.as_mut()?;
         let agent = found.iter_mut().find(|a| a.id == id)?;
-        if agent.setup.as_ref() == Some(setup) {
+        let mut setup = setup.clone();
+        if let Some(before) = &agent.setup {
+            setup.keep_keys_from(before);
+        }
+        if agent.setup.as_ref() == Some(&setup) {
             return None;
         }
-        agent.setup = Some(setup.clone());
+        agent.setup = Some(setup);
         Some(found.clone())
     }
 }
@@ -732,9 +736,10 @@ impl Agents {
 }
 
 /// `found`, a look's answer, with what it couldn't know taken from `before`, the list it
-/// replaces: the setup of an agent whose settings were picked while it ran, and, for an
-/// agent it opened no session in (omp can't delete one), the setup last found with a
-/// session, by a look, the model picker or a pick. An agent `revised_since` the look
+/// replaces: the setup of an agent whose settings were picked while it ran, for an agent it
+/// opened no session in (omp can't delete one), the setup last found with a session, by a
+/// look, the model picker or a pick, and for one that failed without naming its keys, the
+/// key fields its row showed ([`Setup::keep_keys_from`]). An agent `revised_since` the look
 /// started (its keys changed, [`Agents::invalidate`]) keeps its row whatever the look found,
 /// failures too: the look ran on what's no longer true, and the agent's own recheck answers.
 fn keep_what_the_look_missed(
@@ -755,6 +760,9 @@ fn keep_what_the_look_missed(
         if revised_since(agent.id) {
             agent.setup = Some(old.clone());
             continue;
+        }
+        if let Some(setup) = agent.setup.as_mut() {
+            setup.keep_keys_from(old);
         }
         // A problem with the agent itself (signed out, not answering) shows: no pick changes it.
         if agent
@@ -1442,6 +1450,61 @@ mod tests {
             assert_eq!(found, vec![goose(problem)]);
             assert!(usable(&found).is_empty(), "calls don't get it");
         }
+    }
+
+    #[test]
+    fn a_failure_that_cant_name_its_keys_keeps_the_fields_its_row_showed() {
+        // goose waiting on macOS's keychain prompt times out without a session, so the
+        // probe can't tell its provider: the key that stops the prompt must stay savable.
+        let key = setup::KeyField {
+            name: "OPENROUTER_API_KEY".into(),
+            label: "OpenRouter API key".into(),
+            secret: true,
+            optional: false,
+        };
+        let keyed = Setup {
+            session: true,
+            keys: vec![key.clone()],
+            ..ready("Kimi")
+        };
+        let timed_out = Setup {
+            step: Step::Unreachable,
+            problem: Some("It didn't answer in time".into()),
+            timed_out: true,
+            ..Setup::default()
+        };
+        let goose = |setup| AgentStatus {
+            setup: Some(setup),
+            ..status("goose", Some("/b/goose"))
+        };
+        let with_key = Setup {
+            keys: vec![key],
+            ..timed_out.clone()
+        };
+
+        // A look.
+        let agents = Agents::default();
+        agents.detect_with(None, |_| vec![goose(keyed.clone())]);
+        let (found, _) = agents.detect_with(None, |_| vec![goose(timed_out.clone())]);
+        assert_eq!(found, vec![goose(with_key.clone())]);
+
+        // The model picker's check, through its row.
+        let agents = Agents::default();
+        agents.detect_with(None, |_| vec![goose(keyed.clone())]);
+        agents.replace_setup("goose", &timed_out);
+        assert_eq!(agents.offered_keys("goose"), ["OPENROUTER_API_KEY"]);
+        assert!(
+            agents.offers_key("goose", "OPENROUTER_API_KEY"),
+            "so it can be saved"
+        );
+
+        // A session that names none (a provider without a key) is believed.
+        let keyless = Setup {
+            session: true,
+            ..ready("Llama")
+        };
+        agents.replace_setup("goose", &keyless);
+        assert!(agents.offered_keys("goose").is_empty());
     }
 
     #[test]

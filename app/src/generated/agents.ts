@@ -77,7 +77,12 @@ keys: Array<KeyField>,
  * The files that hold its own setup: a ready check is remembered until one changes
  * (`agent_checks`). None for an agent that's checked at every launch.
  */
-setupFiles: Array<string>, };
+setupFiles: Array<string>, 
+/**
+ * It didn't answer in time (`Unreachable`): for an agent that reads its keys from the
+ * macOS keychain, most likely a password prompt nobody has answered yet.
+ */
+timedOut: boolean, };
 
 /**
  * A session setting the user can pick: a model, an effort, goose's provider.
@@ -137,7 +142,12 @@ keys: Array<KeyField>,
  * The files that hold its own setup: a ready check is remembered until one changes
  * (`agent_checks`). None for an agent that's checked at every launch.
  */
-setupFiles: Array<string>, };
+setupFiles: Array<string>, 
+/**
+ * It didn't answer in time (`Unreachable`): for an agent that reads its keys from the
+ * macOS keychain, most likely a password prompt nobody has answered yet.
+ */
+timedOut: boolean, };
 
 /**
  * A pick that didn't apply, so the session keeps the agent's default for it.

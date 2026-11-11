@@ -22,6 +22,7 @@ function listed(model: string): Listed {
     session: true,
     keys: [],
     setupFiles: [],
+    timedOut: false,
     settings: [],
   }
 }

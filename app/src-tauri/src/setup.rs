@@ -56,6 +56,22 @@ pub struct Setup {
     /// (`agent_checks`). None for an agent that's checked at every launch.
     #[serde(default)]
     pub setup_files: Vec<String>,
+    /// It didn't answer in time (`Unreachable`): for an agent that reads its keys from the
+    /// macOS keychain, most likely a password prompt nobody has answered yet.
+    #[serde(default)]
+    pub timed_out: bool,
+}
+
+impl Setup {
+    /// Keeps `before`'s key fields, those the agent's row showed, when this answer has none
+    /// and opened no session: without one the probe can't always tell which keys the agent
+    /// takes (goose's follow its provider), and a failure is exactly when the user needs a
+    /// field to save one in.
+    pub fn keep_keys_from(&mut self, before: &Setup) {
+        if !self.session && self.keys.is_empty() {
+            self.keys.clone_from(&before.keys);
+        }
+    }
 }
 
 /// A key the agent asks for, saved under the environment variable `name` (`KeyField` in

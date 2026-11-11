@@ -8,6 +8,10 @@ A session lands in the agent's history, so the background check opens one only w
 agent can delete it again, or when the app asks for one (`open_session`): it does once per launch
 for an agent that can't (omp), so even that one's setup and model are checked, not assumed.
 The model picker, which the user opens, gets one either way. Either is closed afterwards.
+
+An agent that fails still comes back with the keys it asks for, as far as the probe can tell
+without a session: its key fields stay on its row, since a missing key, or macOS asking
+for a password for the agent's own keychain item, is often why it failed.
 """
 
 import asyncio
@@ -104,6 +108,9 @@ class Setup:
     setup_files: tuple[str, ...] = ()
     """The files that hold its own setup, home folder expanded (`Harness.setup_files`):
     the app remembers a ready check until one of them changes."""
+    timed_out: bool = False
+    """It didn't answer in time (`unreachable`). For an agent that reads its keys from the
+    macOS keychain, the likeliest reason is a password prompt nobody has answered yet."""
 
 
 async def probe(
@@ -120,6 +127,12 @@ async def probe(
     `open_session` opens one there too, without the settings."""
     # Out of what it says back before that's cut short, so no part of a key is left.
     secrets = secrets_to_redact(environ)
+    # What `initialize` answered, if it got that far: its keys show on a failure too.
+    started: list[InitializeResponse] = []
+
+    def failed(problem: str, timed_out: bool = False) -> Setup:
+        return _unreachable(harness, picks, started, problem, timed_out)
+
     try:
         adapter = harness.adapter_path(environ)
         if adapter is not None and not Path(adapter).is_file():
@@ -138,27 +151,42 @@ async def probe(
                 _,
                 init,
             ):
+                started.append(init)
                 return await _check(
                     harness, conn, client, init, picks, listing, open_session, secrets
                 )
     except TimeoutError:
-        return Setup("unreachable", problem="It didn't answer in time")
+        return failed("It didn't answer in time", timed_out=True)
     # Before OSError, which ConnectionError is a kind of.
     except (RequestError, ConnectionError) as e:
-        return Setup(
-            "unreachable", problem=f"It quit while starting: {detail(e, secrets)}"
-        )
+        return failed(f"It quit while starting: {detail(e, secrets)}")
     except OSError as e:
-        return Setup(
-            "unreachable", problem=f"It couldn't be started: {detail(e, secrets)}"
-        )
+        return failed(f"It couldn't be started: {detail(e, secrets)}")
     # Anything else (an answer the SDK can't read) fails only this agent.
     except Exception as e:
         logger.exception("probing %s failed", harness.id)
-        return Setup(
-            "unreachable",
-            problem=f"It answered in a way Bomby can't read: {detail(e, secrets)}",
-        )
+        return failed(f"It answered in a way Bomby can't read: {detail(e, secrets)}")
+
+
+def _unreachable(
+    harness: Harness,
+    picks: Sequence[Pick],
+    started: Sequence[InitializeResponse],
+    problem: str,
+    timed_out: bool,
+) -> Setup:
+    """An agent that didn't answer, with the keys it asks for as far as they're known
+    without a session: its ACP `env_var` auth methods if `initialize` answered, else its
+    harness's for the user's pick. Where they follow a setting only a session knows (goose's
+    provider, with no pick), there are none, and the app keeps the ones its row showed."""
+    auth = (started[0].auth_methods or []) if started else []
+    return Setup(
+        "unreachable",
+        problem=problem,
+        keys=key_fields(harness, auth, (), picks),
+        setup_files=tuple(str(Path(f).expanduser()) for f in harness.setup_files),
+        timed_out=timed_out,
+    )
 
 
 async def probe_all(

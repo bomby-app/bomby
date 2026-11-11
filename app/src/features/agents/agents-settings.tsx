@@ -10,6 +10,7 @@ import { AgentLogo } from "./agent-logos"
 import { type AgentStatus, versionNumber } from "./api"
 import { FixSteps } from "./fix-steps"
 import { InstallButton } from "./install-button"
+import { mayBeAskingForPassword } from "./key-fields"
 import { modelName } from "./model-picker"
 import { ModelSettings, skippedNote } from "./model-settings"
 import { SetUpButton } from "./set-up-button"
@@ -117,14 +118,15 @@ function AgentRow({
   const settings = useAgentSettings(agent.id, open)
   const step = setupStep(agent)
   const pickable = step === "pick" || step === "ready"
-  const { saved } = useSavedAgentKeys(agent.id)
+  const { saved, known } = useSavedAgentKeys(agent.id)
   const keys = (agent.setup?.keys.length ?? 0) > 0 || saved.length > 0
+  const asking = mayBeAskingForPassword(agent, saved, known)
   return (
     <StatusRow
       logo={<AgentLogo id={agent.id} />}
       name={agent.name}
       ready={isReady(agent)}
-      detail={detail(agent)}
+      detail={detail(agent, asking)}
       action={action(agent)}
       expand={
         pickable || keys
@@ -149,7 +151,11 @@ function AgentRow({
   )
 }
 
-function detail(agent: AgentStatus): ReactNode {
+/**
+ * What the row says under the agent's name. `asking`: it didn't answer in time, likely
+ * because macOS is asking for a password for it ([`mayBeAskingForPassword`]).
+ */
+function detail(agent: AgentStatus, asking: boolean): ReactNode {
   const { name, version, setup } = agent
   switch (setupStep(agent)) {
     case "missing":
@@ -161,12 +167,14 @@ function detail(agent: AgentStatus): ReactNode {
       return (
         <span className="inline-flex max-w-full items-center gap-1.5">
           <span className="truncate select-text">
-            {setup?.problem ??
-              (setupStep(agent) === "sign_in"
-                ? "Needs setup"
-                : "It didn't answer")}
+            {asking
+              ? `It didn't answer in time. Your Mac may be asking for your password for ${name}.`
+              : (setup?.problem ??
+                (setupStep(agent) === "sign_in"
+                  ? "Needs setup"
+                  : "It didn't answer"))}
           </span>
-          <FixSteps agent={agent} />
+          <FixSteps agent={agent} asking={asking} />
         </span>
       )
     case "pick":
