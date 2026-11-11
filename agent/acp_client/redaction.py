@@ -59,3 +59,12 @@ class RedactingFilter(logging.Filter):
         if record.exc_text:
             record.exc_text = scrub(record.exc_text, self._secrets)
         return True
+
+
+def redact_logs(secrets: Collection[str]) -> None:
+    """Puts a `RedactingFilter` for `secrets` on every handler of the root logger, in place
+    of one an earlier job in this process put there (a worker's job processes are reused)."""
+    for handler in logging.getLogger().handlers:
+        for old in [f for f in handler.filters if isinstance(f, RedactingFilter)]:
+            handler.removeFilter(old)
+        handler.addFilter(RedactingFilter(secrets))

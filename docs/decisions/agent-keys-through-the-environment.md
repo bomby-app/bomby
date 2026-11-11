@@ -22,6 +22,7 @@ What goose does with a key in its environment (1.59.0 source, [acp-notes.md](../
 
 ## Consequences
 
+- An agent can echo a key it was given ("Credential rejected: sk-..."). Every saved key of 8 characters or more is taken out of what reaches anyone (`agent/acp_client/redaction.py`): the probe's free text for Settings, a task's result before the voice model or the log gets it, each message chunk and tool title on the Agents panel, and every line the worker's job logs (a filter on the root handlers, tracebacks included). A key split across two streamed chunks can still show on the panel; the result is scrubbed whole. Shorter values (a local gateway's placeholder) aren't taken out, so they can't garble other text.
 - With a goose key saved in Bomby, goose sees no secret it keeps only in its keychain: another provider's key, custom headers, extensions' keys. They come from the environment or `secrets.yaml` instead. Switching goose to a provider whose key isn't saved here makes it refuse that provider rather than fall back to the keychain: the row then offers that provider's key, and the pick goes through once it's saved.
 - A different key than goose's own can change the models goose lists, so a saved model pick may show as no longer offered; the row says so and the user picks again.
 - goose answers `session/new` without checking the key (1.59.0), so a wrong or missing key shows on the first task, not in Settings.
