@@ -23,6 +23,7 @@ function listed(model: string): Listed {
     keys: [],
     setupFiles: [],
     timedOut: false,
+    takesKeys: false,
     settings: [],
   }
 }

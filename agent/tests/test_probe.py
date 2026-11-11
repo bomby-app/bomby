@@ -338,6 +338,7 @@ def test_the_command_line_answers_by_agent_id(
             "keys": [],
             "setup_files": [],
             "timed_out": False,
+            "takes_keys": False,
         }
     }
 
@@ -668,10 +669,11 @@ def test_an_agent_that_doesnt_answer_in_time_offers_the_keys_it_named_over_acp(
     assert setup.keys == (KeyField("FAKE_API_KEY", "Fake API key"),)
 
 
-def test_without_a_pick_or_a_session_keys_that_follow_a_setting_are_unknown(
+def test_without_a_pick_or_a_session_keys_that_follow_a_setting_are_unknown_but_taken(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Which provider goose is on only a session tells: the app keeps the row's last fields.
+    # Which provider goose is on only a session tells: no field to offer, but the row can
+    # still say macOS may be asking, and the app keeps any fields it showed.
     monkeypatch.setattr(probe_module, "TIMEOUT_S", 1)
 
     setup, _ = run_probe(
@@ -679,6 +681,13 @@ def test_without_a_pick_or_a_session_keys_that_follow_a_setting_are_unknown(
     )
 
     assert (setup.step, setup.timed_out, setup.keys) == ("unreachable", True, ())
+    assert setup.takes_keys
+
+
+def test_an_agent_that_takes_no_keys_says_so() -> None:
+    assert not asyncio.run(
+        probe(FAKE, Path("/nowhere/fake"), dict(os.environ))
+    ).takes_keys
 
 
 def test_an_agent_that_wont_start_offers_the_keys_its_pick_asks_for(

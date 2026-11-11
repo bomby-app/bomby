@@ -46,6 +46,7 @@ EVERYTHING = Setup(
     ),
     setup_files=("/Users/me/.config/goose/config.yaml",),
     timed_out=True,
+    takes_keys=True,
 )
 
 

@@ -50,6 +50,7 @@ describe("mayBeAskingForPassword", () => {
       keys: [OPENROUTER],
       setupFiles: [],
       timedOut: true,
+      takesKeys: true,
       ...setup,
     },
   })
@@ -58,10 +59,19 @@ describe("mayBeAskingForPassword", () => {
     expect(mayBeAskingForPassword(goose({}), [], true)).toBe(true)
   })
 
-  it("doesn't once its key is saved, or while that isn't known", () => {
+  it("says so when Bomby can't tell which key field to offer", () => {
+    // goose's first look ever, with no provider the probe could read.
+    expect(mayBeAskingForPassword(goose({ keys: [] }), [], true)).toBe(true)
+  })
+
+  it("doesn't once any key is saved for it, or while that isn't known", () => {
     expect(
       mayBeAskingForPassword(goose({}), ["OPENROUTER_API_KEY"], true)
     ).toBe(false)
+    // Another provider's key: Bomby still starts it with its keychain off.
+    expect(mayBeAskingForPassword(goose({}), ["ANTHROPIC_API_KEY"], true)).toBe(
+      false
+    )
     expect(mayBeAskingForPassword(goose({}), [], false)).toBe(false)
   })
 
@@ -69,7 +79,9 @@ describe("mayBeAskingForPassword", () => {
     expect(mayBeAskingForPassword(goose({ timedOut: false }), [], true)).toBe(
       false
     )
-    expect(mayBeAskingForPassword(goose({ keys: [] }), [], true)).toBe(false)
+    expect(
+      mayBeAskingForPassword(goose({ keys: [], takesKeys: false }), [], true)
+    ).toBe(false)
     expect(mayBeAskingForPassword(goose({ step: "sign_in" }), [], true)).toBe(
       false
     )

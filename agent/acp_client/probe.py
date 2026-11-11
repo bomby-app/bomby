@@ -14,7 +14,8 @@ keychain each time it starts, docs/acp-notes.md#goose-keys).
 
 An agent that fails still comes back with the keys it asks for, as far as the probe can tell
 without a session: its key fields stay on its row, since a missing key, or macOS asking
-for a password for the agent's own keychain item, is often why it failed.
+for a password for the agent's own keychain item, is often why it failed. And it says
+whether the agent takes keys at all (`takes_keys`), even when it can't name them.
 """
 
 import asyncio
@@ -114,6 +115,10 @@ class Setup:
     timed_out: bool = False
     """It didn't answer in time (`unreachable`). For an agent that reads its keys from the
     macOS keychain, the likeliest reason is a password prompt nobody has answered yet."""
+    takes_keys: bool = False
+    """Whether the agent takes keys Settings can save, as far as the probe can tell: it named
+    some (`keys`), or its harness has `key_vars`. True even when which ones isn't known (a
+    provider no session decides), so the app can still say what may be wrong."""
 
 
 async def probe(
@@ -128,6 +133,18 @@ async def probe(
     user's `picks` applied in order. `listing` is for the model picker: it opens a session
     even in an agent that can't delete it, to list the settings that can be picked.
     `open_session` opens one there too."""
+    setup = await _probe(harness, program, environ, picks, listing, open_session)
+    return replace(setup, takes_keys=bool(setup.keys) or harness.key_vars is not None)
+
+
+async def _probe(
+    harness: Harness,
+    program: Path,
+    environ: Mapping[str, str],
+    picks: Sequence[Pick],
+    listing: bool,
+    open_session: bool,
+) -> Setup:
     # Out of what it says back before that's cut short, so no part of a key is left.
     secrets = secrets_to_redact(environ)
     # What `initialize` answered, if it got that far: its keys show on a failure too.

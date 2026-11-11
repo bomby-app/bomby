@@ -82,7 +82,13 @@ setupFiles: Array<string>,
  * It didn't answer in time (`Unreachable`): for an agent that reads its keys from the
  * macOS keychain, most likely a password prompt nobody has answered yet.
  */
-timedOut: boolean, };
+timedOut: boolean, 
+/**
+ * The agent takes keys Settings can save, even when this answer can't name them (goose
+ * on a provider no session told the probe): so a row that timed out can say macOS may be
+ * asking for a password for it, with or without a field.
+ */
+takesKeys: boolean, };
 
 /**
  * A session setting the user can pick: a model, an effort, goose's provider.
@@ -147,7 +153,13 @@ setupFiles: Array<string>,
  * It didn't answer in time (`Unreachable`): for an agent that reads its keys from the
  * macOS keychain, most likely a password prompt nobody has answered yet.
  */
-timedOut: boolean, };
+timedOut: boolean, 
+/**
+ * The agent takes keys Settings can save, even when this answer can't name them (goose
+ * on a provider no session told the probe): so a row that timed out can say macOS may be
+ * asking for a password for it, with or without a field.
+ */
+takesKeys: boolean, };
 
 /**
  * A pick that didn't apply, so the session keeps the agent's default for it.
