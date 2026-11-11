@@ -501,7 +501,7 @@ impl Agents {
         fingerprint: &Fingerprint,
         started: &Started,
     ) -> Result<()> {
-        if self.lock().revisions.get(id).copied().unwrap_or_default() != started.revision(id) {
+        if !self.unrevised(started, id) {
             return Ok(());
         }
         agent_checks::record(conn, id, setup, fingerprint, started.at)
@@ -510,8 +510,19 @@ impl Agents {
     /// Forgets `id`'s remembered check, and keeps any check of it already running from
     /// recording its answer. Under the database's lock (`conn`), as [`Agents::record_check`].
     pub fn invalidate(&self, conn: &Connection, id: &str) -> Result<()> {
-        *self.lock().revisions.entry(id.to_owned()).or_default() += 1;
+        self.revise(id);
         agent_checks::forget(conn, id)
+    }
+
+    /// Whether what's known of `id` is as it was when a check `started`: its answer may be
+    /// kept and shown.
+    pub fn unrevised(&self, started: &Started, id: &str) -> bool {
+        self.lock().revisions.get(id).copied().unwrap_or_default() == started.revision(id)
+    }
+
+    /// What's known of `id` changed: no check that started before is recorded, or shown.
+    fn revise(&self, id: &str) {
+        *self.lock().revisions.entry(id.to_owned()).or_default() += 1;
     }
 
     /// Adds `keys`, which agent `id` asked for when a pick was refused (a provider without
@@ -653,6 +664,7 @@ impl Agents {
         let seen = std::mem::take(&mut state.seen);
         previous.extend(seen.clone());
         let picks = state.picks.clone();
+        let revisions = state.revisions.clone();
         drop(state);
 
         // A look that panics keeps what was found before, and never leaves waiters waiting.
@@ -662,7 +674,13 @@ impl Agents {
         let changed = match found {
             Ok(found) => {
                 let picked_since = |id: &str| state.picks.get(id) != picks.get(id);
-                let found = keep_what_the_look_missed(found, state.found.as_deref(), picked_since);
+                let revised_since = |id: &str| state.revisions.get(id) != revisions.get(id);
+                let found = keep_what_the_look_missed(
+                    found,
+                    state.found.as_deref(),
+                    picked_since,
+                    revised_since,
+                );
                 for agent in &found {
                     if agent.setup.as_ref().is_some_and(|s| s.session) {
                         state.checked.insert(agent.id.to_owned());
@@ -690,11 +708,14 @@ impl Agents {
 /// `found`, a look's answer, with what it couldn't know taken from `before`, the list it
 /// replaces: the setup of an agent whose settings were picked while it ran, and, for an
 /// agent it opened no session in (omp can't delete one), the setup last found with a
-/// session, by a look, the model picker or a pick.
+/// session, by a look, the model picker or a pick. An agent `revised_since` the look
+/// started (its keys changed, [`Agents::invalidate`]) keeps its row whatever the look found,
+/// failures too: the look ran on what's no longer true, and the agent's own recheck answers.
 fn keep_what_the_look_missed(
     mut found: Vec<AgentStatus>,
     before: Option<&[AgentStatus]>,
     picked_since: impl Fn(&str) -> bool,
+    revised_since: impl Fn(&str) -> bool,
 ) -> Vec<AgentStatus> {
     for agent in &mut found {
         let Some(old) = before
@@ -705,6 +726,10 @@ fn keep_what_the_look_missed(
         else {
             continue;
         };
+        if revised_since(agent.id) {
+            agent.setup = Some(old.clone());
+            continue;
+        }
         // A problem with the agent itself (signed out, not answering) shows: no pick changes it.
         if agent
             .setup
@@ -833,7 +858,13 @@ pub fn offers_key<R: Runtime>(app: &AppHandle<R>, id: &str, name: &str) -> bool 
 /// it's checked again with them, in the background; its row follows.
 pub fn keys_changed<R: Runtime>(app: &AppHandle<R>, id: &str) {
     let db = app.state::<Db>();
-    if let Err(e) = app.state::<Agents>().invalidate(&db.conn(), id) {
+    // Before the command returns: the page asks for the models again at once.
+    if let Err(e) = agent_picks::keys_changed(
+        &app.state::<Agents>(),
+        &app.state::<agent_picks::Listings>(),
+        &db.conn(),
+        id,
+    ) {
         let _ = crate::app_log::append(app, &format!("forgetting {id}'s check: {e}"));
     }
     let (app, id) = (app.clone(), id.to_owned());
@@ -1434,6 +1465,38 @@ mod tests {
         assert!(agents.offers_key("goose", "OPENROUTER_API_KEY"));
         assert!(!agents.offers_key("goose", "ANTHROPIC_API_KEY"));
         assert!(!agents.offers_key("omp", "OPENROUTER_API_KEY"));
+    }
+
+    #[test]
+    fn a_look_that_started_before_a_key_change_doesnt_undo_its_recheck() {
+        let agents = Agents::default();
+        let goose = |setup| AgentStatus {
+            setup: Some(setup),
+            ..status("goose", Some("/b/goose"))
+        };
+        let signed_out = Setup {
+            step: Step::SignIn,
+            problem: Some("Not signed in".into()),
+            session: true,
+            ..Setup::default()
+        };
+        agents.detect_with(None, |_| vec![goose(signed_out.clone())]);
+
+        let (found, _) = agents.detect_with(None, |_| {
+            // A working key is saved while the look runs on the old one; its recheck answers.
+            agents.revise("goose");
+            agents.picked("goose", &ready("Kimi"));
+            vec![goose(signed_out.clone())]
+        });
+        assert_eq!(found, vec![goose(ready("Kimi"))]);
+        assert_eq!(usable(&found).len(), 1, "calls get it");
+
+        let (found, _) = agents.detect_with(None, |_| vec![goose(signed_out.clone())]);
+        assert_eq!(
+            found,
+            vec![goose(signed_out)],
+            "a look that starts after decides"
+        );
     }
 
     #[test]

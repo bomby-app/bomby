@@ -515,6 +515,27 @@ def test_an_agent_that_refuses_a_session_still_shows_the_keys_it_asks_for(
     assert [k.name for k in by_harness.keys] == ["P2_API_KEY"]
 
 
+def test_a_saved_key_cut_by_the_length_limit_leaves_no_part_behind(
+    tmp_path: Path,
+) -> None:
+    key = "sk-fake-" + "k" * 40
+    # The key starts before the 300-character cut and ends after it.
+    message = "x" * 280 + key + " rejected"
+    environ = {
+        **os.environ,
+        **CAN_DELETE,
+        "FAKE_ACP_LOG": str(tmp_path / "acp.jsonl"),
+        "FAKE_ACP_REFUSE_SESSION": message,
+        AGENT_KEYS_ENV: json.dumps({"fake": {"P1_API_KEY": key}}),
+    }
+
+    setups = asyncio.run(probe_all({"fake": (KEYED, Path(sys.executable))}, environ))
+
+    problem = setups["fake"].problem or ""
+    assert "sk-fake" not in problem
+    assert problem.startswith("x" * 280 + "[redacted]")
+
+
 def test_a_saved_key_an_agent_echoes_never_reaches_the_answer(tmp_path: Path) -> None:
     saved = {"fake": {"P1_API_KEY": "sk-fake-123456"}, "other": {"X": "sk-other-789"}}
     environ = {

@@ -125,6 +125,8 @@ async def probe(
         )
     command, args, env = launch(harness, program, environ)
     client = HarnessClient(harness)
+    # Out of what it says back before that's cut short, so no part of a key is left.
+    secrets = every_saved_key(environ)
     FOLDER.mkdir(exist_ok=True)
     try:
         async with asyncio.timeout(TIMEOUT_S):
@@ -134,20 +136,25 @@ async def probe(
                 init,
             ):
                 return await _check(
-                    harness, conn, client, init, picks, listing, open_session
+                    harness, conn, client, init, picks, listing, open_session, secrets
                 )
     except TimeoutError:
         return Setup("unreachable", problem="It didn't answer in time")
     # Before OSError, which ConnectionError is a kind of.
     except (RequestError, ConnectionError) as e:
-        return Setup("unreachable", problem=f"It quit while starting: {detail(e)}")
+        return Setup(
+            "unreachable", problem=f"It quit while starting: {detail(e, secrets)}"
+        )
     except OSError as e:
-        return Setup("unreachable", problem=f"It couldn't be started: {detail(e)}")
+        return Setup(
+            "unreachable", problem=f"It couldn't be started: {detail(e, secrets)}"
+        )
     # Anything else (an answer the SDK can't read) fails only this agent.
     except Exception as e:
         logger.exception("probing %s failed", harness.id)
         return Setup(
-            "unreachable", problem=f"It answered in a way Bomby can't read: {detail(e)}"
+            "unreachable",
+            problem=f"It answered in a way Bomby can't read: {detail(e, secrets)}",
         )
 
 
@@ -214,6 +221,7 @@ async def _check(
     picks: Sequence[Pick],
     listing: bool,
     open_session: bool,
+    secrets: Collection[str],
 ) -> Setup:
     fix = setup_command(harness, init.auth_methods or [])
     files = tuple(str(Path(f).expanduser()) for f in harness.setup_files)
@@ -238,7 +246,7 @@ async def _check(
         # Its keys still show: a missing one may be why it refused.
         return Setup(
             "sign_in",
-            problem=detail(e),
+            problem=detail(e, secrets),
             fix=fix,
             keys=key_fields(harness, init.auth_methods or [], (), picks),
             setup_files=files,
@@ -302,9 +310,11 @@ def _reports_auth(capabilities: AgentCapabilities | None) -> bool:
     return "authStatus" in (meta or {})
 
 
-def detail(error: BaseException) -> str:
-    """The agent's own words for `error`. A JSON-RPC error's message is generic ("Internal
-    error"); what the agent said is in its `data` (docs/acp-notes.md#setup-signals)."""
+def detail(error: BaseException, secrets: Collection[str] = ()) -> str:
+    """The agent's own words for `error`, without any of `secrets` (the saved keys, which an
+    agent can echo), taken out before the words are cut to length. A JSON-RPC error's
+    message is generic ("Internal error"); what the agent said is in its `data`
+    (docs/acp-notes.md#setup-signals)."""
     text = ""
     if isinstance(error, RequestError):
         data: object = error.data
@@ -318,7 +328,8 @@ def detail(error: BaseException) -> str:
             text = data
     elif isinstance(error, OSError):
         text = error.strerror or ""
-    text = (text or str(error) or type(error).__name__).strip().rstrip(".")
+    text = redact((text or str(error) or type(error).__name__), secrets)
+    text = text.strip().rstrip(".")
     return text if len(text) <= _MAX_DETAIL else text[: _MAX_DETAIL - 3] + "..."
 
 

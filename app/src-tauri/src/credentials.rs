@@ -402,6 +402,13 @@ fn agent_key_name_allowed(name: &str) -> bool {
         && !RESERVED_PREFIXES.iter().any(|p| name.starts_with(p))
 }
 
+/// Whether a key may be saved for an agent under `name`: an allowed variable that the
+/// agent asks for (`offered`), or one already saved for it (`saved`), shown on its row so it
+/// can be replaced (another provider's).
+fn may_save_agent_key(name: &str, offered: bool, saved: bool) -> bool {
+    agent_key_name_allowed(name) && (offered || saved)
+}
+
 /// The saved LiveKit keys without the secret, or `None` when nothing is saved.
 #[tauri::command(async)]
 pub fn credentials_info<R: Runtime>(
@@ -540,9 +547,9 @@ pub fn agent_keys<R: Runtime>(
     Ok(agent_key_names(&vault.agent_keys(&app)?))
 }
 
-/// Saves a coding agent's key under the variable `name`, one the agent asks for (its row's
-/// key fields, from the probe). It reaches only that agent, from its next start; the agent
-/// is checked again with it.
+/// Saves a coding agent's key under the variable `name`: one the agent asks for (its row's
+/// key fields, from the probe), or one already saved for it, which this replaces. It reaches
+/// only that agent, from its next start; the agent is checked again with it.
 #[tauri::command(async)]
 pub fn save_agent_key<R: Runtime>(
     app: AppHandle<R>,
@@ -552,20 +559,19 @@ pub fn save_agent_key<R: Runtime>(
     key: String,
 ) -> Result<()> {
     let key = key.trim();
-    if !agent_key_name_allowed(&name) || !crate::agents::offers_key(&app, &agent, &name) {
-        return Err(Error::Invalid(format!(
-            "{} doesn't ask for {name}.",
-            crate::agents::name(&agent).unwrap_or("This agent")
-        )));
-    }
     if key.is_empty() || key.contains(char::is_whitespace) {
         return Err(Error::Invalid("Paste the whole key.".into()));
     }
+    let offered = crate::agents::offers_key(&app, &agent, &name);
     vault.update(&app, |keys| {
-        keys.agent_keys
-            .entry(agent.clone())
-            .or_default()
-            .insert(name, key.to_owned());
+        let saved = keys.agent_keys.entry(agent.clone()).or_default();
+        if !may_save_agent_key(&name, offered, saved.contains_key(&name)) {
+            return Err(Error::Invalid(format!(
+                "{} doesn't ask for {name}.",
+                crate::agents::name(&agent).unwrap_or("This agent")
+            )));
+        }
+        saved.insert(name, key.to_owned());
         Ok(())
     })?;
     crate::agents::keys_changed(&app, &agent);
@@ -765,6 +771,23 @@ mod tests {
         ] {
             assert!(!agent_key_name_allowed(name), "{name}");
         }
+    }
+
+    #[test]
+    fn a_saved_key_the_agent_no_longer_asks_for_can_still_be_replaced() {
+        assert!(
+            may_save_agent_key("OPENROUTER_API_KEY", true, false),
+            "asked for"
+        );
+        assert!(
+            may_save_agent_key("ANTHROPIC_API_KEY", false, true),
+            "saved under another provider: its row offers Replace"
+        );
+        assert!(!may_save_agent_key("ANTHROPIC_API_KEY", false, false));
+        assert!(
+            !may_save_agent_key("BOMBY_AGENT_KEYS", true, true),
+            "never one of Bomby's own, whatever the row says"
+        );
     }
 
     #[test]

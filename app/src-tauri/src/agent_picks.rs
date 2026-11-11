@@ -183,6 +183,18 @@ fn remember<R: Runtime>(
     )
 }
 
+/// Agent `id`'s keys changed: its model list is forgotten now, so the next ask gets one made
+/// with them, and nothing asked or checked before is kept or recorded ([`Agents::invalidate`]).
+pub(crate) fn keys_changed(
+    agents: &Agents,
+    listings: &Listings,
+    conn: &Connection,
+    id: &str,
+) -> Result<()> {
+    listings.forget_one(id);
+    agents.invalidate(conn, id)
+}
+
 /// Checks `agent` again, alone, with its saved picks and keys, and shows the answer in its
 /// row, kept over a look that started before (its keys changed). Logged when it fails.
 pub fn recheck<R: Runtime>(app: &AppHandle<R>, agent: &str) {
@@ -263,11 +275,12 @@ pub async fn agent_settings<R: Runtime>(app: AppHandle<R>, agent: String) -> Res
         let picks = saved_for(&app.state::<Db>().conn(), &agent)?;
         let (listed, asked) = list(&app, &agent, &picks)?;
         remember(&app, &agent, &listed.setup, &picks, &asked)?;
-        app.state::<Listings>().keep(&agent, &listed);
-        show(
-            &app,
-            app.state::<Agents>().replace_setup(&agent, &listed.setup),
-        );
+        // Asked with keys that changed meanwhile: shown to this caller, kept nowhere.
+        let agents = app.state::<Agents>();
+        if agents.unrevised(&asked.started, &agent) {
+            app.state::<Listings>().keep(&agent, &listed);
+            show(&app, agents.replace_setup(&agent, &listed.setup));
+        }
         Ok(listed)
     })
     .await?
@@ -311,8 +324,11 @@ pub async fn pick_agent_settings<R: Runtime>(
             .setup
             .skipped
             .retain(|s| saved.iter().any(|p| p.setting == s.setting));
-        app.state::<Listings>().keep(&agent, &listed);
-        show(&app, app.state::<Agents>().picked(&agent, &listed.setup));
+        let agents = app.state::<Agents>();
+        if agents.unrevised(&asked.started, &agent) {
+            app.state::<Listings>().keep(&agent, &listed);
+            show(&app, agents.picked(&agent, &listed.setup));
+        }
         Ok(listed)
     })
     .await?
@@ -453,6 +469,32 @@ mod tests {
 
     fn goose_row(setup: setup::Setup) -> Agents {
         Agents::showing("goose", "/b/goose", setup)
+    }
+
+    #[test]
+    fn a_key_change_forgets_the_model_list_before_anyone_asks_again() {
+        let db = Db::in_memory().unwrap();
+        let (agents, listings) = (Agents::default(), Listings::default());
+        let old = Listed {
+            setup: setup::Setup::default(),
+            settings: Vec::new(),
+        };
+        listings.keep("goose", &old);
+        // A picker that asked with the old key, still on its way.
+        let asked_before = agents.start_check();
+
+        keys_changed(&agents, &listings, &db.conn(), "goose").unwrap();
+
+        assert_eq!(
+            listings.get("goose"),
+            None,
+            "the next ask lists with the new key"
+        );
+        assert!(
+            !agents.unrevised(&asked_before, "goose"),
+            "the answer on its way isn't kept or shown"
+        );
+        assert!(agents.unrevised(&agents.start_check(), "goose"));
     }
 
     #[test]
