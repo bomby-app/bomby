@@ -69,7 +69,7 @@ class TaskBoard:
         self._ids = count(1)
         # How to cancel what each running request waits on (`track`), and the ones the
         # user stopped.
-        self._work: dict[str, Callable[[], bool]] = {}
+        self._work: dict[str, tuple[Callable[[], bool], Callable[[], bool]]] = {}
         self._user_stopped: set[str] = set()
 
     @property
@@ -108,41 +108,48 @@ class TaskBoard:
         self._user_stopped &= kept
         return entry.id
 
-    def track(self, id: str, cancel: Callable[[], bool]) -> None:
-        """`cancel` cancels what task `id` waits on until it ends (`asyncio.Task.cancel`),
-        for `stop`."""
-        self._work[id] = cancel
+    def track(
+        self, id: str, cancel: Callable[[], bool], stop_turn: Callable[[], bool]
+    ) -> None:
+        """How `stop` stops task `id`: `cancel` drops it while it waits its turn
+        (`asyncio.Task.cancel` on its own wait), and `stop_turn` stops the turn running
+        in its session once the agent has it (`AcpRunner.stop`); each says whether there
+        was anything to stop."""
+        self._work[id] = (cancel, stop_turn)
 
     def stop(self, id: str) -> StopOutcome:
         """The user stops task `id`. A queued one is dropped before it starts. A working one
         stops its whole turn, so every request steered into it stops with it: a request
-        can't be taken back once the agent has it. The session stays. `stopped_by_user` then
-        says so for each."""
+        can't be taken back once the agent has it. The session stays. Each of them ends,
+        `stopped`, once the agent has stopped, and `stopped_by_user` says so for each.
+        Stopping one that's already being stopped changes nothing."""
         entry = next((t for t in self._tasks if t.id == id), None)
         if entry is None:
             return "unknown"
-        if entry.endedAt is not None or id not in self._work:
+        work = self._work.get(id)
+        if entry.endedAt is not None or work is None:
             return "over"
+        if id in self._user_stopped:
+            return "stopped"
+        cancel, stop_turn = work
         if entry.status == "queued":
-            ids = [id]
-        else:
-            # The turn's requests: the one that started it and those steered in, all
-            # `working` in its session until the turn ends.
-            ids = [
-                t.id
-                for t in self._tasks
-                if t.agent == entry.agent
-                and t.session == entry.session
-                and t.status == "working"
-                and t.endedAt is None
-            ]
-        cancelled = False
-        for each in ids:
-            cancel = self._work.get(each)
-            if cancel is not None and cancel():
-                self._user_stopped.add(each)
-                cancelled = True
-        return "stopped" if cancelled else "over"
+            if not cancel():
+                return "over"
+            self._user_stopped.add(id)
+            return "stopped"
+        if not stop_turn():
+            return "over"
+        # The turn's requests: the one that started it and those steered in, all
+        # `working` in its session until the turn ends.
+        self._user_stopped.update(
+            t.id
+            for t in self._tasks
+            if t.agent == entry.agent
+            and t.session == entry.session
+            and t.status == "working"
+            and t.endedAt is None
+        )
+        return "stopped"
 
     def stopped_by_user(self, id: str) -> bool:
         """Whether task `id` ended because the user stopped it (`stop`)."""

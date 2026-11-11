@@ -42,7 +42,11 @@ Scenario = Callable[
 
 
 def with_fake(
-    tmp_path: Path, scenario: Scenario, user_name: str = "", steering: bool = True
+    tmp_path: Path,
+    scenario: Scenario,
+    user_name: str = "",
+    steering: bool = True,
+    slow_cancel: float = 0,
 ) -> tuple[Any, list[list[dict[str, Any]]]]:
     """Runs `scenario` with `start_task` on the fake agent: it gets the runner, the board,
     and a way to send a request to session "page". Returns its result and every list the
@@ -50,6 +54,9 @@ def with_fake(
     env = {**os.environ, "FAKE_ACP_LOG": str(tmp_path / "acp.jsonl")}
     if not steering:
         env["FAKE_ACP_NO_STEERING"] = "1"
+    if slow_cancel:
+        # The agent takes this long to stop after a cancel, as one stopping its tools does.
+        env["FAKE_ACP_SLOW_CANCEL"] = str(slow_cancel)
     runner = AcpRunner(
         harness=CLAUDE_CODE,
         command=sys.executable,
@@ -147,6 +154,71 @@ def test_stopping_a_steered_request_stops_the_whole_turn(tmp_path: Path) -> None
     assert outcome == "stopped"
     assert first == steered == "The user stopped the task."
     assert statuses == ["stopped", "stopped"]
+
+
+def turn_events(tmp_path: Path) -> list[str]:
+    """The fake agent's prompts, cancels and turns it stopped, in order."""
+    lines = (tmp_path / "acp.jsonl").read_text().splitlines()
+    events = [json.loads(line)["event"] for line in lines]
+    return [e for e in events if e in ("prompt", "cancel", "stopped")]
+
+
+def test_a_request_that_joined_hears_stopped_only_once_the_agent_has(
+    tmp_path: Path,
+) -> None:
+    async def scenario(
+        runner: AcpRunner,
+        board: TaskBoard,
+        send: Callable[[str], asyncio.Task[str]],
+    ) -> tuple[str, int, list[str]]:
+        first = send("hang")
+        await until_logged(runner, "prompt", text="hang")
+        steered = send("make it blue")
+        await until_logged(runner, "steer", text="make it blue")
+        _ = await until_status(board, "2", "working")
+        _ = board.stop("1")
+        result = await steered
+        # By the time it says so, the agent has confirmed its turn is over.
+        confirmed = logged(runner, "stopped")
+        statuses = [t.status for t in board.tasks]
+        _ = await first
+        return result, confirmed, statuses
+
+    (result, confirmed, statuses), _ = with_fake(tmp_path, scenario, slow_cancel=0.4)
+
+    assert result == "The user stopped the task."
+    assert confirmed == 1
+    assert statuses[1] == "stopped"
+
+
+def test_stopping_again_while_the_agent_stops_keeps_its_session_held(
+    tmp_path: Path,
+) -> None:
+    async def scenario(
+        runner: AcpRunner,
+        board: TaskBoard,
+        send: Callable[[str], asyncio.Task[str]],
+    ) -> tuple[str, str, str]:
+        first = send("hang")
+        await until_logged(runner, "prompt", text="hang")
+        steered = send("make it blue")
+        await until_logged(runner, "steer", text="make it blue")
+        _ = await until_status(board, "2", "working")
+        assert board.stop("1") == "stopped"
+        await until_logged(runner, "cancel")
+        # The turn's other row, while the agent is still stopping: nothing new to do.
+        again = board.stop("2")
+        after = await send("turns")
+        _ = await asyncio.gather(first, steered)
+        return again, after, await first
+
+    (again, after, first), _ = with_fake(tmp_path, scenario, slow_cancel=0.5)
+
+    assert again == "stopped"
+    assert first == "The user stopped the task."
+    assert after == "turn 2"
+    # The next request started only once the old turn was over, in the same agent.
+    assert turn_events(tmp_path) == ["prompt", "cancel", "stopped", "prompt"]
 
 
 def test_a_queued_task_is_dropped_before_it_starts(tmp_path: Path) -> None:

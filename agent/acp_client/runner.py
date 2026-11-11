@@ -145,9 +145,19 @@ class Turn:
 class _RunningTurn:
     """A prompt turn in progress, which the requests steered into it wait on."""
 
-    def __init__(self) -> None:
+    def __init__(self, owner: "asyncio.Task[object] | None") -> None:
         self._ended = asyncio.Event()
         self._error: str | None = None
+        self._owner = owner  # the request that holds the prompt
+        self._stopping = False
+
+    def stop(self) -> None:
+        """Stops the turn, once: cancelling the request that holds the prompt stops it
+        for every request waiting on it, when the agent has stopped. Asking again while
+        it stops changes nothing."""
+        if not self._stopping and self._owner is not None:
+            self._stopping = True
+            _ = self._owner.cancel()
 
     def end(self, error: str | None = None) -> None:
         """The turn is over; `error` is the voice's line when it didn't finish."""
@@ -241,6 +251,16 @@ class AcpRunner:
         session = self._sessions.get(session_name(name))
         return session is not None and session.running is not None
 
+    def stop(self, name: str) -> bool:
+        """Stops the turn running in the session called `name`, for the request that
+        started it and every one steered into it: each ends once the agent has stopped
+        (`_stop_turn`). False when no turn runs there."""
+        session = self._sessions.get(session_name(name))
+        if session is None or session.running is None:
+            return False
+        session.running.stop()
+        return True
+
     async def run(
         self,
         task: str,
@@ -270,7 +290,7 @@ class AcpRunner:
                 return Turn(steered_note(self._harness), steered=True)
         async with s.turn_lock:
             # Set before anything awaits, so a request steered in now waits on this turn.
-            running = s.running = _RunningTurn()
+            running = s.running = _RunningTurn(asyncio.current_task())
             try:
                 if on_start is not None:
                     await on_start()
@@ -426,7 +446,7 @@ class AcpRunner:
         except asyncio.CancelledError:
             # Stop the turn, keep the session: the next request continues it.
             outcome = "stopped"
-            await self._stop_turn(conn, s, session_id, prompt)
+            await self._until_stopped(conn, s, session_id, prompt)
             raise
         except (ConnectionError, RequestError) as e:
             if isinstance(e, ConnectionError):
@@ -455,6 +475,22 @@ class AcpRunner:
         logger.info("%s turn in %s result: %s", self._harness.id, s.name, text)
         return text, finished
 
+    async def _until_stopped(
+        self,
+        conn: ClientSideConnection,
+        s: _Session,
+        session_id: str,
+        prompt: asyncio.Future[PromptResponse],
+    ) -> None:
+        """Stops the running turn and returns only once it's over, however often this
+        request is cancelled meanwhile (Stop again, the voice's cancel after it): the
+        stopping is a task of its own, and the session stays held until it's done."""
+        stopping = asyncio.ensure_future(self._stop_turn(conn, s, session_id, prompt))
+        while not stopping.done():
+            with contextlib.suppress(asyncio.CancelledError):
+                await asyncio.shield(stopping)
+        stopping.result()
+
     async def _stop_turn(
         self,
         conn: ClientSideConnection,
@@ -469,22 +505,20 @@ class AcpRunner:
         `STOP_TIMEOUT_S` loses its adapter instead. The call ending doesn't wait: closing
         stops the adapter anyway."""
         with contextlib.suppress(Exception):
-            await asyncio.shield(conn.cancel(session_id=session_id))
-        ended = False
-        try:
-            if not self._closed:
-                done, _ = await asyncio.wait({prompt}, timeout=STOP_TIMEOUT_S)
-                ended = bool(done)
-        finally:
-            if ended:
-                # Over, with a stop reason or an error: either way nothing is left running.
-                if not prompt.cancelled() and isinstance(
-                    prompt.exception(), ConnectionError
-                ):
-                    self._connection_lost(conn)
-            else:
-                _ = prompt.cancel()
-        if ended or self._closed:
+            await conn.cancel(session_id=session_id)
+        if self._closed:
+            _ = prompt.cancel()
+            return
+        done, _ = await asyncio.wait({prompt}, timeout=STOP_TIMEOUT_S)
+        if done:
+            # Over, with a stop reason or an error: either way nothing is left running.
+            if not prompt.cancelled() and isinstance(
+                prompt.exception(), ConnectionError
+            ):
+                self._connection_lost(conn)
+            return
+        _ = prompt.cancel()
+        if self._closed:
             return
         logger.warning(
             "%s turn in %s didn't stop within %g s, so %s was stopped",

@@ -5,6 +5,7 @@ The agents are defined in `harnesses/`; running them (adapter, sessions, steerin
 """
 
 import asyncio
+import contextlib
 
 from livekit.agents import RunContext
 from livekit.agents.llm import ToolError, ToolFlag, function_tool
@@ -77,15 +78,21 @@ async def start_task(
     async def started() -> None:
         await board.start(id)
 
-    # Its own task, so the user can stop it from the agents panel (`TaskBoard.stop`); the
-    # voice model's cancel reaches it through the await.
+    # Its own task, so the user can stop it from the agents panel (`TaskBoard.stop`): a
+    # queued one by dropping it, one the agent has by stopping the turn it's in. The voice
+    # model's cancel reaches it through the await.
     work = asyncio.create_task(runner.run(task, name, on_start=started))
-    board.track(id, work.cancel)
+    board.track(id, work.cancel, lambda: runner.stop(name))
     try:
         await board.publish()
         turn = await work
     except asyncio.CancelledError:
-        _ = work.cancel()  # cancelled before it was awaited
+        if not work.done():
+            # The voice model's cancel (or one before the work was awaited): the task is
+            # over once the agent has stopped, as with the user's Stop.
+            _ = work.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                _ = await asyncio.wait({work})
         await board.finish(id, "stopped")
         if board.stopped_by_user(id) and not _being_cancelled():
             return user_stopped(context.userdata.user_name)
