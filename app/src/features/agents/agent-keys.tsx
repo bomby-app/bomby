@@ -30,16 +30,12 @@ export function AgentKeys({ agent }: { agent: AgentStatus }) {
     )
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-sm text-muted-foreground">
-        Save {agent.name}'s key here and Bomby hands it to {agent.name} alone,
-        so your Mac stops asking for your password when {agent.name} starts.
-        Without one, {agent.name} uses its own.
-      </p>
       {fields.map((field) => (
         <ApiKeyForm
           key={field.name}
           id={`${agent.id}-${field.name}`}
           label={field.label}
+          info={`Save ${agent.name}'s key here and Bomby hands it to ${agent.name} alone, so your Mac stops asking for your password when ${agent.name} starts. Without one, ${agent.name} uses its own.`}
           saved={saved.includes(field.name)}
           save={async (key) => {
             await saveAgentKey(agent.id, field.name, key)
