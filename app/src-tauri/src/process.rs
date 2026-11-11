@@ -22,7 +22,8 @@ pub fn wait_timeout(child: &mut Child, timeout: Duration) -> io::Result<Option<E
     }
 }
 
-/// For a child started with `process_group(0)`: SIGTERM to its group, SIGKILL after `grace`.
+/// For a child that leads its process group (started with `process_group(0)`, or in a
+/// session of its own): SIGTERM to its group, SIGKILL after `grace`.
 pub fn stop_group(mut child: Child, grace: Duration) {
     #[cfg(unix)]
     if let Ok(pid) = i32::try_from(child.id()) {

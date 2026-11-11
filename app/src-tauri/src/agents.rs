@@ -156,8 +156,13 @@ const STOP_GRACE: Duration = Duration::from_secs(2);
 /// a pipe open after it exits, keeping any reader waiting. A file has neither problem, and
 /// it's unlinked at once, so nothing is left behind.
 ///
-/// It runs in a process group of its own, and a timeout stops the whole group: a probe's
-/// coding agents and their adapters, or what a login shell started, go with it.
+/// It runs in a session of its own, which it leads, so its process group is its own too and
+/// a timeout stops the whole group: a probe's coding agents and their adapters, or what a
+/// login shell started, go with it. A session, not just a group: a new group in Bomby's own
+/// session is a background job of the terminal Bomby was started from (`just app dev`), and
+/// an interactive shell there is stopped the moment it reaches for that terminal, so the
+/// lookup timed out and found nothing. A new session has no terminal, as when Bomby is opened
+/// from Finder.
 pub fn run(mut command: Command, timeout: Duration) -> Option<Output> {
     let mut out = unlinked_file().ok()?;
     command
@@ -165,7 +170,16 @@ pub fn run(mut command: Command, timeout: Duration) -> Option<Output> {
         .stdout(out.try_clone().ok()?)
         .stderr(Stdio::null());
     #[cfg(unix)]
-    std::os::unix::process::CommandExt::process_group(&mut command, 0);
+    // SAFETY: the closure runs in the child between fork and exec, and calls only setsid,
+    // which is async-signal-safe and touches nothing of this process.
+    unsafe {
+        std::os::unix::process::CommandExt::pre_exec(&mut command, || {
+            if libc::setsid() == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
     let mut child = command.spawn().ok()?;
     let Ok(Some(status)) = process::wait_timeout(&mut child, timeout) else {
         process::stop_group(child, STOP_GRACE);
@@ -1053,6 +1067,20 @@ mod tests {
             thread::sleep(Duration::from_millis(50));
         }
         assert!(!alive(), "the sleep it started outlived it");
+    }
+
+    #[test]
+    fn a_program_runs_without_the_terminal_bomby_was_started_from() {
+        // With a terminal of its own session's, an interactive login shell in a new group is
+        // stopped as a background job reaching for it, and the lookup times out. Run from a
+        // terminal (`just check`), this fails unless the program got a session of its own.
+        let mut command = Command::new("sh");
+        command.args([
+            "-c",
+            "if (: </dev/tty) 2>/dev/null; then echo terminal; else echo none; fi",
+        ]);
+        let output = run(command, Duration::from_secs(5)).expect("finished in time");
+        assert_eq!(stdout(&output).as_deref(), Some("none"));
     }
 
     #[test]
