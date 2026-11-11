@@ -118,17 +118,20 @@ async def probe(
     user's `picks` applied in order. `listing` is for the model picker: it returns the
     settings that can be picked, opening a session even in an agent that can't delete it.
     `open_session` opens one there too, without the settings."""
-    adapter = harness.adapter_path(environ)
-    if adapter is not None and not Path(adapter).is_file():
-        return Setup(
-            "connect", problem="Its ACP adapter isn't set up", adapter=harness.adapter
-        )
-    command, args, env = launch(harness, program, environ)
-    client = HarnessClient(harness)
     # Out of what it says back before that's cut short, so no part of a key is left.
     secrets = secrets_to_redact(environ)
-    FOLDER.mkdir(exist_ok=True)
     try:
+        adapter = harness.adapter_path(environ)
+        if adapter is not None and not Path(adapter).is_file():
+            return Setup(
+                "connect",
+                problem="Its ACP adapter isn't set up",
+                adapter=harness.adapter,
+            )
+        # Inside the `try`: a launch or a folder that fails fails this agent only.
+        command, args, env = launch(harness, program, environ)
+        client = HarnessClient(harness)
+        FOLDER.mkdir(exist_ok=True)
         async with asyncio.timeout(TIMEOUT_S):
             async with connect(client, command, args, env=env, cwd=FOLDER) as (
                 conn,

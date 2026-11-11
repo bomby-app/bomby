@@ -24,11 +24,17 @@ from job import read_metadata
 
 
 def main(metadata: str) -> str:
-    fields = read_metadata(metadata)
-    agents = {
-        id: (HARNESSES[id], program)
-        for id, program in installed(fields, HARNESSES, os.environ).items()
-    }
+    """The answer for `metadata`; `{}` (no agent checked) when it can't be read, with why on
+    stderr, so the app shows every agent unchecked instead of failing the whole look."""
+    try:
+        fields = read_metadata(metadata)
+        agents = {
+            id: (HARNESSES[id], program)
+            for id, program in installed(fields, HARNESSES, os.environ).items()
+        }
+    except ValueError as e:  # pydantic's ValidationError is one
+        print(f"probe: unreadable metadata: {e}", file=sys.stderr)
+        return "{}"
     picks = fields.picks if fields else {}
     listing = fields.listing if fields else ()
     sessions = fields.sessions if fields else ()

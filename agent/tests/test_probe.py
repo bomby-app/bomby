@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 
+import acp_client.probe as probe_module
 import probe as probe_cli
 from acp_client.environment import AGENT_KEYS_ENV
 from acp_client.probe import KeyField, Setup, probe, probe_all, redact
@@ -612,3 +613,22 @@ def test_the_setup_files_come_back_with_the_home_folder_expanded(
     assert setup.setup_files == expected
     assert sessionless.setup_files == expected
     assert run_probe(tmp_path, env)[0].setup_files == ()
+
+
+def test_a_probe_that_cant_set_up_fails_its_agent_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Its working folder can't be made: a file is in the way.
+    blocked = tmp_path / "bomby-probe"
+    _ = blocked.write_text("")
+    monkeypatch.setattr(probe_module, "FOLDER", blocked)
+
+    setups = asyncio.run(
+        probe_all({"fake": (KEYED, Path(sys.executable))}, {**os.environ, **CAN_DELETE})
+    )
+
+    assert setups["fake"].step == "unreachable"
+
+
+def test_metadata_the_probe_cant_read_answers_no_agents() -> None:
+    assert probe_cli.main('{"agents": "not a map"}') == "{}"
