@@ -16,6 +16,7 @@ from livekit.agents import (
 import dev_env
 import lifeline
 from acp_client.runner import CallRunners
+from acp_client.streams import StreamRecorder
 from call import Call
 from call_failure import ServiceErrors
 from call_failure import report as report_failure
@@ -104,8 +105,13 @@ async def entrypoint(ctx: JobContext) -> None:
     service_errors = ServiceErrors.listen()
     # The voice model, its voice and, on a resumed call, the conversation so far.
     options = CallOptions.from_job(job, os.environ)
+    # What each coding agent is doing, live, for the app's Agents panel; none on console
+    # runs, which have no app.
+    streams = StreamRecorder.from_env(ctx.room.name)
     runners = CallRunners.for_job(
-        job, short_reports=options.provider.late_result_tokens is not None
+        job,
+        short_reports=options.provider.late_result_tokens is not None,
+        streams=streams,
     )
     model_name = options.provider.model
     ctx.log_context_fields = {"room": ctx.room.name, "model": model_name}
@@ -146,6 +152,9 @@ async def entrypoint(ctx: JobContext) -> None:
     board = TaskBoard(publish)
     call = Call(runners, board, memory, options.provider, options.user_name)
     ctx.add_shutdown_callback(call.aclose)
+    if streams is not None:
+        streams.start()
+        ctx.add_shutdown_callback(streams.aclose)
 
     # The page asks for a task's full request when the user opens it: `bomby.tasks` carries
     # each shortened.

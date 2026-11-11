@@ -113,6 +113,16 @@ Checked 2026-11-04 against `@vitejs/plugin-react` 6.2.1 (installed README), `oxc
 - `saveUserChoices={false}` makes devices follow the system. livekit-client 2.23.0 captures the default device with echo cancellation, noise suppression, auto gain and voice isolation enabled.
 - `useTrackVolume(track)` on the agent microphone and local participant microphone drives mascot levels.
 
+## AI Elements
+
+shadcn's AI Elements are patterns built from its components, copied in with no package ([docs](https://ui.shadcn.com/docs/ai-elements), checked 2026-11-11). The Agents panel uses three:
+
+- **Trace** (`components/ui/trace.tsx`, `just app add trace`; needs only `cn` and `collapsible`, which it found ours identical to): `Trace` is a list of rows; `TraceLine` takes `status` `"running"` (the title shimmers; write it in the present tense), `"error"` (destructive colour; say it failed in the title) or `"pending"`, and none for done. Status is shown with colour and motion, so the title must say it too ([Trace](https://ui.shadcn.com/docs/components/radix/trace)).
+- **Tool** maps a tool call to a `TraceLine`: "Running pnpm test", then "Ran pnpm test" or "Failed to run pnpm test"; a plain line while it runs, a `TraceCollapsible` once it has output ([Tool](https://ui.shadcn.com/docs/ai-elements/radix/tool)). Trace reads no AI SDK types: `features/agent-streams/streams.ts` maps Bomby's own events to a title and a status, and shows no output.
+- **Chat**: the agent's messages in `Message` inside `MessageScroller` (`autoScroll` follows streamed text), as the call transcript does; its text through `Streamdown`, which completes markdown that's still arriving.
+
+Vercel's AI Elements (deprecated at the end of November 2026), prompt-kit and assistant-ui aren't used.
+
 ## Workspace panel
 
 Checked 2026-11-07 against the installed `@pierre/diffs` 1.6.4, `@wterm/react`, `@wterm/dom` and `@wterm/ghostty` 0.5.9 (pinned exactly while 0.x moves weekly), `react-resizable-panels` 4.19.1, and [diffs.com/docs](https://diffs.com/docs), [wterm.dev](https://wterm.dev).

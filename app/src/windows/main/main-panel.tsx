@@ -1,5 +1,6 @@
 import type { ReactNode } from "react"
 
+import { AGENTS_TAB, AgentsView } from "@/features/agent-streams/agents-view"
 import { AgentsPanel } from "@/features/call/agents-panel"
 import { CallName } from "@/features/call/call-name"
 import { type ActiveCall, useCall } from "@/features/call/call-provider"
@@ -86,8 +87,10 @@ export function MainPanel({
 }
 
 /**
- * A project's page in the workspace layout, with the tabs its extensions add to the panel
- * (To-dos, when the project's calls have it) and its to-do dialogs (a new one with notes, one expanded).
+ * A project's page in the workspace layout, with Agents (what each coding agent is doing on
+ * the project's call, always there so the toggle never comes and goes), the tabs its
+ * extensions add to the panel (To-dos, when the project's calls have it) and its to-do
+ * dialogs (a new one with notes, one expanded).
  */
 function ProjectLayout({
   project,
@@ -99,17 +102,22 @@ function ProjectLayout({
   onSelect: (selection: Selection) => void
 }) {
   const extensions = useExtensions()
+  const { active } = useCall()
   const todosOn = isOn("todos", project.extensions, extensions)
   const openTodos = useOpenCount(project.id, todosOn)
-  const tabs: ExtraTab[] = todosOn
-    ? [
-        {
-          ...TODOS_TAB,
-          count: openTodos,
-          content: <TodosView projectId={project.id} />,
-        },
-      ]
-    : []
+  const callId = active?.projectId === project.id ? active.callId : null
+  const tabs: ExtraTab[] = [
+    { ...AGENTS_TAB, content: <AgentsView callId={callId} /> },
+    ...(todosOn
+      ? [
+          {
+            ...TODOS_TAB,
+            count: openTodos,
+            content: <TodosView projectId={project.id} />,
+          },
+        ]
+      : []),
+  ]
   return (
     <>
       {todosOn && (

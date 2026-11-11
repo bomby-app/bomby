@@ -33,6 +33,7 @@ from .client import HarnessClient, Reply, connect
 from .environment import AGENT_ROOT, launch
 from .sessions import close_session, discard_session
 from .settings import Applied, apply, model_setting, needs_pick
+from .streams import Recorder
 
 logger = logging.getLogger("bomby.acp_client.runner")
 
@@ -190,15 +191,17 @@ class AcpRunner:
         args: Sequence[str] = (),
         picks: Sequence[Pick] = (),
         short_reports: bool = False,
+        streams: Recorder | None = None,
     ) -> None:
         self._harness = harness
         self._short_reports = short_reports
+        self._streams = streams
         self._picks = tuple(picks)  # the model and effort the user picked, if any
         self._command = command
         self._args = tuple(args)
         self._project = project
         self._env = dict(env)
-        self._client = HarnessClient(harness)
+        self._client = HarnessClient(harness, streams)
         self._lock = asyncio.Lock()  # the process
         self._stack: AsyncExitStack | None = None
         self._conn: ClientSideConnection | None = None
@@ -397,6 +400,11 @@ class AcpRunner:
             else [briefing(self._project, self._short_reports), task]
         )
         s.briefed = True
+        # The Agents panel's stream is the turn's, so a request steered in shares it.
+        if self._streams is not None:
+            self._streams.open(
+                session_id, self._harness.id, self._harness.short_name, s.name
+            )
         try:
             response = await conn.prompt(
                 session_id=session_id, prompt=[text_block(t) for t in texts]
@@ -413,6 +421,8 @@ class AcpRunner:
             raise ToolError(stopped(self._harness)) from e
         finally:
             _ = self._client.replies.pop(session_id, None)
+            if self._streams is not None:
+                self._streams.close(session_id)
 
         logger.info(
             "%s turn in %s ended: %s", self._harness.id, s.name, response.stop_reason
@@ -593,9 +603,11 @@ class CallRunners:
         environ: Mapping[str, str],
         picks: Mapping[str, Sequence[Pick]] | None = None,
         short_reports: bool = False,
+        streams: Recorder | None = None,
     ) -> None:
         self._project = project
         self._short_reports = short_reports
+        self._streams = streams
         self._environ = dict(environ)
         self._picks = dict(picks or {})
         self._installed = {
@@ -606,15 +618,22 @@ class CallRunners:
         self._runners: dict[str, AcpRunner] = {}
 
     @classmethod
-    def for_job(cls, fields: JobFields, short_reports: bool = False) -> "CallRunners":
+    def for_job(
+        cls,
+        fields: JobFields,
+        short_reports: bool = False,
+        streams: Recorder | None = None,
+    ) -> "CallRunners":
         """Runners for the project and the installed agents in the job's metadata, with
-        each agent's picks (see `Project.from_job` and `harnesses.installed`)."""
+        each agent's picks (see `Project.from_job` and `harnesses.installed`), streaming
+        to `streams` when the app is there."""
         return cls(
             Project.from_job(fields, os.environ),
             installed(fields, HARNESSES, os.environ),
             os.environ,
             fields.picks if fields else {},
             short_reports,
+            streams,
         )
 
     @property
@@ -654,6 +673,7 @@ class CallRunners:
             args=args,
             picks=self._picks.get(harness.id, ()),
             short_reports=self._short_reports,
+            streams=self._streams,
         )
         return runner
 

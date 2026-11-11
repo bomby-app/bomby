@@ -76,6 +76,8 @@
     "allow-terminal-open",
     "allow-terminal-write",
     "allow-terminal-resize",
-    "allow-terminal-close"
+    "allow-terminal-close",
+    "allow-watch-agent-streams",
+    "allow-unwatch-agent-streams"
   ]
 }

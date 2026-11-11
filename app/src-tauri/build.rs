@@ -75,6 +75,8 @@ const COMMANDS: &[&str] = &[
     "terminal_write",
     "terminal_resize",
     "terminal_close",
+    "watch_agent_streams",
+    "unwatch_agent_streams",
 ];
 
 fn main() {
