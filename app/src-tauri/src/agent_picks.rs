@@ -224,8 +224,10 @@ fn recheck_with<R: Runtime>(
     let picks = saved_for(&*app.state::<Db>().conn()?, agent)?;
     let asked = ask(&picks)?;
     match &asked.listed {
+        // Shown, never remembered: the check ran with keys that just changed, and a
+        // session doesn't prove a key works (goose opens one with a wrong key and fails only
+        // on a prompt, docs/acp-notes.md), so the next launch checks it again.
         Some(listed) if listed.setup.session => {
-            remember(app, agent, &listed.setup, &picks, &asked)?;
             Ok(app.state::<Agents>().picked(agent, &listed.setup))
         }
         // It didn't get as far as a session: the row shows why, as a look would.
@@ -425,9 +427,9 @@ mod tests {
     }
 
     #[test]
-    fn checking_again_lets_the_database_go_for_the_probe_and_takes_it_once_after() {
+    fn checking_again_lets_the_database_go_for_the_probe_and_remembers_nothing() {
         // 0.3.2 held the database from reading the picks through the probe and then took
-        // it again to keep the answer: it hung for good after every key saved for an agent.
+        // it again: it hung for good after every key saved for an agent.
         let shown = Setup {
             session: true,
             ..Setup::default()
@@ -462,7 +464,10 @@ mod tests {
 
         assert!(changed.is_some(), "its row shows the new answer");
         let remembered = agent_checks::all(&app.state::<Db>().conn().unwrap()).unwrap();
-        assert!(remembered.contains_key("goose"), "kept for the next launch");
+        assert!(
+            remembered.is_empty(),
+            "not kept for the next launch: a new key isn't proven by a session"
+        );
 
         // One that didn't get a session: forgotten, and its row says why.
         let signed_out = Setup {
