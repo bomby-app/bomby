@@ -37,6 +37,14 @@ export function setLivekitServer(server: LiveKitServer): Promise<void> {
   return call("set_livekit_server", { server })
 }
 
+/**
+ * Reads the keys from the keychain again after a read that failed this run (denied at the
+ * prompt, say), which may prompt again. Every window then hears keys-changed.
+ */
+export function readKeysAgain(): Promise<void> {
+  return call("read_keys_again")
+}
+
 /** Calls `handler` when a key or the LiveKit server changes, in any window. */
 export function onKeysChanged(handler: () => void): Promise<UnlistenFn> {
   return listen("keys-changed", () => handler())
