@@ -95,24 +95,34 @@ struct Running {
 
 /// The worker, shared through Tauri state.
 #[derive(Default)]
-pub struct AgentWorker(Mutex<Option<Running>>);
+pub struct AgentWorker {
+    /// The worker that's running. Held only to look or swap, never across a start, so Quit
+    /// never waits on one (the main thread runs it).
+    running: Mutex<Option<Running>>,
+    /// One start at a time; held across it, up to `READY_TIMEOUT`.
+    starting: Mutex<()>,
+}
 
 impl AgentWorker {
     /// Makes sure a worker with `config` is running and registered. A worker started here
     /// tells `on_news` what its output reports.
     pub fn ensure(&self, config: WorkerConfig, log_dir: &Path, on_news: OnNews) -> Result<()> {
-        let mut slot = sync::lock(&self.0);
-        if let Some(running) = slot.as_mut() {
-            let alive = matches!(running.child.try_wait(), Ok(None));
-            if alive && running.config == config {
-                return Ok(());
+        let _one = sync::lock(&self.starting);
+        let old = {
+            let mut slot = sync::lock(&self.running);
+            if let Some(running) = slot.as_mut() {
+                let alive = matches!(running.child.try_wait(), Ok(None));
+                if alive && running.config == config {
+                    return Ok(());
+                }
             }
-        }
-        if let Some(old) = slot.take() {
+            slot.take()
+        };
+        if let Some(old) = old {
             stop(old.child);
         }
         let (child, lifeline) = start(&config, log_dir, on_news)?;
-        *slot = Some(Running {
+        *sync::lock(&self.running) = Some(Running {
             child,
             _lifeline: lifeline,
             config,
@@ -120,10 +130,12 @@ impl AgentWorker {
         Ok(())
     }
 
-    /// Stops the worker, if one runs. Called when the app exits.
+    /// Stops the worker, if one runs. Called when the app exits, on the main thread: it
+    /// doesn't wait for a start under way, whose worker exits with the app anyway (its
+    /// lifeline, `agent/lifeline.py`).
     pub fn shutdown(&self) {
-        let mut slot = sync::lock(&self.0);
-        if let Some(running) = slot.take() {
+        let running = sync::lock(&self.running).take();
+        if let Some(running) = running {
             stop(running.child);
         }
     }
@@ -357,7 +369,32 @@ mod tests {
     use std::collections::VecDeque;
     use std::sync::Mutex;
 
-    use super::{JobCrash, RECENT_LINES, WorkerNews, job_crash, last_error, news, remember};
+    use std::sync::mpsc;
+    use std::thread;
+    use std::time::Duration;
+
+    use super::{
+        AgentWorker, JobCrash, RECENT_LINES, WorkerNews, job_crash, last_error, news, remember,
+    };
+    use crate::sync;
+
+    #[test]
+    fn quitting_doesnt_wait_for_a_worker_that_is_starting() {
+        let worker = AgentWorker::default();
+        // A start under way holds `starting` for up to a minute.
+        let _starting = sync::lock(&worker.starting);
+        let (done_tx, done_rx) = mpsc::channel();
+        thread::scope(|scope| {
+            scope.spawn(|| {
+                worker.shutdown();
+                let _ = done_tx.send(());
+            });
+            assert!(
+                done_rx.recv_timeout(Duration::from_secs(2)).is_ok(),
+                "Quit waited on the start"
+            );
+        });
+    }
 
     #[test]
     fn keeps_only_the_last_lines() {
