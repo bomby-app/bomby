@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 import { getCurrentWindow } from "@tauri-apps/api/window"
 
@@ -9,6 +8,7 @@ import type {
   Namer,
   Transcript,
 } from "@/generated/call"
+import { call } from "@/lib/core"
 
 // The core's call commands (src-tauri/src/calls.rs).
 
@@ -29,7 +29,12 @@ export function openCall(
   projectId: number,
   resumeCallId?: number
 ): Promise<number> {
-  return invoke("open_call", { projectId, resumeCallId: resumeCallId ?? null })
+  return call(
+    "open_call",
+    { projectId, resumeCallId: resumeCallId ?? null },
+    // Starting the voice agent alone may take a minute (READY_TIMEOUT in agent.rs).
+    { timeout: 120_000 }
+  )
 }
 
 /**
@@ -37,11 +42,11 @@ export function openCall(
  * Only reads, so LiveKit may fetch one whenever it likes.
  */
 export function callToken(callId: number): Promise<CallToken> {
-  return invoke("call_token", { callId })
+  return call("call_token", { callId })
 }
 
 export function endCall(callId: number): Promise<void> {
-  return invoke("end_call", { callId })
+  return call("end_call", { callId })
 }
 
 /** Saves one transcript line; saving the same segment again replaces its text. */
@@ -49,17 +54,17 @@ export function saveMessage(
   callId: number,
   line: { segmentId: string; role: "user" | "agent"; text: string }
 ): Promise<void> {
-  return invoke("save_message", { callId, line })
+  return call("save_message", { callId, line })
 }
 
 /** Deletes a call and its conversation. */
 export function deleteCall(callId: number): Promise<void> {
-  return invoke("delete_call", { callId })
+  return call("delete_call", { callId })
 }
 
 /** A call's saved conversation: its sessions (each opening or resume) and its lines. */
 export function callTranscript(callId: number): Promise<Transcript> {
-  return invoke("call_transcript", { callId })
+  return call("call_transcript", { callId })
 }
 
 /**
@@ -71,7 +76,7 @@ export function renameCall(
   name: string,
   by: Namer
 ): Promise<CallName> {
-  return invoke("rename_call", { callId, name, by })
+  return call("rename_call", { callId, name, by })
 }
 
 /** A call was named or renamed, in any window. Returns the unlisten. */

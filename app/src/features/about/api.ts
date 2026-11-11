@@ -1,7 +1,7 @@
-import { invoke } from "@tauri-apps/api/core"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 
 import type { About, DiagnosticsExport, UpdateStatus } from "@/generated/about"
+import { call } from "@/lib/core"
 
 // The core's version and updates (src-tauri/src/updates.rs, docs/releasing.md), and
 // Export Diagnostics (src-tauri/src/diagnostics.rs).
@@ -9,12 +9,15 @@ import type { About, DiagnosticsExport, UpdateStatus } from "@/generated/about"
 export type { About, DiagnosticsExport, UpdateStatus } from "@/generated/about"
 
 export function about(): Promise<About> {
-  return invoke("about")
+  return call("about")
 }
 
-/** Checks for an update now. Never rejects: a failure is the `failed` status. */
+/**
+ * Checks for an update now. A failed check is the `failed` status; it rejects only when the
+ * core doesn't answer.
+ */
 export function checkForUpdates(): Promise<UpdateStatus> {
-  return invoke("check_for_updates")
+  return call("check_for_updates", undefined, { timeout: 60_000 })
 }
 
 /**
@@ -22,7 +25,7 @@ export function checkForUpdates(): Promise<UpdateStatus> {
  * message for the user, such as while a call is on.
  */
 export function installUpdate(): Promise<void> {
-  return invoke("install_update")
+  return call("install_update", undefined, { timeout: null })
 }
 
 /** The update status changed, in any window. Returns the unlisten. */
@@ -41,10 +44,10 @@ export function onUpdateStatus(
  * `finderError` saying what to do.
  */
 export function exportDiagnostics(): Promise<DiagnosticsExport> {
-  return invoke("export_diagnostics")
+  return call("export_diagnostics", undefined, { timeout: 120_000 })
 }
 
 /** Shows the last exported zip in Finder again. Rejects with a message for the user. */
 export function showDiagnostics(): Promise<void> {
-  return invoke("show_diagnostics")
+  return call("show_diagnostics")
 }

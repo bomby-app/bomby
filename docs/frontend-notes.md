@@ -17,6 +17,11 @@ The app's web half is `app/src`. Checked 2026-11-03/04 against installed shadcn 
 - Vite dark mode toggles `.dark` on `<html>`. Our provider also follows OS changes and sets the native window theme ([Tauri notes](tauri-notes.md#window)).
 - **Toasts**: shadcn's Sonner (`components/ui/sonner.tsx`, `sonner` 2.0.8, added 2026-11-09), one `Toaster` per window in `windows/mount.tsx`. shadcn's file reads the theme from `next-themes`, which the app doesn't use: ours reads `hooks/use-dark-mode.ts` instead, and `next-themes` was removed.
 
+## Errors and a core that doesn't answer
+
+- Tauri's `invoke` has no timeout (`@tauri-apps/api` `core.ts`), so a core that never answers left 0.3.2's window blank forever. Features call the core through `lib/core.ts`'s `call()`, `invoke` with a timeout that rejects with a string, as the core's errors are: 20 s for most commands, longer for those that start an agent or the voice agent, none for a browser sign-in or a download. The main window's first read (`first_run`, 8 s) shows a full-window error with Try again and Export diagnostics instead of nothing.
+- React 19 unmounts the whole root on an uncaught render error. `windows/mount.tsx` wraps every window, providers included, in `components/root-error-boundary.tsx` (a class component: `getDerivedStateFromError`, `componentDidCatch`; its fallback uses no provider), and passes `createRoot` `onUncaughtError` and `onRecoverableError` (react-dom 19.3.1, `@types/react-dom` `client.d.ts`). `lib/log.ts` also sends `window` `error` and `unhandledrejection` events to `app.log`: a release build's webview console is seen by no one.
+
 ## Radix
 
 - Compose with `asChild`, including nested tooltip and dialog triggers. `TooltipProvider` accepts `delayDuration`.

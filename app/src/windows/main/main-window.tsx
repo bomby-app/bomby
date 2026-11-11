@@ -13,10 +13,12 @@ import { ProjectsProvider } from "@/features/projects/projects-provider"
 import type { Selection } from "@/features/projects/selection"
 import { TODOS_RPC } from "@/features/todos/rpc"
 import { TrayBridge } from "@/features/tray/tray-bridge"
+import { log } from "@/lib/log"
 
 import { openSettings, SETTINGS_SHORTCUT } from "../settings/open-settings"
 import { AppSidebar } from "./app-sidebar"
 import { CommandPalette } from "./command-palette"
+import { CoreNotAnswering } from "./core-not-answering"
 import { MainPanel } from "./main-panel"
 import { NEW_PROJECT_SHORTCUT, PALETTE_SHORTCUT } from "./shortcuts"
 
@@ -25,13 +27,40 @@ import { NEW_PROJECT_SHORTCUT, PALETTE_SHORTCUT } from "./shortcuts"
  * the left and the selected item on the right.
  */
 export function MainWindow() {
+  // `null` while the core is asked; a message when it failed or didn't answer.
   const [first, setFirst] = useState<boolean | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [asked, setAsked] = useState(0)
 
   useEffect(() => {
-    firstRun().then(setFirst, () => setFirst(false))
-  }, [])
+    let current = true
+    // Its first read of the core: a stuck core shows here, not as a blank window.
+    firstRun().then(
+      (first) => {
+        if (current) setFirst(first)
+      },
+      (e: unknown) => {
+        log(`Reading the first run failed: ${String(e)}`)
+        if (current) setError(String(e))
+      }
+    )
+    return () => {
+      current = false
+    }
+  }, [asked])
 
-  if (first === null) return null
+  if (error !== null)
+    return (
+      <CoreNotAnswering
+        message={error}
+        onRetry={() => {
+          setError(null)
+          setAsked((n) => n + 1)
+        }}
+      />
+    )
+  // A blank window for the moment the core takes to answer, never longer than `FIRST_READ` (onboarding/api.ts).
+  if (first === null) return <div className="h-svh bg-background" />
   if (first) return <Splash onDone={() => setFirst(false)} />
   return <Workspace />
 }

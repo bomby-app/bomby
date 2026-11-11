@@ -1,6 +1,7 @@
-import { Channel, invoke } from "@tauri-apps/api/core"
+import { Channel } from "@tauri-apps/api/core"
 
 import type { StreamEvent } from "@/generated/agent-streams"
+import { call } from "@/lib/core"
 import { log } from "@/lib/log"
 
 /**
@@ -14,9 +15,9 @@ export async function watchAgentStreams(
 ): Promise<() => void> {
   const events = new Channel<StreamEvent>()
   events.onmessage = onEvent
-  const id = await invoke<number>("watch_agent_streams", { callId, events })
+  const id = await call<number>("watch_agent_streams", { callId, events })
   return () => {
-    void invoke("unwatch_agent_streams", { id }).catch((e: unknown) =>
+    void call("unwatch_agent_streams", { id }).catch((e: unknown) =>
       log(`unwatch_agent_streams: ${String(e)}`)
     )
   }

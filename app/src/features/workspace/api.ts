@@ -1,4 +1,4 @@
-import { Channel, invoke } from "@tauri-apps/api/core"
+import { Channel } from "@tauri-apps/api/core"
 
 import type {
   Changes,
@@ -6,6 +6,7 @@ import type {
   FilePreview,
   FolderInfo,
 } from "@/generated/workspace"
+import { call } from "@/lib/core"
 import { log } from "@/lib/log"
 
 // The core's workspace commands (src-tauri/src/workspace/): a project's folder, its git
@@ -25,7 +26,7 @@ export function folderInfo(
   projectId: number,
   folder: string
 ): Promise<FolderInfo> {
-  return invoke("folder_info", { projectId, folder })
+  return call("folder_info", { projectId, folder }, { timeout: 60_000 })
 }
 
 /** What changed since the last commit; null when the folder isn't in a git repository. */
@@ -33,7 +34,7 @@ export function folderChanges(
   projectId: number,
   folder: string
 ): Promise<Changes | null> {
-  return invoke("folder_changes", { projectId, folder })
+  return call("folder_changes", { projectId, folder }, { timeout: 60_000 })
 }
 
 /** One directory of the folder, `""` for the folder itself: folders first, then files. */
@@ -42,7 +43,7 @@ export function folderEntries(
   folder: string,
   dir: string
 ): Promise<Entry[]> {
-  return invoke("folder_entries", { projectId, folder, dir })
+  return call("folder_entries", { projectId, folder, dir })
 }
 
 export function folderFile(
@@ -50,7 +51,7 @@ export function folderFile(
   folder: string,
   file: string
 ): Promise<FilePreview> {
-  return invoke("folder_file", { projectId, folder, file })
+  return call("folder_file", { projectId, folder, file })
 }
 
 /** An image's bytes, for a blob URL (`FilePreview.image` says it is one, and its type). */
@@ -59,7 +60,7 @@ export function folderImage(
   folder: string,
   file: string
 ): Promise<ArrayBuffer> {
-  return invoke("folder_image", { projectId, folder, file })
+  return call("folder_image", { projectId, folder, file })
 }
 
 /**
@@ -73,7 +74,7 @@ export async function watchFolder(
 ): Promise<() => void> {
   const changed = new Channel<null>()
   changed.onmessage = onChange
-  const id = await invoke<number>("watch_folder", {
+  const id = await call<number>("watch_folder", {
     projectId,
     folder,
     changed,
@@ -82,7 +83,7 @@ export async function watchFolder(
 }
 
 function quietly(command: string, args: Record<string, unknown>) {
-  void invoke(command, args).catch((e: unknown) =>
+  void call(command, args).catch((e: unknown) =>
     log(`${command}: ${String(e)}`)
   )
 }
@@ -122,7 +123,7 @@ export async function openTerminal({
   output.onmessage = (buffer) => onOutput(new Uint8Array(buffer))
   const exit = new Channel<number | null>()
   exit.onmessage = onExit
-  const id = await invoke<number>("terminal_open", {
+  const id = await call<number>("terminal_open", {
     projectId,
     folder,
     cols,
