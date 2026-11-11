@@ -552,7 +552,7 @@ def test_a_failed_turn_and_a_crash_are_reported_briefly_and_the_next_task_restar
     tmp_path: Path,
 ) -> None:
     async def scenario(runner: AcpRunner) -> tuple[str, str, str]:
-        failed = await tool_error(runner, "fail Rate limited")
+        failed = await tool_error(runner, "fail-after-work Rate limited")
         crashed = await tool_error(runner, "crash out of memory")
         return failed, crashed, (await runner.run("reply back")).text
 
@@ -755,6 +755,19 @@ def test_pick_allow_prefers_allow_once() -> None:
         pick_allow([PermissionOption(option_id="n", name="No", kind="reject_once")])
         is None
     )
+
+
+def test_a_turn_refused_before_any_work_is_not_ready_and_reported_to_the_app(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    # goose with a wrong key: the session opens, the first prompt fails.
+    with caplog.at_level(logging.WARNING):
+        (refused, _) = run_with_fake(
+            tmp_path, lambda runner: tool_error(runner, "fail 401 Unauthorized")
+        )
+    assert refused == not_ready(CLAUDE_CODE)
+    record = next(r for r in caplog.records if r.getMessage() == NOT_READY_LINE)
+    assert record.__dict__["not_ready"] == "claude"
 
 
 def test_a_harness_not_ready_on_a_call_is_logged_for_the_app(

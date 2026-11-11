@@ -465,6 +465,12 @@ class AcpRunner:
             if isinstance(e, ConnectionError):
                 self._connection_lost(conn)
             logger.warning("%s turn in %s failed: %r", self._harness.id, s.name, e)
+            if isinstance(e, RequestError) and not reply.worked:
+                # Refused before doing anything: its setup, not the task (goose opens a
+                # session with a wrong key and fails only here, docs/acp-notes.md). The
+                # app forgets its remembered check, and the voice offers another agent.
+                report_not_ready(self._harness)
+                raise ToolError(not_ready(self._harness)) from e
             raise ToolError(stopped(self._harness)) from e
         finally:
             _ = self._client.replies.pop(session_id, None)
