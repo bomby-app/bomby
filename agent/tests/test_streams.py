@@ -304,6 +304,35 @@ def test_a_tool_update_that_sends_nothing_leaves_the_messages_cap_counting() -> 
     assert after == "after"
 
 
+def test_an_empty_chunk_of_another_message_leaves_the_cap_counting() -> None:
+    async def main() -> Core:
+        async with core() as c:
+            streams = StreamRecorder(c.path, "s", "bomby-1-1")
+            streams.open("a", "goose", "goose", "main")
+
+            def say(text: str, message: str) -> None:
+                chunk = update_agent_message(text_block(text))
+                chunk.message_id = message
+                streams.record("a", "goose", chunk)
+
+            for _ in range(3):
+                say("x" * MAX_MESSAGE, "m1")
+                say("", "m2")
+            streams.close("a", "goose", "done")
+            streams.start()
+            try:
+                await c.until(ended)
+            finally:
+                await streams.aclose()
+            return c
+
+    c = asyncio.run(main())
+
+    assert [e["type"] for e in c.events] == ["start", "text", "end"]
+    assert c.events[1]["message"] == "m1"
+    assert len(c.events[1]["text"]) == MAX_MESSAGE
+
+
 def test_two_agents_with_the_same_session_id_have_a_stream_each() -> None:
     # A session id is its agent's own: one that numbers its sessions gives "1" (issue #39).
     async def main() -> Core:

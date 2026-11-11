@@ -136,8 +136,11 @@ export function WorkspaceLayout({
   ]
   const available = sections.length > 0
   const ids = sections.map((s) => s.id)
-  // A panel no longer there (an extension turned off) drops out.
+  // A panel no longer there (an extension turned off, Agents off the call's page) drops
+  // out, and comes back open if it was. Not expanded, though: back, on the next call say,
+  // it would hide the panels beside it unasked.
   const showing = open.filter((id) => ids.includes(id))
+  if (maximized !== null && !ids.includes(maximized)) setMaximized(null)
 
   // One saved layout with the column and one without, as the library needs when a panel
   // comes and goes.

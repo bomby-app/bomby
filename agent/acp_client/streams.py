@@ -191,6 +191,10 @@ class StreamRecorder:
         if isinstance(update, AgentMessageChunk):
             if not isinstance(update.content, TextContentBlock):
                 return None
+            # An empty chunk shows nothing and starts no message: taken for one, it would
+            # start the count afresh for the message it interrupts.
+            if not update.content.text:
+                return None
             message = update.message_id
             if message is not None:
                 message = cut(message, MAX_ID)

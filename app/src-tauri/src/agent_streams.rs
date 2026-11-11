@@ -202,6 +202,11 @@ impl Held {
             self.hold(event.clone());
             return vec![event];
         };
+        // An empty piece is nothing to hold, and so no other message either: counted as
+        // one, it would hand the message before it a fresh allowance to join past the cap.
+        if text.is_empty() {
+            return Vec::new();
+        }
         let taken = match &self.writing {
             Some((written, taken)) if *written == message => *taken,
             _ => 0,
@@ -765,6 +770,37 @@ mod tests {
         };
         streams.apply(1, next.clone());
         assert_eq!(streams.held(1).last(), Some(&next));
+    }
+
+    #[test]
+    fn an_empty_piece_of_another_message_gives_no_fresh_allowance() {
+        // It isn't held, so what follows under the first id still joins that message.
+        let streams = Streams::default();
+        streams.apply(1, start("a"));
+        let (sink, seen) = recorder();
+        streams.watch(1, sink);
+        let empty = StreamEvent::Text {
+            stream: "a".into(),
+            message: Some("m2".into()),
+            text: String::new(),
+        };
+        let piece = "x".repeat(MAX_TEXT / 4);
+        for _ in 0..80 {
+            streams.apply(1, text("a", &piece));
+            streams.apply(1, empty.clone());
+        }
+        let dropped = StreamEvent::Dropped { stream: "a".into() };
+        assert_eq!(
+            streams.held(1),
+            vec![
+                start("a"),
+                text("a", &"x".repeat(MAX_TEXT)),
+                dropped.clone()
+            ]
+        );
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.iter().filter(|e| **e == dropped).count(), 1);
+        assert!(!seen.contains(&empty), "nothing of it is sent on");
     }
 
     #[test]
