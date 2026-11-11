@@ -168,7 +168,9 @@ function detail(agent: AgentStatus, asking: boolean): ReactNode {
         <span className="inline-flex max-w-full items-center gap-1.5">
           <span className="truncate select-text">
             {asking
-              ? `It didn't answer in time. Your Mac may be asking for your password for ${name}.`
+              ? // The cause first and short: the row cuts a long line, and How to fix
+                // says the rest.
+                "Your Mac may be asking for a password."
               : (setup?.problem ??
                 (setupStep(agent) === "sign_in"
                   ? "Needs setup"
