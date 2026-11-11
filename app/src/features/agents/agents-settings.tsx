@@ -44,25 +44,29 @@ export function AgentsSettings() {
       {error && <ErrorCard message={error} />}
       {install.error && <ErrorCard message={install.error} />}
       {keysError && <ErrorCard message={keysError} />}
-      <ul className="flex flex-col divide-y overflow-hidden rounded-lg border">
-        {agents === null ? (
-          <StatusRow
-            logo={<SquareTerminal />}
-            name="Agents"
-            ready={null}
-            detail={null}
-          />
-        ) : (
-          agents.map((agent) => (
-            <AgentRow
-              key={agent.id}
-              agent={agent}
-              open={openId === agent.id}
-              onOpenChange={(open) => setOpenId(open ? agent.id : null)}
+      {/* A first read that failed shows above, with Refresh models; not a check that
+          never ends. */}
+      {(agents !== null || !error) && (
+        <ul className="flex flex-col divide-y overflow-hidden rounded-lg border">
+          {agents === null ? (
+            <StatusRow
+              logo={<SquareTerminal />}
+              name="Agents"
+              ready={null}
+              detail={null}
             />
-          ))
-        )}
-      </ul>
+          ) : (
+            agents.map((agent) => (
+              <AgentRow
+                key={agent.id}
+                agent={agent}
+                open={openId === agent.id}
+                onOpenChange={(open) => setOpenId(open ? agent.id : null)}
+              />
+            ))
+          )}
+        </ul>
+      )}
       <div>
         <CheckAgainButton
           checking={checking}

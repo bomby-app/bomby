@@ -27,10 +27,16 @@ async function readAgain(): Promise<void> {
   }
 }
 
-const store = createStore<AgentKeys>({ saved: null, error: null }, () => {
-  void onKeysChanged(() => void readAgain())
-  void readAgain()
-})
+const store = createStore<AgentKeys>(
+  { saved: null, error: null },
+  () => {
+    void onKeysChanged(() => void readAgain())
+    void readAgain()
+  },
+  () => {
+    if (store.get().error !== null) void readAgain()
+  }
+)
 
 /**
  * The variables with a key saved for `agent`, kept current, and whether that's known yet:
