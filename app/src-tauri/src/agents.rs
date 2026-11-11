@@ -145,6 +145,9 @@ pub struct AgentStatus {
     check: &'static str,
 }
 
+/// How long a timed-out program's group gets to exit after SIGTERM, before SIGKILL.
+const STOP_GRACE: Duration = Duration::from_secs(2);
+
 /// Runs `command` and returns its output if it finishes within `timeout`; kills it
 /// otherwise.
 ///
@@ -152,16 +155,20 @@ pub struct AgentStatus {
 /// waits for a reader, and a program it starts (a daemon from the shell's rc files) can hold
 /// a pipe open after it exits, keeping any reader waiting. A file has neither problem, and
 /// it's unlinked at once, so nothing is left behind.
+///
+/// It runs in a process group of its own, and a timeout stops the whole group: a probe's
+/// coding agents and their adapters, or what a login shell started, go with it.
 pub fn run(mut command: Command, timeout: Duration) -> Option<Output> {
     let mut out = unlinked_file().ok()?;
-    let mut child = command
+    command
         .stdin(Stdio::null())
         .stdout(out.try_clone().ok()?)
-        .stderr(Stdio::null())
-        .spawn()
-        .ok()?;
+        .stderr(Stdio::null());
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut command, 0);
+    let mut child = command.spawn().ok()?;
     let Ok(Some(status)) = process::wait_timeout(&mut child, timeout) else {
-        process::kill(&mut child);
+        process::stop_group(child, STOP_GRACE);
         return None;
     };
     let mut stdout = Vec::new();
@@ -1020,6 +1027,32 @@ mod tests {
         command.args(["-c", "head -c 300000 /dev/zero"]);
         let output = run(command, Duration::from_secs(5)).expect("finished in time");
         assert_eq!(output.stdout.len(), 300_000);
+    }
+
+    #[test]
+    fn a_program_that_times_out_is_stopped_with_what_it_started() {
+        let pid_file = std::env::temp_dir().join(format!("bomby-run-group-{}", std::process::id()));
+        let mut command = Command::new("sh");
+        command.args([
+            "-c",
+            &format!("sleep 30 & echo $! > '{}'; wait", pid_file.display()),
+        ]);
+        assert!(run(command, Duration::from_millis(500)).is_none());
+        let pid = fs::read_to_string(&pid_file).unwrap();
+        let _ = fs::remove_file(&pid_file);
+        // `kill -0` fails once the sleep is gone (reaped by launchd or a zombie no more).
+        let alive = || {
+            Command::new("kill")
+                .args(["-0", pid.trim()])
+                .stderr(Stdio::null())
+                .status()
+                .is_ok_and(|s| s.success())
+        };
+        let started = Instant::now();
+        while alive() && started.elapsed() < Duration::from_secs(5) {
+            thread::sleep(Duration::from_millis(50));
+        }
+        assert!(!alive(), "the sleep it started outlived it");
     }
 
     #[test]
