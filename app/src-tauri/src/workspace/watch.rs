@@ -80,7 +80,7 @@ pub async fn watch_folder<R: Runtime>(
     blocking(app, move |app| {
         let db = app.state::<Db>();
         let watches = app.state::<Watches>();
-        let folder = project_folder(&*db.conn()?, project_id, &folder)?;
+        let folder = project_folder(&db, project_id, &folder)?;
         let debouncer = watch(&folder, move || {
             let _ = changed.send(());
         })?;

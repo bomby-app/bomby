@@ -341,7 +341,7 @@ pub async fn terminal_open(
     exit: Channel<Option<u32>>,
 ) -> Result<u32> {
     blocking(app, move |app| {
-        let folder = project_folder(&*app.state::<Db>().conn()?, project_id, &folder)?;
+        let folder = project_folder(&app.state::<Db>(), project_id, &folder)?;
         app.state::<TerminalsState>()
             .0
             .spawn(

@@ -246,7 +246,7 @@ pub async fn folder_info<R: Runtime>(
 ) -> Result<FolderInfo> {
     blocking(app, move |app| {
         let db = app.state::<Db>();
-        let folder = super::project_folder(&*db.conn()?, project_id, &folder)?;
+        let folder = super::project_folder(&db, project_id, &folder)?;
         Ok(info(&folder))
     })
     .await
@@ -261,7 +261,7 @@ pub async fn folder_changes<R: Runtime>(
 ) -> Result<Option<Changes>> {
     blocking(app, move |app| {
         let db = app.state::<Db>();
-        let folder = super::project_folder(&*db.conn()?, project_id, &folder)?;
+        let folder = super::project_folder(&db, project_id, &folder)?;
         changes(&folder)
     })
     .await

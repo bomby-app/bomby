@@ -175,7 +175,7 @@ pub async fn folder_entries<R: Runtime>(
 ) -> Result<Vec<Entry>> {
     blocking(app, move |app| {
         let db = app.state::<Db>();
-        let folder = project_folder(&*db.conn()?, project_id, &folder)?;
+        let folder = project_folder(&db, project_id, &folder)?;
         entries(&folder, &dir)
     })
     .await
@@ -191,7 +191,7 @@ pub async fn folder_image<R: Runtime>(
 ) -> Result<Response> {
     blocking(app, move |app| {
         let db = app.state::<Db>();
-        let folder = project_folder(&*db.conn()?, project_id, &folder)?;
+        let folder = project_folder(&db, project_id, &folder)?;
         Ok(Response::new(image(&folder, &file)?))
     })
     .await
@@ -207,7 +207,7 @@ pub async fn folder_file<R: Runtime>(
 ) -> Result<FilePreview> {
     blocking(app, move |app| {
         let db = app.state::<Db>();
-        let folder = project_folder(&*db.conn()?, project_id, &folder)?;
+        let folder = project_folder(&db, project_id, &folder)?;
         preview(&folder, &file)
     })
     .await
