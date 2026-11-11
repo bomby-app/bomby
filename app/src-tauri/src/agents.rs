@@ -31,13 +31,14 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 use crate::agent_checks::{self, Fingerprint, Remembered};
+use crate::agent_key_fields;
 use crate::agent_picks;
 use crate::credentials::{AgentKeys, Vault};
 use crate::db::{Db, now_ms};
 use crate::dev;
 use crate::error::Result;
 use crate::process;
-use crate::setup::{self, Pick, Setup, Step};
+use crate::setup::{self, KeyField, Listed, Pick, Setup, Step};
 use crate::sync;
 
 /// The event every window gets with the new list when a look finds something different.
@@ -145,6 +146,9 @@ pub struct AgentStatus {
     check: &'static str,
 }
 
+/// How long a timed-out program's group gets to exit after SIGTERM, before SIGKILL.
+const STOP_GRACE: Duration = Duration::from_secs(2);
+
 /// Runs `command` and returns its output if it finishes within `timeout`; kills it
 /// otherwise.
 ///
@@ -152,16 +156,34 @@ pub struct AgentStatus {
 /// waits for a reader, and a program it starts (a daemon from the shell's rc files) can hold
 /// a pipe open after it exits, keeping any reader waiting. A file has neither problem, and
 /// it's unlinked at once, so nothing is left behind.
+///
+/// It runs in a session of its own, which it leads, so its process group is its own too and
+/// a timeout stops the whole group: a probe's coding agents and their adapters, or what a
+/// login shell started, go with it. A session, not just a group: a new group in Bomby's own
+/// session is a background job of the terminal Bomby was started from (`just app dev`), and
+/// an interactive shell there is stopped the moment it reaches for that terminal, so the
+/// lookup timed out and found nothing. A new session has no terminal, as when Bomby is opened
+/// from Finder.
 pub fn run(mut command: Command, timeout: Duration) -> Option<Output> {
     let mut out = unlinked_file().ok()?;
-    let mut child = command
+    command
         .stdin(Stdio::null())
         .stdout(out.try_clone().ok()?)
-        .stderr(Stdio::null())
-        .spawn()
-        .ok()?;
+        .stderr(Stdio::null());
+    #[cfg(unix)]
+    // SAFETY: the closure runs in the child between fork and exec, and calls only setsid,
+    // which is async-signal-safe and touches nothing of this process.
+    unsafe {
+        std::os::unix::process::CommandExt::pre_exec(&mut command, || {
+            if libc::setsid() == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let mut child = command.spawn().ok()?;
     let Ok(Some(status)) = process::wait_timeout(&mut child, timeout) else {
-        process::kill(&mut child);
+        process::stop_group(child, STOP_GRACE);
         return None;
     };
     let mut stdout = Vec::new();
@@ -237,7 +259,12 @@ fn expand(place: &str, home: Option<&Path>) -> Option<PathBuf> {
 /// Finds each known agent the way a terminal would, then in its usual install places. In
 /// development, `just app dev --agents` can hide some, as if not installed ([`dev`]).
 fn find_all(previous: &HashMap<String, PathBuf>) -> Vec<(&'static Known, Option<PathBuf>)> {
-    let from_shell = shell_paths();
+    // No login shell when no agent may be found (`--agents=none`, the smoke check).
+    let from_shell = KNOWN
+        .iter()
+        .any(|known| dev::agent_shown(known.id))
+        .then(shell_paths)
+        .flatten();
     let home = std::env::var_os("HOME").map(PathBuf::from);
     KNOWN
         .iter()
@@ -292,12 +319,14 @@ fn version_of(program: &Path) -> Option<String> {
 }
 
 /// What a look takes from elsewhere, read once it has started: each agent's picks and saved
-/// keys, and the checks remembered from before.
+/// keys, the checks remembered from before, and the key fields each row last offered from a
+/// session (`agent_key_fields`).
 #[derive(Default)]
 pub struct Look {
     pub picks: HashMap<String, Vec<Pick>>,
     pub keys: AgentKeys,
     pub remembered: HashMap<String, Remembered>,
+    pub key_fields: HashMap<String, Vec<KeyField>>,
     /// When the look started, and what was known of each agent then.
     pub started: Started,
 }
@@ -309,6 +338,8 @@ pub struct Started {
     /// In ns since 1970, as file modification times are compared.
     pub at: u128,
     pub revisions: HashMap<String, u64>,
+    /// How often each agent's picks had changed ([`Agents::picked`]).
+    pub picks: HashMap<String, u64>,
 }
 
 impl Started {
@@ -329,6 +360,16 @@ impl Look {
         Fingerprint::of(program, files, picks, &keys)
     }
 
+    /// What agent `id`'s row shows for `setup`, the probe's answer: with the key fields a
+    /// session last offered, kept from an earlier launch, when it can't name any
+    /// ([`Setup::keep_keys`]).
+    fn shown(&self, id: &str, mut setup: Setup) -> Setup {
+        if let Some(kept) = self.key_fields.get(id) {
+            setup.keep_keys(kept);
+        }
+        setup
+    }
+
     /// The remembered setup of agent `id` at `program`, if it still holds at `at`.
     fn still_holds(&self, id: &str, program: &Path, at: i64) -> Option<Setup> {
         let remembered = self.remembered.get(id)?;
@@ -339,14 +380,15 @@ impl Look {
 
 /// Every known agent with its status and setup, the probe applying each one's picks and
 /// keys from `look`. An agent whose remembered check still holds isn't started; every check
-/// the probe makes goes to `record`, with what it depends on. The probe and each agent's
-/// own checks run side by side, so a look takes about as long as the shell and the slowest
-/// of them.
+/// the probe makes goes to `record`, with what it depends on and what it lets the user pick.
+/// One that fails without naming its keys offers the fields a session last named
+/// ([`Setup::keep_keys`]), from an earlier launch too. The probe and each agent's own checks
+/// run side by side, so a look takes about as long as the shell and the slowest of them.
 fn detect_all(
     previous: &HashMap<String, PathBuf>,
     look: &Look,
     checked: &HashSet<String>,
-    record: &(dyn Fn(&str, &Setup, &Fingerprint, &Started) + Sync),
+    record: &(dyn Fn(&str, &Listed, &Fingerprint, &Started) + Sync),
 ) -> Vec<AgentStatus> {
     let found = find_all(previous);
     let now = now_ms();
@@ -373,7 +415,7 @@ fn detect_all(
                 if let Some(listed) = setups.get(id) {
                     let files = &listed.setup.setup_files;
                     let fingerprint = look.fingerprint(id, program, files);
-                    record(id, &listed.setup, &fingerprint, &look.started);
+                    record(id, listed, &fingerprint, &look.started);
                 }
             }
             setups
@@ -390,7 +432,7 @@ fn detect_all(
         for agent in &mut agents {
             agent.setup = reused
                 .remove(agent.id)
-                .or_else(|| setups.remove(agent.id).map(|listed| listed.setup));
+                .or_else(|| Some(look.shown(agent.id, setups.remove(agent.id)?.setup)));
         }
         agents
     })
@@ -440,8 +482,9 @@ struct Detection {
     checked: HashSet<String>,
     /// Agents a call found not ready, to check again once it ends.
     unready_on_call: HashSet<String>,
-    /// How often what's known of each agent changed under a running check (its keys, or a
-    /// call that found it not ready), so a check that started before isn't recorded.
+    /// How often what's known of each agent changed under a running check (its keys, a
+    /// call that found it not ready, or Check again), so a check that started before isn't
+    /// recorded.
     revisions: HashMap<String, u64>,
 }
 
@@ -452,10 +495,14 @@ impl Detection {
         }
         let found = self.found.as_mut()?;
         let agent = found.iter_mut().find(|a| a.id == id)?;
-        if agent.setup.as_ref() == Some(setup) {
+        let mut setup = setup.clone();
+        if let Some(before) = &agent.setup {
+            setup.keep_keys(&before.keys);
+        }
+        if agent.setup.as_ref() == Some(&setup) {
             return None;
         }
-        agent.setup = Some(setup.clone());
+        agent.setup = Some(setup);
         Some(found.clone())
     }
 }
@@ -473,8 +520,14 @@ impl Agents {
     }
 
     /// Has the next look check every agent with a session again, omp too (a full check).
+    /// What's known of every agent changes, so a look already running records no check,
+    /// listing or key fields back over the forget: the fresh look checks them again.
     pub fn forget_checks(&self) {
-        self.lock().checked.clear();
+        let mut state = self.lock();
+        state.checked.clear();
+        for known in KNOWN {
+            *state.revisions.entry(known.id.to_owned()).or_default() += 1;
+        }
     }
 
     /// Agent `id` wasn't ready on a call: it's checked again once the call ends.
@@ -484,10 +537,18 @@ impl Agents {
 
     /// When a check starts now, and what it may be recorded against.
     pub fn start_check(&self) -> Started {
+        let state = self.lock();
         Started {
             at: agent_checks::now_ns(),
-            revisions: self.lock().revisions.clone(),
+            revisions: state.revisions.clone(),
+            picks: state.picks.clone(),
         }
+    }
+
+    /// Whether agent `id`'s picks are as they were when a check `started`, so what it found
+    /// can be picked still holds.
+    pub fn unpicked(&self, started: &Started, id: &str) -> bool {
+        self.lock().picks.get(id) == started.picks.get(id)
     }
 
     /// Records a check of `id` that `started`, unless what was known of `id` changed since
@@ -623,7 +684,7 @@ impl Agents {
         &self,
         seen: Option<Vec<(String, PathBuf)>>,
         look: impl FnOnce() -> Look,
-        record: &(dyn Fn(&str, &Setup, &Fingerprint, &Started) + Sync),
+        record: &(dyn Fn(&str, &Listed, &Fingerprint, &Started) + Sync),
     ) -> (Vec<AgentStatus>, bool) {
         let checked = self.lock().checked.clone();
         self.detect_with(seen, |previous| {
@@ -706,9 +767,10 @@ impl Agents {
 }
 
 /// `found`, a look's answer, with what it couldn't know taken from `before`, the list it
-/// replaces: the setup of an agent whose settings were picked while it ran, and, for an
-/// agent it opened no session in (omp can't delete one), the setup last found with a
-/// session, by a look, the model picker or a pick. An agent `revised_since` the look
+/// replaces: the setup of an agent whose settings were picked while it ran, for an agent it
+/// opened no session in (omp can't delete one), the setup last found with a session, by a
+/// look, the model picker or a pick, and for one that failed without naming its keys, the
+/// key fields its row showed ([`Setup::keep_keys`]). An agent `revised_since` the look
 /// started (its keys changed, [`Agents::invalidate`]) keeps its row whatever the look found,
 /// failures too: the look ran on what's no longer true, and the agent's own recheck answers.
 fn keep_what_the_look_missed(
@@ -729,6 +791,9 @@ fn keep_what_the_look_missed(
         if revised_since(agent.id) {
             agent.setup = Some(old.clone());
             continue;
+        }
+        if let Some(setup) = agent.setup.as_mut() {
+            setup.keep_keys(&old.keys);
         }
         // A problem with the agent itself (signed out, not answering) shows: no pick changes it.
         if agent
@@ -808,28 +873,103 @@ fn refresh<R: Runtime>(
     app: &AppHandle<R>,
     seen: Option<Vec<(String, PathBuf)>>,
 ) -> Vec<AgentStatus> {
-    // Without the database (only if it can't be read), every agent shows its defaults and
-    // is checked.
-    let (db, agents) = (app.state::<Db>(), app.state::<Agents>());
-    let look = || Look {
-        // Before anything it reads: what changes after this is the next check's.
-        started: agents.start_check(),
-        picks: agent_picks::saved(&db.conn()).unwrap_or_default(),
-        keys: saved_keys(app),
-        remembered: agent_checks::all(&db.conn()).unwrap_or_default(),
+    let record = |id: &str, listed: &Listed, fingerprint: &Fingerprint, started: &Started| {
+        record_key_fields(app, id, &listed.setup, started);
+        record_check(app, id, &listed.setup, fingerprint, started);
+        agent_picks::keep_listing(app, id, listed, started);
     };
-    let record = |id: &str, setup: &Setup, fingerprint: &Fingerprint, started: &Started| {
-        if let Err(e) = agents.record_check(&db.conn(), id, setup, fingerprint, started) {
-            let _ = crate::app_log::append(app, &format!("remembering {id}'s check: {e}"));
-        }
-    };
-    let (found, changed) = agents.detect(seen, look, &record);
+    let (found, changed) = app
+        .state::<Agents>()
+        .detect(seen, || look_reads(app), &record);
     if changed {
         // Only fails for an invalid event name or payload; a window that misses it still
         // gets the list when it asks.
         let _ = app.emit(CHANGED, &found);
     }
     found
+}
+
+/// What a look reads before it starts: the user's picks, the remembered checks and the kept
+/// key fields, in one hold of the database, and the agents' saved keys. Without the database
+/// (only if it can't be read), every agent shows its defaults and is checked.
+pub(crate) fn look_reads<R: Runtime>(app: &AppHandle<R>) -> Look {
+    // Before anything it reads: what changes after this is the next check's.
+    let started = app.state::<Agents>().start_check();
+    let SavedChoices {
+        picks,
+        remembered,
+        key_fields,
+    } = saved_choices(&app.state::<Db>()).unwrap_or_else(|e| {
+        let _ = crate::app_log::append(app, &format!("reading the agents' picks: {e}"));
+        SavedChoices::default()
+    });
+    Look {
+        started,
+        picks,
+        keys: saved_keys(app),
+        remembered,
+        key_fields,
+    }
+}
+
+#[derive(Default)]
+struct SavedChoices {
+    picks: HashMap<String, Vec<Pick>>,
+    remembered: HashMap<String, Remembered>,
+    key_fields: HashMap<String, Vec<KeyField>>,
+}
+
+/// Every agent's picks, remembered check and kept key fields.
+fn saved_choices(db: &Db) -> Result<SavedChoices> {
+    let conn = db.conn()?;
+    Ok(SavedChoices {
+        picks: agent_picks::saved(&conn)?,
+        remembered: agent_checks::all(&conn)?,
+        key_fields: agent_key_fields::all(&conn)?,
+    })
+}
+
+/// Keeps the key fields a session of `id` offered, for its row at later launches
+/// (`agent_key_fields`), unless its picks or what's known of it changed since the check
+/// `started`: the answer is about a setup that's no longer the agent's. Logged when it can't.
+pub(crate) fn record_key_fields<R: Runtime>(
+    app: &AppHandle<R>,
+    id: &str,
+    setup: &Setup,
+    started: &Started,
+) {
+    let agents = app.state::<Agents>();
+    if !setup.session || !agents.unrevised(started, id) || !agents.unpicked(started, id) {
+        return;
+    }
+    let recorded = app
+        .state::<Db>()
+        .conn()
+        .and_then(|conn| agent_key_fields::record(&conn, id, setup));
+    if let Err(e) = recorded {
+        let _ = crate::app_log::append(app, &format!("keeping {id}'s key fields: {e}"));
+    }
+}
+
+/// Keeps a check a look made ([`Agents::record_check`]); logged when it can't.
+pub(crate) fn record_check<R: Runtime>(
+    app: &AppHandle<R>,
+    id: &str,
+    setup: &Setup,
+    fingerprint: &Fingerprint,
+    started: &Started,
+) {
+    // Checked without the agents' keys: not what a launch with them would find.
+    if app.state::<Vault>().unreadable() {
+        return;
+    }
+    let recorded = app.state::<Db>().conn().and_then(|conn| {
+        app.state::<Agents>()
+            .record_check(&conn, id, setup, fingerprint, started)
+    });
+    if let Err(e) = recorded {
+        let _ = crate::app_log::append(app, &format!("remembering {id}'s check: {e}"));
+    }
 }
 
 /// [`refresh`] after something on disk changed (adapters installed), for callers already on
@@ -857,14 +997,16 @@ pub fn offers_key<R: Runtime>(app: &AppHandle<R>, id: &str, name: &str) -> bool 
 /// After agent `id`'s keys changed: its remembered check and model list are forgotten, and
 /// it's checked again with them, in the background; its row follows.
 pub fn keys_changed<R: Runtime>(app: &AppHandle<R>, id: &str) {
-    let db = app.state::<Db>();
     // Before the command returns: the page asks for the models again at once.
-    if let Err(e) = agent_picks::keys_changed(
-        &app.state::<Agents>(),
-        &app.state::<agent_picks::Listings>(),
-        &db.conn(),
-        id,
-    ) {
+    let forgotten = app.state::<Db>().conn().and_then(|conn| {
+        agent_picks::keys_changed(
+            &app.state::<Agents>(),
+            &app.state::<agent_picks::Listings>(),
+            &conn,
+            id,
+        )
+    });
+    if let Err(e) = forgotten {
         let _ = crate::app_log::append(app, &format!("forgetting {id}'s check: {e}"));
     }
     let (app, id) = (app.clone(), id.to_owned());
@@ -874,8 +1016,11 @@ pub fn keys_changed<R: Runtime>(app: &AppHandle<R>, id: &str) {
 /// A call found agent `id` not ready: what was remembered of it goes now, and it's checked
 /// again once the call ends ([`after_call`]), not during it.
 pub fn not_ready_on_call<R: Runtime>(app: &AppHandle<R>, id: &str) {
-    let db = app.state::<Db>();
-    if let Err(e) = app.state::<Agents>().invalidate(&db.conn(), id) {
+    let forgotten = app
+        .state::<Db>()
+        .conn()
+        .and_then(|conn| app.state::<Agents>().invalidate(&conn, id));
+    if let Err(e) = forgotten {
         let _ = crate::app_log::append(app, &format!("forgetting {id}'s check: {e}"));
     }
     app.state::<Agents>().unready_on_call(id);
@@ -910,10 +1055,15 @@ pub async fn agents_status<R: Runtime>(app: AppHandle<R>) -> Result<Vec<AgentSta
 pub async fn refresh_agents<R: Runtime>(app: AppHandle<R>) -> Result<Vec<AgentStatus>> {
     // A full check: every agent started again, with a session, and its models asked again
     // on next open.
-    app.state::<Agents>().forget_checks();
-    app.state::<agent_picks::Listings>().forget();
-    agent_checks::forget_all(&app.state::<Db>().conn())?;
-    refresh_in_background(app).await
+    crate::blocking::blocking(app, |app| {
+        app.state::<Agents>().forget_checks();
+        app.state::<agent_picks::Listings>().forget();
+        agent_checks::forget_all(&*app.state::<Db>().conn()?)?;
+        // From a look that starts now: one already running read the checks and keys from
+        // before this, so its answer isn't the fresh check the user asked for.
+        Ok(refresh(app, Some(Vec::new())))
+    })
+    .await
 }
 
 #[cfg(test)]
@@ -924,12 +1074,90 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_launch_looks_reads_and_records_take_the_database_one_at_a_time() {
+        // 0.3.2 took the database twice in one statement here and hung at launch.
+        let app = crate::testing::app();
+        app.state::<Db>()
+            .conn()
+            .unwrap()
+            .execute(
+                "INSERT INTO agent_picks (agent, position, setting, value)
+                 VALUES ('goose', 0, 'model', 'kimi')",
+                [],
+            )
+            .unwrap();
+        let files = vec!["/Users/me/.config/goose/config.yaml".to_owned()];
+        let ready = Setup {
+            session: true,
+            setup_files: files.clone(),
+            ..Setup::default()
+        };
+        let fingerprint = Fingerprint::of(Path::new("/no/such/goose"), &files, &[], &[]);
+        let started = app.state::<Agents>().start_check();
+        record_check(app.handle(), "goose", &ready, &fingerprint, &started);
+
+        let look = look_reads(app.handle());
+
+        assert_eq!(
+            look.picks.get("goose").map(Vec::as_slice),
+            Some(
+                &[Pick {
+                    setting: "model".into(),
+                    value: "kimi".into()
+                }][..]
+            )
+        );
+        assert!(look.remembered.contains_key("goose"));
+        assert!(!app.state::<Db>().held_here());
+    }
+
+    #[test]
     fn reads_output_longer_than_a_pipe_holds() {
         // The setup probe's answer lists every model an agent offers: hundreds of KiB.
         let mut command = Command::new("sh");
         command.args(["-c", "head -c 300000 /dev/zero"]);
         let output = run(command, Duration::from_secs(5)).expect("finished in time");
         assert_eq!(output.stdout.len(), 300_000);
+    }
+
+    #[test]
+    fn a_program_that_times_out_is_stopped_with_what_it_started() {
+        let pid_file = std::env::temp_dir().join(format!("bomby-run-group-{}", std::process::id()));
+        let mut command = Command::new("sh");
+        command.args([
+            "-c",
+            &format!("sleep 30 & echo $! > '{}'; wait", pid_file.display()),
+        ]);
+        assert!(run(command, Duration::from_millis(500)).is_none());
+        let pid = fs::read_to_string(&pid_file).unwrap();
+        let _ = fs::remove_file(&pid_file);
+        // `kill -0` fails once the sleep is gone (reaped by launchd or a zombie no more).
+        let alive = || {
+            Command::new("kill")
+                .args(["-0", pid.trim()])
+                .stderr(Stdio::null())
+                .status()
+                .is_ok_and(|s| s.success())
+        };
+        let started = Instant::now();
+        while alive() && started.elapsed() < Duration::from_secs(5) {
+            thread::sleep(Duration::from_millis(50));
+        }
+        assert!(!alive(), "the sleep it started outlived it");
+    }
+
+    #[test]
+    fn a_program_runs_without_the_terminal_bomby_was_started_from() {
+        // With a terminal of its own session's, an interactive login shell in a new group is
+        // stopped as a background job reaching for it, and the lookup times out. Run from a
+        // terminal (`just check`), this fails unless the program got a session of its own.
+        let mut command = Command::new("sh");
+        command.args([
+            "-c",
+            "if (: </dev/tty) 2>/dev/null; then echo terminal; else echo none; fi",
+        ]);
+        let output = run(command, Duration::from_secs(5)).expect("finished in time");
+        assert_eq!(stdout(&output).as_deref(), Some("none"));
     }
 
     #[test]
@@ -1294,6 +1522,152 @@ mod tests {
     }
 
     #[test]
+    fn a_failure_that_cant_name_its_keys_keeps_the_fields_its_row_showed() {
+        // goose waiting on macOS's keychain prompt times out without a session, so the
+        // probe can't tell its provider: the key that stops the prompt must stay savable.
+        let key = setup::KeyField {
+            name: "OPENROUTER_API_KEY".into(),
+            label: "OpenRouter API key".into(),
+            secret: true,
+            optional: false,
+        };
+        let keyed = Setup {
+            session: true,
+            keys: vec![key.clone()],
+            ..ready("Kimi")
+        };
+        let timed_out = Setup {
+            step: Step::Unreachable,
+            problem: Some("It didn't answer in time".into()),
+            timed_out: true,
+            ..Setup::default()
+        };
+        let goose = |setup| AgentStatus {
+            setup: Some(setup),
+            ..status("goose", Some("/b/goose"))
+        };
+        let with_key = Setup {
+            keys: vec![key],
+            ..timed_out.clone()
+        };
+
+        // A look.
+        let agents = Agents::default();
+        agents.detect_with(None, |_| vec![goose(keyed.clone())]);
+        let (found, _) = agents.detect_with(None, |_| vec![goose(timed_out.clone())]);
+        assert_eq!(found, vec![goose(with_key.clone())]);
+
+        // The model picker's check, through its row.
+        let agents = Agents::default();
+        agents.detect_with(None, |_| vec![goose(keyed.clone())]);
+        agents.replace_setup("goose", &timed_out);
+        assert_eq!(agents.offered_keys("goose"), ["OPENROUTER_API_KEY"]);
+        assert!(
+            agents.offers_key("goose", "OPENROUTER_API_KEY"),
+            "so it can be saved"
+        );
+
+        // A session that names none (a provider without a key) is believed.
+        let keyless = Setup {
+            session: true,
+            ..ready("Llama")
+        };
+        agents.replace_setup("goose", &keyless);
+        assert!(agents.offered_keys("goose").is_empty());
+    }
+
+    #[test]
+    fn a_first_look_that_times_out_offers_the_fields_a_session_offered_at_an_earlier_launch() {
+        // goose at launch, waiting on macOS's keychain prompt, with no provider the probe
+        // can read and no row yet this run: the field comes from the last session.
+        let key = setup::KeyField {
+            name: "OPENROUTER_API_KEY".into(),
+            label: "OpenRouter API key".into(),
+            secret: true,
+            optional: false,
+        };
+        let timed_out = Setup {
+            step: Step::Unreachable,
+            problem: Some("It didn't answer in time".into()),
+            timed_out: true,
+            takes_keys: true,
+            ..Setup::default()
+        };
+        let goose = |setup| AgentStatus {
+            setup: Some(setup),
+            ..status("goose", Some("/b/goose"))
+        };
+        let first_look = |app: &tauri::App<tauri::test::MockRuntime>| {
+            let shown = look_reads(app.handle()).shown("goose", timed_out.clone());
+            let agents = Agents::default();
+            agents.detect_with(None, |_| vec![goose(shown)]);
+            agents
+        };
+
+        // Never a session with goose: no field, but the row knows it takes keys.
+        let app = crate::testing::app();
+        let agents = first_look(&app);
+        assert!(agents.offered_keys("goose").is_empty());
+        let shown = agents.cached().unwrap()[0].setup.clone().unwrap();
+        assert!(shown.takes_keys && shown.timed_out);
+
+        // A session at an earlier launch named its key: this launch's first look offers it.
+        let app = crate::testing::app();
+        let earlier = Setup {
+            session: true,
+            keys: vec![key.clone()],
+            ..ready("Kimi")
+        };
+        let started = app.state::<Agents>().start_check();
+        record_key_fields(app.handle(), "goose", &earlier, &started);
+        let agents = first_look(&app);
+        assert_eq!(agents.offered_keys("goose"), ["OPENROUTER_API_KEY"]);
+        assert!(
+            agents.offers_key("goose", "OPENROUTER_API_KEY"),
+            "so it can be saved"
+        );
+
+        // A probe that names keys itself (from a pick or goose's config) is believed.
+        let anthropic = setup::KeyField {
+            name: "ANTHROPIC_API_KEY".into(),
+            label: "Anthropic API key".into(),
+            ..key
+        };
+        let named = Setup {
+            keys: vec![anthropic.clone()],
+            ..timed_out.clone()
+        };
+        assert_eq!(
+            look_reads(app.handle()).shown("goose", named).keys,
+            vec![anthropic]
+        );
+    }
+
+    #[test]
+    fn a_session_found_before_a_pick_or_a_key_change_keeps_no_key_fields() {
+        let app = crate::testing::app();
+        let agents = app.state::<Agents>();
+        let keyed = Setup {
+            session: true,
+            keys: vec![setup::KeyField {
+                name: "OPENROUTER_API_KEY".into(),
+                label: "OpenRouter API key".into(),
+                secret: true,
+                optional: false,
+            }],
+            ..ready("Kimi")
+        };
+        let started = agents.start_check();
+        agents.picked("goose", &keyed);
+        record_key_fields(app.handle(), "goose", &keyed, &started);
+        let started = agents.start_check();
+        agents.revise("goose");
+        record_key_fields(app.handle(), "goose", &keyed, &started);
+
+        assert!(look_reads(app.handle()).key_fields.is_empty());
+    }
+
+    #[test]
     fn a_look_keeps_its_answer_over_a_listing_made_while_it_ran() {
         let agents = Agents::default();
         let goose = |setup| AgentStatus {
@@ -1502,7 +1876,7 @@ mod tests {
     #[test]
     fn a_check_that_started_before_its_keys_changed_isnt_recorded() {
         let db = Db::in_memory().unwrap();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         let agents = Agents::default();
         let setup = Setup {
             setup_files: vec!["/Users/me/.config/goose/config.yaml".into()],
@@ -1530,6 +1904,39 @@ mod tests {
         agents.invalidate(&conn, "omp").unwrap();
         agents
             .record_check(&conn, "goose", &setup, &fingerprint, &omp_started)
+            .unwrap();
+        assert!(agent_checks::all(&conn).unwrap().contains_key("goose"));
+    }
+
+    #[test]
+    fn a_check_that_started_before_check_again_isnt_recorded_back_over_it() {
+        // Check again forgets every remembered check while a look is still probing: that
+        // look must not record its old answer back, or the fresh look reuses it and the
+        // user gets the old answer they asked to check again (Greptile on PR #43).
+        let db = Db::in_memory().unwrap();
+        let conn = db.conn().unwrap();
+        let agents = Agents::default();
+        let setup = Setup {
+            setup_files: vec!["/Users/me/.config/goose/config.yaml".into()],
+            ..ready("Kimi")
+        };
+        let fingerprint =
+            Fingerprint::of(Path::new("/no/such/goose"), &setup.setup_files, &[], &[]);
+
+        let before = agents.start_check();
+        agents.forget_checks();
+        agents
+            .record_check(&conn, "goose", &setup, &fingerprint, &before)
+            .unwrap();
+        assert!(
+            agent_checks::all(&conn).unwrap().is_empty(),
+            "the look that ran before Check again records nothing back"
+        );
+
+        // The fresh look's check is recorded.
+        let after = agents.start_check();
+        agents
+            .record_check(&conn, "goose", &setup, &fingerprint, &after)
             .unwrap();
         assert!(agent_checks::all(&conn).unwrap().contains_key("goose"));
     }

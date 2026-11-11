@@ -50,7 +50,12 @@ export function AboutSettings() {
   function check() {
     setError(null)
     startTransition(async () => {
-      await checkForUpdates()
+      try {
+        await checkForUpdates()
+      } catch (e) {
+        // Only when the core didn't answer; a failed check is the `failed` status.
+        setError(String(e))
+      }
     })
   }
 
@@ -90,7 +95,7 @@ export function AboutSettings() {
         />
       )}
       <LinkList />
-      <Diagnostics />
+      <ExportDiagnostics />
     </div>
   )
 }
@@ -168,7 +173,7 @@ function LinkList() {
  * mid-export loses nothing. The zip's name, and Show in Finder, stay under the button once
  * it's saved.
  */
-function Diagnostics() {
+export function ExportDiagnostics() {
   const { status, fileName } = useDiagnostics()
   const exporting = status.kind === "exporting"
 

@@ -20,14 +20,24 @@ import { checkAgentsAgain, setupStep } from "./use-agents"
 
 /**
  * A small (i) beside an agent's status when its own setup needs a fix (a sign-in, or it
- * didn't start), opening the steps. Nothing for any other status.
+ * didn't start), opening the steps. Nothing for any other status. `asking`: it didn't
+ * answer in time, likely because macOS is asking for a password for it, which comes first:
+ * answer it, or, when its row offers a key field, save the key that stops the asking.
  */
-export function FixSteps({ agent }: { agent: AgentStatus }) {
+export function FixSteps({
+  agent,
+  asking = false,
+}: {
+  agent: AgentStatus
+  asking?: boolean
+}) {
   const step = setupStep(agent)
   const [checking, startCheck] = useTransition()
   if (step !== "sign_in" && step !== "unreachable") return null
   const { name, check, setup } = agent
   const signIn = setup?.fix
+  const first = asking ? 2 : 1
+  const savable = (setup?.keys.length ?? 0) > 0
 
   return (
     <Dialog>
@@ -64,15 +74,26 @@ export function FixSteps({ agent }: { agent: AgentStatus }) {
             </>
           ) : (
             <>
-              <Step n={1} command={check}>
-                Open Terminal and run this to see what's wrong:
+              {asking && (
+                <Step n={1}>
+                  Your Mac may be asking for your password so {name} can read
+                  its keychain.{" "}
+                  {savable
+                    ? `Answer it, or save ${name}'s key in its row and Bomby hands it over instead, so it doesn't ask.`
+                    : "Answer it, then check again."}
+                </Step>
+              )}
+              <Step n={first} command={check}>
+                {asking
+                  ? "If it still doesn't answer, open Terminal and run this to see what's wrong:"
+                  : "Open Terminal and run this to see what's wrong:"}
               </Step>
               {signIn && (
-                <Step n={2} command={signIn}>
+                <Step n={first + 1} command={signIn}>
                   If it isn't signed in:
                 </Step>
               )}
-              <Step n={signIn ? 3 : 2}>
+              <Step n={first + (signIn ? 2 : 1)}>
                 If it's out of date,{" "}
                 <InlineLink onClick={() => void openInstallPage(agent)}>
                   update it

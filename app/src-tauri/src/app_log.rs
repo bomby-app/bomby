@@ -5,7 +5,7 @@
 use std::fs::OpenOptions;
 use std::io::Write;
 
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{AppHandle, Runtime};
 
 use crate::db::now_ms;
 use crate::error::Result;
@@ -21,8 +21,12 @@ pub fn app_log<R: Runtime>(app: AppHandle<R>, line: String) -> Result<()> {
 
 /// Appends one line from the core: something that went wrong where no page can be told.
 pub fn append<R: Runtime>(app: &AppHandle<R>, line: &str) -> Result<()> {
-    let dir = app.path().app_log_dir()?;
-    std::fs::create_dir_all(&dir)?;
+    append_in(&crate::dirs::logs(app)?, line)
+}
+
+/// [`append`] to the log in `dir`.
+pub fn append_in(dir: &std::path::Path, line: &str) -> Result<()> {
+    std::fs::create_dir_all(dir)?;
     let mut file = OpenOptions::new()
         .create(true)
         .append(true)

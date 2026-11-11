@@ -15,6 +15,7 @@ from livekit.agents import (
 
 import dev_env
 import lifeline
+from acp_client.redaction import redact_logs, secrets_to_redact
 from acp_client.runner import CallRunners
 from acp_client.streams import StreamRecorder
 from call import Call
@@ -101,6 +102,8 @@ async def entrypoint(ctx: JobContext) -> None:
     # the app found gets one ACP process per call, started on its first task, to
     # run its named sessions. Shutting the job down closes every session and process.
     job = read_metadata(ctx.job.metadata)
+    # Before anything logs: no saved key reaches the worker's log from this job.
+    redact_logs(secrets_to_redact(os.environ))
     # From before the voice model connects: its service may refuse the first request.
     service_errors = ServiceErrors.listen()
     # The voice model, its voice and, on a resumed call, the conversation so far.

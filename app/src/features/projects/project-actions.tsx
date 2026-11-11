@@ -61,11 +61,29 @@ export function ProjectSettingsButton({
 
 /** Starts a new call on the project: the header's main action, at its right end. */
 export function CallButton({ project }: { project: Project }) {
-  const { active, starting, start } = useCall()
+  const { active, starting, start, cancel } = useCall()
   const { ready, missing } = useCallReadiness()
   // A new call on this project is starting (not a resume).
   const waking =
     starting?.projectId === project.id && starting.resumeCallId === undefined
+
+  if (waking)
+    return (
+      <div className="flex items-center gap-2">
+        <Button size="sm" variant="ghost" onClick={cancel}>
+          Cancel
+        </Button>
+        <Button size="sm" disabled>
+          <Mascot
+            state="waking"
+            size={16}
+            bubble="currentColor"
+            eyes="var(--primary)"
+          />
+          Waking up...
+        </Button>
+      </div>
+    )
 
   return (
     <CallGate missing={missing}>
@@ -76,12 +94,12 @@ export function CallButton({ project }: { project: Project }) {
       >
         {/* The mascot in the button's own colours: bubble in its text colour, eyes in its fill. */}
         <Mascot
-          state={waking ? "waking" : "idle"}
+          state="idle"
           size={16}
           bubble="currentColor"
           eyes="var(--primary)"
         />
-        {waking ? "Waking up..." : "Call"}
+        Call
       </Button>
     </CallGate>
   )

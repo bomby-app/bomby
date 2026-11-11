@@ -151,7 +151,7 @@ fn export<R: Runtime>(app: &AppHandle<R>, vault: &Vault, server: &LocalServer) -
         arch: std::env::consts::ARCH,
         created: now.format("%Y-%m-%d %H:%M:%S %:z").to_string(),
     };
-    let logs = sources(&app.path().app_log_dir()?, adapters::install_log());
+    let logs = sources(&crate::dirs::logs(app)?, adapters::install_log());
     write_bundle(&desktop, now, &logs, &redactor, &summary)
 }
 

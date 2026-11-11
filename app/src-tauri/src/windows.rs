@@ -66,6 +66,14 @@ fn main_size(width: f64, height: f64) -> (f64, f64) {
     )
 }
 
+/// The main window rendered (the splash or the workspace) and its read of the agents
+/// answered: a line in `app.log`, and half of what the launch smoke check waits for
+/// ([`crate::smoke`]).
+#[tauri::command]
+pub fn main_window_ready<R: Runtime>(app: AppHandle<R>, ready: crate::smoke::PageReady) {
+    crate::smoke::page_ready(&app, ready);
+}
+
 /// Opens the settings window centered over the main window, or brings it forward when it is
 /// already open. Async because building a window from a sync command deadlocks on Windows
 /// (Tauri docs).

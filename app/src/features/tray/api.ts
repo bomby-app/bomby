@@ -1,14 +1,14 @@
-import { invoke } from "@tauri-apps/api/core"
 import { getCurrentWindow } from "@tauri-apps/api/window"
 
 import type { TrayStatus } from "@/generated/tray"
+import { call } from "@/lib/core"
 
 // The core's menu bar icon (src-tauri/src/tray.rs).
 
 export type { TrayState, TrayStatus } from "@/generated/tray"
 
 export function setTrayStatus(status: TrayStatus): Promise<void> {
-  return invoke("set_tray_status", { status })
+  return call("set_tray_status", { status })
 }
 
 /** Start a call was chosen in the menu bar, on this project. Returns the unlisten. */

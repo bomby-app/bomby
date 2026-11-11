@@ -12,6 +12,7 @@ import type { AgentStatus } from "../agents/api"
 import { checkAgentsAgain, isReady, useAgents } from "../agents/use-agents"
 import {
   checkKeysAgain,
+  tryKeysAgain,
   type Keys,
   useSavedKeys,
 } from "../call-server/use-saved-keys"
@@ -28,6 +29,7 @@ export function SetupSettings() {
   const { keys, error: keysError } = useSavedKeys()
   const { agents, error: agentsError } = useAgents()
   const [checking, startChecking] = useTransition()
+  const [retrying, startRetrying] = useTransition()
   const error = keysError ?? agentsError
 
   return (
@@ -36,7 +38,22 @@ export function SetupSettings() {
         A call needs a call server and a voice, and an agent to do the work.
         Bomby uses your own accounts.
       </p>
-      {error && <ErrorCard message={error} />}
+      {error && (
+        <ErrorCard
+          message={error}
+          action={
+            keysError && (
+              <Button
+                variant="outline"
+                disabled={retrying}
+                onClick={() => startRetrying(tryKeysAgain)}
+              >
+                Try again
+              </Button>
+            )
+          }
+        />
+      )}
       <ul className="flex flex-col divide-y rounded-lg border">
         <StatusRow
           logo={

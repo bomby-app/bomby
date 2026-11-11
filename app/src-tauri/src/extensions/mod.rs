@@ -20,8 +20,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::LazyLock;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Runtime, State};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 
+use crate::blocking::blocking;
 use crate::db::Db;
 use crate::error::{Error, Result};
 use crate::settings;
@@ -219,31 +220,35 @@ pub(crate) fn for_call(
         .collect()
 }
 
-#[tauri::command(async)]
-pub fn extensions_settings<R: Runtime>(
-    app: AppHandle<R>,
-    db: State<'_, Db>,
-) -> Result<Vec<ExtensionSetting>> {
-    // The keychain first: it may wait on the user's password, and the database waits for no one.
-    let sign_ins = connections::sign_ins(&app)?;
-    settings(&db.conn(), &sign_ins)
+#[tauri::command]
+pub async fn extensions_settings<R: Runtime>(app: AppHandle<R>) -> Result<Vec<ExtensionSetting>> {
+    blocking(app, move |app| {
+        let db = app.state::<Db>();
+        // The keychain first: it may wait on the user's password, and the database waits for no one.
+        let sign_ins = connections::sign_ins(app)?;
+        settings(&*db.conn()?, &sign_ins)
+    })
+    .await
 }
 
 /// Applies from the next call; one under way keeps its extensions.
-#[tauri::command(async)]
-pub fn set_extension<R: Runtime>(
+#[tauri::command]
+pub async fn set_extension<R: Runtime>(
     app: AppHandle<R>,
-    db: State<'_, Db>,
     id: String,
     on: bool,
 ) -> Result<Vec<ExtensionSetting>> {
-    // The keychain before the database, as in `extensions_settings`.
-    let sign_ins = connections::sign_ins(&app)?;
-    let conn = db.conn();
-    save(&conn, &id, on)?;
-    let now = settings(&conn, &sign_ins)?;
-    let _ = app.emit(CHANGED, ());
-    Ok(now)
+    blocking(app, move |app| {
+        let db = app.state::<Db>();
+        // The keychain before the database, as in `extensions_settings`.
+        let sign_ins = connections::sign_ins(app)?;
+        let conn = db.conn()?;
+        save(&conn, &id, on)?;
+        let now = settings(&conn, &sign_ins)?;
+        let _ = app.emit(CHANGED, ());
+        Ok(now)
+    })
+    .await
 }
 
 #[cfg(test)]
@@ -269,7 +274,7 @@ mod tests {
     #[test]
     fn settings_start_at_each_default_and_keep_what_the_user_set() {
         let db = Db::in_memory().unwrap();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         let on = |conn: &rusqlite::Connection, id: &str| {
             settings(conn, &SignIns::default())
                 .unwrap()
@@ -296,7 +301,7 @@ mod tests {
             accounts: BTreeMap::from([("zapier".to_owned(), Some("me@example.com".to_owned()))]),
             connecting: BTreeSet::from(["composio".to_owned()]),
         };
-        let all = settings(&db.conn(), &sign_ins).unwrap();
+        let all = settings(&db.conn().unwrap(), &sign_ins).unwrap();
         let find = |id: &str| all.iter().find(|e| e.id == id).unwrap().clone();
         assert_eq!(find(todos::ID).connection, None);
         assert_eq!(
@@ -315,7 +320,7 @@ mod tests {
     #[test]
     fn a_project_follows_settings_until_it_picks_its_own() {
         let db = Db::in_memory().unwrap();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         let follows = ProjectExtensions::default();
         assert_eq!(
             on_for(&conn, &follows, &none()).unwrap(),
@@ -340,7 +345,7 @@ mod tests {
     #[test]
     fn a_call_gets_a_hosted_one_only_once_its_connected() {
         let db = Db::in_memory().unwrap();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         save(&conn, "zapier", true).unwrap();
         save(&conn, "composio", true).unwrap();
         save(&conn, call_names::ID, false).unwrap();

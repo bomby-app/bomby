@@ -13,9 +13,15 @@ export type Store<T> = {
 
 /**
  * A store starting at `initial`. `start` runs once, for the first subscriber: where a store
- * starts following the core (its events, a first read).
+ * starts following the core (its events, a first read). `remount` runs each time a
+ * subscriber comes after none were left (a section opened again): where a store whose
+ * first read failed reads again, so a screen never stays on an error it could recover from.
  */
-export function createStore<T>(initial: T, start?: () => void): Store<T> {
+export function createStore<T>(
+  initial: T,
+  start?: () => void,
+  remount?: () => void
+): Store<T> {
   let value = initial
   let started = false
   const listeners = new Set<() => void>()
@@ -29,6 +35,8 @@ export function createStore<T>(initial: T, start?: () => void): Store<T> {
       if (!started) {
         started = true
         start?.()
+      } else if (listeners.size === 0) {
+        remount?.()
       }
       listeners.add(listener)
       return () => {

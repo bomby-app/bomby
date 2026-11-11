@@ -19,16 +19,28 @@ type Agents = {
   error: string | null
 }
 
-// Starts mirroring the core on the first subscriber.
-const store = createStore<Agents>({ agents: null, error: null }, () => {
-  void onAgentsChanged((agents) => store.set({ agents, error: null }))
+function readFirst() {
   agentsStatus().then(
     // An event may have brought a newer list already.
     (agents) =>
       store.set({ agents: store.get().agents ?? agents, error: null }),
     (e: unknown) => store.set({ ...store.get(), error: String(e) })
   )
-})
+}
+
+// Starts mirroring the core on the first subscriber; a first read that failed is tried
+// again when a section shows the agents again.
+const store = createStore<Agents>(
+  { agents: null, error: null },
+  () => {
+    void onAgentsChanged((agents) => store.set({ agents, error: null }))
+    readFirst()
+  },
+  () => {
+    const { agents, error } = store.get()
+    if (agents === null && error !== null) readFirst()
+  }
+)
 
 /** The agents on this computer, kept current; re-renders when they change. */
 export function useAgents(): Agents {

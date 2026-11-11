@@ -14,10 +14,16 @@ type Saved = {
  * shared by the page (Settings, Voice and the splash). Read once, then again whenever any
  * window saves a key or picks a provider (keys-changed), and after each change here.
  */
-const store = createStore<Saved>({ settings: null, error: null }, () => {
-  void onKeysChanged(() => void readVoiceSettings())
-  void readVoiceSettings()
-})
+const store = createStore<Saved>(
+  { settings: null, error: null },
+  () => {
+    void onKeysChanged(() => void readVoiceSettings())
+    void readVoiceSettings()
+  },
+  () => {
+    if (store.get().error !== null) void readVoiceSettings()
+  }
+)
 
 export function useVoiceSettings(): Saved {
   return useStore(store)

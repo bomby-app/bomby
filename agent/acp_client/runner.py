@@ -12,7 +12,14 @@ import asyncio
 import contextlib
 import logging
 import os
-from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping, Sequence
+from collections.abc import (
+    AsyncGenerator,
+    Awaitable,
+    Callable,
+    Collection,
+    Mapping,
+    Sequence,
+)
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,6 +43,7 @@ from sections import join, section
 
 from .client import HarnessClient, Reply, connect
 from .environment import AGENT_ROOT, launch
+from .redaction import scrub, secrets_to_redact
 from .sessions import close_session, discard_session
 from .settings import Applied, apply, model_setting, needs_pick
 from .streams import Outcome, Recorder
@@ -222,8 +230,12 @@ class AcpRunner:
         picks: Sequence[Pick] = (),
         short_reports: bool = False,
         streams: Recorder | None = None,
+        secrets: Collection[str] = (),
     ) -> None:
         self._harness = harness
+        # The saved keys (`redaction.py`), taken out of what the agent reports: the voice
+        # model and the log get its result.
+        self._secrets = tuple(secrets)
         self._short_reports = short_reports
         self._streams = streams
         self._picks = tuple(picks)  # the model and effort the user picked, if any
@@ -465,6 +477,12 @@ class AcpRunner:
             if isinstance(e, ConnectionError):
                 self._connection_lost(conn)
             logger.warning("%s turn in %s failed: %r", self._harness.id, s.name, e)
+            if isinstance(e, RequestError) and not reply.worked:
+                # Refused before doing anything: its setup, not the task (goose opens a
+                # session with a wrong key and fails only here, docs/acp-notes.md). The
+                # app forgets its remembered check, and the voice offers another agent.
+                report_not_ready(self._harness)
+                raise ToolError(not_ready(self._harness)) from e
             raise ToolError(stopped(self._harness)) from e
         finally:
             _ = self._client.replies.pop(session_id, None)
@@ -481,7 +499,7 @@ class AcpRunner:
                 "%s turn in %s ended without a final message", self._harness.id, s.name
             )
             raise ToolError(no_report(self._harness))
-        text = reply.text
+        text = scrub(reply.text, self._secrets)
         finished = response.stop_reason == "end_turn"
         if not finished:
             text = f"{name} stopped early ({response.stop_reason}). Its last message: {text}"
@@ -778,6 +796,7 @@ class CallRunners:
             picks=self._picks.get(harness.id, ()),
             short_reports=self._short_reports,
             streams=self._streams,
+            secrets=secrets_to_redact(self._environ),
         )
         return runner
 

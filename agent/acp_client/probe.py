@@ -8,18 +8,27 @@ A session lands in the agent's history, so the background check opens one only w
 agent can delete it again, or when the app asks for one (`open_session`): it does once per launch
 for an agent that can't (omp), so even that one's setup and model are checked, not assumed.
 The model picker, which the user opens, gets one either way. Either is closed afterwards.
+Whenever a session was opened, what can be picked comes back too, so the app keeps it for the
+model picker instead of starting the agent again when the picker opens (goose reads its
+keychain each time it starts, docs/acp-notes.md#goose-keys).
+
+An agent that fails still comes back with the keys it asks for, as far as the probe can tell
+without a session: its key fields stay on its row, since a missing key, or macOS asking
+for a password for the agent's own keychain item, is often why it failed. Where they follow a
+setting (goose's provider), its harness says where the agent keeps it (`KeyVars.saved_in`),
+which is read when no pick and no session decides it. And it says whether the agent takes
+keys at all (`takes_keys`), even when it can't name them.
 """
 
 import asyncio
 import contextlib
-import dataclasses
 import logging
 import re
 import tempfile
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Literal, cast
+from typing import Literal
 
 from acp import RequestError
 from acp.client.connection import ClientSideConnection
@@ -35,7 +44,8 @@ from harnesses.harness import Harness, KeyVar
 from job import Pick
 
 from .client import HarnessClient, connect
-from .environment import every_saved_key, launch
+from .environment import launch
+from .redaction import scrub, secrets_to_redact
 from .sessions import can_delete, discard_session
 from .settings import Setting, Skipped, apply, model_name, needs_pick
 
@@ -97,13 +107,20 @@ class Setup:
     """Whether a session was opened, so `model` and `skipped` are known. The background
     check opens none in an agent that can't delete it (omp)."""
     settings: tuple[Setting, ...] = ()
-    """What the user can pick, with the picks applied; only when listing."""
+    """What the user can pick, with the picks applied; whenever a session was opened."""
     keys: tuple[KeyField, ...] = ()
     """The keys Settings offers to save: the agent's ACP `env_var` auth methods', else its
     harness's (`key_vars`), for its provider where they follow one."""
     setup_files: tuple[str, ...] = ()
     """The files that hold its own setup, home folder expanded (`Harness.setup_files`):
     the app remembers a ready check until one of them changes."""
+    timed_out: bool = False
+    """It didn't answer in time (`unreachable`). For an agent that reads its keys from the
+    macOS keychain, the likeliest reason is a password prompt nobody has answered yet."""
+    takes_keys: bool = False
+    """Whether the agent takes keys Settings can save, as far as the probe can tell: it named
+    some (`keys`), or its harness has `key_vars`. True even when which ones isn't known (a
+    provider no session or file decides), so the app can still say what may be wrong."""
 
 
 async def probe(
@@ -115,47 +132,96 @@ async def probe(
     open_session: bool = False,
 ) -> Setup:
     """Checks `harness`, started from `program` the way a call would start it, with the
-    user's `picks` applied in order. `listing` is for the model picker: it returns the
-    settings that can be picked, opening a session even in an agent that can't delete it.
-    `open_session` opens one there too, without the settings."""
-    adapter = harness.adapter_path(environ)
-    if adapter is not None and not Path(adapter).is_file():
-        return Setup(
-            "connect", problem="Its ACP adapter isn't set up", adapter=harness.adapter
-        )
-    command, args, env = launch(harness, program, environ)
-    client = HarnessClient(harness)
+    user's `picks` applied in order. `listing` is for the model picker: it opens a session
+    even in an agent that can't delete it, to list the settings that can be picked.
+    `open_session` opens one there too."""
+    setup = await _probe(harness, program, environ, picks, listing, open_session)
+    return replace(setup, takes_keys=bool(setup.keys) or harness.key_vars is not None)
+
+
+async def _probe(
+    harness: Harness,
+    program: Path,
+    environ: Mapping[str, str],
+    picks: Sequence[Pick],
+    listing: bool,
+    open_session: bool,
+) -> Setup:
     # Out of what it says back before that's cut short, so no part of a key is left.
-    secrets = every_saved_key(environ)
-    FOLDER.mkdir(exist_ok=True)
+    secrets = secrets_to_redact(environ)
+    # What `initialize` answered, if it got that far: its keys show on a failure too.
+    started: list[InitializeResponse] = []
+    # The environment it's started with, once known: where a setting its keys follow may be.
+    agent_env: dict[str, str] = dict(environ)
+
+    def failed(problem: str, timed_out: bool = False) -> Setup:
+        return _unreachable(harness, picks, started, agent_env, problem, timed_out)
+
     try:
+        adapter = harness.adapter_path(environ)
+        if adapter is not None and not Path(adapter).is_file():
+            return Setup(
+                "connect",
+                problem="Its ACP adapter isn't set up",
+                adapter=harness.adapter,
+            )
+        # Inside the `try`: a launch or a folder that fails fails this agent only.
+        command, args, env = launch(harness, program, environ)
+        agent_env = env
+        client = HarnessClient(harness)
+        FOLDER.mkdir(exist_ok=True)
         async with asyncio.timeout(TIMEOUT_S):
             async with connect(client, command, args, env=env, cwd=FOLDER) as (
                 conn,
                 _,
                 init,
             ):
+                started.append(init)
                 return await _check(
-                    harness, conn, client, init, picks, listing, open_session, secrets
+                    harness,
+                    conn,
+                    client,
+                    init,
+                    picks,
+                    env,
+                    listing,
+                    open_session,
+                    secrets,
                 )
     except TimeoutError:
-        return Setup("unreachable", problem="It didn't answer in time")
+        return failed("It didn't answer in time", timed_out=True)
     # Before OSError, which ConnectionError is a kind of.
     except (RequestError, ConnectionError) as e:
-        return Setup(
-            "unreachable", problem=f"It quit while starting: {detail(e, secrets)}"
-        )
+        return failed(f"It quit while starting: {detail(e, secrets)}")
     except OSError as e:
-        return Setup(
-            "unreachable", problem=f"It couldn't be started: {detail(e, secrets)}"
-        )
+        return failed(f"It couldn't be started: {detail(e, secrets)}")
     # Anything else (an answer the SDK can't read) fails only this agent.
     except Exception as e:
         logger.exception("probing %s failed", harness.id)
-        return Setup(
-            "unreachable",
-            problem=f"It answered in a way Bomby can't read: {detail(e, secrets)}",
-        )
+        return failed(f"It answered in a way Bomby can't read: {detail(e, secrets)}")
+
+
+def _unreachable(
+    harness: Harness,
+    picks: Sequence[Pick],
+    started: Sequence[InitializeResponse],
+    env: Mapping[str, str],
+    problem: str,
+    timed_out: bool,
+) -> Setup:
+    """An agent that didn't answer, with the keys it asks for as far as they're known
+    without a session: its ACP `env_var` auth methods if `initialize` answered, else its
+    harness's for the user's pick, or for the setting where the agent keeps it (goose's
+    provider in its config, `KeyVars.saved_in`, read from `env`). Where neither decides
+    them, there are none, and the app keeps the ones its row last showed."""
+    auth = (started[0].auth_methods or []) if started else []
+    return Setup(
+        "unreachable",
+        problem=problem,
+        keys=key_fields(harness, auth, (), picks, env),
+        setup_files=tuple(str(Path(f).expanduser()) for f in harness.setup_files),
+        timed_out=timed_out,
+    )
 
 
 async def probe_all(
@@ -165,11 +231,10 @@ async def probe_all(
     listing: Collection[str] = (),
     sessions: Collection[str] = (),
 ) -> dict[str, Setup]:
-    """Checks every agent at once, each with its own `picks`, listing the settings of
-    those in `listing`, and opening a session in those in `sessions` even if they can't
-    delete it."""
+    """Checks every agent at once, each with its own `picks`, opening a session in those in
+    `listing` or `sessions` even if they can't delete it."""
     ids = list(agents)
-    secrets = every_saved_key(environ)
+    secrets = secrets_to_redact(environ)
     setups = await asyncio.gather(
         *(
             probe(
@@ -188,29 +253,22 @@ async def probe_all(
     return {id: redact(s, secrets) for id, s in zip(ids, setups, strict=True)}
 
 
-REDACTED = "[redacted]"
-
-
-def redact[T](value: T, secrets: Collection[str]) -> T:
-    """`value` with every one of `secrets` in its text replaced, through dataclasses and
-    tuples (a `Setup` and everything in it)."""
+def redact(setup: Setup, secrets: Collection[str]) -> Setup:
+    """`setup` with `secrets` taken out of the free text an agent can echo: its problem,
+    account and model. Steps, ids, values, commands and paths are never touched, so a key
+    that happens to be a common word can't break them."""
     if not secrets:
-        return value
-    if isinstance(value, str):
-        text = value
-        for secret in sorted(secrets, key=len, reverse=True):
-            text = text.replace(secret, REDACTED)
-        return cast(T, text)
-    if isinstance(value, tuple):
-        items = cast(tuple[object, ...], value)
-        return cast(T, tuple(redact(item, secrets) for item in items))
-    if dataclasses.is_dataclass(value) and not isinstance(value, type):
-        fields = {
-            f.name: redact(getattr(value, f.name), secrets)
-            for f in dataclasses.fields(value)
-        }
-        return cast(T, replace(value, **fields))
-    return value
+        return setup
+
+    def clean(text: str | None) -> str | None:
+        return None if text is None else scrub(text, secrets)
+
+    return replace(
+        setup,
+        problem=clean(setup.problem),
+        account=clean(setup.account),
+        model=clean(setup.model),
+    )
 
 
 async def _check(
@@ -219,6 +277,7 @@ async def _check(
     client: HarnessClient,
     init: InitializeResponse,
     picks: Sequence[Pick],
+    env: Mapping[str, str],
     listing: bool,
     open_session: bool,
     secrets: Collection[str],
@@ -237,7 +296,7 @@ async def _check(
         )
         return replace(
             setup,
-            keys=key_fields(harness, init.auth_methods or [], (), picks),
+            keys=key_fields(harness, init.auth_methods or [], (), picks, env),
             setup_files=files,
         )
     try:
@@ -248,7 +307,7 @@ async def _check(
             "sign_in",
             problem=detail(e, secrets),
             fix=fix,
-            keys=key_fields(harness, init.auth_methods or [], (), picks),
+            keys=key_fields(harness, init.auth_methods or [], (), picks, env),
             setup_files=files,
         )
     try:
@@ -270,8 +329,10 @@ async def _check(
             session=True,
             model=model,
             skipped=applied.skipped,
-            settings=applied.settings if listing else (),
-            keys=key_fields(harness, init.auth_methods or [], applied.settings, picks),
+            settings=applied.settings,
+            keys=key_fields(
+                harness, init.auth_methods or [], applied.settings, picks, env
+            ),
             setup_files=files,
         )
     finally:
@@ -328,7 +389,7 @@ def detail(error: BaseException, secrets: Collection[str] = ()) -> str:
             text = data
     elif isinstance(error, OSError):
         text = error.strerror or ""
-    text = redact((text or str(error) or type(error).__name__), secrets)
+    text = scrub(text or str(error) or type(error).__name__, secrets)
     text = text.strip().rstrip(".")
     return text if len(text) <= _MAX_DETAIL else text[: _MAX_DETAIL - 3] + "..."
 
@@ -338,11 +399,14 @@ def key_fields(
     auth_methods: Sequence[AuthMethodAgent | EnvVarAuthMethod | TerminalAuthMethod],
     settings: Sequence[Setting],
     picks: Sequence[Pick],
+    env: Mapping[str, str] | None = None,
 ) -> tuple[KeyField, ...]:
     """The keys Settings offers for the agent: the variables its `env_var` auth methods
     name, the protocol first, like `setup_command`; else its harness's `key_vars`, for the
     value of the setting they follow, the user's pick for it before the session's current
-    one (a provider refused for lack of the very key the user is about to save)."""
+    one (a provider refused for lack of the very key the user is about to save), and,
+    without either, the value where the agent keeps it (`saved_in`), read with `env`, the
+    environment it's started with."""
     from_protocol = [
         KeyField(
             name=var.name,
@@ -362,6 +426,8 @@ def key_fields(
     value = next((p.value for p in reversed(picks) if p.setting == setting), None)
     if value is None or value in harness.key_vars.defaults:
         value = next((s.current for s in settings if s.id == setting), None)
+    if value is None and env is not None and harness.key_vars.saved_in is not None:
+        value = harness.key_vars.saved_in.read(env)
     return _unique(_field(var) for var in harness.key_vars.offered(value))
 
 

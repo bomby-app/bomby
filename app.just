@@ -133,6 +133,47 @@ check-macos app="src-tauri/target/release/bundle/macos/Bomby.app":
     [[ $bad == 0 ]] || { echo "Some files need a newer macOS than $min"; exit 1; }
     echo "$count programs and libraries run on macOS $min or later"
 
+# Starts the built app with BOMBY_SMOKE_DIR, which keeps its data and logs in a fresh temp
+# folder, its keys in memory (never the keychain), finds no agents and uses no network
+# (src-tauri/src/smoke.rs). It passes only once the main window rendered and read the agents
+# and the core's first look finished: then Bomby writes smoke.json and quits by itself.
+
+# Launch a built app and check it opens: the page renders and the first agents look finishes, within `timeout` seconds
+[group('check')]
+smoke app="src-tauri/target/release/bundle/macos/Bomby.app" timeout="120":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    app="{{ app }}"; [[ $app = /* ]] || app="{{ justfile_directory() }}/app/$app"
+    [[ -d $app ]] || { echo "No app at $app: build one with just app build"; exit 1; }
+    exe="$app/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")"
+    dir=$(mktemp -d "${TMPDIR:-/tmp}/bomby-smoke.XXXXXX")
+    BOMBY_SMOKE_DIR="$dir" "$exe" >"$dir/stdout.log" 2>&1 &
+    pid=$!
+    trap 'kill -9 "$pid" 2>/dev/null || true' EXIT
+    waited=0
+    while kill -0 "$pid" 2>/dev/null && (( waited < {{ timeout }} )); do
+      sleep 1; waited=$((waited + 1))
+    done
+    show_logs() {
+      for f in "$dir/logs/app.log" "$dir/stdout.log"; do
+        [[ -s $f ]] && { echo "--- ${f#"$dir"/}"; tail -n 40 "$f"; }
+      done
+      return 0
+    }
+    if kill -0 "$pid" 2>/dev/null; then
+      echo "Bomby didn't finish launching in {{ timeout }} s: the page never said it rendered and read the agents, or the core's first look never finished. It hangs at launch."
+      show_logs
+      exit 1
+    fi
+    status=0; wait "$pid" || status=$?
+    if [[ $status != 0 || ! -s $dir/smoke.json ]]; then
+      echo "Bomby quit during launch (exit $status) without passing the smoke check."
+      show_logs
+      exit 1
+    fi
+    echo "Bomby launched in about $waited s: $(tr -d '\n ' < "$dir/smoke.json")"
+    rm -rf "$dir"
+
 # Build the frontend as a release does (tauri.conf.json's beforeBuildCommand), into dist/
 [group('check')]
 [working-directory: 'app']

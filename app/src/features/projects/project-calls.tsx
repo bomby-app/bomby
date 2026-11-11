@@ -155,13 +155,14 @@ function CallRow({
  * is waking up. One call at a time.
  */
 export function useResume(projectId: number, callId: number) {
-  const { active, starting, start } = useCall()
+  const { active, starting, start, cancel } = useCall()
   const { ready, missing } = useCallReadiness()
   return {
     can: ready && active === null && starting === null,
     missing,
     waking: starting?.resumeCallId === callId,
     resume: () => void start(projectId, callId),
+    cancel,
   }
 }
 
@@ -173,7 +174,19 @@ export function ResumeButton({
   projectId: number
   callId: number
 }) {
-  const { can, missing, waking, resume } = useResume(projectId, callId)
+  const { can, missing, waking, resume, cancel } = useResume(projectId, callId)
+  if (waking)
+    return (
+      <div className="flex items-center gap-2">
+        <Button size="sm" variant="ghost" onClick={cancel}>
+          Cancel
+        </Button>
+        <Button size="sm" variant="claude" disabled>
+          <Play />
+          Waking up...
+        </Button>
+      </div>
+    )
   return (
     <CallGate missing={missing}>
       <Button
@@ -184,7 +197,7 @@ export function ResumeButton({
         onClick={resume}
       >
         <Play />
-        {waking ? "Waking up..." : "Resume"}
+        Resume
       </Button>
     </CallGate>
   )

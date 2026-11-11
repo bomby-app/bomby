@@ -1,6 +1,7 @@
-# Builds the app as a release would, unsigned, and checks the frozen agent inside it runs:
-# catches a PyInstaller or bundling break before release day. Only for changes that can
-# cause one, so it isn't a required check. Pull requests only: a push to main was checked on
+# Builds the app as a release would, unsigned, checks the frozen agent inside it runs and
+# opens the app (just app smoke): catches a PyInstaller or bundling break, or a launch that
+# hangs, before release day. Only for changes that can cause one, so it isn't a required
+# check. Pull requests only: a push to main was checked on
 # its pull request, and the Release workflow builds the app anyway. Signing: release.yml.
 name: Package
 
@@ -8,9 +9,7 @@ on:
   pull_request:
     paths:
       - "agent/**"
-      - "app/src-tauri/**"
-      - "app/package.json"
-      - "app/bun.lock"
+      - "app/**"
       - "justfile"
       - "*.just"
       - "mise.toml"
@@ -65,3 +64,9 @@ jobs:
 
       - name: Check the bundled LiveKit server runs
         run: '"$APP/Contents/MacOS/livekit-server" --version'
+
+      # Opens the built app with its own temp folder, no keys, no agents and no network,
+      # and fails unless the window renders and the first agents look finishes (0.3.2 hung
+      # here with a blank window). Bomby quits by itself once both have said so.
+      - name: Check the app opens
+        run: just app smoke "$PWD/$APP"

@@ -13,6 +13,7 @@ from acp.client.connection import ClientSideConnection
 from acp.interfaces import Agent, Client
 from acp.schema import (
     AgentMessageChunk,
+    AgentThoughtChunk,
     AllowedOutcome,
     ClientCapabilities,
     CreateElicitationResponse,
@@ -29,6 +30,7 @@ from acp.schema import (
     RequestPermissionResponse,
     TerminalOutputResponse,
     TextContentBlock,
+    ToolCallProgress,
     ToolCallStart,
     ToolCallUpdate,
     WaitForTerminalExitResponse,
@@ -41,7 +43,7 @@ from .streams import Recorder
 
 logger = logging.getLogger("bomby.acp_client.client")
 
-CLIENT_INFO = Implementation(name="bomby", version="0.3.2")
+CLIENT_INFO = Implementation(name="bomby", version="0.3.3")
 # The SDK's read buffer per line. It reassembles longer lines anyway; this only saves
 # round trips on large messages. Matches the SDK's agent side.
 STDIO_LIMIT = 50 * 1024 * 1024
@@ -114,6 +116,9 @@ class Reply:
     def __init__(self) -> None:
         self._message_id: str | None = None
         self._parts: list[str] = []
+        # Whether the agent did anything this turn (wrote, thought or ran a tool): a turn
+        # that fails before it did was refused at the start (a wrong key, say).
+        self.worked = False
 
     def add(self, message_id: str | None, text: str) -> None:
         if message_id != self._message_id:
@@ -176,6 +181,11 @@ class HarnessClient(Client):
         reply = self.replies.get(session_id)
         if reply is None:
             return
+        if isinstance(
+            update,
+            AgentMessageChunk | AgentThoughtChunk | ToolCallStart | ToolCallProgress,
+        ):
+            reply.worked = True
         if isinstance(update, AgentMessageChunk) and isinstance(
             update.content, TextContentBlock
         ):

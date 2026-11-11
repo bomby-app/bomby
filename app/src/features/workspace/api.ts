@@ -1,4 +1,4 @@
-import { Channel, invoke } from "@tauri-apps/api/core"
+import { Channel } from "@tauri-apps/api/core"
 
 import type {
   Changes,
@@ -6,6 +6,7 @@ import type {
   FilePreview,
   FolderInfo,
 } from "@/generated/workspace"
+import { call } from "@/lib/core"
 import { log } from "@/lib/log"
 
 // The core's workspace commands (src-tauri/src/workspace/): a project's folder, its git
@@ -25,7 +26,7 @@ export function folderInfo(
   projectId: number,
   folder: string
 ): Promise<FolderInfo> {
-  return invoke("folder_info", { projectId, folder })
+  return call("folder_info", { projectId, folder }, { timeout: 60_000 })
 }
 
 /** What changed since the last commit; null when the folder isn't in a git repository. */
@@ -33,7 +34,7 @@ export function folderChanges(
   projectId: number,
   folder: string
 ): Promise<Changes | null> {
-  return invoke("folder_changes", { projectId, folder })
+  return call("folder_changes", { projectId, folder }, { timeout: 60_000 })
 }
 
 /** One directory of the folder, `""` for the folder itself: folders first, then files. */
@@ -42,7 +43,7 @@ export function folderEntries(
   folder: string,
   dir: string
 ): Promise<Entry[]> {
-  return invoke("folder_entries", { projectId, folder, dir })
+  return call("folder_entries", { projectId, folder, dir })
 }
 
 export function folderFile(
@@ -50,7 +51,7 @@ export function folderFile(
   folder: string,
   file: string
 ): Promise<FilePreview> {
-  return invoke("folder_file", { projectId, folder, file })
+  return call("folder_file", { projectId, folder, file })
 }
 
 /** An image's bytes, for a blob URL (`FilePreview.image` says it is one, and its type). */
@@ -59,12 +60,14 @@ export function folderImage(
   folder: string,
   file: string
 ): Promise<ArrayBuffer> {
-  return invoke("folder_image", { projectId, folder, file })
+  return call("folder_image", { projectId, folder, file })
 }
 
 /**
  * Calls `onChange` after each burst of changes in the folder (debounced in the core).
- * Resolves to the function that stops watching.
+ * Resolves to the function that stops watching. A watch the core starts after the page
+ * gave up waiting is stopped as soon as its id arrives: nothing shows it, and it would
+ * watch the folder until Bomby quits.
  */
 export async function watchFolder(
   projectId: number,
@@ -73,16 +76,20 @@ export async function watchFolder(
 ): Promise<() => void> {
   const changed = new Channel<null>()
   changed.onmessage = onChange
-  const id = await invoke<number>("watch_folder", {
-    projectId,
-    folder,
-    changed,
-  })
+  const id = await call<number>(
+    "watch_folder",
+    {
+      projectId,
+      folder,
+      changed,
+    },
+    { late: (id) => quietly("unwatch_folder", { id }) }
+  )
   return () => quietly("unwatch_folder", { id })
 }
 
 function quietly(command: string, args: Record<string, unknown>) {
-  void invoke(command, args).catch((e: unknown) =>
+  void call(command, args).catch((e: unknown) =>
     log(`${command}: ${String(e)}`)
   )
 }
@@ -101,6 +108,8 @@ const RESIZE_SETTLE_MS = 60
 /**
  * Starts the user's login shell in the folder, on a terminal of `cols` by `rows`. Its
  * output arrives as bytes on `onOutput`; `onExit` gets the exit code once it has gone.
+ * A shell the core starts after the page gave up waiting is closed as soon as its id
+ * arrives: no tab shows it, and it would run until Bomby quits.
  */
 export async function openTerminal({
   projectId,
@@ -122,14 +131,18 @@ export async function openTerminal({
   output.onmessage = (buffer) => onOutput(new Uint8Array(buffer))
   const exit = new Channel<number | null>()
   exit.onmessage = onExit
-  const id = await invoke<number>("terminal_open", {
-    projectId,
-    folder,
-    cols,
-    rows,
-    output,
-    exit,
-  })
+  const id = await call<number>(
+    "terminal_open",
+    {
+      projectId,
+      folder,
+      cols,
+      rows,
+      output,
+      exit,
+    },
+    { late: (id) => quietly("terminal_close", { id }) }
+  )
   // Tauri runs each command as its own task, so two can overtake each other: every input
   // carries its number and the core applies them in that order (terminals.rs, Inbox).
   let seq = 0

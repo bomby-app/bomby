@@ -1,6 +1,13 @@
 import { openUrl } from "@tauri-apps/plugin-opener"
-import { type FormEvent, useEffect, useRef, useState } from "react"
+import {
+  type FormEvent,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from "react"
 
+import { InfoTip } from "@/components/info-tip"
 import { InlineLink } from "@/components/inline-link"
 import { Button } from "@/components/ui/button"
 import {
@@ -29,6 +36,7 @@ export function ApiKeyForm({
   saved,
   keysUrl,
   hint,
+  info,
   focus = false,
   save,
   remove,
@@ -42,6 +50,8 @@ export function ApiKeyForm({
   keysUrl?: string
   /** Shown under the field while no key is saved. */
   hint?: string
+  /** What the (i) beside the label explains, if anything. */
+  info?: ReactNode
   /** Takes focus once, while no key is saved. */
   focus?: boolean
   save: (key: string) => Promise<void>
@@ -88,7 +98,10 @@ export function ApiKeyForm({
       <FieldGroup className="gap-3">
         <Field>
           <div className="flex items-center justify-between gap-2">
-            <FieldLabel htmlFor={id}>{label}</FieldLabel>
+            <div className="flex h-5 items-center gap-1">
+              <FieldLabel htmlFor={id}>{label}</FieldLabel>
+              {info && <InfoTip>{info}</InfoTip>}
+            </div>
             {keysUrl && (
               <InlineLink
                 className="text-sm"

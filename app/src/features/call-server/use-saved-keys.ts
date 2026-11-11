@@ -10,6 +10,7 @@ import {
   type LiveKitServer,
   livekitServer,
   onKeysChanged,
+  readKeysAgain,
   setLivekitServer,
 } from "./api"
 
@@ -38,10 +39,22 @@ type SavedKeys = {
   error: string | null
 }
 
-const store = createStore<SavedKeys>({ keys: null, error: null }, () => {
-  void onKeysChanged(() => void checkKeysAgain())
-  void checkKeysAgain()
-})
+const store = createStore<SavedKeys>(
+  { keys: null, error: null },
+  () => {
+    void onKeysChanged(() => void checkKeysAgain())
+    void checkKeysAgain()
+    // A first read that failed is tried again when the window comes back, so Call doesn't
+    // stay disabled until a key changes.
+    window.addEventListener("focus", () => {
+      const { keys, error } = store.get()
+      if (keys === null && error !== null) void checkKeysAgain()
+    })
+  },
+  () => {
+    if (store.get().error !== null) void checkKeysAgain()
+  }
+)
 
 /** The LiveKit server calls use, and which keys are saved. */
 export function useSavedKeys(): SavedKeys {
@@ -87,6 +100,21 @@ export async function checkKeysAgain(): Promise<void> {
   } catch (e) {
     if (read === reads) store.set({ ...store.get(), error: String(e) })
   }
+}
+
+/**
+ * Try again on a keys error: asks the keychain again (the core remembers a read that
+ * failed, so nothing else does), then reads which keys are saved. Never rejects, like
+ * `checkKeysAgain`.
+ */
+export async function tryKeysAgain(): Promise<void> {
+  try {
+    await readKeysAgain()
+  } catch (e) {
+    store.set({ ...store.get(), error: String(e) })
+    return
+  }
+  await checkKeysAgain()
 }
 
 /** Never rejects, like `checkKeysAgain`. */

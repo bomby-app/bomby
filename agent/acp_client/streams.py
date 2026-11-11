@@ -40,6 +40,8 @@ from acp.schema import (
     ToolCallStart,
 )
 
+from .redaction import scrub, secrets_to_redact
+
 logger = logging.getLogger("bomby.acp_client.streams")
 
 Outcome = Literal["done", "stopped", "failed"]
@@ -109,6 +111,10 @@ class StreamRecorder:
         self._path = path
         self._secret = secret
         self._room = room
+        # The saved keys, taken out of what an agent writes or titles a tool call with. A
+        # key split across two chunks still gets through; the final result is scrubbed
+        # whole (`AcpRunner`).
+        self._keys = secrets_to_redact(os.environ)
         self._max_pending = max_pending
         # By agent and ACP session id: the id alone is only unique to its agent.
         self._streams: dict[tuple[str, str], _Stream] = {}
@@ -203,7 +209,7 @@ class StreamRecorder:
             room = MAX_MESSAGE - stream.chars
             if room <= 0:
                 return None
-            text = update.content.text
+            text = scrub(update.content.text, self._keys)
             if len(text) > room:
                 text = text[: room - len(CUT)] + CUT
             stream.chars += min(room, len(text))
@@ -220,7 +226,7 @@ class StreamRecorder:
                 "id": cut(update.tool_call_id, MAX_ID),
             }
             if update.title is not None:
-                event["title"] = cut(update.title, MAX_TITLE)
+                event["title"] = cut(scrub(update.title, self._keys), MAX_TITLE)
             if update.kind is not None:
                 event["kind"] = update.kind
             status = update.status

@@ -31,9 +31,9 @@ pub fn no_keys() -> bool {
     var(NO_KEYS).is_some()
 }
 
-/// Whether agent `id` may be found, or looks not installed.
+/// Whether agent `id` may be found, or looks not installed. The smoke check finds none.
 pub fn agent_shown(id: &str) -> bool {
-    var(AGENTS).is_none_or(|list| listed(&list, id))
+    !crate::smoke::active() && var(AGENTS).is_none_or(|list| listed(&list, id))
 }
 
 fn listed(list: &str, id: &str) -> bool {

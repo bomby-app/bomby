@@ -40,6 +40,8 @@
     ],
     "setup_files": [
       "/Users/me/.config/goose/config.yaml"
-    ]
+    ],
+    "timed_out": true,
+    "takes_keys": true
   }
 }

@@ -10,14 +10,16 @@ pub mod watch;
 
 use std::path::{Component, Path, PathBuf};
 
-use rusqlite::Connection;
-
+use crate::db::Db;
 use crate::error::{Error, Result};
 use crate::projects;
 
-/// `folder` as one of project `id`'s folders that is still on disk.
-pub(crate) fn project_folder(conn: &Connection, id: i64, folder: &str) -> Result<PathBuf> {
-    if !projects::folders(conn, id)?.iter().any(|f| f == folder) {
+/// `folder` as one of project `id`'s folders that is still on disk. The disk is checked
+/// once the database is free again: a sleeping or unreachable volume can hold up a `stat`
+/// for seconds, and nothing else should wait on it.
+pub(crate) fn project_folder(db: &Db, id: i64, folder: &str) -> Result<PathBuf> {
+    let folders = projects::folders(&*db.conn()?, id)?;
+    if !folders.iter().any(|f| f == folder) {
         return Err(Error::NotFound("folder"));
     }
     let path = PathBuf::from(folder);
@@ -82,7 +84,7 @@ mod tests {
     #[test]
     fn project_folder_is_only_the_projects_own() {
         let db = Db::in_memory().unwrap();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         let dir = tempfile_dir("project-folder");
         let folder = dir.to_string_lossy().into_owned();
         conn.execute(
@@ -96,13 +98,14 @@ mod tests {
             rusqlite::params![id, folder],
         )
         .unwrap();
-        assert_eq!(project_folder(&conn, id, &folder).unwrap(), dir);
+        drop(conn);
+        assert_eq!(project_folder(&db, id, &folder).unwrap(), dir);
         assert!(matches!(
-            project_folder(&conn, id, "/tmp"),
+            project_folder(&db, id, "/tmp"),
             Err(Error::NotFound("folder"))
         ));
         std::fs::remove_dir_all(&dir).unwrap();
-        let gone = project_folder(&conn, id, &folder).unwrap_err().to_string();
+        let gone = project_folder(&db, id, &folder).unwrap_err().to_string();
         assert!(gone.contains("isn't there any more"), "{gone}");
     }
 

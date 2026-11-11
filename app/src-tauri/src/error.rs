@@ -15,6 +15,10 @@ pub enum Error {
     Database(#[from] rusqlite::Error),
     #[error("keychain: {0}")]
     Keychain(#[from] keyring::Error),
+    /// The keys couldn't be read from the keychain this run (denied, say); not asked again
+    /// until the user saves a key or tries again.
+    #[error("Bomby couldn't read your keys from the keychain ({0}).")]
+    Unreadable(String),
     /// The keychain entry isn't the JSON this app writes. Only credentials.rs makes it.
     #[error("stored credentials are unreadable: {0}")]
     Corrupt(serde_json::Error),
@@ -28,6 +32,10 @@ pub enum Error {
     Zip(#[from] zip::result::ZipError),
     #[error("notification: {0}")]
     Notification(#[from] tauri_plugin_notification::Error),
+    /// A thread asked for a lock it already held ([`crate::sync::Exclusive`]): a bug, which
+    /// would otherwise have hung the app.
+    #[error("Bomby asked for {0} while it already held it. Quit and open Bomby again.")]
+    Reentered(&'static str),
 }
 
 impl Serialize for Error {

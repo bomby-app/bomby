@@ -1,6 +1,6 @@
 [project]
 name = "bomby-agent"
-version = "0.3.2"
+version = "0.3.3"
 description = "Bomby's voice agent: LiveKit with Gemini 3.8 Live, OpenAI GPT-Live or Rime Prism, running agents (Claude Code first) over ACP in the background"
 authors = [
     { name = "Ahmed Aburady", email = "accounts@aburady.com" }
@@ -16,6 +16,7 @@ dependencies = [
     "livekit-plugins-rime[realtime]>=1.8.11",
     "pydantic>=2.14.2",
     "python-dotenv>=1.2.4",
+    "pyyaml>=6.0.3",
     "zep-cloud>=4.0.1",
 ]
 
@@ -24,6 +25,7 @@ dev = [
     "basedpyright==1.40.2",
     "pytest>=9.2.0",
     "ruff==0.17.2",
+    "types-pyyaml==6.0.12.20261030",
 ]
 freeze = [
     "pyinstaller>=6.22.3",

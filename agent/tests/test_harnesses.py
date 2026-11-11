@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -8,7 +9,7 @@ from livekit.agents.llm import ToolError
 
 from acp_client.runner import AcpRunner, CallRunners
 from harnesses import CLAUDE_CODE, CODEX, GOOSE, HARNESSES, OMP, OPENCODE, installed
-from harnesses.harness import ADAPTERS, Harness
+from harnesses.harness import ADAPTERS, Harness, SettingSource
 from job import Pick, read_metadata
 from project import Project
 
@@ -185,3 +186,38 @@ def test_only_goose_names_setup_files_or_key_variables() -> None:
         if harness.id != "goose":
             assert (harness.setup_files, harness.key_vars) == ((), None), harness.id
             assert not harness.saved_keys_env, harness.id
+
+
+def test_gooses_provider_is_read_where_goose_reads_it(tmp_path: Path) -> None:
+    # The same keys and order as goose's own config, in files of the test's.
+    assert GOOSE.key_vars is not None and GOOSE.key_vars.saved_in is not None
+    assert GOOSE.key_vars.saved_in.files == (
+        "/etc/goose/config.yaml",
+        "~/.config/goose/config.yaml",
+    )
+    system, user = tmp_path / "system.yaml", tmp_path / "user.yaml"
+    source = replace(GOOSE.key_vars.saved_in, files=(str(system), str(user)))
+
+    assert source.read({}) is None, "no config yet"
+    _ = user.write_text("GOOSE_PROVIDER: openrouter\nGOOSE_MODEL: kimi\n")
+    assert source.read({}) == "openrouter", "goose's flat layout, before 1.59"
+    _ = user.write_text(
+        "active_provider: anthropic\nproviders:\n  anthropic:\n    model: opus\n"
+        + "GOOSE_PROVIDER: openrouter\n"
+    )
+    assert source.read({}) == "anthropic", "its providers block wins"
+    _ = system.write_text("active_provider: openai\n")
+    assert source.read({}) == "anthropic", "the user's file over the system's"
+    _ = user.write_text("GOOSE_MODEL: kimi\n")
+    assert source.read({}) == "openai"
+    assert source.read({"GOOSE_PROVIDER": "xai"}) == "xai", "its environment first"
+
+
+def test_a_setting_file_that_cant_be_read_counts_as_empty(tmp_path: Path) -> None:
+    broken, listed, number = (tmp_path / n for n in ("a.yaml", "b.yaml", "c.yaml"))
+    _ = broken.write_text("active_provider: [unclosed\n")
+    _ = listed.write_text("- active_provider\n")
+    _ = number.write_text("active_provider: 3\n")
+    for file in (broken, listed, number, tmp_path / "missing.yaml", tmp_path):
+        source = SettingSource(files=(str(file),), keys=("active_provider",))
+        assert source.read({}) is None, file.name

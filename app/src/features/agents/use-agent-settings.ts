@@ -28,9 +28,14 @@ export type AgentSettings = {
 /**
  * `agent`'s settings for the model picker and the Agents row. Its state belongs to one
  * agent: give the component that calls it a `key` of the agent's id, so another agent
- * starts fresh rather than on this one's answers.
+ * starts fresh rather than on this one's answers. `shown` is whether anyone sees them now
+ * (a row that's open): one that stays mounted while collapsed asks the agent again after a
+ * change only once it's shown (`load`), not in the background.
  */
-export function useAgentSettings(agent: string): AgentSettings {
+export function useAgentSettings(
+  agent: string,
+  shown: boolean = true
+): AgentSettings {
   const [listed, setListed] = useState<Listed | null>(
     () => keptListing(agent) ?? null
   )
@@ -62,15 +67,17 @@ export function useAgentSettings(agent: string): AgentSettings {
     [agent]
   )
 
-  // Its keys changed: a picker showing its answer, or waiting on one (which is dropped now),
-  // asks again. The core answers once its own check with the new keys is done.
-  const showing = listed !== null || busy !== null
+  // Its keys changed, or Refresh models: a picker showing its answer, or waiting on one
+  // (which is dropped now), asks again. The core answers once its own check with the new
+  // keys is done.
+  const showing = shown && (listed !== null || busy !== null)
   useEffect(
     () =>
       onAgentListingForgotten((forgotten) => {
-        if (forgotten !== agent) return
+        if (forgotten !== null && forgotten !== agent) return
         setError(null)
         setListed(null)
+        setBusy(null)
         if (showing) settle(() => agentSettings(agent), "loading")
       }),
     [agent, showing, settle]

@@ -136,7 +136,7 @@ fn list<R: Runtime>(app: &AppHandle<R>, agent: &str, picks: &[Pick]) -> Result<(
         failed => {
             let db = app.state::<Db>();
             let shown = settle_failure(
-                &db.conn(),
+                &*db.conn()?,
                 &app.state::<Agents>(),
                 agent,
                 failed.as_ref().map(|l| &l.setup),
@@ -165,7 +165,8 @@ fn settle_failure(
 }
 
 /// Keeps `setup`, a live answer from a session of `agent` with `picks` saved, for the
-/// launch check, against what it was `asked` with, or forgets what it had (`agent_checks`).
+/// launch check, against what it was `asked` with, or forgets what it had (`agent_checks`),
+/// and keeps the key fields it offers for the row at later launches (`agent_key_fields`).
 fn remember<R: Runtime>(
     app: &AppHandle<R>,
     agent: &str,
@@ -173,9 +174,14 @@ fn remember<R: Runtime>(
     picks: &[Pick],
     asked: &Asked,
 ) -> Result<()> {
+    agents::record_key_fields(app, agent, setup, &asked.started);
     let fingerprint = Fingerprint::of(&asked.program, &setup.setup_files, picks, &asked.keys);
+    // Checked without the agents' keys: not what a launch with them would find.
+    if app.state::<crate::credentials::Vault>().unreadable() {
+        return Ok(());
+    }
     app.state::<Agents>().record_check(
-        &app.state::<Db>().conn(),
+        &*app.state::<Db>().conn()?,
         agent,
         setup,
         &fingerprint,
@@ -198,26 +204,7 @@ pub(crate) fn keys_changed(
 /// Checks `agent` again, alone, with its saved picks and keys, and shows the answer in its
 /// row, kept over a look that started before (its keys changed). Logged when it fails.
 pub fn recheck<R: Runtime>(app: &AppHandle<R>, agent: &str) {
-    let lock = app.state::<Agents>().one_at_a_time(agent);
-    let _one = sync::lock(&lock);
-    app.state::<Listings>().forget_one(agent);
-    let checked = saved_for(&app.state::<Db>().conn(), agent).and_then(|picks| {
-        let asked = ask(app, agent, &picks, false)?;
-        match &asked.listed {
-            Some(listed) if listed.setup.session => {
-                remember(app, agent, &listed.setup, &picks, &asked)?;
-                Ok(app.state::<Agents>().picked(agent, &listed.setup))
-            }
-            // It didn't get as far as a session: the row shows why, as a look would.
-            failed => settle_failure(
-                &app.state::<Db>().conn(),
-                &app.state::<Agents>(),
-                agent,
-                failed.as_ref().map(|l| &l.setup),
-            ),
-        }
-    });
-    match checked {
+    match recheck_with(app, agent, |picks| ask(app, agent, picks, false)) {
         Ok(shown) => show(app, shown),
         Err(e) => {
             let _ = crate::app_log::append(app, &format!("checking {agent} again: {e}"));
@@ -225,9 +212,46 @@ pub fn recheck<R: Runtime>(app: &AppHandle<R>, agent: &str) {
     }
 }
 
+/// [`recheck`], with how the agent is asked (a probe of seconds) passed in, so a test can
+/// answer for it. The new list when the row changed.
+fn recheck_with<R: Runtime>(
+    app: &AppHandle<R>,
+    agent: &str,
+    ask: impl FnOnce(&[Pick]) -> Result<Asked>,
+) -> Result<Option<Vec<agents::AgentStatus>>> {
+    let lock = app.state::<Agents>().one_at_a_time(agent);
+    let _one = sync::lock(&lock);
+    app.state::<Listings>().forget_one(agent);
+    // A `let`, so the database is free again before the probe, and for `remember`.
+    let picks = saved_for(&*app.state::<Db>().conn()?, agent)?;
+    let asked = ask(&picks)?;
+    if let Some(listed) = &asked.listed {
+        keep_listing(app, agent, listed, &asked.started);
+    }
+    match &asked.listed {
+        // Shown, never remembered: the check ran with keys that just changed, and a
+        // session doesn't prove a key works (goose opens one with a wrong key and fails only
+        // on a prompt, docs/acp-notes.md), so the next launch checks it again.
+        // Its key fields are kept, though: they follow the agent's provider, not its key.
+        Some(listed) if listed.setup.session => {
+            agents::record_key_fields(app, agent, &listed.setup, &asked.started);
+            Ok(app.state::<Agents>().picked(agent, &listed.setup))
+        }
+        // It didn't get as far as a session: the row shows why, as a look would.
+        failed => settle_failure(
+            &*app.state::<Db>().conn()?,
+            &app.state::<Agents>(),
+            agent,
+            failed.as_ref().map(|l| &l.setup),
+        ),
+    }
+}
+
 /// What each agent let the user pick, as it last answered, for the whole launch: asking
-/// starts the agent, seconds each time, so the model picker asks each agent once, and every
-/// pick keeps the answer current. Forgotten only on a full check (`refresh_agents`).
+/// starts the agent, seconds each time, so the model picker asks each agent at most once, and
+/// not at all when a look or recheck already opened a session in it ([`keep_listing`]); every
+/// pick keeps the answer current. Forgotten on a full check (`refresh_agents`), and for one
+/// agent when its keys change.
 #[derive(Default)]
 pub struct Listings(Mutex<HashMap<String, Listed>>);
 
@@ -240,6 +264,13 @@ impl Listings {
         sync::lock(&self.0).insert(agent.to_owned(), listed.clone());
     }
 
+    /// Keeps `listed` for `agent` unless the picker already has an answer, which is newer.
+    fn keep_unless_known(&self, agent: &str, listed: &Listed) {
+        sync::lock(&self.0)
+            .entry(agent.to_owned())
+            .or_insert_with(|| listed.clone());
+    }
+
     /// Every agent is asked again when its picker next opens.
     pub fn forget(&self) {
         sync::lock(&self.0).clear();
@@ -248,6 +279,23 @@ impl Listings {
     /// `agent` is asked again when its picker next opens.
     fn forget_one(&self, agent: &str) {
         sync::lock(&self.0).remove(agent);
+    }
+}
+
+/// Keeps `listed`, what a check with a session (a look, a recheck) found agent `id` lets the
+/// user pick, for its model picker, so opening the picker doesn't start the agent a second
+/// time: goose reads its keychain item each time it starts, which can be a macOS password
+/// prompt (docs/acp-notes.md#goose-keys). Never over an answer the picker already has, nor
+/// one asked with keys or picks that changed since the check `started`.
+pub(crate) fn keep_listing<R: Runtime>(
+    app: &AppHandle<R>,
+    id: &str,
+    listed: &Listed,
+    started: &Started,
+) {
+    let agents = app.state::<Agents>();
+    if listed.setup.session && agents.unrevised(started, id) && agents.unpicked(started, id) {
+        app.state::<Listings>().keep_unless_known(id, listed);
     }
 }
 
@@ -272,7 +320,7 @@ pub async fn agent_settings<R: Runtime>(app: AppHandle<R>, agent: String) -> Res
         if let Some(listed) = app.state::<Listings>().get(&agent) {
             return Ok(listed);
         }
-        let picks = saved_for(&app.state::<Db>().conn(), &agent)?;
+        let picks = saved_for(&*app.state::<Db>().conn()?, &agent)?;
         let (listed, asked) = list(&app, &agent, &picks)?;
         remember(&app, &agent, &listed.setup, &picks, &asked)?;
         // Asked with keys that changed meanwhile: shown to this caller, kept nowhere.
@@ -303,7 +351,7 @@ pub async fn pick_agent_settings<R: Runtime>(
         let lock = app.state::<Agents>().one_at_a_time(&agent);
         let _one = sync::lock(&lock);
         let db = app.state::<Db>();
-        let mut picks = saved_for(&db.conn(), &agent)?;
+        let mut picks = saved_for(&*db.conn()?, &agent)?;
         picks.retain(|p| p.setting != pick.setting);
         picks.push(pick.clone());
         // One that didn't get as far as a session (it timed out, say) fails in `list`.
@@ -317,7 +365,7 @@ pub async fn pick_agent_settings<R: Runtime>(
             return Err(Error::Invalid(why_not_taken(skipped, &agent, asks_for_key)));
         }
         let saved = to_save(picks, &listed, &pick);
-        save(&mut db.conn(), &agent, &saved)?;
+        save(&mut *db.conn()?, &agent, &saved)?;
         remember(&app, &agent, &listed.setup, &saved, &asked)?;
         // A pick that fell away with this one isn't the user's any more: no note for it.
         listed
@@ -390,6 +438,7 @@ fn to_save(mut picks: Vec<Pick>, listed: &Listed, new: &Pick) -> Vec<Pick> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent_key_fields;
 
     fn pick(setting: &str, value: &str) -> Pick {
         Pick {
@@ -398,10 +447,199 @@ mod tests {
         }
     }
 
+    /// The answer a probe gives for goose, through `recheck_with`'s `ask`.
+    fn asked(app: &tauri::App<tauri::test::MockRuntime>, setup: Option<Setup>) -> Asked {
+        Asked {
+            listed: setup.map(|setup| Listed {
+                setup,
+                settings: Vec::new(),
+            }),
+            program: PathBuf::from("/Users/me/.local/bin/goose"),
+            keys: vec!["OPENROUTER_API_KEY".into()],
+            started: app.state::<Agents>().start_check(),
+        }
+    }
+
+    #[test]
+    fn checking_again_lets_the_database_go_for_the_probe_and_remembers_nothing() {
+        // 0.3.2 held the database from reading the picks through the probe and then took
+        // it again: it hung for good after every key saved for an agent.
+        let shown = Setup {
+            session: true,
+            ..Setup::default()
+        };
+        let app = crate::testing::app_with(Agents::showing(
+            "goose",
+            "/Users/me/.local/bin/goose",
+            shown,
+        ));
+        save(
+            &mut app.state::<Db>().conn().unwrap(),
+            "goose",
+            &[pick("model", "kimi")],
+        )
+        .unwrap();
+        let ready = Setup {
+            session: true,
+            model: Some("Kimi".into()),
+            setup_files: vec!["/Users/me/.config/goose/config.yaml".into()],
+            ..Setup::default()
+        };
+
+        let changed = recheck_with(app.handle(), "goose", |picks| {
+            assert_eq!(picks, [pick("model", "kimi")]);
+            assert!(
+                !app.state::<Db>().held_here(),
+                "free while the agent answers"
+            );
+            Ok(asked(&app, Some(ready.clone())))
+        })
+        .unwrap();
+
+        assert!(changed.is_some(), "its row shows the new answer");
+        let remembered = agent_checks::all(&app.state::<Db>().conn().unwrap()).unwrap();
+        assert!(
+            remembered.is_empty(),
+            "not kept for the next launch: a new key isn't proven by a session"
+        );
+
+        // One that didn't get a session: forgotten, and its row says why.
+        let signed_out = Setup {
+            step: setup::Step::SignIn,
+            problem: Some("Sign in to goose.".into()),
+            ..Setup::default()
+        };
+        let changed = recheck_with(app.handle(), "goose", |_| {
+            Ok(asked(&app, Some(signed_out.clone())))
+        })
+        .unwrap();
+        assert!(changed.is_some());
+        assert!(
+            agent_checks::all(&app.state::<Db>().conn().unwrap())
+                .unwrap()
+                .is_empty()
+        );
+        assert!(!app.state::<Db>().held_here());
+    }
+
+    #[test]
+    fn a_key_saved_from_a_row_that_timed_out_checks_the_agent_again_and_shows_it_ready() {
+        // goose's first look timed out on macOS's keychain prompt, its row offering the
+        // field a session named at an earlier launch. The user saves the key there.
+        let key = setup::KeyField {
+            name: "OPENROUTER_API_KEY".into(),
+            label: "OpenRouter API key".into(),
+            secret: true,
+            optional: false,
+        };
+        let timed_out = Setup {
+            step: setup::Step::Unreachable,
+            problem: Some("It didn't answer in time".into()),
+            timed_out: true,
+            takes_keys: true,
+            keys: vec![key.clone()],
+            ..Setup::default()
+        };
+        let app = crate::testing::app_with(Agents::showing(
+            "goose",
+            "/Users/me/.local/bin/goose",
+            timed_out,
+        ));
+        let agents = app.state::<Agents>();
+        assert!(
+            agents.offers_key("goose", "OPENROUTER_API_KEY"),
+            "Save takes it"
+        );
+        keys_changed(
+            &agents,
+            &app.state::<Listings>(),
+            &app.state::<Db>().conn().unwrap(),
+            "goose",
+        )
+        .unwrap();
+        // With the key, goose reads no keychain (`GOOSE_DISABLE_KEYRING`, its harness's
+        // `saved_keys_env`) and answers at once.
+        let ready = Setup {
+            session: true,
+            model: Some("Kimi".into()),
+            keys: vec![key],
+            takes_keys: true,
+            ..Setup::default()
+        };
+
+        let changed = recheck_with(app.handle(), "goose", |_| {
+            Ok(asked(&app, Some(ready.clone())))
+        })
+        .unwrap();
+
+        let found = changed.expect("its row changed");
+        assert_eq!(
+            agents::usable(&found),
+            [(
+                "goose".to_owned(),
+                PathBuf::from("/Users/me/.local/bin/goose")
+            )],
+            "ready: calls can use it"
+        );
+        let kept = agent_key_fields::all(&app.state::<Db>().conn().unwrap()).unwrap();
+        assert_eq!(
+            kept["goose"], ready.keys,
+            "and its field shows at the next launch"
+        );
+    }
+
+    #[test]
+    fn a_check_with_a_session_fills_the_model_picker_so_it_doesnt_start_the_agent_again() {
+        // Each start of goose can be a macOS password prompt for its keychain.
+        let app = crate::testing::app_with(Agents::showing(
+            "goose",
+            "/Users/me/.local/bin/goose",
+            Setup::default(),
+        ));
+        let listed = |model: &str| Listed {
+            setup: Setup {
+                session: true,
+                model: Some(model.into()),
+                ..Setup::default()
+            },
+            settings: Vec::new(),
+        };
+        let agents = app.state::<Agents>();
+        let listings = app.state::<Listings>();
+
+        // Not when the picks changed while it ran: it listed what no longer holds.
+        let started = agents.start_check();
+        agents.picked("goose", &listed("picked").setup);
+        keep_listing(app.handle(), "goose", &listed("old"), &started);
+        assert!(listings.get("goose").is_none());
+
+        // Not without a session: nothing was listed.
+        let started = agents.start_check();
+        let sessionless = Listed {
+            setup: Setup::default(),
+            settings: Vec::new(),
+        };
+        keep_listing(app.handle(), "goose", &sessionless, &started);
+        assert!(listings.get("goose").is_none());
+
+        keep_listing(app.handle(), "goose", &listed("Kimi"), &started);
+        assert_eq!(listings.get("goose"), Some(listed("Kimi")));
+        // Never over the picker's own answer, which is newer.
+        keep_listing(app.handle(), "goose", &listed("later"), &started);
+        assert_eq!(listings.get("goose"), Some(listed("Kimi")));
+
+        // A recheck after a key change lists with the new key, for the picker too.
+        recheck_with(app.handle(), "goose", |_| {
+            Ok(asked(&app, Some(listed("with key").setup)))
+        })
+        .unwrap();
+        assert_eq!(listings.get("goose"), Some(listed("with key")));
+    }
+
     #[test]
     fn keeps_each_agents_picks_in_order_and_replaces_them() {
         let db = Db::in_memory().unwrap();
-        let mut conn = db.conn();
+        let mut conn = db.conn().unwrap();
         assert!(
             saved(&conn).unwrap().is_empty(),
             "every agent starts on its defaults"
@@ -483,7 +721,7 @@ mod tests {
         // A picker that asked with the old key, still on its way.
         let asked_before = agents.start_check();
 
-        keys_changed(&agents, &listings, &db.conn(), "goose").unwrap();
+        keys_changed(&agents, &listings, &db.conn().unwrap(), "goose").unwrap();
 
         assert_eq!(
             listings.get("goose"),
@@ -531,7 +769,7 @@ mod tests {
     #[test]
     fn a_failed_live_check_forgets_the_remembered_one_and_shows_on_the_row() {
         let db = Db::in_memory().unwrap();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         let ready = setup::Setup {
             session: true,
             setup_files: vec!["/Users/me/.config/goose/config.yaml".into()],

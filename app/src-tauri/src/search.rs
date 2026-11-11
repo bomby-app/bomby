@@ -7,10 +7,11 @@ use caseless::Caseless;
 use rusqlite::functions::FunctionFlags;
 use rusqlite::{Connection, params};
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, Manager, Runtime};
 use unicode_normalization::UnicodeNormalization;
 use unicode_normalization::char::is_combining_mark;
 
+use crate::blocking::blocking;
 use crate::db::Db;
 use crate::error::Result;
 
@@ -260,9 +261,13 @@ fn search_in(conn: &Connection, query: &str) -> Result<SearchResults> {
 
 /// Projects whose name has every word of `query`, and calls whose name has every word or
 /// with a line that has every word (each of three characters or more), any case.
-#[tauri::command(async)]
-pub fn search(db: State<'_, Db>, query: String) -> Result<SearchResults> {
-    search_in(&db.conn(), &query)
+#[tauri::command]
+pub async fn search<R: Runtime>(app: AppHandle<R>, query: String) -> Result<SearchResults> {
+    blocking(app, move |app| {
+        let db = app.state::<Db>();
+        search_in(&*db.conn()?, &query)
+    })
+    .await
 }
 
 #[cfg(test)]
@@ -304,7 +309,7 @@ mod tests {
     #[test]
     fn finds_projects_by_any_part_of_their_name_starts_first() {
         let db = Db::in_memory().unwrap();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         project(&conn, "Garden planner");
         project(&conn, "Plant shop");
         project(&conn, "Samba");
@@ -327,7 +332,7 @@ mod tests {
     #[test]
     fn finds_calls_by_what_was_said_once_each_the_latest_first() {
         let db = Db::in_memory().unwrap();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         let garden = project(&conn, "Garden");
         let older = call(&conn, garden, 1);
         let newer = call(&conn, garden, 2);
@@ -380,7 +385,7 @@ mod tests {
     #[test]
     fn finds_calls_by_their_name_once_each_with_a_line_when_one_matched_too() {
         let db = Db::in_memory().unwrap();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         let garden = project(&conn, "Garden");
         let named = call(&conn, garden, 1);
         let both = call(&conn, garden, 2);
@@ -430,7 +435,7 @@ mod tests {
         assert_eq!(fold("ÇA"), "ca");
         assert_eq!(fold("ΟΣ"), fold("οσ"), "final sigma folds like any other");
         let db = Db::in_memory().unwrap();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         project(&conn, "Café Ölmühle");
         let found: Vec<String> = search_in(&conn, "cafe OLM")
             .unwrap()
@@ -458,7 +463,7 @@ mod tests {
     #[test]
     fn a_common_word_gives_the_latest_calls_each_with_its_snippet() {
         let db = Db::in_memory().unwrap();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         let garden = project(&conn, "Garden");
         let calls: Vec<i64> = (0..MAX_CALLS + 5)
             .map(|at| {
@@ -490,7 +495,7 @@ mod tests {
     #[test]
     fn follows_lines_as_they_grow_and_go() {
         let db = Db::in_memory().unwrap();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         let garden = project(&conn, "Garden");
         let id = call(&conn, garden, 1);
         say(&conn, id, "a", "user", "Water the");

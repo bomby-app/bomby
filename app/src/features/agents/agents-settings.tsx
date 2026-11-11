@@ -10,11 +10,12 @@ import { AgentLogo } from "./agent-logos"
 import { type AgentStatus, versionNumber } from "./api"
 import { FixSteps } from "./fix-steps"
 import { InstallButton } from "./install-button"
+import { mayBeAskingForPassword } from "./key-fields"
 import { modelName } from "./model-picker"
 import { ModelSettings, skippedNote } from "./model-settings"
 import { SetUpButton } from "./set-up-button"
 import { useAdapterInstall } from "./use-adapter-install"
-import { useSavedAgentKeys } from "./use-agent-keys"
+import { useAgentKeysError, useSavedAgentKeys } from "./use-agent-keys"
 import { forgetListedSettings, useAgentSettings } from "./use-agent-settings"
 import { checkAgentsAgain, isReady, setupStep, useAgents } from "./use-agents"
 
@@ -30,6 +31,7 @@ import { checkAgentsAgain, isReady, setupStep, useAgents } from "./use-agents"
  */
 export function AgentsSettings() {
   const { agents, error } = useAgents()
+  const keysError = useAgentKeysError()
   const install = useAdapterInstall()
   const [checking, startChecking] = useTransition()
   const [openId, setOpenId] = useState<string | null>(null)
@@ -42,25 +44,30 @@ export function AgentsSettings() {
       </p>
       {error && <ErrorCard message={error} />}
       {install.error && <ErrorCard message={install.error} />}
-      <ul className="flex flex-col divide-y overflow-hidden rounded-lg border">
-        {agents === null ? (
-          <StatusRow
-            logo={<SquareTerminal />}
-            name="Agents"
-            ready={null}
-            detail={null}
-          />
-        ) : (
-          agents.map((agent) => (
-            <AgentRow
-              key={agent.id}
-              agent={agent}
-              open={openId === agent.id}
-              onOpenChange={(open) => setOpenId(open ? agent.id : null)}
+      {keysError && <ErrorCard message={keysError} />}
+      {/* A first read that failed shows above, with Refresh models; not a check that
+          never ends. */}
+      {(agents !== null || !error) && (
+        <ul className="flex flex-col divide-y overflow-hidden rounded-lg border">
+          {agents === null ? (
+            <StatusRow
+              logo={<SquareTerminal />}
+              name="Agents"
+              ready={null}
+              detail={null}
             />
-          ))
-        )}
-      </ul>
+          ) : (
+            agents.map((agent) => (
+              <AgentRow
+                key={agent.id}
+                agent={agent}
+                open={openId === agent.id}
+                onOpenChange={(open) => setOpenId(open ? agent.id : null)}
+              />
+            ))
+          )}
+        </ul>
+      )}
       <div>
         <CheckAgainButton
           checking={checking}
@@ -108,17 +115,18 @@ function AgentRow({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
-  const settings = useAgentSettings(agent.id)
+  const settings = useAgentSettings(agent.id, open)
   const step = setupStep(agent)
   const pickable = step === "pick" || step === "ready"
-  const { saved } = useSavedAgentKeys(agent.id)
+  const { saved, known } = useSavedAgentKeys(agent.id)
   const keys = (agent.setup?.keys.length ?? 0) > 0 || saved.length > 0
+  const asking = mayBeAskingForPassword(agent, saved, known)
   return (
     <StatusRow
       logo={<AgentLogo id={agent.id} />}
       name={agent.name}
       ready={isReady(agent)}
-      detail={detail(agent)}
+      detail={detail(agent, asking)}
       action={action(agent)}
       expand={
         pickable || keys
@@ -143,7 +151,11 @@ function AgentRow({
   )
 }
 
-function detail(agent: AgentStatus): ReactNode {
+/**
+ * What the row says under the agent's name. `asking`: it didn't answer in time, likely
+ * because macOS is asking for a password for it ([`mayBeAskingForPassword`]).
+ */
+function detail(agent: AgentStatus, asking: boolean): ReactNode {
   const { name, version, setup } = agent
   switch (setupStep(agent)) {
     case "missing":
@@ -155,12 +167,16 @@ function detail(agent: AgentStatus): ReactNode {
       return (
         <span className="inline-flex max-w-full items-center gap-1.5">
           <span className="truncate select-text">
-            {setup?.problem ??
-              (setupStep(agent) === "sign_in"
-                ? "Needs setup"
-                : "It didn't answer")}
+            {asking
+              ? // The cause first and short: the row cuts a long line, and How to fix
+                // says the rest.
+                "Your Mac may be asking for a password."
+              : (setup?.problem ??
+                (setupStep(agent) === "sign_in"
+                  ? "Needs setup"
+                  : "It didn't answer"))}
           </span>
-          <FixSteps agent={agent} />
+          <FixSteps agent={agent} asking={asking} />
         </span>
       )
     case "pick":

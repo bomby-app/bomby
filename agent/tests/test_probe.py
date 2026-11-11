@@ -5,17 +5,20 @@ import os
 import subprocess
 import sys
 from collections.abc import Collection
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+import acp_client.probe as probe_module
 import probe as probe_cli
 from acp_client.environment import AGENT_KEYS_ENV
-from acp_client.probe import KeyField, Setup, probe, probe_all
+from acp_client.probe import KeyField, Setup, probe, probe_all, redact
+from acp_client.redaction import secrets_to_redact
 from acp_client.settings import Skipped
 from harnesses import Harness
-from harnesses.harness import KeyVar, KeyVars
+from harnesses.harness import KeyVar, KeyVars, SettingSource
 from job import Pick, read_metadata
 
 FAKE_AGENT = Path(__file__).resolve().parent / "fake_claude_acp.py"
@@ -80,10 +83,11 @@ def test_a_harness_can_add_a_setting_the_agent_lists_without_a_category(
     assert ids(setup) == ["provider", "model", "effort"]
 
 
-def test_the_background_check_leaves_the_option_lists_out(tmp_path: Path) -> None:
+def test_a_check_with_a_session_lists_what_can_be_picked(tmp_path: Path) -> None:
+    # So the model picker needn't start the agent again (goose asks for its keychain).
     setup, _ = run_probe(tmp_path, {**CAN_DELETE, "FAKE_ACP_MODEL": "m1"})
 
-    assert setup.settings == ()
+    assert ids(setup) == ["model", "effort"]
 
 
 def test_saved_picks_are_applied_in_order_and_the_settings_follow(
@@ -207,14 +211,12 @@ def test_listing_opens_and_closes_a_session_the_agent_cant_delete(
     assert events == ["initialize", "new_session", "close_session"]
 
 
-def test_a_session_asked_for_is_opened_and_closed_without_the_option_lists(
-    tmp_path: Path,
-) -> None:
+def test_a_session_asked_for_is_opened_and_closed(tmp_path: Path) -> None:
     # The app asks once per launch, so omp's setup is checked, not assumed.
     setup, events = run_probe(tmp_path, {"FAKE_ACP_MODEL": "m1"}, open_session=True)
 
     assert (setup.step, setup.model, setup.session) == ("ready", "Fake m1", True)
-    assert setup.settings == ()
+    assert ids(setup) == ["model", "effort"]
     assert events == ["initialize", "new_session", "close_session"]
 
 
@@ -335,6 +337,8 @@ def test_the_command_line_answers_by_agent_id(
             "settings": [],
             "keys": [],
             "setup_files": [],
+            "timed_out": False,
+            "takes_keys": False,
         }
     }
 
@@ -555,6 +559,29 @@ def test_a_saved_key_an_agent_echoes_never_reaches_the_answer(tmp_path: Path) ->
     assert "sk-fake" not in answer and "sk-other" not in answer
 
 
+def test_redaction_touches_only_what_an_agent_says_and_skips_placeholder_keys() -> None:
+    setup = Setup(
+        "ready",
+        problem="Key sk-or-real-123456 rejected",
+        fix="goose configure",
+        model="goose-model",
+        setup_files=("/Users/me/.config/goose/config.yaml",),
+        session=True,
+    )
+    # A dummy key for a local gateway ("goose", "e") is left alone everywhere; a real one
+    # goes from the free text only.
+    secrets = secrets_to_redact(
+        {
+            AGENT_KEYS_ENV: json.dumps(
+                {"goose": {"A": "goose", "B": "e", "C": "sk-or-real-123456"}}
+            )
+        }
+    )
+    assert secrets == ("sk-or-real-123456",)
+    redacted = redact(setup, (*secrets, "goose", "e"))
+    assert redacted == replace(setup, problem="Key [redacted] rejected")
+
+
 def test_the_probe_starts_an_agent_with_its_own_saved_keys_only(
     tmp_path: Path,
 ) -> None:
@@ -587,3 +614,124 @@ def test_the_setup_files_come_back_with_the_home_folder_expanded(
     assert setup.setup_files == expected
     assert sessionless.setup_files == expected
     assert run_probe(tmp_path, env)[0].setup_files == ()
+
+
+def test_a_probe_that_cant_set_up_fails_its_agent_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Its working folder can't be made: a file is in the way.
+    blocked = tmp_path / "bomby-probe"
+    _ = blocked.write_text("")
+    monkeypatch.setattr(probe_module, "FOLDER", blocked)
+
+    setups = asyncio.run(
+        probe_all({"fake": (KEYED, Path(sys.executable))}, {**os.environ, **CAN_DELETE})
+    )
+
+    assert setups["fake"].step == "unreachable"
+
+
+def test_metadata_the_probe_cant_read_answers_no_agents() -> None:
+    assert probe_cli.main('{"agents": "not a map"}') == "{}"
+
+
+def test_an_agent_that_doesnt_answer_in_time_still_offers_its_keys(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # goose waiting on macOS's password prompt for its keychain: saving a key is the way out.
+    monkeypatch.setattr(probe_module, "TIMEOUT_S", 1)
+    hang = {**CAN_DELETE, "FAKE_ACP_HANG": "new_session"}
+    harness = dataclasses.replace(KEYED, setup_files=("~/.config/fake/config.yaml",))
+
+    picked, events = run_probe(tmp_path, hang, harness, (Pick("provider", "p2"),))
+
+    assert picked.step == "unreachable"
+    assert picked.problem == "It didn't answer in time"
+    assert picked.timed_out
+    assert [k.name for k in picked.keys] == ["P2_API_KEY"]
+    assert picked.setup_files == (str(Path.home() / ".config/fake/config.yaml"),)
+    assert events == ["initialize", "hang"]
+
+
+def test_an_agent_that_doesnt_answer_in_time_offers_the_keys_it_named_over_acp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(probe_module, "TIMEOUT_S", 1)
+    env = {
+        **CAN_DELETE,
+        "FAKE_ACP_HANG": "new_session",
+        "FAKE_ACP_ENV_VAR_AUTH": "FAKE_API_KEY",
+    }
+
+    setup, _ = run_probe(tmp_path, env, KEYED)
+
+    assert setup.timed_out
+    assert setup.keys == (KeyField("FAKE_API_KEY", "Fake API key"),)
+
+
+def test_without_a_pick_a_session_or_a_saved_setting_keys_are_unknown_but_taken(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # goose's first check ever, with no provider anywhere Bomby can read: no field to offer,
+    # but the row can still say macOS may be asking, and the app keeps any fields it showed.
+    monkeypatch.setattr(probe_module, "TIMEOUT_S", 1)
+
+    setup, _ = run_probe(
+        tmp_path, {**CAN_DELETE, "FAKE_ACP_HANG": "new_session"}, KEYED
+    )
+
+    assert (setup.step, setup.timed_out, setup.keys) == ("unreachable", True, ())
+    assert setup.takes_keys
+
+
+def test_a_first_check_that_times_out_names_the_keys_for_the_setting_in_the_agents_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # goose keeps its provider in config.yaml: read there, no session needed.
+    monkeypatch.setattr(probe_module, "TIMEOUT_S", 1)
+    config = tmp_path / "config.yaml"
+    _ = config.write_text("active_provider: p2\nGOOSE_MODEL: kimi\n")
+    assert KEYED.key_vars is not None
+    harness = dataclasses.replace(
+        KEYED,
+        key_vars=dataclasses.replace(
+            KEYED.key_vars,
+            saved_in=SettingSource(
+                env=("FAKE_PROVIDER",),
+                files=(str(config),),
+                keys=("active_provider",),
+            ),
+        ),
+    )
+    hang = {**CAN_DELETE, "FAKE_ACP_HANG": "new_session"}
+
+    from_file, _ = run_probe(tmp_path, hang, harness)
+    from_env, _ = run_probe(tmp_path, {**hang, "FAKE_PROVIDER": "p3"}, harness)
+    picked, _ = run_probe(tmp_path, hang, harness, (Pick("provider", "p1"),))
+
+    assert from_file.timed_out
+    assert [k.name for k in from_file.keys] == ["P2_API_KEY"]
+    assert [k.name for k in from_env.keys] == ["P3_API_KEY"], (
+        "its environment comes first"
+    )
+    assert [k.name for k in picked.keys] == ["P1_API_KEY"], (
+        "the user's pick comes first"
+    )
+
+
+def test_an_agent_that_takes_no_keys_says_so() -> None:
+    assert not asyncio.run(
+        probe(FAKE, Path("/nowhere/fake"), dict(os.environ))
+    ).takes_keys
+
+
+def test_an_agent_that_wont_start_offers_the_keys_its_pick_asks_for(
+    tmp_path: Path,
+) -> None:
+    setup = asyncio.run(
+        probe(KEYED, tmp_path / "missing", dict(os.environ), (Pick("provider", "p3"),))
+    )
+
+    assert setup.step == "unreachable"
+    assert not setup.timed_out
+    assert [k.name for k in setup.keys] == ["P3_API_KEY"]

@@ -398,6 +398,10 @@ class FakeClaude:
         if text.startswith("fail "):
             raise RequestError(-32603, "Internal error", {"details": text[5:]})
 
+        if text.startswith("fail-after-work "):
+            await say("Let me look. ")
+            raise RequestError(-32603, "Internal error", {"details": text[16:]})
+
         if text.startswith("crash "):
             print(text[6:], file=sys.stderr, flush=True)
             os._exit(1)

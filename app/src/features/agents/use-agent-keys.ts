@@ -27,16 +27,33 @@ async function readAgain(): Promise<void> {
   }
 }
 
-const store = createStore<AgentKeys>({ saved: null, error: null }, () => {
-  void onKeysChanged(() => void readAgain())
-  void readAgain()
-})
+const store = createStore<AgentKeys>(
+  { saved: null, error: null },
+  () => {
+    void onKeysChanged(() => void readAgain())
+    void readAgain()
+  },
+  () => {
+    if (store.get().error !== null) void readAgain()
+  }
+)
 
-/** The variables with a key saved for `agent`, kept current. */
+/**
+ * The variables with a key saved for `agent`, kept current, and whether that's known yet:
+ * until the core first answers, nothing is, and a field can't say whether it's saved.
+ */
 export function useSavedAgentKeys(agent: string): {
   saved: string[]
-  error: string | null
+  known: boolean
 } {
-  const { saved, error } = useStore(store)
-  return { saved: saved?.[agent] ?? [], error }
+  const { saved } = useStore(store)
+  return { saved: saved?.[agent] ?? [], known: saved !== null }
+}
+
+/**
+ * Why the saved keys couldn't be read, for the whole Agents section (it's about every
+ * agent's keys, not one's). Saving still works: the core keeps what it's given.
+ */
+export function useAgentKeysError(): string | null {
+  return useStore(store).error
 }

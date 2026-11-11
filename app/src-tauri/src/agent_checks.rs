@@ -281,7 +281,7 @@ mod tests {
         let files = vec![config.display().to_string()];
         let program = Path::new("/no/such/goose");
         let db = Db::in_memory().unwrap();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         let started = 2_000 * 1_000_000_000;
 
         // Unchanged since the check started: kept.
@@ -303,7 +303,7 @@ mod tests {
     #[test]
     fn records_forgets_and_reads_back() {
         let db = Db::in_memory().unwrap();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         let files = vec!["/Users/me/.config/goose/config.yaml".to_owned()];
         let fingerprint = Fingerprint::of(Path::new("/no/such/goose"), &files, &[], &[]);
 

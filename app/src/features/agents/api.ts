@@ -1,8 +1,8 @@
-import { invoke } from "@tauri-apps/api/core"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 import { openUrl } from "@tauri-apps/plugin-opener"
 
 import type { AgentStatus, Listed, SettingPick } from "@/generated/agents"
+import { AGENT_PROBE, AGENTS_LOOK, call } from "@/lib/core"
 
 // The core's view of the agents on this computer (src-tauri/src/agents.rs). The types are
 // generated from the core's own structs (`just app types`), so the two can't drift apart.
@@ -21,12 +21,12 @@ export type {
 
 /** What the core found last: instant, except right after launch while it first looks. */
 export function agentsStatus(): Promise<AgentStatus[]> {
-  return invoke("agents_status")
+  return call("agents_status", undefined, { timeout: AGENTS_LOOK })
 }
 
 /** Asks the core to look again, setup included; resolves with what it found. */
 export function refreshAgents(): Promise<AgentStatus[]> {
-  return invoke("refresh_agents")
+  return call("refresh_agents", undefined, { timeout: AGENTS_LOOK })
 }
 
 /**
@@ -34,7 +34,7 @@ export function refreshAgents(): Promise<AgentStatus[]> {
  * The agents list follows, through `agents-changed`, when the answer changes its row.
  */
 export function agentSettings(agent: string): Promise<Listed> {
-  return invoke("agent_settings", { agent })
+  return call("agent_settings", { agent }, { timeout: AGENT_PROBE })
 }
 
 /**
@@ -47,12 +47,12 @@ export function pickAgentSettings(
   agent: string,
   pick: SettingPick
 ): Promise<Listed> {
-  return invoke("pick_agent_settings", { agent, pick })
+  return call("pick_agent_settings", { agent, pick }, { timeout: AGENT_PROBE })
 }
 
 /** Which variables have a key saved, by agent id: names only, never a key. */
 export function agentKeys(): Promise<Partial<Record<string, string[]>>> {
-  return invoke("agent_keys")
+  return call("agent_keys")
 }
 
 /**
@@ -65,17 +65,17 @@ export function saveAgentKey(
   name: string,
   key: string
 ): Promise<void> {
-  return invoke("save_agent_key", { agent, name, key })
+  return call("save_agent_key", { agent, name, key })
 }
 
 /** Removes `agent`'s key saved under `name`; every window hears keys-changed. */
 export function clearAgentKey(agent: string, name: string): Promise<void> {
-  return invoke("clear_agent_key", { agent, name })
+  return call("clear_agent_key", { agent, name })
 }
 
 /** Installs every ACP adapter into the app's folder; resolves once the agents are rechecked. */
 export function installAdapters(): Promise<void> {
-  return invoke("install_adapters")
+  return call("install_adapters", undefined, { timeout: null })
 }
 
 /** Opens `agent`'s own install page in the browser (allowed in `capabilities/`). */
