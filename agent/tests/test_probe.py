@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 from collections.abc import Collection
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +13,8 @@ import pytest
 
 import probe as probe_cli
 from acp_client.environment import AGENT_KEYS_ENV
-from acp_client.probe import KeyField, Setup, probe, probe_all
+from acp_client.probe import KeyField, Setup, probe, probe_all, redact
+from acp_client.redaction import secrets_to_redact
 from acp_client.settings import Skipped
 from harnesses import Harness
 from harnesses.harness import KeyVar, KeyVars
@@ -553,6 +555,29 @@ def test_a_saved_key_an_agent_echoes_never_reaches_the_answer(tmp_path: Path) ->
         "Credential rejected: [redacted] (not [redacted])"
     )
     assert "sk-fake" not in answer and "sk-other" not in answer
+
+
+def test_redaction_touches_only_what_an_agent_says_and_skips_placeholder_keys() -> None:
+    setup = Setup(
+        "ready",
+        problem="Key sk-or-real-123456 rejected",
+        fix="goose configure",
+        model="goose-model",
+        setup_files=("/Users/me/.config/goose/config.yaml",),
+        session=True,
+    )
+    # A dummy key for a local gateway ("goose", "e") is left alone everywhere; a real one
+    # goes from the free text only.
+    secrets = secrets_to_redact(
+        {
+            AGENT_KEYS_ENV: json.dumps(
+                {"goose": {"A": "goose", "B": "e", "C": "sk-or-real-123456"}}
+            )
+        }
+    )
+    assert secrets == ("sk-or-real-123456",)
+    redacted = redact(setup, (*secrets, "goose", "e"))
+    assert redacted == replace(setup, problem="Key [redacted] rejected")
 
 
 def test_the_probe_starts_an_agent_with_its_own_saved_keys_only(

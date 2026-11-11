@@ -12,14 +12,13 @@ The model picker, which the user opens, gets one either way. Either is closed af
 
 import asyncio
 import contextlib
-import dataclasses
 import logging
 import re
 import tempfile
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Literal, cast
+from typing import Literal
 
 from acp import RequestError
 from acp.client.connection import ClientSideConnection
@@ -35,7 +34,8 @@ from harnesses.harness import Harness, KeyVar
 from job import Pick
 
 from .client import HarnessClient, connect
-from .environment import every_saved_key, launch
+from .environment import launch
+from .redaction import scrub, secrets_to_redact
 from .sessions import can_delete, discard_session
 from .settings import Setting, Skipped, apply, model_name, needs_pick
 
@@ -126,7 +126,7 @@ async def probe(
     command, args, env = launch(harness, program, environ)
     client = HarnessClient(harness)
     # Out of what it says back before that's cut short, so no part of a key is left.
-    secrets = every_saved_key(environ)
+    secrets = secrets_to_redact(environ)
     FOLDER.mkdir(exist_ok=True)
     try:
         async with asyncio.timeout(TIMEOUT_S):
@@ -169,7 +169,7 @@ async def probe_all(
     those in `listing`, and opening a session in those in `sessions` even if they can't
     delete it."""
     ids = list(agents)
-    secrets = every_saved_key(environ)
+    secrets = secrets_to_redact(environ)
     setups = await asyncio.gather(
         *(
             probe(
@@ -188,29 +188,22 @@ async def probe_all(
     return {id: redact(s, secrets) for id, s in zip(ids, setups, strict=True)}
 
 
-REDACTED = "[redacted]"
-
-
-def redact[T](value: T, secrets: Collection[str]) -> T:
-    """`value` with every one of `secrets` in its text replaced, through dataclasses and
-    tuples (a `Setup` and everything in it)."""
+def redact(setup: Setup, secrets: Collection[str]) -> Setup:
+    """`setup` with `secrets` taken out of the free text an agent can echo: its problem,
+    account and model. Steps, ids, values, commands and paths are never touched, so a key
+    that happens to be a common word can't break them."""
     if not secrets:
-        return value
-    if isinstance(value, str):
-        text = value
-        for secret in sorted(secrets, key=len, reverse=True):
-            text = text.replace(secret, REDACTED)
-        return cast(T, text)
-    if isinstance(value, tuple):
-        items = cast(tuple[object, ...], value)
-        return cast(T, tuple(redact(item, secrets) for item in items))
-    if dataclasses.is_dataclass(value) and not isinstance(value, type):
-        fields = {
-            f.name: redact(getattr(value, f.name), secrets)
-            for f in dataclasses.fields(value)
-        }
-        return cast(T, replace(value, **fields))
-    return value
+        return setup
+
+    def clean(text: str | None) -> str | None:
+        return None if text is None else scrub(text, secrets)
+
+    return replace(
+        setup,
+        problem=clean(setup.problem),
+        account=clean(setup.account),
+        model=clean(setup.model),
+    )
 
 
 async def _check(
@@ -328,7 +321,7 @@ def detail(error: BaseException, secrets: Collection[str] = ()) -> str:
             text = data
     elif isinstance(error, OSError):
         text = error.strerror or ""
-    text = redact((text or str(error) or type(error).__name__), secrets)
+    text = scrub(text or str(error) or type(error).__name__, secrets)
     text = text.strip().rstrip(".")
     return text if len(text) <= _MAX_DETAIL else text[: _MAX_DETAIL - 3] + "..."
 
