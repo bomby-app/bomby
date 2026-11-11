@@ -14,7 +14,7 @@ import { modelName } from "./model-picker"
 import { ModelSettings, skippedNote } from "./model-settings"
 import { SetUpButton } from "./set-up-button"
 import { useAdapterInstall } from "./use-adapter-install"
-import { useSavedAgentKeys } from "./use-agent-keys"
+import { useAgentKeysError, useSavedAgentKeys } from "./use-agent-keys"
 import { forgetListedSettings, useAgentSettings } from "./use-agent-settings"
 import { checkAgentsAgain, isReady, setupStep, useAgents } from "./use-agents"
 
@@ -30,6 +30,7 @@ import { checkAgentsAgain, isReady, setupStep, useAgents } from "./use-agents"
  */
 export function AgentsSettings() {
   const { agents, error } = useAgents()
+  const keysError = useAgentKeysError()
   const install = useAdapterInstall()
   const [checking, startChecking] = useTransition()
   const [openId, setOpenId] = useState<string | null>(null)
@@ -42,6 +43,7 @@ export function AgentsSettings() {
       </p>
       {error && <ErrorCard message={error} />}
       {install.error && <ErrorCard message={install.error} />}
+      {keysError && <ErrorCard message={keysError} />}
       <ul className="flex flex-col divide-y overflow-hidden rounded-lg border">
         {agents === null ? (
           <StatusRow

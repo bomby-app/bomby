@@ -1,10 +1,9 @@
 import { ApiKeyForm } from "@/components/api-key-form"
-import { FieldError } from "@/components/ui/field"
 
 import { type AgentStatus, clearAgentKey, saveAgentKey } from "./api"
 import { keyFields } from "./key-fields"
 import { forgetAgentListing } from "./listing-cache"
-import { useSavedAgentKeys } from "./use-agent-keys"
+import { useAgentKeysError, useSavedAgentKeys } from "./use-agent-keys"
 
 /**
  * The keys an agent asks for, as its setup probe lists them (`setup.keys`: the agent's own
@@ -15,9 +14,20 @@ import { useSavedAgentKeys } from "./use-agent-keys"
  * here is asked again: another key can mean other models.
  */
 export function AgentKeys({ agent }: { agent: AgentStatus }) {
-  const { saved, error } = useSavedAgentKeys(agent.id)
+  const { saved, known } = useSavedAgentKeys(agent.id)
+  const failed = useAgentKeysError() !== null
   const fields = keyFields(agent.setup?.keys ?? [], saved)
   if (fields.length === 0) return null
+  // Not known yet (or the read failed, which the section says once): a field can't say
+  // whether its key is saved, so none offers Save over one that may be.
+  if (!known)
+    return (
+      <p className="text-sm text-muted-foreground">
+        {failed
+          ? `Bomby couldn't check which of ${agent.name}'s keys are saved.`
+          : `Checking which of ${agent.name}'s keys are saved...`}
+      </p>
+    )
   return (
     <div className="flex flex-col gap-3">
       <p className="text-sm text-muted-foreground">
@@ -41,7 +51,6 @@ export function AgentKeys({ agent }: { agent: AgentStatus }) {
           }}
         />
       ))}
-      {error && <FieldError>{error}</FieldError>}
     </div>
   )
 }
