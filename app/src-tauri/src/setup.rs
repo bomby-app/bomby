@@ -68,13 +68,14 @@ pub struct Setup {
 }
 
 impl Setup {
-    /// Keeps `before`'s key fields, those the agent's row showed, when this answer has none
-    /// and opened no session: without one the probe can't always tell which keys the agent
-    /// takes (goose's follow its provider), and a failure is exactly when the user needs a
-    /// field to save one in.
-    pub fn keep_keys_from(&mut self, before: &Setup) {
+    /// Takes `shown`, key fields its row showed before (this run, or the last session's,
+    /// kept across launches in `agent_key_fields`), when this answer has none and opened no
+    /// session: without one the probe can't always tell which keys the agent takes (goose's
+    /// follow its provider), and a failure is exactly when the user needs a field to save
+    /// one in. A session's answer is believed, none included.
+    pub fn keep_keys(&mut self, shown: &[KeyField]) {
         if !self.session && self.keys.is_empty() {
-            self.keys.clone_from(&before.keys);
+            self.keys = shown.to_vec();
         }
     }
 }

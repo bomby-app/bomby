@@ -165,7 +165,8 @@ fn settle_failure(
 }
 
 /// Keeps `setup`, a live answer from a session of `agent` with `picks` saved, for the
-/// launch check, against what it was `asked` with, or forgets what it had (`agent_checks`).
+/// launch check, against what it was `asked` with, or forgets what it had (`agent_checks`),
+/// and keeps the key fields it offers for the row at later launches (`agent_key_fields`).
 fn remember<R: Runtime>(
     app: &AppHandle<R>,
     agent: &str,
@@ -173,6 +174,7 @@ fn remember<R: Runtime>(
     picks: &[Pick],
     asked: &Asked,
 ) -> Result<()> {
+    agents::record_key_fields(app, agent, setup, &asked.started);
     let fingerprint = Fingerprint::of(&asked.program, &setup.setup_files, picks, &asked.keys);
     // Checked without the agents' keys: not what a launch with them would find.
     if app.state::<crate::credentials::Vault>().unreadable() {
@@ -230,7 +232,9 @@ fn recheck_with<R: Runtime>(
         // Shown, never remembered: the check ran with keys that just changed, and a
         // session doesn't prove a key works (goose opens one with a wrong key and fails only
         // on a prompt, docs/acp-notes.md), so the next launch checks it again.
+        // Its key fields are kept, though: they follow the agent's provider, not its key.
         Some(listed) if listed.setup.session => {
+            agents::record_key_fields(app, agent, &listed.setup, &asked.started);
             Ok(app.state::<Agents>().picked(agent, &listed.setup))
         }
         // It didn't get as far as a session: the row shows why, as a look would.
@@ -434,6 +438,7 @@ fn to_save(mut picks: Vec<Pick>, listed: &Listed, new: &Pick) -> Vec<Pick> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent_key_fields;
 
     fn pick(setting: &str, value: &str) -> Pick {
         Pick {
@@ -515,6 +520,72 @@ mod tests {
                 .is_empty()
         );
         assert!(!app.state::<Db>().held_here());
+    }
+
+    #[test]
+    fn a_key_saved_from_a_row_that_timed_out_checks_the_agent_again_and_shows_it_ready() {
+        // goose's first look timed out on macOS's keychain prompt, its row offering the
+        // field a session named at an earlier launch. The user saves the key there.
+        let key = setup::KeyField {
+            name: "OPENROUTER_API_KEY".into(),
+            label: "OpenRouter API key".into(),
+            secret: true,
+            optional: false,
+        };
+        let timed_out = Setup {
+            step: setup::Step::Unreachable,
+            problem: Some("It didn't answer in time".into()),
+            timed_out: true,
+            takes_keys: true,
+            keys: vec![key.clone()],
+            ..Setup::default()
+        };
+        let app = crate::testing::app_with(Agents::showing(
+            "goose",
+            "/Users/me/.local/bin/goose",
+            timed_out,
+        ));
+        let agents = app.state::<Agents>();
+        assert!(
+            agents.offers_key("goose", "OPENROUTER_API_KEY"),
+            "Save takes it"
+        );
+        keys_changed(
+            &agents,
+            &app.state::<Listings>(),
+            &app.state::<Db>().conn().unwrap(),
+            "goose",
+        )
+        .unwrap();
+        // With the key, goose reads no keychain (`GOOSE_DISABLE_KEYRING`, its harness's
+        // `saved_keys_env`) and answers at once.
+        let ready = Setup {
+            session: true,
+            model: Some("Kimi".into()),
+            keys: vec![key],
+            takes_keys: true,
+            ..Setup::default()
+        };
+
+        let changed = recheck_with(app.handle(), "goose", |_| {
+            Ok(asked(&app, Some(ready.clone())))
+        })
+        .unwrap();
+
+        let found = changed.expect("its row changed");
+        assert_eq!(
+            agents::usable(&found),
+            [(
+                "goose".to_owned(),
+                PathBuf::from("/Users/me/.local/bin/goose")
+            )],
+            "ready: calls can use it"
+        );
+        let kept = agent_key_fields::all(&app.state::<Db>().conn().unwrap()).unwrap();
+        assert_eq!(
+            kept["goose"], ready.keys,
+            "and its field shows at the next launch"
+        );
     }
 
     #[test]

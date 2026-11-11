@@ -5,6 +5,7 @@
 mod adapters;
 mod agent;
 mod agent_checks;
+mod agent_key_fields;
 mod agent_picks;
 mod agent_streams;
 mod agents;

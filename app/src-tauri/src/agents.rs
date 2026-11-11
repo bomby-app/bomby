@@ -31,13 +31,14 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 use crate::agent_checks::{self, Fingerprint, Remembered};
+use crate::agent_key_fields;
 use crate::agent_picks;
 use crate::credentials::{AgentKeys, Vault};
 use crate::db::{Db, now_ms};
 use crate::dev;
 use crate::error::Result;
 use crate::process;
-use crate::setup::{self, Listed, Pick, Setup, Step};
+use crate::setup::{self, KeyField, Listed, Pick, Setup, Step};
 use crate::sync;
 
 /// The event every window gets with the new list when a look finds something different.
@@ -318,12 +319,14 @@ fn version_of(program: &Path) -> Option<String> {
 }
 
 /// What a look takes from elsewhere, read once it has started: each agent's picks and saved
-/// keys, and the checks remembered from before.
+/// keys, the checks remembered from before, and the key fields each row last offered from a
+/// session (`agent_key_fields`).
 #[derive(Default)]
 pub struct Look {
     pub picks: HashMap<String, Vec<Pick>>,
     pub keys: AgentKeys,
     pub remembered: HashMap<String, Remembered>,
+    pub key_fields: HashMap<String, Vec<KeyField>>,
     /// When the look started, and what was known of each agent then.
     pub started: Started,
 }
@@ -357,6 +360,16 @@ impl Look {
         Fingerprint::of(program, files, picks, &keys)
     }
 
+    /// What agent `id`'s row shows for `setup`, the probe's answer: with the key fields a
+    /// session last offered, kept from an earlier launch, when it can't name any
+    /// ([`Setup::keep_keys`]).
+    fn shown(&self, id: &str, mut setup: Setup) -> Setup {
+        if let Some(kept) = self.key_fields.get(id) {
+            setup.keep_keys(kept);
+        }
+        setup
+    }
+
     /// The remembered setup of agent `id` at `program`, if it still holds at `at`.
     fn still_holds(&self, id: &str, program: &Path, at: i64) -> Option<Setup> {
         let remembered = self.remembered.get(id)?;
@@ -367,9 +380,10 @@ impl Look {
 
 /// Every known agent with its status and setup, the probe applying each one's picks and
 /// keys from `look`. An agent whose remembered check still holds isn't started; every check
-/// the probe makes goes to `record`, with what it depends on and what it lets the user pick. The probe and each agent's
-/// own checks run side by side, so a look takes about as long as the shell and the slowest
-/// of them.
+/// the probe makes goes to `record`, with what it depends on and what it lets the user pick.
+/// One that fails without naming its keys offers the fields a session last named
+/// ([`Setup::keep_keys`]), from an earlier launch too. The probe and each agent's own checks
+/// run side by side, so a look takes about as long as the shell and the slowest of them.
 fn detect_all(
     previous: &HashMap<String, PathBuf>,
     look: &Look,
@@ -418,7 +432,7 @@ fn detect_all(
         for agent in &mut agents {
             agent.setup = reused
                 .remove(agent.id)
-                .or_else(|| setups.remove(agent.id).map(|listed| listed.setup));
+                .or_else(|| Some(look.shown(agent.id, setups.remove(agent.id)?.setup)));
         }
         agents
     })
@@ -482,7 +496,7 @@ impl Detection {
         let agent = found.iter_mut().find(|a| a.id == id)?;
         let mut setup = setup.clone();
         if let Some(before) = &agent.setup {
-            setup.keep_keys_from(before);
+            setup.keep_keys(&before.keys);
         }
         if agent.setup.as_ref() == Some(&setup) {
             return None;
@@ -749,7 +763,7 @@ impl Agents {
 /// replaces: the setup of an agent whose settings were picked while it ran, for an agent it
 /// opened no session in (omp can't delete one), the setup last found with a session, by a
 /// look, the model picker or a pick, and for one that failed without naming its keys, the
-/// key fields its row showed ([`Setup::keep_keys_from`]). An agent `revised_since` the look
+/// key fields its row showed ([`Setup::keep_keys`]). An agent `revised_since` the look
 /// started (its keys changed, [`Agents::invalidate`]) keeps its row whatever the look found,
 /// failures too: the look ran on what's no longer true, and the agent's own recheck answers.
 fn keep_what_the_look_missed(
@@ -772,7 +786,7 @@ fn keep_what_the_look_missed(
             continue;
         }
         if let Some(setup) = agent.setup.as_mut() {
-            setup.keep_keys_from(old);
+            setup.keep_keys(&old.keys);
         }
         // A problem with the agent itself (signed out, not answering) shows: no pick changes it.
         if agent
@@ -853,6 +867,7 @@ fn refresh<R: Runtime>(
     seen: Option<Vec<(String, PathBuf)>>,
 ) -> Vec<AgentStatus> {
     let record = |id: &str, listed: &Listed, fingerprint: &Fingerprint, started: &Started| {
+        record_key_fields(app, id, &listed.setup, started);
         record_check(app, id, &listed.setup, fingerprint, started);
         agent_picks::keep_listing(app, id, listed, started);
     };
@@ -867,30 +882,66 @@ fn refresh<R: Runtime>(
     found
 }
 
-/// What a look reads before it starts: the user's picks and the remembered checks, in one
-/// hold of the database, and the agents' saved keys. Without the database (only if it can't
-/// be read), every agent shows its defaults and is checked.
+/// What a look reads before it starts: the user's picks, the remembered checks and the kept
+/// key fields, in one hold of the database, and the agents' saved keys. Without the database
+/// (only if it can't be read), every agent shows its defaults and is checked.
 pub(crate) fn look_reads<R: Runtime>(app: &AppHandle<R>) -> Look {
     // Before anything it reads: what changes after this is the next check's.
     let started = app.state::<Agents>().start_check();
-    let (picks, remembered) = saved_choices(&app.state::<Db>()).unwrap_or_else(|e| {
+    let SavedChoices {
+        picks,
+        remembered,
+        key_fields,
+    } = saved_choices(&app.state::<Db>()).unwrap_or_else(|e| {
         let _ = crate::app_log::append(app, &format!("reading the agents' picks: {e}"));
-        Default::default()
+        SavedChoices::default()
     });
     Look {
         started,
         picks,
         keys: saved_keys(app),
         remembered,
+        key_fields,
     }
 }
 
-type SavedChoices = (HashMap<String, Vec<Pick>>, HashMap<String, Remembered>);
+#[derive(Default)]
+struct SavedChoices {
+    picks: HashMap<String, Vec<Pick>>,
+    remembered: HashMap<String, Remembered>,
+    key_fields: HashMap<String, Vec<KeyField>>,
+}
 
-/// Every agent's picks and remembered check.
+/// Every agent's picks, remembered check and kept key fields.
 fn saved_choices(db: &Db) -> Result<SavedChoices> {
     let conn = db.conn()?;
-    Ok((agent_picks::saved(&conn)?, agent_checks::all(&conn)?))
+    Ok(SavedChoices {
+        picks: agent_picks::saved(&conn)?,
+        remembered: agent_checks::all(&conn)?,
+        key_fields: agent_key_fields::all(&conn)?,
+    })
+}
+
+/// Keeps the key fields a session of `id` offered, for its row at later launches
+/// (`agent_key_fields`), unless its picks or what's known of it changed since the check
+/// `started`: the answer is about a setup that's no longer the agent's. Logged when it can't.
+pub(crate) fn record_key_fields<R: Runtime>(
+    app: &AppHandle<R>,
+    id: &str,
+    setup: &Setup,
+    started: &Started,
+) {
+    let agents = app.state::<Agents>();
+    if !setup.session || !agents.unrevised(started, id) || !agents.unpicked(started, id) {
+        return;
+    }
+    let recorded = app
+        .state::<Db>()
+        .conn()
+        .and_then(|conn| agent_key_fields::record(&conn, id, setup));
+    if let Err(e) = recorded {
+        let _ = crate::app_log::append(app, &format!("keeping {id}'s key fields: {e}"));
+    }
 }
 
 /// Keeps a check a look made ([`Agents::record_check`]); logged when it can't.
@@ -1516,6 +1567,97 @@ mod tests {
         };
         agents.replace_setup("goose", &keyless);
         assert!(agents.offered_keys("goose").is_empty());
+    }
+
+    #[test]
+    fn a_first_look_that_times_out_offers_the_fields_a_session_offered_at_an_earlier_launch() {
+        // goose at launch, waiting on macOS's keychain prompt, with no provider the probe
+        // can read and no row yet this run: the field comes from the last session.
+        let key = setup::KeyField {
+            name: "OPENROUTER_API_KEY".into(),
+            label: "OpenRouter API key".into(),
+            secret: true,
+            optional: false,
+        };
+        let timed_out = Setup {
+            step: Step::Unreachable,
+            problem: Some("It didn't answer in time".into()),
+            timed_out: true,
+            takes_keys: true,
+            ..Setup::default()
+        };
+        let goose = |setup| AgentStatus {
+            setup: Some(setup),
+            ..status("goose", Some("/b/goose"))
+        };
+        let first_look = |app: &tauri::App<tauri::test::MockRuntime>| {
+            let shown = look_reads(app.handle()).shown("goose", timed_out.clone());
+            let agents = Agents::default();
+            agents.detect_with(None, |_| vec![goose(shown)]);
+            agents
+        };
+
+        // Never a session with goose: no field, but the row knows it takes keys.
+        let app = crate::testing::app();
+        let agents = first_look(&app);
+        assert!(agents.offered_keys("goose").is_empty());
+        let shown = agents.cached().unwrap()[0].setup.clone().unwrap();
+        assert!(shown.takes_keys && shown.timed_out);
+
+        // A session at an earlier launch named its key: this launch's first look offers it.
+        let app = crate::testing::app();
+        let earlier = Setup {
+            session: true,
+            keys: vec![key.clone()],
+            ..ready("Kimi")
+        };
+        let started = app.state::<Agents>().start_check();
+        record_key_fields(app.handle(), "goose", &earlier, &started);
+        let agents = first_look(&app);
+        assert_eq!(agents.offered_keys("goose"), ["OPENROUTER_API_KEY"]);
+        assert!(
+            agents.offers_key("goose", "OPENROUTER_API_KEY"),
+            "so it can be saved"
+        );
+
+        // A probe that names keys itself (from a pick or goose's config) is believed.
+        let anthropic = setup::KeyField {
+            name: "ANTHROPIC_API_KEY".into(),
+            label: "Anthropic API key".into(),
+            ..key
+        };
+        let named = Setup {
+            keys: vec![anthropic.clone()],
+            ..timed_out.clone()
+        };
+        assert_eq!(
+            look_reads(app.handle()).shown("goose", named).keys,
+            vec![anthropic]
+        );
+    }
+
+    #[test]
+    fn a_session_found_before_a_pick_or_a_key_change_keeps_no_key_fields() {
+        let app = crate::testing::app();
+        let agents = app.state::<Agents>();
+        let keyed = Setup {
+            session: true,
+            keys: vec![setup::KeyField {
+                name: "OPENROUTER_API_KEY".into(),
+                label: "OpenRouter API key".into(),
+                secret: true,
+                optional: false,
+            }],
+            ..ready("Kimi")
+        };
+        let started = agents.start_check();
+        agents.picked("goose", &keyed);
+        record_key_fields(app.handle(), "goose", &keyed, &started);
+        let started = agents.start_check();
+        agents.revise("goose");
+        record_key_fields(app.handle(), "goose", &keyed, &started);
+
+        assert!(look_reads(app.handle()).key_fields.is_empty());
     }
 
     #[test]

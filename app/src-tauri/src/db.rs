@@ -171,6 +171,14 @@ const MIGRATIONS: &[&str] = &[
         checked_at  INTEGER NOT NULL
     );
     ",
+    // 12: the key fields each agent's row last offered from a session (agent_key_fields.rs),
+    // as JSON: variable names and labels, never a key.
+    "
+    CREATE TABLE agent_key_fields (
+        agent  TEXT PRIMARY KEY,
+        fields TEXT NOT NULL
+    );
+    ",
 ];
 
 /// The open database, shared by every command through Tauri state. One thread can't take it
