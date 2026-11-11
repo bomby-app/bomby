@@ -10,7 +10,7 @@ use crate::settings::{self, LiveKitServer};
 
 fn chosen<R: Runtime>(app: &AppHandle<R>, db: &Db, vault: &Vault) -> Result<LiveKitServer> {
     let theirs = vault.livekit(app)?.is_some();
-    settings::livekit_server(&db.conn(), theirs)
+    settings::livekit_server(&*db.conn()?, theirs)
 }
 
 fn their_keys<R: Runtime>(app: &AppHandle<R>, vault: &Vault) -> Result<LiveKitKeys> {
@@ -66,7 +66,7 @@ pub fn set_livekit_server<R: Runtime>(
     db: State<'_, Db>,
     server: LiveKitServer,
 ) -> Result<()> {
-    settings::save_livekit_server(&db.conn(), server)?;
+    settings::save_livekit_server(&*db.conn()?, server)?;
     let _ = app.emit(KEYS_CHANGED, ());
     Ok(())
 }

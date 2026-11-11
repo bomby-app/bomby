@@ -379,23 +379,23 @@ fn delete(conn: &Connection, id: i64) -> Result<()> {
 
 #[tauri::command(async)]
 pub fn list_projects(db: State<'_, Db>) -> Result<Vec<Project>> {
-    list(&db.conn())
+    list(&*db.conn()?)
 }
 
 #[tauri::command(async)]
 pub fn create_project(db: State<'_, Db>, input: ProjectInput) -> Result<Project> {
-    create(&mut db.conn(), input)
+    create(&mut *db.conn()?, input)
 }
 
 #[tauri::command(async)]
 pub fn update_project(db: State<'_, Db>, id: i64, input: ProjectInput) -> Result<Project> {
-    update(&mut db.conn(), id, input)
+    update(&mut *db.conn()?, id, input)
 }
 
 /// Applies from the next call; one under way keeps its agents.
 #[tauri::command(async)]
 pub fn set_project_agents(db: State<'_, Db>, id: i64, agents: ProjectAgents) -> Result<Project> {
-    let mut conn = db.conn();
+    let mut conn = db.conn()?;
     save_agents(&mut conn, id, &agents)?;
     load(&conn, id)
 }
@@ -407,14 +407,14 @@ pub fn set_project_extensions(
     id: i64,
     extensions: ProjectExtensions,
 ) -> Result<Project> {
-    let mut conn = db.conn();
+    let mut conn = db.conn()?;
     save_extensions(&mut conn, id, &extensions)?;
     load(&conn, id)
 }
 
 #[tauri::command(async)]
 pub fn delete_project(db: State<'_, Db>, id: i64) -> Result<()> {
-    delete(&db.conn(), id)
+    delete(&*db.conn()?, id)
 }
 
 #[cfg(test)]
@@ -445,7 +445,7 @@ mod tests {
     #[test]
     fn creates_lists_updates_and_deletes() {
         let db = Db::in_memory().unwrap();
-        let mut conn = db.conn();
+        let mut conn = db.conn().unwrap();
         let (a, b) = folders();
 
         let samba = create(&mut conn, input(" samba ", &[&a, &b])).unwrap();
@@ -472,7 +472,7 @@ mod tests {
     #[test]
     fn keeps_the_instructions_trimmed_and_lets_them_be_cleared() {
         let db = Db::in_memory().unwrap();
-        let mut conn = db.conn();
+        let mut conn = db.conn().unwrap();
         let (a, _) = folders();
 
         let samba = create(&mut conn, input("samba", &[&a])).unwrap();
@@ -502,7 +502,7 @@ mod tests {
     #[test]
     fn names_are_unique_ignoring_case() {
         let db = Db::in_memory().unwrap();
-        let mut conn = db.conn();
+        let mut conn = db.conn().unwrap();
         let (a, _) = folders();
         let first = create(&mut conn, input("Samba", &[&a])).unwrap();
         assert!(matches!(
@@ -531,7 +531,7 @@ mod tests {
     #[test]
     fn a_project_hands_work_to_every_agent_until_told_otherwise() {
         let db = Db::in_memory().unwrap();
-        let mut conn = db.conn();
+        let mut conn = db.conn().unwrap();
         let (a, _) = folders();
         let id = create(&mut conn, input("samba", &[&a])).unwrap().id;
         let agents = |conn: &Connection| for_call(conn, id).unwrap().agents;
@@ -570,7 +570,7 @@ mod tests {
     #[test]
     fn a_project_follows_settings_for_extensions_until_it_picks_its_own() {
         let db = Db::in_memory().unwrap();
-        let mut conn = db.conn();
+        let mut conn = db.conn().unwrap();
         let (a, _) = folders();
         let id = create(&mut conn, input("samba", &[&a])).unwrap().id;
         let chosen = |conn: &Connection| for_call(conn, id).unwrap().extensions;
@@ -620,7 +620,7 @@ mod tests {
         let db = Db::in_memory().unwrap();
         let (a, _) = folders();
         assert!(matches!(
-            update(&mut db.conn(), 42, input("samba", &[&a])),
+            update(&mut db.conn().unwrap(), 42, input("samba", &[&a])),
             Err(Error::NotFound(_))
         ));
     }

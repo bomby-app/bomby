@@ -63,4 +63,7 @@ strip = true
 libc = "0.2"
 
 [dev-dependencies]
+# The mock runtime (`tauri::test`), so tests run the core's commands on a real in-memory
+# database without a window (src/testing.rs).
+tauri = { version = "2", features = ["test"] }
 ts-rs = "12.0.1"

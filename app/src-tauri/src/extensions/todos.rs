@@ -339,7 +339,7 @@ fn changed<R: Runtime>(app: &AppHandle<R>, project_id: i64) {
 
 #[tauri::command(async)]
 pub fn list_todos(db: State<'_, Db>, project_id: i64) -> Result<Vec<Todo>> {
-    list(&db.conn(), project_id)
+    list(&*db.conn()?, project_id)
 }
 
 #[tauri::command(async)]
@@ -350,7 +350,7 @@ pub fn add_todos<R: Runtime>(
     items: Vec<NewTodo>,
     by: Author,
 ) -> Result<Vec<Todo>> {
-    let added = add(&mut db.conn(), project_id, items, by)?;
+    let added = add(&mut *db.conn()?, project_id, items, by)?;
     changed(&app, project_id);
     Ok(added)
 }
@@ -364,7 +364,7 @@ pub fn update_todo<R: Runtime>(
     change: TodoChange,
     by: Author,
 ) -> Result<Todo> {
-    let todo = update(&db.conn(), project_id, number, change, by)?;
+    let todo = update(&*db.conn()?, project_id, number, change, by)?;
     changed(&app, project_id);
     Ok(todo)
 }
@@ -376,7 +376,7 @@ pub fn remove_todo<R: Runtime>(
     project_id: i64,
     number: i64,
 ) -> Result<Todo> {
-    let todo = remove(&db.conn(), project_id, number)?;
+    let todo = remove(&*db.conn()?, project_id, number)?;
     changed(&app, project_id);
     Ok(todo)
 }
@@ -411,7 +411,7 @@ mod tests {
     #[test]
     fn adds_numbers_and_lists_each_projects_own() {
         let db = Db::in_memory().unwrap();
-        let mut conn = db.conn();
+        let mut conn = db.conn().unwrap();
         let samba = project(&conn, "samba");
         let other = project(&conn, "other");
 
@@ -439,7 +439,7 @@ mod tests {
     #[test]
     fn a_removed_number_is_never_reused() {
         let db = Db::in_memory().unwrap();
-        let mut conn = db.conn();
+        let mut conn = db.conn().unwrap();
         let samba = project(&conn, "samba");
         add(&mut conn, samba, vec![new("One"), new("Two")], Author::User).unwrap();
 
@@ -455,7 +455,7 @@ mod tests {
     #[test]
     fn an_update_changes_only_what_it_names_and_records_who() {
         let db = Db::in_memory().unwrap();
-        let mut conn = db.conn();
+        let mut conn = db.conn().unwrap();
         let samba = project(&conn, "samba");
         add(
             &mut conn,
@@ -496,7 +496,7 @@ mod tests {
     #[test]
     fn rejects_what_wont_fit_or_isnt_there() {
         let db = Db::in_memory().unwrap();
-        let mut conn = db.conn();
+        let mut conn = db.conn().unwrap();
         let samba = project(&conn, "samba");
         let long = "x".repeat(MAX_TITLE_LEN + 1);
         for bad in [
@@ -541,7 +541,7 @@ mod tests {
     #[test]
     fn a_call_starts_knowing_the_newest_open_ones() {
         let db = Db::in_memory().unwrap();
-        let mut conn = db.conn();
+        let mut conn = db.conn().unwrap();
         let samba = project(&conn, "samba");
         let items = (1..=CALL_OPEN + 3)
             .map(|i| new(&format!("To-do {i}")))
@@ -574,7 +574,7 @@ mod tests {
     #[test]
     fn todos_go_with_their_project() {
         let db = Db::in_memory().unwrap();
-        let mut conn = db.conn();
+        let mut conn = db.conn().unwrap();
         let samba = project(&conn, "samba");
         add(&mut conn, samba, vec![new("One")], Author::User).unwrap();
         conn.execute("DELETE FROM projects WHERE id = ?1", [samba])

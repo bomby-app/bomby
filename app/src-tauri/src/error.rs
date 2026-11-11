@@ -28,6 +28,10 @@ pub enum Error {
     Zip(#[from] zip::result::ZipError),
     #[error("notification: {0}")]
     Notification(#[from] tauri_plugin_notification::Error),
+    /// A thread asked for a lock it already held ([`crate::sync::Exclusive`]): a bug, which
+    /// would otherwise have hung the app.
+    #[error("Bomby asked for {0} while it already held it. Quit and open Bomby again.")]
+    Reentered(&'static str),
 }
 
 impl Serialize for Error {

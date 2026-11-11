@@ -808,28 +808,61 @@ fn refresh<R: Runtime>(
     app: &AppHandle<R>,
     seen: Option<Vec<(String, PathBuf)>>,
 ) -> Vec<AgentStatus> {
-    // Without the database (only if it can't be read), every agent shows its defaults and
-    // is checked.
-    let (db, agents) = (app.state::<Db>(), app.state::<Agents>());
-    let look = || Look {
-        // Before anything it reads: what changes after this is the next check's.
-        started: agents.start_check(),
-        picks: agent_picks::saved(&db.conn()).unwrap_or_default(),
-        keys: saved_keys(app),
-        remembered: agent_checks::all(&db.conn()).unwrap_or_default(),
-    };
     let record = |id: &str, setup: &Setup, fingerprint: &Fingerprint, started: &Started| {
-        if let Err(e) = agents.record_check(&db.conn(), id, setup, fingerprint, started) {
-            let _ = crate::app_log::append(app, &format!("remembering {id}'s check: {e}"));
-        }
+        record_check(app, id, setup, fingerprint, started);
     };
-    let (found, changed) = agents.detect(seen, look, &record);
+    let (found, changed) = app
+        .state::<Agents>()
+        .detect(seen, || look_reads(app), &record);
     if changed {
         // Only fails for an invalid event name or payload; a window that misses it still
         // gets the list when it asks.
         let _ = app.emit(CHANGED, &found);
     }
     found
+}
+
+/// What a look reads before it starts: the user's picks and the remembered checks, in one
+/// hold of the database, and the agents' saved keys. Without the database (only if it can't
+/// be read), every agent shows its defaults and is checked.
+pub(crate) fn look_reads<R: Runtime>(app: &AppHandle<R>) -> Look {
+    // Before anything it reads: what changes after this is the next check's.
+    let started = app.state::<Agents>().start_check();
+    let (picks, remembered) = saved_choices(&app.state::<Db>()).unwrap_or_else(|e| {
+        let _ = crate::app_log::append(app, &format!("reading the agents' picks: {e}"));
+        Default::default()
+    });
+    Look {
+        started,
+        picks,
+        keys: saved_keys(app),
+        remembered,
+    }
+}
+
+type SavedChoices = (HashMap<String, Vec<Pick>>, HashMap<String, Remembered>);
+
+/// Every agent's picks and remembered check.
+fn saved_choices(db: &Db) -> Result<SavedChoices> {
+    let conn = db.conn()?;
+    Ok((agent_picks::saved(&conn)?, agent_checks::all(&conn)?))
+}
+
+/// Keeps a check a look made ([`Agents::record_check`]); logged when it can't.
+pub(crate) fn record_check<R: Runtime>(
+    app: &AppHandle<R>,
+    id: &str,
+    setup: &Setup,
+    fingerprint: &Fingerprint,
+    started: &Started,
+) {
+    let recorded = app.state::<Db>().conn().and_then(|conn| {
+        app.state::<Agents>()
+            .record_check(&conn, id, setup, fingerprint, started)
+    });
+    if let Err(e) = recorded {
+        let _ = crate::app_log::append(app, &format!("remembering {id}'s check: {e}"));
+    }
 }
 
 /// [`refresh`] after something on disk changed (adapters installed), for callers already on
@@ -857,14 +890,16 @@ pub fn offers_key<R: Runtime>(app: &AppHandle<R>, id: &str, name: &str) -> bool 
 /// After agent `id`'s keys changed: its remembered check and model list are forgotten, and
 /// it's checked again with them, in the background; its row follows.
 pub fn keys_changed<R: Runtime>(app: &AppHandle<R>, id: &str) {
-    let db = app.state::<Db>();
     // Before the command returns: the page asks for the models again at once.
-    if let Err(e) = agent_picks::keys_changed(
-        &app.state::<Agents>(),
-        &app.state::<agent_picks::Listings>(),
-        &db.conn(),
-        id,
-    ) {
+    let forgotten = app.state::<Db>().conn().and_then(|conn| {
+        agent_picks::keys_changed(
+            &app.state::<Agents>(),
+            &app.state::<agent_picks::Listings>(),
+            &conn,
+            id,
+        )
+    });
+    if let Err(e) = forgotten {
         let _ = crate::app_log::append(app, &format!("forgetting {id}'s check: {e}"));
     }
     let (app, id) = (app.clone(), id.to_owned());
@@ -874,8 +909,11 @@ pub fn keys_changed<R: Runtime>(app: &AppHandle<R>, id: &str) {
 /// A call found agent `id` not ready: what was remembered of it goes now, and it's checked
 /// again once the call ends ([`after_call`]), not during it.
 pub fn not_ready_on_call<R: Runtime>(app: &AppHandle<R>, id: &str) {
-    let db = app.state::<Db>();
-    if let Err(e) = app.state::<Agents>().invalidate(&db.conn(), id) {
+    let forgotten = app
+        .state::<Db>()
+        .conn()
+        .and_then(|conn| app.state::<Agents>().invalidate(&conn, id));
+    if let Err(e) = forgotten {
         let _ = crate::app_log::append(app, &format!("forgetting {id}'s check: {e}"));
     }
     app.state::<Agents>().unready_on_call(id);
@@ -912,7 +950,7 @@ pub async fn refresh_agents<R: Runtime>(app: AppHandle<R>) -> Result<Vec<AgentSt
     // on next open.
     app.state::<Agents>().forget_checks();
     app.state::<agent_picks::Listings>().forget();
-    agent_checks::forget_all(&app.state::<Db>().conn())?;
+    agent_checks::forget_all(&*app.state::<Db>().conn()?)?;
     refresh_in_background(app).await
 }
 
@@ -922,6 +960,44 @@ mod tests {
     use std::time::Instant;
 
     use super::*;
+
+    #[test]
+    fn the_launch_looks_reads_and_records_take_the_database_one_at_a_time() {
+        // 0.3.2 took the database twice in one statement here and hung at launch.
+        let app = crate::testing::app();
+        app.state::<Db>()
+            .conn()
+            .unwrap()
+            .execute(
+                "INSERT INTO agent_picks (agent, position, setting, value)
+                 VALUES ('goose', 0, 'model', 'kimi')",
+                [],
+            )
+            .unwrap();
+        let files = vec!["/Users/me/.config/goose/config.yaml".to_owned()];
+        let ready = Setup {
+            session: true,
+            setup_files: files.clone(),
+            ..Setup::default()
+        };
+        let fingerprint = Fingerprint::of(Path::new("/no/such/goose"), &files, &[], &[]);
+        let started = app.state::<Agents>().start_check();
+        record_check(app.handle(), "goose", &ready, &fingerprint, &started);
+
+        let look = look_reads(app.handle());
+
+        assert_eq!(
+            look.picks.get("goose").map(Vec::as_slice),
+            Some(
+                &[Pick {
+                    setting: "model".into(),
+                    value: "kimi".into()
+                }][..]
+            )
+        );
+        assert!(look.remembered.contains_key("goose"));
+        assert!(!app.state::<Db>().held_here());
+    }
 
     #[test]
     fn reads_output_longer_than_a_pipe_holds() {
@@ -1502,7 +1578,7 @@ mod tests {
     #[test]
     fn a_check_that_started_before_its_keys_changed_isnt_recorded() {
         let db = Db::in_memory().unwrap();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         let agents = Agents::default();
         let setup = Setup {
             setup_files: vec!["/Users/me/.config/goose/config.yaml".into()],

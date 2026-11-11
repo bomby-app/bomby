@@ -82,7 +82,7 @@ mod tests {
     #[test]
     fn project_folder_is_only_the_projects_own() {
         let db = Db::in_memory().unwrap();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         let dir = tempfile_dir("project-folder");
         let folder = dir.to_string_lossy().into_owned();
         conn.execute(

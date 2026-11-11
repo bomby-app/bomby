@@ -256,7 +256,7 @@ pub(crate) fn for_token<R: Runtime>(
     vault: &Vault,
 ) -> Result<CallVoice> {
     let keys = vault.voice_keys(app)?;
-    let conn = db.conn();
+    let conn = db.conn()?;
     let (provider, _) = picked(&conn, |p| keys.contains_key(&p))?;
     for_call(&conn, provider)
 }
@@ -395,7 +395,7 @@ pub(crate) fn for_new_call<R: Runtime>(
     vault: &Vault,
 ) -> Result<VoiceProvider> {
     let keys = vault.voice_keys(app)?;
-    let provider = chosen(&db.conn(), |p| keys.contains_key(&p))?;
+    let provider = chosen(&*db.conn()?, |p| keys.contains_key(&p))?;
     if !keys.contains_key(&provider) {
         return Err(Error::Invalid(format!(
             "Add your {} API key in Settings, Voice first.",
@@ -412,7 +412,7 @@ pub fn voice_settings<R: Runtime>(
     vault: State<'_, Vault>,
 ) -> Result<VoiceSettings> {
     let keys = vault.voice_keys(&app)?;
-    let conn = db.conn();
+    let conn = db.conn()?;
     let providers = VoiceProvider::ALL
         .into_iter()
         .map(|provider| {
@@ -440,7 +440,7 @@ pub fn set_voice_provider<R: Runtime>(
     db: State<'_, Db>,
     provider: VoiceProvider,
 ) -> Result<()> {
-    save_provider(&db.conn(), provider)?;
+    save_provider(&*db.conn()?, provider)?;
     let _ = app.emit(KEYS_CHANGED, ());
     Ok(())
 }
@@ -448,7 +448,7 @@ pub fn set_voice_provider<R: Runtime>(
 /// The voice for the provider's next call; a call that's running keeps its voice.
 #[tauri::command(async)]
 pub fn set_voice(db: State<'_, Db>, provider: VoiceProvider, voice: String) -> Result<()> {
-    save_voice(&db.conn(), provider, &voice)
+    save_voice(&*db.conn()?, provider, &voice)
 }
 
 /// A switch's on or off, or a choice's value, for the provider's next call.
@@ -459,7 +459,7 @@ pub fn set_voice_option(
     option: String,
     value: OptionValue,
 ) -> Result<()> {
-    save_option(&db.conn(), provider, &option, &value)
+    save_option(&*db.conn()?, provider, &option, &value)
 }
 
 #[cfg(test)]
@@ -485,7 +485,7 @@ mod tests {
     #[test]
     fn until_picked_the_first_provider_with_a_key_else_gemini_then_the_pick() {
         let db = Db::in_memory().unwrap();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         assert_eq!(
             chosen(&conn, |p| p == VoiceProvider::Rime).unwrap(),
             VoiceProvider::Rime,
@@ -499,7 +499,7 @@ mod tests {
 
         let fresh = Db::in_memory().unwrap();
         assert_eq!(
-            chosen(&fresh.conn(), |_| false).unwrap(),
+            chosen(&fresh.conn().unwrap(), |_| false).unwrap(),
             VoiceProvider::Gemini,
             "a new install starts on Gemini"
         );
@@ -508,7 +508,7 @@ mod tests {
     #[test]
     fn looking_without_choosing_saves_nothing() {
         let db = Db::in_memory().unwrap();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         let gemini = |p| p == VoiceProvider::Gemini;
         assert_eq!(
             picked(&conn, gemini).unwrap(),
@@ -520,7 +520,7 @@ mod tests {
     #[test]
     fn each_provider_keeps_its_own_voice() {
         let db = Db::in_memory().unwrap();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         assert_eq!(voice(&conn, VoiceProvider::Gemini).unwrap(), "Leda");
         assert_eq!(voice(&conn, VoiceProvider::Rime).unwrap(), "aurora");
 
@@ -535,7 +535,7 @@ mod tests {
     #[test]
     fn rejects_a_voice_the_provider_doesnt_have() {
         let db = Db::in_memory().unwrap();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         for (provider, voice) in [
             (VoiceProvider::Gemini, "Hal"),
             (VoiceProvider::Gemini, "aurora"),
@@ -551,7 +551,7 @@ mod tests {
     #[test]
     fn google_search_is_on_until_turned_off_and_only_gemini_has_it() {
         let db = Db::in_memory().unwrap();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         let search =
             |conn: &Connection| option_values(options(conn, VoiceProvider::Gemini).unwrap());
         let on = |on| BTreeMap::from([("google_search", OptionValue::On(on))]);
@@ -596,7 +596,7 @@ mod tests {
     #[test]
     fn an_effort_follows_the_response_model() {
         let db = Db::in_memory().unwrap();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         let openai = VoiceProvider::OpenAi;
         let set = |option: &str, value: &str| {
             save_option(&conn, openai, option, &OptionValue::Value(value.into()))

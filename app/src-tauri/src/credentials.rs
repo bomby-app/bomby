@@ -22,7 +22,6 @@ use keyring::Entry;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Runtime, State};
 
-use crate::dev;
 use crate::error::{Error, Result};
 use crate::extensions::oauth::{Expect, Grant};
 use crate::sync;
@@ -155,9 +154,6 @@ fn remove(entry: &Entry) -> Result<()> {
 }
 
 fn write<R: Runtime>(app: &AppHandle<R>, keys: &Keys) -> Result<()> {
-    if dev::no_keys() {
-        return Ok(());
-    }
     let entry = entry(app, ACCOUNT)?;
     if keys.is_empty() {
         return remove(&entry);
@@ -166,23 +162,30 @@ fn write<R: Runtime>(app: &AppHandle<R>, keys: &Keys) -> Result<()> {
     Ok(())
 }
 
-/// Reads the entry; no keys yet when there is none. With `just app dev --no-keys`, neither
-/// this nor `write` touches the keychain: the keys start empty and last for the run
-/// ([`dev`]).
+/// Reads the entry; no keys yet when there is none.
 fn read_keychain<R: Runtime>(app: &AppHandle<R>) -> Result<Keys> {
-    if dev::no_keys() {
-        return Ok(Keys::default());
-    }
     match read(&entry(app, ACCOUNT)?)? {
         Some(json) => serde_json::from_str(&json).map_err(Error::Corrupt),
         None => Ok(Keys::default()),
     }
 }
 
+/// Where the vault keeps the keys.
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+enum Store {
+    /// The keychain entry.
+    #[default]
+    Keychain,
+    /// Memory only: the keys start empty and last for the run, and the keychain is never read
+    /// or written (`just app dev --no-keys`, the launch smoke check, tests).
+    Memory,
+}
+
 /// The keychain entry, read on first use and kept for the run, and every secret the vault
 /// has held this run. Tauri state.
 #[derive(Default)]
 pub struct Vault {
+    store: Store,
     keys: Mutex<Option<Keys>>,
     /// Every key, secret and token read from the keychain or saved this run, kept after it's
     /// replaced, cleared or disconnected: the logs may still hold it, so Export Diagnostics
@@ -192,6 +195,44 @@ pub struct Vault {
 }
 
 impl Vault {
+    /// A vault that never touches the keychain ([`Store::Memory`]).
+    pub fn in_memory() -> Self {
+        Self {
+            store: Store::Memory,
+            ..Self::default()
+        }
+    }
+
+    /// Saves LiveKit keys, for other modules' tests.
+    #[cfg(test)]
+    pub(crate) fn save_livekit_for_tests(&self, livekit: LiveKitKeys) {
+        self.change_with(
+            || Ok(Keys::default()),
+            |keys| {
+                keys.livekit = Some(livekit);
+                Ok(())
+            },
+            |_| Ok(()),
+        )
+        .unwrap();
+    }
+
+    /// The saved keys, from the store.
+    fn fetch<R: Runtime>(&self, app: &AppHandle<R>) -> Result<Keys> {
+        match self.store {
+            Store::Keychain => read_keychain(app),
+            Store::Memory => Ok(Keys::default()),
+        }
+    }
+
+    /// Saves `keys` in the store; in memory, the cache is all there is.
+    fn save<R: Runtime>(&self, app: &AppHandle<R>, keys: &Keys) -> Result<()> {
+        match self.store {
+            Store::Keychain => write(app, keys),
+            Store::Memory => Ok(()),
+        }
+    }
+
     fn keys<R: Runtime>(&self, app: &AppHandle<R>) -> Result<Keys> {
         self.read(app, Keys::clone)
     }
@@ -222,7 +263,7 @@ impl Vault {
 
     /// Reads part of the keys under the lock, without copying the rest.
     fn read<R: Runtime, T>(&self, app: &AppHandle<R>, take: impl FnOnce(&Keys) -> T) -> Result<T> {
-        self.read_with(|| read_keychain(app), take)
+        self.read_with(|| self.fetch(app), take)
     }
 
     fn read_with<T>(
@@ -254,7 +295,7 @@ impl Vault {
         app: &AppHandle<R>,
         change: impl FnOnce(&mut Keys) -> Result<()>,
     ) -> Result<()> {
-        self.change_with(|| read_keychain(app), change, |keys| write(app, keys))
+        self.change_with(|| self.fetch(app), change, |keys| self.save(app, keys))
     }
 
     /// `write_back` with the keychain's read and write passed in. What the change put in is

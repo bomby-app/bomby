@@ -362,7 +362,7 @@ fn memory_for_call<R: Runtime>(
     vault: &credentials::Vault,
 ) -> Result<(String, Option<String>)> {
     let key = vault.zep_key(app)?;
-    let conn = db.conn();
+    let conn = db.conn()?;
     let user = if key.is_some() && settings::memory(&conn)? == settings::Memory::Zep {
         settings::memory_user(&conn)?
     } else {
@@ -414,14 +414,14 @@ pub fn open_call<R: Runtime>(
 ) -> Result<i64> {
     // Holds off an update's restart while the call opens; refused if one is under way.
     let opening = updates::CallOpening::begin(&app)?;
-    let project = projects::for_call(&db.conn(), project_id)?;
+    let project = projects::for_call(&*db.conn()?, project_id)?;
     folders_are_there(&project)?;
     let provider = voice::for_new_call(&app, &db, &vault)?;
     let voice_keys = vault.voice_keys(&app)?;
     let agent_keys = vault.agent_keys(&app)?;
     // Read before the server starts, so this Mac's server starts only for a call that can open.
     let (memory_user, zep_key) = memory_for_call(&app, &db, &vault)?;
-    let memory_incognito = settings::incognito(&db.conn())?;
+    let memory_incognito = settings::incognito(&*db.conn()?)?;
     // Finds the agents (a login shell) while the server and worker start.
     let (found, started) = thread::scope(|scope| {
         let lookup = scope.spawn(|| agents::usable_now(&app));
@@ -458,7 +458,7 @@ pub fn open_call<R: Runtime>(
 
     // The keychain before the database: a password prompt mustn't hold up every other read.
     let connected = extensions::connections::connected(&app, &vault)?;
-    let conn = db.conn();
+    let conn = db.conn()?;
     // Read before the call is recorded, so a failed read leaves no call without its agents.
     let picks = agent_picks::saved(&conn)?;
     let call_voice = voice::for_call(&conn, provider)?;
@@ -509,17 +509,15 @@ fn start(conn: &Connection, project_id: i64, resume_call_id: Option<i64>) -> Res
 /// tokens on its own too (on mount, and on end and disconnects, to have the next one ready),
 /// so getting one must not change anything (docs/livekit-notes.md).
 #[tauri::command(async)]
-pub fn call_token<R: Runtime>(
-    app: AppHandle<R>,
-    db: State<'_, Db>,
-    vault: State<'_, credentials::Vault>,
-    local: State<'_, LocalServer>,
-    found: State<'_, agents::Agents>,
-    call_agents: State<'_, CallAgents>,
-    call_id: i64,
-) -> Result<CallToken> {
+pub fn call_token<R: Runtime>(app: AppHandle<R>, call_id: i64) -> Result<CallToken> {
+    token_for(&app, call_id)
+}
+
+/// [`call_token`]'s answer.
+fn token_for<R: Runtime>(app: &AppHandle<R>, call_id: i64) -> Result<CallToken> {
+    let (db, vault) = (app.state::<Db>(), app.state::<credentials::Vault>());
     let (project_id, project, history, settings) = {
-        let conn = db.conn();
+        let conn = db.conn()?;
         let project_id: i64 = conn
             .query_row(
                 "SELECT project_id FROM calls WHERE id = ?1",
@@ -537,29 +535,41 @@ pub fn call_token<R: Runtime>(
     };
     let room = room_name(call_id);
     // A call opened in this run has its own list; any other gets the last one found.
-    let opened = match call_agents.get(call_id) {
+    let opened = match app.state::<CallAgents>().get(call_id) {
         Some(opened) => opened,
         None => {
             // The keychain before the database, as in `open_call`.
-            let connected = extensions::connections::connected(&app, &vault)?;
+            let connected = extensions::connections::connected(app, &vault)?;
+            let voice = voice::for_token(app, &db, &vault)?;
+            let server = call_server::current(app, &db, &vault, &app.state::<LocalServer>())?;
+            // One hold of the database for both: a second `db.conn()` in the struct below
+            // would wait on the first, which lives to the end of the statement (0.3.2).
+            let (picks, extensions) = {
+                let conn = db.conn()?;
+                (
+                    agent_picks::saved(&conn)?,
+                    extensions::on_for(&conn, &project.extensions, &connected)?,
+                )
+            };
             OpenedWith {
-                voice: voice::for_token(&app, &db, &vault)?,
-                server: call_server::current(&app, &db, &vault, &local)?,
+                voice,
+                server,
                 agents: for_project(
-                    agents::usable(&found.cached().unwrap_or_default()),
+                    agents::usable(&app.state::<agents::Agents>().cached().unwrap_or_default()),
                     &project.agents,
                 ),
                 agents_off: !project.agents.on,
-                picks: agent_picks::saved(&db.conn())?,
+                picks,
                 // The worker that has the Zep key was started with an opened call.
                 memory_user: String::new(),
                 memory_incognito: false,
-                extensions: extensions::on_for(&db.conn(), &project.extensions, &connected)?,
+                extensions,
             }
         }
     };
     // Read fresh for each room, so a reconnect starts from the list as it is now.
-    let extension_data = extensions::for_call(&db.conn(), project_id, call_id, &opened.extensions)?;
+    let extension_data =
+        extensions::for_call(&*db.conn()?, project_id, call_id, &opened.extensions)?;
     let metadata = dispatch_metadata(&project, &opened, &settings, &history, &extension_data);
     let server = opened.server;
     Ok(CallToken {
@@ -584,7 +594,7 @@ fn end(conn: &Connection, call_id: i64, at: i64) -> Result<()> {
 #[tauri::command(async)]
 pub fn end_call<R: Runtime>(app: AppHandle<R>, db: State<'_, Db>, call_id: i64) -> Result<()> {
     updates::call_ended(&app, call_id);
-    end(&db.conn(), call_id, now_ms())?;
+    end(&*db.conn()?, call_id, now_ms())?;
     agents::after_call(&app);
     Ok(())
 }
@@ -597,7 +607,7 @@ fn delete(conn: &Connection, call_id: i64) -> Result<()> {
 
 #[tauri::command(async)]
 pub fn delete_call(db: State<'_, Db>, call_id: i64) -> Result<()> {
-    delete(&db.conn(), call_id)
+    delete(&*db.conn()?, call_id)
 }
 
 fn save(conn: &Connection, call_id: i64, line: &MessageInput) -> Result<()> {
@@ -715,7 +725,7 @@ pub fn rename_call<R: Runtime>(
     name: String,
     by: Namer,
 ) -> Result<CallName> {
-    let (project_id, now) = rename(&db.conn(), call_id, &name, by)?;
+    let (project_id, now) = rename(&*db.conn()?, call_id, &name, by)?;
     let _ = app.emit(
         RENAMED,
         CallRenamed {
@@ -729,13 +739,13 @@ pub fn rename_call<R: Runtime>(
 /// Saves one transcript line, or updates it if its segment was saved before.
 #[tauri::command(async)]
 pub fn save_message(db: State<'_, Db>, call_id: i64, line: MessageInput) -> Result<()> {
-    save(&db.conn(), call_id, &line)
+    save(&*db.conn()?, call_id, &line)
 }
 
 /// A call's saved conversation, its sessions and lines in order.
 #[tauri::command(async)]
 pub fn call_transcript(db: State<'_, Db>, call_id: i64) -> Result<Transcript> {
-    transcript(&db.conn(), call_id)
+    transcript(&*db.conn()?, call_id)
 }
 
 #[cfg(test)]
@@ -751,6 +761,36 @@ mod tests {
             voice: "aurora".into(),
             options: BTreeMap::new(),
         }
+    }
+
+    #[test]
+    fn a_token_for_a_call_this_run_didnt_open_reads_the_database_once_at_a_time() {
+        // 0.3.2 took the database twice in one statement here and hung for good.
+        let app = crate::testing::app();
+        crate::testing::their_livekit(&app);
+        app.state::<Db>()
+            .conn()
+            .unwrap()
+            .execute_batch(
+                "INSERT INTO projects (name, created_at) VALUES ('samba', 0);
+                 INSERT INTO project_folders (project_id, position, path)
+                     VALUES (1, 0, '/Users/me/samba');
+                 INSERT INTO calls (project_id, started_at) VALUES (1, 0);
+                 INSERT INTO agent_picks (agent, position, setting, value)
+                     VALUES ('goose', 0, 'model', 'kimi');",
+            )
+            .unwrap();
+        assert!(app.state::<CallAgents>().get(1).is_none());
+
+        let token = token_for(app.handle(), 1).unwrap();
+
+        assert_eq!(token.server_url, "wss://test.livekit.cloud");
+        assert!(!token.participant_token.is_empty());
+        assert!(!app.state::<Db>().held_here(), "and let it go");
+        assert!(matches!(
+            token_for(app.handle(), 2),
+            Err(Error::NotFound("call"))
+        ));
     }
 
     #[test]
@@ -830,7 +870,7 @@ mod tests {
     #[test]
     fn a_segment_saved_twice_keeps_one_line_with_the_latest_text() {
         let db = Db::in_memory().unwrap();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         let id = call(&conn);
         save(&conn, id, &line("s1", "user", "can you")).unwrap();
         save(&conn, id, &line("s2", "agent", "sure")).unwrap();
@@ -855,7 +895,7 @@ mod tests {
     #[test]
     fn resuming_reopens_the_call_and_the_agent_gets_its_last_lines_oldest_first() {
         let db = Db::in_memory().unwrap();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         let id = call(&conn);
         conn.execute("UPDATE calls SET ended_at = 5 WHERE id = ?1", [id])
             .unwrap();
@@ -896,7 +936,7 @@ mod tests {
     #[test]
     fn each_opening_is_a_session_and_each_line_keeps_the_one_it_was_said_in() {
         let db = Db::in_memory().unwrap();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         let id = call(&conn);
         save(&conn, id, &line("s1", "user", "fix the login")).unwrap();
         end(&conn, id, now_ms()).unwrap();
@@ -937,7 +977,7 @@ mod tests {
     #[test]
     fn a_session_the_app_quit_during_ends_at_its_last_line_when_the_call_resumes() {
         let db = Db::in_memory().unwrap();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         let id = call(&conn);
         conn.execute("UPDATE call_sessions SET started_at = 100", [])
             .unwrap();
@@ -969,7 +1009,7 @@ mod tests {
     #[test]
     fn a_call_is_named_on_one_line_and_no_words_take_its_name_away() {
         let db = Db::in_memory().unwrap();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         let id = call(&conn);
         let unnamed = CallName {
             name: None,
@@ -1005,7 +1045,7 @@ mod tests {
     #[test]
     fn deleting_a_call_takes_its_transcript_with_it() {
         let db = Db::in_memory().unwrap();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         let id = call(&conn);
         save(&conn, id, &line("s1", "user", "hello")).unwrap();
         delete(&conn, id).unwrap();
@@ -1020,7 +1060,7 @@ mod tests {
     #[test]
     fn the_metadata_carries_the_project_agents_settings_and_history() {
         let db = Db::in_memory().unwrap();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         conn.execute(
             "INSERT INTO projects (name, instructions, created_at)
              VALUES ('samba', 'A music app.', 0)",

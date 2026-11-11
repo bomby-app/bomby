@@ -26,6 +26,8 @@ mod search;
 mod settings;
 mod setup;
 mod sync;
+#[cfg(test)]
+mod testing;
 mod tray;
 mod updates;
 mod voice;
@@ -65,7 +67,12 @@ pub fn run() {
                 dir.clone(),
                 app.path().app_log_dir()?,
             ));
-            app.manage(credentials::Vault::default());
+            // `just app dev --no-keys` keeps the keys in memory and leaves the keychain alone.
+            app.manage(if dev::no_keys() {
+                credentials::Vault::in_memory()
+            } else {
+                credentials::Vault::default()
+            });
             app.manage(extensions::connections::Connections::default());
             app.manage(extensions::tokens::Tokens(extensions::tokens::start(
                 app.handle(),

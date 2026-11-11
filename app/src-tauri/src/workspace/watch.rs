@@ -77,7 +77,7 @@ pub fn watch_folder(
     folder: String,
     changed: Channel<()>,
 ) -> Result<u32> {
-    let folder = project_folder(&db.conn(), project_id, &folder)?;
+    let folder = project_folder(&*db.conn()?, project_id, &folder)?;
     let debouncer = watch(&folder, move || {
         let _ = changed.send(());
     })?;

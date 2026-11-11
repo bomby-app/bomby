@@ -126,12 +126,12 @@ fn save_user_name(conn: &Connection, name: &str) -> Result<String> {
 
 #[tauri::command(async)]
 pub fn user_name(db: State<'_, Db>) -> Result<String> {
-    read_user_name(&db.conn())
+    read_user_name(&*db.conn()?)
 }
 
 #[tauri::command(async)]
 pub fn set_user_name(db: State<'_, Db>, name: String) -> Result<String> {
-    save_user_name(&db.conn(), &name)
+    save_user_name(&*db.conn()?, &name)
 }
 
 /// Until chosen: theirs if their keys are saved, so existing installs stay on them. Saved
@@ -169,13 +169,13 @@ pub(crate) fn incognito(conn: &Connection) -> Result<bool> {
 
 #[tauri::command(async)]
 pub fn memory_incognito(db: State<'_, Db>) -> Result<bool> {
-    incognito(&db.conn())
+    incognito(&*db.conn()?)
 }
 
 /// Applies from the next call.
 #[tauri::command(async)]
 pub fn set_memory_incognito(db: State<'_, Db>, on: bool) -> Result<()> {
-    put(&db.conn(), INCOGNITO_KEY, if on { "1" } else { "0" })
+    put(&*db.conn()?, INCOGNITO_KEY, if on { "1" } else { "0" })
 }
 
 /// This install's id in Zep: one user, made the first time it's needed.
@@ -196,7 +196,7 @@ pub(crate) fn memory_user(conn: &Connection) -> Result<String> {
 
 #[tauri::command(async)]
 pub fn memory_setting(db: State<'_, Db>) -> Result<Memory> {
-    memory(&db.conn())
+    memory(&*db.conn()?)
 }
 
 /// Applies from the next call.
@@ -206,7 +206,7 @@ pub fn set_memory_setting(db: State<'_, Db>, memory: Memory) -> Result<()> {
         Memory::Off => "off",
         Memory::Zep => "zep",
     };
-    put(&db.conn(), MEMORY_KEY, value)
+    put(&*db.conn()?, MEMORY_KEY, value)
 }
 
 fn read_tone(conn: &Connection) -> Result<Tone> {
@@ -219,12 +219,12 @@ fn read_tone(conn: &Connection) -> Result<Tone> {
 
 #[tauri::command(async)]
 pub fn tone(db: State<'_, Db>) -> Result<Tone> {
-    read_tone(&db.conn())
+    read_tone(&*db.conn()?)
 }
 
 #[tauri::command(async)]
 pub fn set_tone(db: State<'_, Db>, tone: Tone) -> Result<()> {
-    put(&db.conn(), TONE_KEY, tone.as_str())
+    put(&*db.conn()?, TONE_KEY, tone.as_str())
 }
 
 /// Whether this is the first run: the splash shows until the user finishes it, with the
@@ -232,12 +232,12 @@ pub fn set_tone(db: State<'_, Db>, tone: Tone) -> Result<()> {
 /// shows it at every launch ([`dev`](crate::dev)).
 #[tauri::command(async)]
 pub fn first_run(db: State<'_, Db>) -> Result<bool> {
-    Ok(crate::dev::always_splash() || get(&db.conn(), FIRST_RUN_KEY)?.is_none())
+    Ok(crate::dev::always_splash() || get(&*db.conn()?, FIRST_RUN_KEY)?.is_none())
 }
 
 #[tauri::command(async)]
 pub fn finish_first_run(db: State<'_, Db>) -> Result<()> {
-    put(&db.conn(), FIRST_RUN_KEY, "1")
+    put(&*db.conn()?, FIRST_RUN_KEY, "1")
 }
 
 #[cfg(test)]
@@ -247,7 +247,7 @@ mod tests {
     #[test]
     fn keeps_the_users_name_trimmed_and_lets_it_be_cleared() {
         let db = Db::in_memory().unwrap();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         assert_eq!(
             read_user_name(&conn).unwrap(),
             "",
@@ -264,14 +264,14 @@ mod tests {
     #[test]
     fn keeps_their_livekit_until_the_user_chooses() {
         let db = Db::in_memory().unwrap();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         assert_eq!(livekit_server(&conn, true).unwrap(), LiveKitServer::Theirs);
         // Saved once worked out: removing the keys later keeps it.
         assert_eq!(livekit_server(&conn, false).unwrap(), LiveKitServer::Theirs);
 
         let fresh = Db::in_memory().unwrap();
         assert_eq!(
-            livekit_server(&fresh.conn(), false).unwrap(),
+            livekit_server(&fresh.conn().unwrap(), false).unwrap(),
             LiveKitServer::ThisMac
         );
 
@@ -284,7 +284,7 @@ mod tests {
     #[test]
     fn the_tone_is_sharp_until_one_is_chosen() {
         let db = Db::in_memory().unwrap();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         assert_eq!(for_call(&conn).unwrap().tone, Tone::Sharp);
         put(&conn, TONE_KEY, Tone::Playful.as_str()).unwrap();
         assert_eq!(for_call(&conn).unwrap().tone, Tone::Playful);
@@ -293,7 +293,7 @@ mod tests {
     #[test]
     fn memory_is_off_until_turned_on_and_its_user_is_made_once() {
         let db = Db::in_memory().unwrap();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         assert_eq!(memory(&conn).unwrap(), Memory::Off);
         put(&conn, MEMORY_KEY, "zep").unwrap();
         assert_eq!(memory(&conn).unwrap(), Memory::Zep);
@@ -312,7 +312,7 @@ mod tests {
         let db = Db::in_memory().unwrap();
         let long = "x".repeat(MAX_USER_NAME_LEN + 1);
         assert!(matches!(
-            save_user_name(&db.conn(), &long),
+            save_user_name(&db.conn().unwrap(), &long),
             Err(Error::Invalid(_))
         ));
     }

@@ -239,7 +239,7 @@ pub(crate) fn changes(folder: &Path) -> Result<Option<Changes>> {
 /// Whether one of a project's folders is in a git repository.
 #[tauri::command(async)]
 pub fn folder_info(db: State<'_, Db>, project_id: i64, folder: String) -> Result<FolderInfo> {
-    let folder = super::project_folder(&db.conn(), project_id, &folder)?;
+    let folder = super::project_folder(&*db.conn()?, project_id, &folder)?;
     Ok(info(&folder))
 }
 
@@ -250,7 +250,7 @@ pub fn folder_changes(
     project_id: i64,
     folder: String,
 ) -> Result<Option<Changes>> {
-    let folder = super::project_folder(&db.conn(), project_id, &folder)?;
+    let folder = super::project_folder(&*db.conn()?, project_id, &folder)?;
     changes(&folder)
 }
 

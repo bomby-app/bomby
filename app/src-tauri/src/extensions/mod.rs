@@ -226,7 +226,7 @@ pub fn extensions_settings<R: Runtime>(
 ) -> Result<Vec<ExtensionSetting>> {
     // The keychain first: it may wait on the user's password, and the database waits for no one.
     let sign_ins = connections::sign_ins(&app)?;
-    settings(&db.conn(), &sign_ins)
+    settings(&*db.conn()?, &sign_ins)
 }
 
 /// Applies from the next call; one under way keeps its extensions.
@@ -239,7 +239,7 @@ pub fn set_extension<R: Runtime>(
 ) -> Result<Vec<ExtensionSetting>> {
     // The keychain before the database, as in `extensions_settings`.
     let sign_ins = connections::sign_ins(&app)?;
-    let conn = db.conn();
+    let conn = db.conn()?;
     save(&conn, &id, on)?;
     let now = settings(&conn, &sign_ins)?;
     let _ = app.emit(CHANGED, ());
@@ -269,7 +269,7 @@ mod tests {
     #[test]
     fn settings_start_at_each_default_and_keep_what_the_user_set() {
         let db = Db::in_memory().unwrap();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         let on = |conn: &rusqlite::Connection, id: &str| {
             settings(conn, &SignIns::default())
                 .unwrap()
@@ -296,7 +296,7 @@ mod tests {
             accounts: BTreeMap::from([("zapier".to_owned(), Some("me@example.com".to_owned()))]),
             connecting: BTreeSet::from(["composio".to_owned()]),
         };
-        let all = settings(&db.conn(), &sign_ins).unwrap();
+        let all = settings(&db.conn().unwrap(), &sign_ins).unwrap();
         let find = |id: &str| all.iter().find(|e| e.id == id).unwrap().clone();
         assert_eq!(find(todos::ID).connection, None);
         assert_eq!(
@@ -315,7 +315,7 @@ mod tests {
     #[test]
     fn a_project_follows_settings_until_it_picks_its_own() {
         let db = Db::in_memory().unwrap();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         let follows = ProjectExtensions::default();
         assert_eq!(
             on_for(&conn, &follows, &none()).unwrap(),
@@ -340,7 +340,7 @@ mod tests {
     #[test]
     fn a_call_gets_a_hosted_one_only_once_its_connected() {
         let db = Db::in_memory().unwrap();
-        let conn = db.conn();
+        let conn = db.conn().unwrap();
         save(&conn, "zapier", true).unwrap();
         save(&conn, "composio", true).unwrap();
         save(&conn, call_names::ID, false).unwrap();

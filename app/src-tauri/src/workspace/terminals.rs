@@ -344,7 +344,7 @@ pub fn terminal_open(
     output: Channel<InvokeResponseBody>,
     exit: Channel<Option<u32>>,
 ) -> Result<u32> {
-    let folder = project_folder(&db.conn(), project_id, &folder)?;
+    let folder = project_folder(&*db.conn()?, project_id, &folder)?;
     terminals
         .0
         .spawn(

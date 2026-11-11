@@ -2,12 +2,11 @@
 //! data folder. The core is its only reader and writer; the page goes through commands.
 
 use std::path::Path;
-use std::sync::{Mutex, MutexGuard};
 
 use rusqlite::Connection;
 
 use crate::error::Result;
-use crate::sync;
+use crate::sync::{Exclusive, ExclusiveGuard};
 
 pub const FILE_NAME: &str = "bomby.db";
 
@@ -174,8 +173,9 @@ const MIGRATIONS: &[&str] = &[
     ",
 ];
 
-/// The open database, shared by every command through Tauri state.
-pub struct Db(Mutex<Connection>);
+/// The open database, shared by every command through Tauri state. One thread can't take it
+/// twice ([`Exclusive`]): take it once into a `let` and pass the connection down.
+pub struct Db(Exclusive<Connection>);
 
 impl Db {
     /// Opens (creating if needed) the database file and brings its schema up to date.
@@ -188,18 +188,26 @@ impl Db {
         Self::init(Connection::open_in_memory()?)
     }
 
+    /// Whether this thread holds the connection now.
+    #[cfg(test)]
+    pub fn held_here(&self) -> bool {
+        self.0.held_here()
+    }
+
     fn init(mut conn: Connection) -> Result<Self> {
         conn.pragma_update(None, "foreign_keys", true)?;
         // WAL keeps reads fast while a call writes transcript lines. In-memory stays "memory".
         conn.pragma_update(None, "journal_mode", "WAL")?;
         crate::search::add_fold(&conn)?;
         migrate(&mut conn)?;
-        Ok(Self(Mutex::new(conn)))
+        Ok(Self(Exclusive::new("the database", conn)))
     }
 
-    pub fn conn(&self) -> MutexGuard<'_, Connection> {
+    /// The connection, once no other thread holds it. Fails at once, never waits, when this
+    /// thread holds it already (in debug builds and tests it panics).
+    pub fn conn(&self) -> Result<ExclusiveGuard<'_, Connection>> {
         // A panic while holding the lock leaves the connection usable; carry on.
-        sync::lock(&self.0)
+        self.0.lock()
     }
 }
 
@@ -231,7 +239,7 @@ mod tests {
     #[test]
     fn migrates_once_and_records_the_version() {
         let db = Db::in_memory().unwrap();
-        let mut conn = db.conn();
+        let mut conn = db.conn().unwrap();
         let version: i64 = conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();

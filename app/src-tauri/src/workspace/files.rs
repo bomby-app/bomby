@@ -172,7 +172,7 @@ pub fn folder_entries(
     folder: String,
     dir: String,
 ) -> Result<Vec<Entry>> {
-    let folder = project_folder(&db.conn(), project_id, &folder)?;
+    let folder = project_folder(&*db.conn()?, project_id, &folder)?;
     entries(&folder, &dir)
 }
 
@@ -184,7 +184,7 @@ pub fn folder_image(
     folder: String,
     file: String,
 ) -> Result<Response> {
-    let folder = project_folder(&db.conn(), project_id, &folder)?;
+    let folder = project_folder(&*db.conn()?, project_id, &folder)?;
     Ok(Response::new(image(&folder, &file)?))
 }
 
@@ -196,7 +196,7 @@ pub fn folder_file(
     folder: String,
     file: String,
 ) -> Result<FilePreview> {
-    let folder = project_folder(&db.conn(), project_id, &folder)?;
+    let folder = project_folder(&*db.conn()?, project_id, &folder)?;
     preview(&folder, &file)
 }
 

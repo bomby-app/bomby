@@ -216,7 +216,7 @@ fn changed<R: Runtime>(app: &AppHandle<R>) -> Result<Vec<ExtensionSetting>> {
     let _ = app.emit(CHANGED, ());
     // The keychain before the database: a password prompt mustn't hold up every other read.
     let sign_ins = sign_ins(app)?;
-    super::settings(&app.state::<Db>().conn(), &sign_ins)
+    super::settings(&*app.state::<Db>().conn()?, &sign_ins)
 }
 
 /// The extensions that are signed in, by id.

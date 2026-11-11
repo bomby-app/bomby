@@ -132,7 +132,8 @@ Checked 2026-11-11 in `tauri-plugin-updater` 2.14.1 (`src/updater.rs`, `src/conf
 
 ## Storage
 
-- `rusqlite` 0.41.1 with `bundled`, behind `Mutex<Connection>` in Tauri state. `bomby.db` lives in `app_data_dir` and is created in `Builder::setup`.
+- `rusqlite` 0.41.1 with `bundled`, behind `sync::Exclusive<Connection>` in Tauri state: one thread can't take it twice ([decision](decisions/locks-that-cant-be-taken-twice.md)). `bomby.db` lives in `app_data_dir` and is created in `Builder::setup`.
+- **Tests run commands on a mock app.** The `test` feature (dev-dependency only) adds `tauri::test::mock_app()`, an `App<MockRuntime>` with no window and a default config (empty identifier), on which tests `manage` state as `lib.rs` does (`src-tauri/src/testing.rs`; tauri 2.12.5 `src/test/mod.rs`). Path lookups like `app_log_dir` resolve against that empty identifier, so a test must not reach code that writes logs.
 - Append-only SQL migrations run in transactions; `PRAGMA user_version` tracks them. Never edit a shipped migration.
 - Enable `foreign_keys` per connection for cascades and use WAL for concurrent reads during writes.
 - Use `i64`, not `usize`, for SQL integers. Timestamps are integer epoch milliseconds, read in JS with `new Date(ms)`.
