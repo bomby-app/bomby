@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test"
 import type { Listed } from "./api"
 import {
   forgetAgentListing,
+  forgetListedSettings,
   keepListing,
   keptListing,
   listingGeneration,
@@ -31,7 +32,7 @@ describe("listing cache", () => {
     expect(keepListing("goose", asked, listed("old"))).toBe(true)
 
     const askedAgain = listingGeneration("goose")
-    const forgotten: string[] = []
+    const forgotten: (string | null)[] = []
     const stop = onAgentListingForgotten((agent) => forgotten.push(agent))
     forgetAgentListing("goose")
     stop()
@@ -45,6 +46,20 @@ describe("listing cache", () => {
       keepListing("goose", listingGeneration("goose"), listed("fresh"))
     ).toBe(true)
     expect(keptListing("goose")?.model).toBe("fresh")
+  })
+
+  it("drops every answer on its way at Refresh models, and tells every picker", () => {
+    const asked = listingGeneration("omp")
+    keepListing("omp", asked, listed("omp-model"))
+    const forgotten: (string | null)[] = []
+    const stop = onAgentListingForgotten((agent) => forgotten.push(agent))
+    forgetListedSettings()
+    stop()
+
+    expect(forgotten).toEqual([null])
+    expect(keptListing("omp")).toBeUndefined()
+    expect(keepListing("omp", asked, listed("from before"))).toBe(false)
+    expect(keptListing("omp")).toBeUndefined()
   })
 
   it("leaves other agents' answers alone", () => {

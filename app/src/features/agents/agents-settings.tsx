@@ -108,7 +108,7 @@ function AgentRow({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
-  const settings = useAgentSettings(agent.id)
+  const settings = useAgentSettings(agent.id, open)
   const step = setupStep(agent)
   const pickable = step === "pick" || step === "ready"
   const { saved } = useSavedAgentKeys(agent.id)

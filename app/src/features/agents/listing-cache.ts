@@ -8,7 +8,10 @@ import type { Listed } from "./api"
  */
 const lastListed = new Map<string, Listed>()
 const generations = new Map<string, number>()
-const listeners = new Set<(agent: string) => void>()
+/** Bumped by Refresh models: every agent's generation moves with it. */
+let refreshes = 0
+/** Told the agent whose answer was forgotten, or `null` for every agent's. */
+const listeners = new Set<(agent: string | null) => void>()
 
 export function keptListing(agent: string): Listed | undefined {
   return lastListed.get(agent)
@@ -28,12 +31,18 @@ export function keepListing(
 
 /** The current generation of `agent`'s answers. */
 export function listingGeneration(agent: string): number {
-  return generations.get(agent) ?? 0
+  // Both only grow, so their sum changes whenever either does.
+  return (generations.get(agent) ?? 0) + refreshes
 }
 
-/** Forgets every agent's answer (Refresh models). */
+/**
+ * Forgets every agent's answer and starts a new generation for all (Refresh models): an
+ * answer still on its way from before is dropped, and pickers showing one ask again.
+ */
 export function forgetListedSettings(): void {
   lastListed.clear()
+  refreshes += 1
+  for (const listener of listeners) listener(null)
 }
 
 /**
@@ -46,9 +55,12 @@ export function forgetAgentListing(agent: string): void {
   for (const listener of listeners) listener(agent)
 }
 
-/** Calls `listener` with each agent whose answer is forgotten; returns the unsubscribe. */
+/**
+ * Calls `listener` with each agent whose answer is forgotten, `null` for all of them;
+ * returns the unsubscribe.
+ */
 export function onAgentListingForgotten(
-  listener: (agent: string) => void
+  listener: (agent: string | null) => void
 ): () => void {
   listeners.add(listener)
   return () => listeners.delete(listener)
