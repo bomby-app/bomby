@@ -142,6 +142,7 @@ Checked 2026-11-11 in `tauri-plugin-updater` 2.14.1 (`src/updater.rs`, `src/conf
 ## Dialogs, clipboard and links
 
 - `tauri-plugin-dialog` 2.8.4 provides the native multi-folder picker: `open({ directory: true, multiple: true })` resolves to `string[] | null`. Only the main window has `dialog:allow-open`.
+- A launch that fails (`lib.rs`, `launch`) shows the core's own message dialog, `app.dialog().message(..).kind(Error).show(callback)`, which runs on the main thread once the event loop does; `blocking_show` must not be called from the main thread, which `setup` runs on (2.8.4 `src/lib.rs`, `MessageDialogBuilder`). The callback quits; `RunEvent::Exit` then uses `try_state`, since the failed launch may not have managed everything.
 - Settings uses `tauri-plugin-clipboard-manager` 2 for Paste all and copying install commands. Scoped read/write permissions avoid WKWebView's separate Paste prompt. Ordinary paste events need no plugin permission.
 - Links open in the browser through `tauri-plugin-opener` 2.7.2. `opener:default` would also allow any `http(s)`, `mailto:` and `tel:` URL and revealing files ([plugin docs](https://v2.tauri.app/plugin/opener/#default-permission)), so the main window gets only `opener:allow-open-url` scoped to the pages the splash links to: LiveKit Cloud, the three voice providers' key pages and the five agents' install pages. Each `url` entry is a `glob::Pattern` matched against the whole string the page passes (`src/scope.rs`, `matches_url`), so an exact URL allows only itself.
 
