@@ -64,19 +64,23 @@ WRITE_TIMEOUT_S = 5
 
 
 class Recorder(Protocol):
-    """Where the runner and client report a turn's activity. Nothing here may await."""
+    """Where the runner and client report a turn's activity. Nothing here may await.
+
+    A turn is known by its agent and its ACP session id together: the id is the agent's
+    own, and two agents on a call may give the same one (one that numbers its sessions)."""
 
     def open(self, session_id: str, agent: str, name: str, session: str) -> None:
         """A turn starts in ACP session `session_id`, the call's session `session` of the
         agent `agent` (a harness id), called `name` ("Claude")."""
         ...
 
-    def record(self, session_id: str, update: Any) -> None:
-        """One `session/update` for `session_id`; ignored when no turn runs there."""
+    def record(self, session_id: str, agent: str, update: Any) -> None:
+        """One `session/update` for `agent`'s `session_id`; ignored when no turn runs
+        there."""
         ...
 
-    def close(self, session_id: str, outcome: Outcome) -> None:
-        """The turn in `session_id` is over, and how it ended."""
+    def close(self, session_id: str, agent: str, outcome: Outcome) -> None:
+        """The turn in `agent`'s `session_id` is over, and how it ended."""
         ...
 
 
@@ -106,7 +110,8 @@ class StreamRecorder:
         self._secret = secret
         self._room = room
         self._max_pending = max_pending
-        self._streams: dict[str, _Stream] = {}  # by ACP session id
+        # By agent and ACP session id: the id alone is only unique to its agent.
+        self._streams: dict[tuple[str, str], _Stream] = {}
         self._next = 1
         self._pending: deque[dict[str, Any]] = deque()
         self._dropped: set[str] = (
@@ -148,7 +153,7 @@ class StreamRecorder:
                 return
             stream = _Stream(str(self._next))
             self._next += 1
-            self._streams[session_id] = stream
+            self._streams[agent, session_id] = stream
             self._emit(
                 {
                     "type": "start",
@@ -162,9 +167,9 @@ class StreamRecorder:
         except Exception:
             logger.exception("recording a turn's start failed")
 
-    def close(self, session_id: str, outcome: Outcome) -> None:
+    def close(self, session_id: str, agent: str, outcome: Outcome) -> None:
         try:
-            stream = self._streams.pop(session_id, None)
+            stream = self._streams.pop((agent, session_id), None)
             if stream is not None and self._live:
                 self._emit(
                     {"type": "end", "stream": stream.key, "outcome": outcome},
@@ -173,8 +178,8 @@ class StreamRecorder:
         except Exception:
             logger.exception("recording a turn's end failed")
 
-    def record(self, session_id: str, update: Any) -> None:
-        stream = self._streams.get(session_id)
+    def record(self, session_id: str, agent: str, update: Any) -> None:
+        stream = self._streams.get((agent, session_id))
         if stream is None or not self._live:
             return
         event = self._event(stream, update)
@@ -205,8 +210,6 @@ class StreamRecorder:
                 "text": text,
             }
         if isinstance(update, ToolCallStart | ToolCallProgress):
-            # A tool call ends the message before it, as in the final message's `Reply`.
-            stream.message, stream.chars = None, 0
             event: dict[str, Any] = {
                 "type": "tool",
                 "stream": stream.key,
@@ -221,9 +224,13 @@ class StreamRecorder:
                 status = "pending"  # ACP's default for a new tool call
             if status is not None:
                 event["status"] = status
-            # An update with only output, content or a diff changes nothing shown.
+            # An update with only output, content or a diff changes nothing shown, and
+            # sends nothing: the message before it goes on, still counted, or text under
+            # its id would be let through again and join it in the core, past the cap.
             if isinstance(update, ToolCallProgress) and len(event) == 3:
                 return None
+            # A tool call ends the message before it, as in the final message's `Reply`.
+            stream.message, stream.chars = None, 0
             return event
         return None
 

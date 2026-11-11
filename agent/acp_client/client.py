@@ -186,7 +186,7 @@ class HarnessClient(Client):
         # delay a result (`streams.py`). It only queues.
         if self._streams is not None:
             try:
-                self._streams.record(session_id, update)
+                self._streams.record(session_id, self._harness.id, update)
             except Exception:
                 logger.exception("recording %s's update failed", self._harness.id)
 

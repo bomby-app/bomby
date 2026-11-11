@@ -69,10 +69,10 @@ export const AGENTS_TAB = {
  * The Agents panel: what each coding agent has done on the call, live and read-only. A row
  * per agent and session on one side, the chosen one's messages and tool calls on the other,
  * run after run, following the newest. It's there until the call ends, and kept nowhere
- * after (docs/decisions/agent-streams-through-the-core.md). `callId` is the project's call
- * on now, or null.
+ * after (docs/decisions/agent-streams-through-the-core.md). `callId` is the running call,
+ * whose page is the only one with this panel.
  */
-export function AgentsView({ callId }: { callId: number | null }) {
+export function AgentsView({ callId }: { callId: number }) {
   const streams = useAgentStreams(callId)
   const [chosen, setChosen] = useState<string | null>(null)
   // The one chosen, else the first at work, else the first.
@@ -109,7 +109,7 @@ export function AgentsView({ callId }: { callId: number | null }) {
   )
 }
 
-/** No agent has worked on the call yet, or no call is on: as To-dos' empty panel. */
+/** No agent has worked on the call yet: as To-dos' empty panel. */
 function Empty() {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 px-10 pb-16 text-center">
@@ -127,13 +127,12 @@ function Empty() {
 }
 
 /** The call's streams as the core sends them, from the start of `callId`'s watch. */
-function useAgentStreams(callId: number | null): Streams {
+function useAgentStreams(callId: number): Streams {
   const [state, setState] = useState<{ callId: number; streams: Streams }>({
     callId: -1,
     streams: [],
   })
   useEffect(() => {
-    if (callId === null) return
     let stop: (() => void) | null = null
     let gone = false
     // A watch that's over says nothing more: an event of the last call still on its way

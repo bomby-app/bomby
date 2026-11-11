@@ -88,9 +88,10 @@ export function MainPanel({
 
 /**
  * A project's page in the workspace layout, with Agents (what each coding agent is doing on
- * the project's call, always there so the toggle never comes and goes), the tabs its
- * extensions add to the panel (To-dos, when the project's calls have it) and its to-do
- * dialogs (a new one with notes, one expanded).
+ * the call, only on the running call's page, beside its agents panel: anywhere else it has
+ * nothing to show, owner 2026-11-11), the tabs its extensions add to the panel (To-dos,
+ * when the project's calls have it) and its to-do dialogs (a new one with notes, one
+ * expanded).
  */
 function ProjectLayout({
   project,
@@ -102,12 +103,12 @@ function ProjectLayout({
   onSelect: (selection: Selection) => void
 }) {
   const extensions = useExtensions()
-  const { active } = useCall()
   const todosOn = isOn("todos", project.extensions, extensions)
   const openTodos = useOpenCount(project.id, todosOn)
-  const callId = active?.projectId === project.id ? active.callId : null
   const tabs: ExtraTab[] = [
-    { ...AGENTS_TAB, content: <AgentsView callId={callId} /> },
+    ...(view.liveCallId !== undefined
+      ? [{ ...AGENTS_TAB, content: <AgentsView callId={view.liveCallId} /> }]
+      : []),
     ...(todosOn
       ? [
           {
@@ -162,6 +163,8 @@ type ProjectView = {
   /** The page's main action, at the header's right end: Call, Resume, the call's agents. */
   primary?: ReactNode
   body: ReactNode
+  /** The call on the page, when it's the running one: the Agents panel comes with it. */
+  liveCallId?: number
 }
 
 /** What a project's page shows: its running call, one of its past calls, or its calls. */
@@ -196,6 +199,7 @@ function projectView(
           <CallView call={active} />
         </div>
       ),
+      liveCallId: active.callId,
     }
   }
   if (call) {

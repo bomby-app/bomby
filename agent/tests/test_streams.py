@@ -12,7 +12,13 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, final
 
-from acp import start_tool_call, text_block, update_agent_message
+from acp import (
+    start_tool_call,
+    text_block,
+    tool_content,
+    update_agent_message,
+    update_tool_call,
+)
 
 from acp_client.environment import APP_KEYS
 from acp_client.runner import AcpRunner, Turn
@@ -210,8 +216,8 @@ def test_a_full_queue_drops_events_and_says_so_but_keeps_start_and_end() -> None
             streams = StreamRecorder(c.path, "s", "bomby-1-1", max_pending=3)
             streams.open("a", "codex", "Codex", "api")
             for id in ("t1", "t2", "t3", "t4"):
-                streams.record("a", tool(id))
-            streams.close("a", "done")
+                streams.record("a", "codex", tool(id))
+            streams.close("a", "codex", "done")
             streams.start()
             try:
                 await c.until(ended)
@@ -239,12 +245,12 @@ def test_a_message_is_cut_to_its_cap_and_the_next_one_starts_afresh() -> None:
             def say(text: str, message: str) -> None:
                 chunk = update_agent_message(text_block(text))
                 chunk.message_id = message
-                streams.record("a", chunk)
+                streams.record("a", "goose", chunk)
 
             say("x" * (MAX_MESSAGE + 500), "m1")
             say("more", "m1")
             say("next", "m2")
-            streams.close("a", "done")
+            streams.close("a", "goose", "done")
             streams.start()
             try:
                 await c.until(ended)
@@ -258,6 +264,85 @@ def test_a_message_is_cut_to_its_cap_and_the_next_one_starts_afresh() -> None:
     assert len(texts[0]["text"]) == MAX_MESSAGE
     assert texts[0]["text"].endswith(CUT)
     assert texts[1] == {"type": "text", "stream": "1", "message": "m2", "text": "next"}
+
+
+def test_a_tool_update_that_sends_nothing_leaves_the_messages_cap_counting() -> None:
+    # An agent that keeps one message id across a tool call's output (issue #40).
+    async def main() -> Core:
+        async with core() as c:
+            streams = StreamRecorder(c.path, "s", "bomby-1-1")
+            streams.open("a", "goose", "goose", "main")
+
+            def say(text: str) -> None:
+                chunk = update_agent_message(text_block(text))
+                chunk.message_id = "m1"
+                streams.record("a", "goose", chunk)
+
+            output = update_tool_call("t1", content=[tool_content(text_block("out"))])
+            say("x" * (MAX_MESSAGE - 10))
+            streams.record("a", "goose", output)
+            say("y" * 500)
+            streams.record("a", "goose", output)
+            say("more")
+            # One that shows something does end the message: the next starts afresh.
+            streams.record("a", "goose", update_tool_call("t1", status="completed"))
+            say("after")
+            streams.close("a", "goose", "done")
+            streams.start()
+            try:
+                await c.until(ended)
+            finally:
+                await streams.aclose()
+            return c
+
+    c = asyncio.run(main())
+
+    assert [e["type"] for e in c.events] == ["start", "text", "tool", "text", "end"]
+    first, after = (e["text"] for e in c.events if e["type"] == "text")
+    assert len(first) == MAX_MESSAGE
+    assert first.endswith("y" * 9 + CUT)
+    assert after == "after"
+
+
+def test_two_agents_with_the_same_session_id_have_a_stream_each() -> None:
+    # A session id is its agent's own: one that numbers its sessions gives "1" (issue #39).
+    async def main() -> Core:
+        async with core() as c:
+            streams = StreamRecorder(c.path, "s", "bomby-1-1")
+            streams.open("1", "goose", "goose", "main")
+            streams.open("1", "codex", "Codex", "api")
+            streams.record("1", "goose", update_agent_message(text_block("from goose")))
+            streams.record("1", "codex", update_agent_message(text_block("from codex")))
+            # One ending leaves the other's turn running.
+            streams.close("1", "goose", "done")
+            streams.record("1", "goose", update_agent_message(text_block("late")))
+            streams.record("1", "codex", tool("t1"))
+            streams.close("1", "codex", "stopped")
+            streams.start()
+            try:
+                await c.until(
+                    lambda events: len([e for e in events if ended([e])]) == 2
+                )
+            finally:
+                await streams.aclose()
+            return c
+
+    c = asyncio.run(main())
+
+    def of(stream: str) -> list[tuple[str, Any]]:
+        return [
+            (e["type"], e.get("text") or e.get("agent") or e.get("outcome"))
+            for e in c.events
+            if e["stream"] == stream
+        ]
+
+    assert of("1") == [("start", "goose"), ("text", "from goose"), ("end", "done")]
+    assert of("2") == [
+        ("start", "codex"),
+        ("text", "from codex"),
+        ("tool", None),
+        ("end", "stopped"),
+    ]
 
 
 def test_without_the_app_there_is_no_stream() -> None:
@@ -289,11 +374,11 @@ class Broken:
     def open(self, session_id: str, agent: str, name: str, session: str) -> None:
         self.opened.append(f"{agent}/{name}/{session}/{session_id}")
 
-    def record(self, session_id: str, update: Any) -> None:
-        raise RuntimeError(f"recorder bug on {session_id}: {update!r}")
+    def record(self, session_id: str, agent: str, update: Any) -> None:
+        raise RuntimeError(f"recorder bug on {agent}'s {session_id}: {update!r}")
 
-    def close(self, session_id: str, outcome: str) -> None:
-        del outcome
+    def close(self, session_id: str, agent: str, outcome: str) -> None:
+        del agent, outcome
         self.opened.remove(next(o for o in self.opened if o.endswith(session_id)))
 
 

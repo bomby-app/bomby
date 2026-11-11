@@ -456,7 +456,7 @@ class AcpRunner:
         finally:
             _ = self._client.replies.pop(session_id, None)
             if self._streams is not None:
-                self._streams.close(session_id, outcome)
+                self._streams.close(session_id, self._harness.id, outcome)
 
         logger.info(
             "%s turn in %s ended: %s", self._harness.id, s.name, response.stop_reason
