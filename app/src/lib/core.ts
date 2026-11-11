@@ -51,19 +51,27 @@ export async function whyNotAnswering(
 
 /**
  * Calls a core command, like `invoke`, and stops waiting after `timeout` ms, rejecting
- * with why ({@link whyNotAnswering}); the core may still finish the work. `null` waits as long as it takes: only for what waits on the
- * user (a browser sign-in) or a download.
+ * with why ({@link whyNotAnswering}); the core may still finish the work. `null` waits as
+ * long as it takes: only for what waits on the user (a browser sign-in) or a download.
+ * An answer that arrives after the page gave up goes to `late`, to clean up what the
+ * command started (a call ended, a terminal closed) rather than drop it.
  */
 export function call<T>(
   command: string,
   args?: InvokeArgs,
-  { timeout = QUICK }: { timeout?: number | null } = {}
+  {
+    timeout = QUICK,
+    late,
+  }: { timeout?: number | null; late?: (value: T) => void } = {}
 ): Promise<T> {
   const answer = invoke<T>(command, args)
   if (timeout === null) return answer
   return new Promise<T>((resolve, reject) => {
+    let settled = false
     const timer = setTimeout(() => {
       void whyNotAnswering().then((why) => {
+        if (settled) return
+        settled = true
         const waiting =
           why === KEYCHAIN_ASKING ? ", waiting on the keychain" : ""
         log(`${command} didn't answer in ${timeout / 1000} s${waiting}`)
@@ -74,11 +82,19 @@ export function call<T>(
     answer.then(
       (value) => {
         clearTimeout(timer)
-        resolve(value)
+        if (settled) {
+          late?.(value)
+        } else {
+          settled = true
+          resolve(value)
+        }
       },
       (error: unknown) => {
         clearTimeout(timer)
-        reject(error)
+        if (!settled) {
+          settled = true
+          reject(error)
+        }
       }
     )
   })

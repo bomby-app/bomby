@@ -60,4 +60,46 @@ describe("calling the core", () => {
     finish("signed in")
     await expect(answer).resolves.toBe("signed in")
   })
+
+  it("gives an answer that arrives after it gave up to late, to clean up", async () => {
+    let finish: (value: number) => void = () => {}
+    invoke.mockImplementation((command: string) => {
+      if (command === "keychain_asking") return Promise.resolve(false)
+      if (command === "app_log") return Promise.resolve()
+      return new Promise((resolve) => (finish = resolve))
+    })
+    const late = vi.fn()
+    const answer = call("open_call", undefined, { timeout: 8000, late })
+    const rejected = expect(answer).rejects.toBe(NOT_ANSWERING)
+    await vi.advanceTimersByTimeAsync(10_000)
+    await rejected
+    expect(late).not.toHaveBeenCalled()
+    finish(9)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(late).toHaveBeenCalledWith(9)
+  })
+
+  it("doesn't call late for an answer in time", async () => {
+    invoke.mockResolvedValue(7)
+    const late = vi.fn()
+    await expect(call("open_call", undefined, { late })).resolves.toBe(7)
+    expect(late).not.toHaveBeenCalled()
+  })
+
+  it("drops a late failure: the page already showed why it gave up", async () => {
+    let fail: (e: unknown) => void = () => {}
+    invoke.mockImplementation((command: string) => {
+      if (command === "keychain_asking") return Promise.resolve(false)
+      if (command === "app_log") return Promise.resolve()
+      return new Promise((_, reject) => (fail = reject))
+    })
+    const late = vi.fn()
+    const answer = call("open_call", undefined, { timeout: 8000, late })
+    const rejected = expect(answer).rejects.toBe(NOT_ANSWERING)
+    await vi.advanceTimersByTimeAsync(10_000)
+    await rejected
+    fail("database: locked")
+    await vi.advanceTimersByTimeAsync(0)
+    expect(late).not.toHaveBeenCalled()
+  })
 })
