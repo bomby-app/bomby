@@ -65,7 +65,9 @@ export function folderImage(
 
 /**
  * Calls `onChange` after each burst of changes in the folder (debounced in the core).
- * Resolves to the function that stops watching.
+ * Resolves to the function that stops watching. A watch the core starts after the page
+ * gave up waiting is stopped as soon as its id arrives: nothing shows it, and it would
+ * watch the folder until Bomby quits.
  */
 export async function watchFolder(
   projectId: number,
@@ -74,11 +76,15 @@ export async function watchFolder(
 ): Promise<() => void> {
   const changed = new Channel<null>()
   changed.onmessage = onChange
-  const id = await call<number>("watch_folder", {
-    projectId,
-    folder,
-    changed,
-  })
+  const id = await call<number>(
+    "watch_folder",
+    {
+      projectId,
+      folder,
+      changed,
+    },
+    { late: (id) => quietly("unwatch_folder", { id }) }
+  )
   return () => quietly("unwatch_folder", { id })
 }
 
@@ -102,6 +108,8 @@ const RESIZE_SETTLE_MS = 60
 /**
  * Starts the user's login shell in the folder, on a terminal of `cols` by `rows`. Its
  * output arrives as bytes on `onOutput`; `onExit` gets the exit code once it has gone.
+ * A shell the core starts after the page gave up waiting is closed as soon as its id
+ * arrives: no tab shows it, and it would run until Bomby quits.
  */
 export async function openTerminal({
   projectId,
@@ -123,14 +131,18 @@ export async function openTerminal({
   output.onmessage = (buffer) => onOutput(new Uint8Array(buffer))
   const exit = new Channel<number | null>()
   exit.onmessage = onExit
-  const id = await call<number>("terminal_open", {
-    projectId,
-    folder,
-    cols,
-    rows,
-    output,
-    exit,
-  })
+  const id = await call<number>(
+    "terminal_open",
+    {
+      projectId,
+      folder,
+      cols,
+      rows,
+      output,
+      exit,
+    },
+    { late: (id) => quietly("terminal_close", { id }) }
+  )
   // Tauri runs each command as its own task, so two can overtake each other: every input
   // carries its number and the core applies them in that order (terminals.rs, Inbox).
   let seq = 0
