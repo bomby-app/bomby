@@ -62,7 +62,8 @@ pub enum WorkerNews {
     NotReady(String),
 }
 
-/// Told the news in the worker's output, from the thread reading it.
+/// Told the news in the worker's output, in order, on a thread apart from the ones reading
+/// it, so it may take locks and wait.
 pub type OnNews = Arc<dyn Fn(WorkerNews) + Send + Sync>;
 
 /// Everything the worker needs to run. A change to any of it means a restart.
@@ -214,6 +215,15 @@ fn start(config: &WorkerConfig, log_dir: &Path, on_news: OnNews) -> Result<(Chil
         .take()
         .ok_or_else(|| Error::Invalid("The agent's stdin isn't piped".into()))?;
     let (ready_tx, ready_rx) = mpsc::channel();
+    // The readers only read: what the output reports is acted on here, on a thread of its
+    // own, so a reader never waits on what acting takes (the database, say) and the worker
+    // never blocks writing to a pipe nobody drains. It ends once both readers have.
+    let (news_tx, news_rx) = mpsc::channel::<WorkerNews>();
+    thread::spawn(move || {
+        for news in news_rx {
+            on_news(news);
+        }
+    });
     // The last lines, to say why it failed without sending the user to the log.
     let recent = Arc::new(Mutex::new(VecDeque::with_capacity(RECENT_LINES)));
     for stream in [
@@ -230,7 +240,7 @@ fn start(config: &WorkerConfig, log_dir: &Path, on_news: OnNews) -> Result<(Chil
     .flatten()
     {
         let (log, ready_tx, recent) = (Arc::clone(&log), ready_tx.clone(), Arc::clone(&recent));
-        let on_news = Arc::clone(&on_news);
+        let news_tx = news_tx.clone();
         thread::spawn(move || {
             for line in BufReader::new(stream)
                 .lines()
@@ -240,7 +250,7 @@ fn start(config: &WorkerConfig, log_dir: &Path, on_news: OnNews) -> Result<(Chil
                     let _ = ready_tx.send(());
                 }
                 if let Some(news) = news(&line) {
-                    on_news(news);
+                    let _ = news_tx.send(news);
                 }
                 if let Ok(mut file) = log.lock() {
                     let _ = writeln!(file, "{line}");
@@ -249,7 +259,7 @@ fn start(config: &WorkerConfig, log_dir: &Path, on_news: OnNews) -> Result<(Chil
             }
         });
     }
-    drop(ready_tx);
+    drop((ready_tx, news_tx));
 
     match ready_rx.recv_timeout(READY_TIMEOUT) {
         Ok(()) => Ok((child, lifeline)),
