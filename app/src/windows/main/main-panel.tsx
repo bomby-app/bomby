@@ -1,5 +1,7 @@
 import type { ReactNode } from "react"
 
+import { ErrorCard } from "@/components/error-card"
+import { Button } from "@/components/ui/button"
 import { AGENTS_TAB, AgentsView } from "@/features/agent-streams/agents-view"
 import { AgentsPanel } from "@/features/call/agents-panel"
 import { CallName } from "@/features/call/call-name"
@@ -51,7 +53,7 @@ export function MainPanel({
   onSelect: (selection: Selection) => void
   onNewProject: () => void
 }) {
-  const { projects } = useProjects()
+  const { projects, error: projectsError, retry: retryProjects } = useProjects()
   const { active } = useCall()
   const project = projects?.find((p) => p.id === selection?.projectId)
   const call =
@@ -64,12 +66,25 @@ export function MainPanel({
     return (
       <>
         <AppHeader title="Projects" />
-        {projects && (
+        {projects ? (
           <ProjectsHome
             projects={projects}
             onOpen={(projectId) => onSelect({ kind: "project", projectId })}
             onNewProject={onNewProject}
           />
+        ) : (
+          projectsError !== null && (
+            <div className="p-6">
+              <ErrorCard
+                message={projectsError}
+                action={
+                  <Button variant="outline" onClick={retryProjects}>
+                    Try again
+                  </Button>
+                }
+              />
+            </div>
+          )
         )}
       </>
     )
