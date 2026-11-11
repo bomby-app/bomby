@@ -37,6 +37,10 @@ const HELLO_TIMEOUT: Duration = Duration::from_secs(5);
 /// The most a line may weigh. The agent cuts a message at 16,000 characters, which is at
 /// most 64 KiB of UTF-8; a longer line closes the connection.
 const MAX_LINE: usize = 256 * 1024;
+/// The most bytes of one message a stream holds: what the agent's cut comes to at most, so
+/// only a worker that let more through reaches it. Text past it is left out, and a
+/// `dropped` marker says so.
+const MAX_TEXT: usize = 64 * 1024;
 /// The most connections served at once: one per call's job, and the app runs one call.
 const MAX_CONNECTIONS: usize = 8;
 /// The most turns a call has running at once.
@@ -90,8 +94,8 @@ pub enum StreamEvent {
         #[cfg_attr(test, ts(optional))]
         status: Option<String>,
     },
-    /// Some events before this one were left out: the agent's queue was full, or the
-    /// stream outgrew what the core holds.
+    /// Some events before this one were left out: the agent's queue was full, the stream
+    /// outgrew what the core holds, or a message did.
     Dropped { stream: String },
     /// The turn is over; its open tool calls are over with it. `outcome` is how the worker
     /// says it ended (`done`, `stopped` or `failed`), and missing when the core ended it
@@ -177,10 +181,61 @@ struct Held {
     events: VecDeque<StreamEvent>,
     weight: usize,
     ended: bool,
+    /// The message the last event wrote to, and how many of its bytes were taken; none
+    /// once anything but text came after it.
+    writing: Option<(Option<String>, usize)>,
 }
 
 impl Held {
-    fn push(&mut self, event: StreamEvent) {
+    /// Takes `event`, and returns what of it is held, for the watchers: all of it, or, of
+    /// text that takes its message past `MAX_TEXT`, the part that fits and one `Dropped`.
+    /// The joined text is bounded here because the budget's trim can't be what bounds it:
+    /// a stream that is its start and one message has nothing older to let go.
+    fn push(&mut self, event: StreamEvent) -> Vec<StreamEvent> {
+        let StreamEvent::Text {
+            stream,
+            message,
+            mut text,
+        } = event
+        else {
+            self.writing = None;
+            self.hold(event.clone());
+            return vec![event];
+        };
+        // An empty piece is nothing to hold, and so no other message either: counted as
+        // one, it would hand the message before it a fresh allowance to join past the cap.
+        if text.is_empty() {
+            return Vec::new();
+        }
+        let taken = match &self.writing {
+            Some((written, taken)) if *written == message => *taken,
+            _ => 0,
+        };
+        let fits = text.floor_char_boundary(MAX_TEXT - taken);
+        let cut = fits < text.len();
+        // Once cut, the message is full: nothing shorter slips in after the marker.
+        self.writing = Some((message.clone(), if cut { MAX_TEXT } else { taken + fits }));
+        text.truncate(fits);
+        let mut held = Vec::new();
+        if !text.is_empty() {
+            held.push(StreamEvent::Text {
+                stream,
+                message,
+                text,
+            });
+        }
+        if cut && !matches!(self.events.back(), Some(StreamEvent::Dropped { .. })) {
+            held.push(StreamEvent::Dropped {
+                stream: self.id.clone(),
+            });
+        }
+        for event in &held {
+            self.hold(event.clone());
+        }
+        held
+    }
+
+    fn hold(&mut self, event: StreamEvent) {
         // The next piece of the message the last event writes joins it.
         if let (
             Some(StreamEvent::Text { message, text, .. }),
@@ -251,30 +306,35 @@ impl Streams {
         let call = calls.entry(call_id).or_default();
         let index = call.streams.iter().position(|s| s.id == event.stream());
         let running = call.streams.iter().filter(|s| !s.ended).count();
-        match (&event, index) {
-            (StreamEvent::Start { .. }, None) if running < MAX_STREAMS => {
+        let started = matches!(event, StreamEvent::Start { .. });
+        let ending = matches!(event, StreamEvent::End { .. });
+        // What the stream held of it, which is what the watchers get.
+        let sent = match index {
+            None if started && running < MAX_STREAMS => {
                 let mut held = Held {
                     id: event.stream().to_owned(),
                     events: VecDeque::new(),
                     weight: 0,
                     ended: false,
+                    writing: None,
                 };
-                held.push(event.clone());
+                let sent = held.push(event);
                 call.streams.push(held);
+                sent
             }
-            (StreamEvent::Start { .. }, _) | (_, None) => {
+            Some(i) if !started && !call.streams[i].ended => {
+                call.streams[i].ended = ending;
+                call.streams[i].push(event)
+            }
+            // A turn that never started or is over, a second start, or one start too many.
+            _ => {
                 Self::tidy(&mut calls, call_id);
                 return;
             }
-            (_, Some(i)) if call.streams[i].ended => return,
-            (StreamEvent::End { .. }, Some(i)) => {
-                call.streams[i].push(event.clone());
-                call.streams[i].ended = true;
-            }
-            (_, Some(i)) => call.streams[i].push(event.clone()),
-        }
+        };
         call.trim();
-        call.watchers.retain(|_, sink| sink(&event));
+        call.watchers
+            .retain(|_, sink| sent.iter().all(|event| sink(event)));
         Self::tidy(&mut calls, call_id);
     }
 
@@ -664,6 +724,83 @@ mod tests {
         assert_eq!(held[1], StreamEvent::Dropped { stream: "a".into() });
         assert!(held.len() < 8);
         assert!(matches!(&held.last().unwrap(), StreamEvent::Tool { id, .. } if id == "t9"));
+    }
+
+    #[test]
+    fn a_message_that_keeps_growing_is_cut_at_its_cap_and_says_so() {
+        // Its start and one message: nothing older for the budget's trim to let go (#40).
+        let streams = Streams::default();
+        streams.apply(1, start("a"));
+        let (sink, seen) = recorder();
+        streams.watch(1, sink);
+        // An odd byte, then two-byte characters: the cap falls inside one.
+        streams.apply(1, text("a", "x"));
+        let piece = "é".repeat(MAX_TEXT / 8);
+        for _ in 0..8 {
+            streams.apply(1, text("a", &piece));
+        }
+        let held = streams.held(1);
+        let dropped = StreamEvent::Dropped { stream: "a".into() };
+        assert_eq!(held.len(), 3, "its start, the message and one marker");
+        let StreamEvent::Text { text: kept, .. } = &held[1] else {
+            panic!("the message is held: {:?}", held[1]);
+        };
+        assert_eq!(
+            kept.len(),
+            MAX_TEXT - 1,
+            "cut before the character that didn't fit"
+        );
+        assert_eq!(held[2], dropped);
+        // The page watching got as much, not what was left out.
+        let seen = seen.lock().unwrap().clone();
+        let sent: String = seen
+            .iter()
+            .filter_map(|e| match e {
+                StreamEvent::Text { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(&sent, kept);
+        assert_eq!(seen.iter().filter(|e| **e == dropped).count(), 1);
+        // Its next message starts afresh.
+        let next = StreamEvent::Text {
+            stream: "a".into(),
+            message: Some("m2".into()),
+            text: "next".into(),
+        };
+        streams.apply(1, next.clone());
+        assert_eq!(streams.held(1).last(), Some(&next));
+    }
+
+    #[test]
+    fn an_empty_piece_of_another_message_gives_no_fresh_allowance() {
+        // It isn't held, so what follows under the first id still joins that message.
+        let streams = Streams::default();
+        streams.apply(1, start("a"));
+        let (sink, seen) = recorder();
+        streams.watch(1, sink);
+        let empty = StreamEvent::Text {
+            stream: "a".into(),
+            message: Some("m2".into()),
+            text: String::new(),
+        };
+        let piece = "x".repeat(MAX_TEXT / 4);
+        for _ in 0..80 {
+            streams.apply(1, text("a", &piece));
+            streams.apply(1, empty.clone());
+        }
+        let dropped = StreamEvent::Dropped { stream: "a".into() };
+        assert_eq!(
+            streams.held(1),
+            vec![
+                start("a"),
+                text("a", &"x".repeat(MAX_TEXT)),
+                dropped.clone()
+            ]
+        );
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.iter().filter(|e| **e == dropped).count(), 1);
+        assert!(!seen.contains(&empty), "nothing of it is sent on");
     }
 
     #[test]

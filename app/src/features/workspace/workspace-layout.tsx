@@ -69,7 +69,7 @@ export function WorkspaceLayout({
 }) {
   const column = usePanelRef()
   const contents = useRef<HTMLDivElement>(null)
-  // The panels open, in the order they stack, and the one taking the whole column.
+  // The panels the user opened, closed only by them, and the one taking the whole column.
   // A panel asked for before this page opened (`panelRequest`) starts open.
   const [requested] = useState(() => {
     const request = panelRequest.get()
@@ -136,8 +136,12 @@ export function WorkspaceLayout({
   ]
   const available = sections.length > 0
   const ids = sections.map((s) => s.id)
-  // A panel no longer there (an extension turned off) drops out.
-  const showing = open.filter((id) => ids.includes(id))
+  // The open panels there are, stacked in the header's order. One no longer there (an
+  // extension turned off, Agents off the call's page) drops out but stays in `open`,
+  // whatever else is toggled meanwhile, so it comes back open if it was. Not expanded,
+  // though: back, on the next call say, it would hide the panels beside it unasked.
+  const showing = ids.filter((id) => open.includes(id))
+  if (maximized !== null && !ids.includes(maximized)) setMaximized(null)
 
   // One saved layout with the column and one without, as the library needs when a panel
   // comes and goes.
@@ -167,11 +171,11 @@ export function WorkspaceLayout({
   function toggle(id: string) {
     setMaximized(null)
     if (showing.includes(id)) {
-      setOpen(showing.filter((s) => s !== id))
+      setOpen(open.filter((s) => s !== id))
       return
     }
     setMounted(new Set(mounted).add(id))
-    setOpen(ids.filter((s) => s === id || showing.includes(s)))
+    setOpen([...open, id])
   }
 
   /** Brings the panel `id` into view, never closing it: for the command palette. */
@@ -269,8 +273,8 @@ export function WorkspaceLayout({
                   document.activeElement instanceof HTMLElement
                 )
                   document.activeElement.blur()
-                // Dragged shut: every panel closes.
-                if (anyOpen) setOpen([])
+                // Dragged shut: every panel there closes.
+                if (anyOpen) setOpen(open.filter((id) => !ids.includes(id)))
               }
               setShown(now)
             }}
