@@ -1,6 +1,6 @@
 [package]
 name = "bomby"
-version = "0.3.0"
+version = "0.3.1"
 description = "Bomby, talk to your agents: the desktop app"
 authors = ["Ahmed Aburady"]
 license = "MIT"
