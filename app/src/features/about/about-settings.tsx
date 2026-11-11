@@ -43,7 +43,7 @@ const LINKS = [
  * launch, installing waits for the user), where Bomby lives, and Export Diagnostics.
  */
 export function AboutSettings() {
-  const info = useAbout()
+  const { info, error: readError } = useAbout()
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
@@ -79,6 +79,7 @@ export function AboutSettings() {
           </p>
         </div>
       </div>
+      {readError && <ErrorCard message={readError} />}
       {error && <ErrorCard message={error} />}
       {info && (
         <UpdateRow
@@ -335,7 +336,7 @@ function quietLine(status: UpdateStatus): string {
 
 /** About's mark in the settings sidebar: a highlighter dot while an update is ready. */
 export function AboutBadge() {
-  const info = useAbout()
+  const { info } = useAbout()
   const kind = info?.status.kind
   if (kind !== "available" && kind !== "downloaded") return null
   return (

@@ -6,6 +6,7 @@ import { ErrorCard } from "@/components/error-card"
 import { StatusRow } from "@/components/status-row"
 import { Button } from "@/components/ui/button"
 import { useSettingsNavigation } from "@/lib/settings-navigation"
+import { andList } from "@/lib/text"
 
 import type { AgentStatus } from "../agents/api"
 import { checkAgentsAgain, isReady, useAgents } from "../agents/use-agents"
@@ -60,9 +61,7 @@ export function SetupSettings() {
           ready={keys ? keys.voiceKey : null}
           detail={keys ? voiceDetail(keys) : null}
           action={
-            <GoButton to={{ section: "voice", field: "key" }}>
-              {keys?.voice ? "Add key" : "Pick one"}
-            </GoButton>
+            <GoButton to={{ section: "voice", field: "key" }}>Add key</GoButton>
           }
         />
         <StatusRow
@@ -115,15 +114,14 @@ function serverDetail(keys: Keys): string {
     : "LiveKit Cloud needs its keys."
 }
 
-/** The picked provider's logo, or a plain voice mark before there's one. */
+/** The picked provider's logo, or a plain voice mark until the keys are read. */
 function VoiceLogo({ keys }: { keys: Keys | null }) {
-  if (!keys?.voice) return <AudioLines />
+  if (!keys) return <AudioLines />
   const Logo = PROVIDERS[keys.voice].logo
   return <Logo />
 }
 
 function voiceDetail(keys: Keys): string {
-  if (!keys.voice) return "Pick who Bomby talks through."
   const name = PROVIDERS[keys.voice].name
   return keys.voiceKey
     ? `${name}, its key in your keychain.`
@@ -134,15 +132,9 @@ function voiceDetail(keys: Keys): string {
 function agentDetail(agents: AgentStatus[]): string {
   const ready = agents.filter(isReady).map((agent) => agent.name)
   if (ready.length > 0)
-    return `${list(ready)} ${ready.length === 1 ? "is" : "are"} ready.`
+    return `${andList(ready)} ${ready.length === 1 ? "is" : "are"} ready.`
   const installed = agents.filter((agent) => agent.path !== null)
   if (installed.length > 0)
-    return `${list(installed.map((agent) => agent.name))} ${installed.length === 1 ? "needs" : "need"} setting up.`
+    return `${andList(installed.map((agent) => agent.name))} ${installed.length === 1 ? "needs" : "need"} setting up.`
   return "None installed yet."
-}
-
-/** "a", "a and b", "a, b and c". */
-function list(names: string[]): string {
-  if (names.length <= 1) return names.join("")
-  return `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`
 }

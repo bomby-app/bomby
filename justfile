@@ -15,7 +15,7 @@ mod livekit
 default:
     @just --list --unsorted
 
-# Install the tools pinned in mise.toml (lk, go, rust, bun, uv, just) and every part's dependencies, the ACP adapters included
+# Install the tools pinned in mise.toml and every part's dependencies, the ACP adapters included
 install: tools agent::install livekit::build app::install
 
 # Install the tools pinned in mise.toml
@@ -23,7 +23,7 @@ tools:
     mise install
 
 # Everything a change must pass, in every part
-check: agent::check app::check lint-workflows lint-docs
+check: agent::check app::check lint-workflows lint-docs lint-versions
 
 # Lint the GitHub workflows: actionlint for mistakes, zizmor for security
 [group('check')]
@@ -35,6 +35,21 @@ lint-workflows:
 [group('check')]
 lint-docs:
     git ls-files -z '*.md' | xargs -0 lychee --offline --include-fragments --no-progress
+
+# Check every place that carries Bomby's version says the same as tauri.conf.json (scripts/version.py)
+[group('check')]
+lint-versions:
+    uv run --script scripts/version.py check
+
+# Set Bomby's version everywhere, for a release (docs/releasing.md): tauri.conf.json, the crate, the agent and their lockfiles
+[group('release')]
+version new:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    uv run --script scripts/version.py set {{quote(new)}}
+    (cd agent && uv version {{quote(new)}} --no-sync)
+    (cd app/src-tauri && cargo update --workspace --offline)
+    uv run --script scripts/version.py check
 
 # Talk to the agent from a browser with LiveKit's own agent starter (localhost:3000): Chrome vs Safari separates WebKit (Tauri) from React and LiveKit. Ctrl-C stops both.
 [group('debug')]

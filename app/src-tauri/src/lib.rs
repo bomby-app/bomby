@@ -1,10 +1,11 @@
 //! The Tauri core of the desktop app: windows, the menu bar icon, notifications, updates, Export Diagnostics, the permission prompt for the mic, the app's
-//! database, extensions and their data, the workspace panel's terminals, git changes and files, and the commands the page calls. Each command's module documents it;
+//! database, extensions and their data, the workspace panel's terminals, git changes and files, the Agents panel's live streams, and the commands the page calls. Each command's module documents it;
 //! capabilities/ grants them.
 
 mod adapters;
 mod agent;
 mod agent_picks;
+mod agent_streams;
 mod agents;
 mod app_log;
 mod call_server;
@@ -16,6 +17,7 @@ mod diagnostics;
 mod error;
 mod extensions;
 mod local_server;
+mod local_socket;
 mod notifications;
 mod process;
 mod projects;
@@ -32,7 +34,6 @@ mod workspace;
 use tauri::Manager;
 use tauri::webview::{PermissionKind, PermissionResponse};
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
     // Only release builds update (updates.rs), so only they load the updater, which won't
@@ -68,6 +69,7 @@ pub fn run() {
             app.manage(extensions::tokens::Tokens(extensions::tokens::start(
                 app.handle(),
             )));
+            app.manage(agent_streams::start(app.handle()));
             app.manage(agents::Agents::default());
             app.manage(agent_picks::Listings::default());
             app.manage(calls::CallAgents::default());
@@ -168,6 +170,8 @@ pub fn run() {
             workspace::terminals::terminal_write,
             workspace::terminals::terminal_resize,
             workspace::terminals::terminal_close,
+            agent_streams::watch_agent_streams,
+            agent_streams::unwatch_agent_streams,
         ])
         .build(tauri::generate_context!())
         .expect("error while building the app")
@@ -181,6 +185,9 @@ pub fn run() {
                     .close_all();
                 app.state::<local_server::LocalServer>().stop();
                 if let Some(socket) = &app.state::<extensions::tokens::Tokens>().0 {
+                    socket.stop();
+                }
+                if let Some(socket) = &app.state::<agent_streams::AgentStreams>().socket {
                     socket.stop();
                 }
             }

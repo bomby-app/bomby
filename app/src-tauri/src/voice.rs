@@ -204,9 +204,8 @@ pub struct ProviderSettings {
 #[derive(Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export, export_to = "voice.ts"))]
 pub struct VoiceSettings {
-    /// The pick, else the first provider with a saved key, else Gemini; always set in
-    /// practice (`chosen`).
-    provider: Option<VoiceProvider>,
+    /// The pick, else the first provider with a saved key, else Gemini (`chosen`).
+    provider: VoiceProvider,
     providers: Vec<ProviderSettings>,
 }
 
@@ -223,31 +222,29 @@ pub(crate) struct CallVoice {
 pub(crate) fn chosen(
     conn: &Connection,
     has_key: impl Fn(VoiceProvider) -> bool,
-) -> Result<Option<VoiceProvider>> {
-    let Some((provider, saved)) = picked(conn, has_key)? else {
-        return Ok(None);
-    };
+) -> Result<VoiceProvider> {
+    let (provider, saved) = picked(conn, has_key)?;
     if !saved {
         save_provider(conn, provider)?;
     }
-    Ok(Some(provider))
+    Ok(provider)
 }
 
 /// What `chosen` finds, without saving it, and whether it was saved already.
 fn picked(
     conn: &Connection,
     has_key: impl Fn(VoiceProvider) -> bool,
-) -> Result<Option<(VoiceProvider, bool)>> {
+) -> Result<(VoiceProvider, bool)> {
     if let Some(provider) = get(conn, PROVIDER_KEY)?
         .as_deref()
         .and_then(VoiceProvider::from_id)
     {
-        return Ok(Some((provider, true)));
+        return Ok((provider, true));
     }
     // With no key either, Gemini: the splash and Settings start with it picked (owner,
     // 2026-11-06).
     let first_with_key = VoiceProvider::ALL.into_iter().find(|&p| has_key(p));
-    Ok(Some((first_with_key.unwrap_or(DEFAULT_PROVIDER), false)))
+    Ok((first_with_key.unwrap_or(DEFAULT_PROVIDER), false))
 }
 
 /// What a token for a call this run didn't open talks through: the pick as it stands,
@@ -260,9 +257,7 @@ pub(crate) fn for_token<R: Runtime>(
 ) -> Result<CallVoice> {
     let keys = vault.voice_keys(app)?;
     let conn = db.conn();
-    let (provider, _) = picked(&conn, |p| keys.contains_key(&p))?.ok_or_else(|| {
-        Error::Invalid("Pick who Bomby talks through in Settings, Voice first.".into())
-    })?;
+    let (provider, _) = picked(&conn, |p| keys.contains_key(&p))?;
     for_call(&conn, provider)
 }
 
@@ -393,16 +388,14 @@ pub(crate) fn for_call(conn: &Connection, provider: VoiceProvider) -> Result<Cal
 }
 
 /// The picked provider for a new call, with its key: what the worker needs. Fails with
-/// what to add when either is missing.
+/// what to add when the key is missing.
 pub(crate) fn for_new_call<R: Runtime>(
     app: &AppHandle<R>,
     db: &Db,
     vault: &Vault,
 ) -> Result<VoiceProvider> {
     let keys = vault.voice_keys(app)?;
-    let provider = chosen(&db.conn(), |p| keys.contains_key(&p))?.ok_or_else(|| {
-        Error::Invalid("Pick who Bomby talks through in Settings, Voice first.".into())
-    })?;
+    let provider = chosen(&db.conn(), |p| keys.contains_key(&p))?;
     if !keys.contains_key(&provider) {
         return Err(Error::Invalid(format!(
             "Add your {} API key in Settings, Voice first.",
@@ -495,22 +488,19 @@ mod tests {
         let conn = db.conn();
         assert_eq!(
             chosen(&conn, |p| p == VoiceProvider::Rime).unwrap(),
-            Some(VoiceProvider::Rime),
+            VoiceProvider::Rime,
             "an install with only a Rime key starts on Rime"
         );
         // Saved once worked out: a key added later doesn't switch it.
-        assert_eq!(chosen(&conn, |_| true).unwrap(), Some(VoiceProvider::Rime));
+        assert_eq!(chosen(&conn, |_| true).unwrap(), VoiceProvider::Rime);
 
         save_provider(&conn, VoiceProvider::Gemini).unwrap();
-        assert_eq!(
-            chosen(&conn, |_| false).unwrap(),
-            Some(VoiceProvider::Gemini)
-        );
+        assert_eq!(chosen(&conn, |_| false).unwrap(), VoiceProvider::Gemini);
 
         let fresh = Db::in_memory().unwrap();
         assert_eq!(
             chosen(&fresh.conn(), |_| false).unwrap(),
-            Some(VoiceProvider::Gemini),
+            VoiceProvider::Gemini,
             "a new install starts on Gemini"
         );
     }
@@ -522,7 +512,7 @@ mod tests {
         let gemini = |p| p == VoiceProvider::Gemini;
         assert_eq!(
             picked(&conn, gemini).unwrap(),
-            Some((VoiceProvider::Gemini, false))
+            (VoiceProvider::Gemini, false)
         );
         assert_eq!(get(&conn, PROVIDER_KEY).unwrap(), None);
     }

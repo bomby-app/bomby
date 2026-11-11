@@ -1,11 +1,11 @@
 """What a call's tools share: the runners that drive the agents, the task board the
 app's agents panel shows, the call's memory, if it remembers across calls, and its voice
-provider."""
+provider and what the user is called."""
 
 import asyncio
 from dataclasses import dataclass
 
-from acp_client import CallRunners
+from acp_client.runner import CallRunners
 from memory import Memory
 from task_board import TaskBoard
 from voice_providers import GEMINI, VoiceProvider
@@ -18,6 +18,8 @@ class Call:
     memory: Memory | None = None
     # The voice model the call talks through, for what only some providers need.
     provider: VoiceProvider = GEMINI
+    # The user's name (`CallOptions.user_name`), empty when they haven't given one.
+    user_name: str = ""
 
     async def aclose(self) -> None:
         # Side by side: closing the agents mustn't eat the time saving the call needs.

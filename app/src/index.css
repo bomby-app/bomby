@@ -377,6 +377,13 @@
   border-color: var(--border);
 }
 
+/* Agents UI pairs its mic toggle (36 px) with shadcn's select as the device menu, whose
+   trigger is 32 px in this style: it takes the toggle's height, so the two halves read as
+   one control. */
+.call-controls [data-slot="toggle"] ~ [data-slot="select-trigger"] {
+  height: calc(var(--spacing) * 9);
+}
+
 /* `SlidingName`: a long name slides between faded edges while highlighted or hovered.
    `100cqw - 100%` is its overflow, zero when it fits; `--slide-ms` keeps the speed even. */
 [data-slot="sliding-name"] {

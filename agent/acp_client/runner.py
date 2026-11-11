@@ -12,16 +12,20 @@ import asyncio
 import contextlib
 import logging
 import os
-from collections.abc import Awaitable, Callable, Mapping, Sequence
-from contextlib import AsyncExitStack
+from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping, Sequence
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import final
 
 from acp import RequestError, text_block
 from acp.client.connection import ClientSideConnection
-from acp.schema import AgentCapabilities, InitializeResponse, NewSessionResponse
-from dotenv import dotenv_values
+from acp.schema import (
+    AgentCapabilities,
+    InitializeResponse,
+    NewSessionResponse,
+    PromptResponse,
+)
 from livekit.agents.llm import ToolError
 
 from harnesses import HARNESSES, installed
@@ -31,12 +35,13 @@ from project import Project
 from sections import join, section
 
 from .client import HarnessClient, Reply, connect
+from .environment import AGENT_ROOT, launch
 from .sessions import close_session, discard_session
 from .settings import Applied, apply, model_setting, needs_pick
+from .streams import Outcome, Recorder
 
 logger = logging.getLogger("bomby.acp_client.runner")
 
-AGENT_ROOT = Path(__file__).resolve().parent.parent
 # What every harness is told about working behind a voice assistant.
 BRIEFING = (AGENT_ROOT / "prompts" / "harness-briefing.md").read_text().rstrip()
 # Must match the line in harness-briefing.md (a test checks).
@@ -45,47 +50,16 @@ SHORT_REPORT_RULE = (
     "- stay under about 100 words, even when the task is to find information: give what"
     + " the user asked for and leave out the rest, which they can ask for next"
 )
-# Never passed to any harness: the desktop app starts this agent with the user's LiveKit,
-# voice provider and Zep keys in its environment (not in .env), and GEMINI_API_KEY may
-# come from the user's own shell. Each harness blocks its own on top.
-APP_KEYS = frozenset(
-    {
-        "LIVEKIT_URL",
-        "LIVEKIT_API_KEY",
-        "LIVEKIT_API_SECRET",
-        "GOOGLE_API_KEY",
-        "GEMINI_API_KEY",
-        "OPENAI_API_KEY",
-        "RIME_API_KEY",
-        "ZEP_API_KEY",
-        # The core's token socket for the hosted MCP extensions (`extensions/tokens.py`).
-        "BOMBY_TOKENS",
-        "BOMBY_TOKENS_SECRET",
-    }
-)
 DEFAULT_SESSION = "main"
-
-
-def child_environment(
-    environ: Mapping[str, str], dotenv_keys: set[str], harness: Harness
-) -> dict[str, str]:
-    """The environment a harness runs with: the shell's, minus this agent's `.env`
-    secrets, the app's keys and whatever the harness must not see."""
-    blocked = APP_KEYS | harness.blocked_env
-    return {
-        k: v for k, v in environ.items() if k not in dotenv_keys and k not in blocked
-    }
-
-
-def launch(
-    harness: Harness, program: Path, environ: Mapping[str, str]
-) -> tuple[str, tuple[str, ...], dict[str, str]]:
-    """How to start `harness` from `program`, with this agent's environment minus its
-    secrets."""
-    dotenv_keys = set(dotenv_values(AGENT_ROOT / ".env"))
-    return harness.launch(
-        str(program), child_environment(environ, dotenv_keys, harness), environ
-    )
+# How long starting an adapter (spawning it and `initialize`) and opening a session
+# (`session/new`, its mode and the picks) may each take, as long as the setup probe gives
+# them (`probe.py`). One that doesn't answer in time is stopped, so the next request
+# starts a fresh one.
+START_TIMEOUT_S: float = 30
+# How long a turn that was told to stop may take to end. An agent answers its prompt only
+# once it has stopped its tools and sent its last updates; one that hasn't by then is
+# stopped itself, so its session is never handed on with the old turn still going.
+STOP_TIMEOUT_S: float = 10
 
 
 # What the voice model hears when a harness fails; the details go to the log, and
@@ -171,9 +145,19 @@ class Turn:
 class _RunningTurn:
     """A prompt turn in progress, which the requests steered into it wait on."""
 
-    def __init__(self) -> None:
+    def __init__(self, owner: "asyncio.Task[object] | None") -> None:
         self._ended = asyncio.Event()
         self._error: str | None = None
+        self._owner = owner  # the request that holds the prompt
+        self._stopping = False
+
+    def stop(self) -> None:
+        """Stops the turn, once: cancelling the request that holds the prompt stops it
+        for every request waiting on it, when the agent has stopped. Asking again while
+        it stops changes nothing."""
+        if not self._stopping and self._owner is not None:
+            self._stopping = True
+            _ = self._owner.cancel()
 
     def end(self, error: str | None = None) -> None:
         """The turn is over; `error` is the voice's line when it didn't finish."""
@@ -185,6 +169,10 @@ class _RunningTurn:
         _ = await self._ended.wait()
         if self._error is not None:
             raise ToolError(self._error)
+
+
+class _StartTimeout(Exception):
+    """A start step that didn't answer within `START_TIMEOUT_S`; says which."""
 
 
 @final
@@ -222,15 +210,17 @@ class AcpRunner:
         args: Sequence[str] = (),
         picks: Sequence[Pick] = (),
         short_reports: bool = False,
+        streams: Recorder | None = None,
     ) -> None:
         self._harness = harness
         self._short_reports = short_reports
+        self._streams = streams
         self._picks = tuple(picks)  # the model and effort the user picked, if any
         self._command = command
         self._args = tuple(args)
         self._project = project
         self._env = dict(env)
-        self._client = HarnessClient(harness)
+        self._client = HarnessClient(harness, streams)
         self._lock = asyncio.Lock()  # the process
         self._stack: AsyncExitStack | None = None
         self._conn: ClientSideConnection | None = None
@@ -240,6 +230,7 @@ class AcpRunner:
         self._conn_failed = False  # a request saw the connection drop
         self._closed = False  # the call ended: refuse new work
         self._sessions: dict[str, _Session] = {}
+        self._deadlines: set[asyncio.Timeout] = set()  # the start steps' running now
 
     @property
     def command(self) -> str:
@@ -259,6 +250,16 @@ class AcpRunner:
         """Whether the session called `name` has a turn running."""
         session = self._sessions.get(session_name(name))
         return session is not None and session.running is not None
+
+    def stop(self, name: str) -> bool:
+        """Stops the turn running in the session called `name`, for the request that
+        started it and every one steered into it: each ends once the agent has stopped
+        (`_stop_turn`). False when no turn runs there."""
+        session = self._sessions.get(session_name(name))
+        if session is None or session.running is None:
+            return False
+        session.running.stop()
+        return True
 
     async def run(
         self,
@@ -289,7 +290,7 @@ class AcpRunner:
                 return Turn(steered_note(self._harness), steered=True)
         async with s.turn_lock:
             # Set before anything awaits, so a request steered in now waits on this turn.
-            running = s.running = _RunningTurn()
+            running = s.running = _RunningTurn(asyncio.current_task())
             try:
                 if on_start is not None:
                     await on_start()
@@ -311,15 +312,27 @@ class AcpRunner:
     async def aclose(self) -> None:
         """Close every session, then the adapter process. No new work after this."""
         self._closed = True
-        for s in list(self._sessions.values()):
-            async with s.open_lock:
-                session_id, conn, s.id, s.conn = s.id, s.conn, None, None
-                # Closed, not deleted: the call's sessions stay in the agent's history.
-                # One whose process is gone is gone with it.
-                if session_id is not None and conn is not None and conn is self._conn:
-                    await close_session(conn, session_id, self._capabilities)
-        async with self._lock:
-            await self._teardown()
+        # A start step still waiting gives up now, rather than holding the locks below
+        # until its deadline.
+        for deadline in self._deadlines:
+            if not deadline.expired():
+                deadline.reschedule(-1)
+        try:
+            for s in list(self._sessions.values()):
+                async with s.open_lock:
+                    session_id, conn, s.id, s.conn = s.id, s.conn, None, None
+                    # Closed, not deleted: the call's sessions stay in the agent's history.
+                    # One whose process is gone is gone with it.
+                    if (
+                        session_id is not None
+                        and conn is not None
+                        and conn is self._conn
+                    ):
+                        await close_session(conn, session_id, self._capabilities)
+        finally:
+            # Whatever closing a session did, the process doesn't outlive the call.
+            async with self._lock:
+                await self._teardown()
 
     async def _open(self, s: _Session) -> tuple[ClientSideConnection, str]:
         try:
@@ -329,7 +342,9 @@ class AcpRunner:
         except Exception as e:
             if self._closed:
                 raise ToolError(self._ending()) from e
-            if isinstance(e, OSError | RequestError | ConnectionError):
+            if isinstance(e, _StartTimeout):
+                logger.warning("%s, so it was stopped", e)
+            elif isinstance(e, OSError | RequestError | ConnectionError):
                 logger.warning("%s could not start: %r", self._harness.id, e)
             else:
                 # Unexpected (an answer the SDK can't read): logged whole.
@@ -356,16 +371,24 @@ class AcpRunner:
                     "append": briefing(self._project, self._short_reports)
                 }
             try:
-                created = await conn.new_session(
-                    cwd=str(self._project.cwd),
-                    additional_directories=self._project.extra_folders or None,
-                    mcp_servers=[],
-                    **options,
-                )
-                await self._bypass_permissions(conn, created)
-                applied = await self._apply_picks(conn, created)
+                async with self._deadline("session/new"):
+                    created = await conn.new_session(
+                        cwd=str(self._project.cwd),
+                        additional_directories=self._project.extra_folders or None,
+                        mcp_servers=[],
+                        **options,
+                    )
+                    await self._bypass_permissions(conn, created)
+                    applied = await self._apply_picks(conn, created)
             except ConnectionError:
                 self._connection_lost(conn)
+                raise
+            except _StartTimeout:
+                # Hung: its other sessions go with it, and the next request starts afresh.
+                self._connection_lost(conn)
+                async with self._lock:
+                    if conn is self._conn:
+                        await self._teardown()
                 raise
             if needs_pick(self._harness, applied, self._picks):
                 logger.warning(
@@ -406,14 +429,24 @@ class AcpRunner:
             else [briefing(self._project, self._short_reports), task]
         )
         s.briefed = True
-        try:
-            response = await conn.prompt(
-                session_id=session_id, prompt=[text_block(t) for t in texts]
+        # The Agents panel's stream is the turn's, so a request steered in shares it.
+        if self._streams is not None:
+            self._streams.open(
+                session_id, self._harness.id, self._harness.short_name, s.name
             )
+        # A task of its own: cancelling this request must not drop the prompt's answer,
+        # which is how the agent says the turn is over (`_stop_turn`).
+        prompt = asyncio.ensure_future(
+            conn.prompt(session_id=session_id, prompt=[text_block(t) for t in texts])
+        )
+        outcome: Outcome = "failed"  # how the turn ended, for the Agents panel
+        try:
+            response = await asyncio.shield(prompt)
+            outcome = "done" if response.stop_reason == "end_turn" else "stopped"
         except asyncio.CancelledError:
             # Stop the turn, keep the session: the next request continues it.
-            with contextlib.suppress(Exception):
-                await asyncio.shield(conn.cancel(session_id=session_id))
+            outcome = "stopped"
+            await self._until_stopped(conn, s, session_id, prompt)
             raise
         except (ConnectionError, RequestError) as e:
             if isinstance(e, ConnectionError):
@@ -422,6 +455,8 @@ class AcpRunner:
             raise ToolError(stopped(self._harness)) from e
         finally:
             _ = self._client.replies.pop(session_id, None)
+            if self._streams is not None:
+                self._streams.close(session_id, outcome)
 
         logger.info(
             "%s turn in %s ended: %s", self._harness.id, s.name, response.stop_reason
@@ -439,6 +474,63 @@ class AcpRunner:
             text = f"{name} stopped early ({response.stop_reason}). Its last message: {text}"
         logger.info("%s turn in %s result: %s", self._harness.id, s.name, text)
         return text, finished
+
+    async def _until_stopped(
+        self,
+        conn: ClientSideConnection,
+        s: _Session,
+        session_id: str,
+        prompt: asyncio.Future[PromptResponse],
+    ) -> None:
+        """Stops the running turn and returns only once it's over, however often this
+        request is cancelled meanwhile (Stop again, the voice's cancel after it): the
+        stopping is a task of its own, and the session stays held until it's done."""
+        stopping = asyncio.ensure_future(self._stop_turn(conn, s, session_id, prompt))
+        while not stopping.done():
+            with contextlib.suppress(asyncio.CancelledError):
+                await asyncio.shield(stopping)
+        stopping.result()
+
+    async def _stop_turn(
+        self,
+        conn: ClientSideConnection,
+        s: _Session,
+        session_id: str,
+        prompt: asyncio.Future[PromptResponse],
+    ) -> None:
+        """Tells the agent to stop the running turn and waits until it has: its answer to
+        the prompt comes once it has stopped its tools and sent its last updates. Until
+        then the turn keeps its session, its reply and its stream, so the next request
+        can't start early or take those updates for its own. One that hasn't ended within
+        `STOP_TIMEOUT_S` loses its adapter instead. The call ending doesn't wait: closing
+        stops the adapter anyway."""
+        with contextlib.suppress(Exception):
+            await conn.cancel(session_id=session_id)
+        if self._closed:
+            _ = prompt.cancel()
+            return
+        done, _ = await asyncio.wait({prompt}, timeout=STOP_TIMEOUT_S)
+        if done:
+            # Over, with a stop reason or an error: either way nothing is left running.
+            if not prompt.cancelled() and isinstance(
+                prompt.exception(), ConnectionError
+            ):
+                self._connection_lost(conn)
+            return
+        _ = prompt.cancel()
+        if self._closed:
+            return
+        logger.warning(
+            "%s turn in %s didn't stop within %g s, so %s was stopped",
+            self._harness.id,
+            s.name,
+            STOP_TIMEOUT_S,
+            self._command,
+        )
+        self._connection_lost(conn)
+        async with self._lock:
+            if conn is self._conn:
+                await self._teardown()
 
     async def _steer(
         self, conn: ClientSideConnection, s: _Session, session_id: str, task: str
@@ -490,15 +582,17 @@ class AcpRunner:
 
             stack = AsyncExitStack()
             try:
-                conn, process, init = await stack.enter_async_context(
-                    connect(
-                        self._client,
-                        self._command,
-                        self._args,
-                        env=self._env,
-                        cwd=self._project.cwd,
+                # Leaving `connect` on the deadline stops the process it started.
+                async with self._deadline("initialize"):
+                    conn, process, init = await stack.enter_async_context(
+                        connect(
+                            self._client,
+                            self._command,
+                            self._args,
+                            env=self._env,
+                            cwd=self._project.cwd,
+                        )
                     )
-                )
             except BaseException:
                 await stack.aclose()
                 raise
@@ -507,6 +601,22 @@ class AcpRunner:
             self._read_capabilities(init)
             logger.info("%s started (pid %s)", self._command, process.pid)
             return conn
+
+    @asynccontextmanager
+    async def _deadline(self, step: str) -> AsyncGenerator[None]:
+        """Fails `step` with `_StartTimeout` after `START_TIMEOUT_S`; `aclose` ends it
+        sooner."""
+        try:
+            async with asyncio.timeout(START_TIMEOUT_S) as deadline:
+                self._deadlines.add(deadline)
+                try:
+                    yield
+                finally:
+                    self._deadlines.discard(deadline)
+        except TimeoutError as e:
+            raise _StartTimeout(
+                f"{self._command} didn't answer {step} within {START_TIMEOUT_S:g} s"
+            ) from e
 
     def _ending(self) -> str:
         return f"The call is ending; {self._harness.short_name} takes no new work."
@@ -584,9 +694,11 @@ class CallRunners:
         environ: Mapping[str, str],
         picks: Mapping[str, Sequence[Pick]] | None = None,
         short_reports: bool = False,
+        streams: Recorder | None = None,
     ) -> None:
         self._project = project
         self._short_reports = short_reports
+        self._streams = streams
         self._environ = dict(environ)
         self._picks = dict(picks or {})
         self._installed = {
@@ -597,15 +709,22 @@ class CallRunners:
         self._runners: dict[str, AcpRunner] = {}
 
     @classmethod
-    def for_job(cls, fields: JobFields, short_reports: bool = False) -> "CallRunners":
+    def for_job(
+        cls,
+        fields: JobFields,
+        short_reports: bool = False,
+        streams: Recorder | None = None,
+    ) -> "CallRunners":
         """Runners for the project and the installed agents in the job's metadata, with
-        each agent's picks (see `Project.from_job` and `harnesses.installed`)."""
+        each agent's picks (see `Project.from_job` and `harnesses.installed`), streaming
+        to `streams` when the app is there."""
         return cls(
             Project.from_job(fields, os.environ),
             installed(fields, HARNESSES, os.environ),
             os.environ,
             fields.picks if fields else {},
             short_reports,
+            streams,
         )
 
     @property
@@ -645,9 +764,17 @@ class CallRunners:
             args=args,
             picks=self._picks.get(harness.id, ()),
             short_reports=self._short_reports,
+            streams=self._streams,
         )
         return runner
 
     async def aclose(self) -> None:
-        for runner in self._runners.values():
-            await runner.aclose()
+        # Side by side, and each on its own: one that fails to close doesn't leave the
+        # others' processes running, and the call's shutdown time isn't spent in a queue.
+        results = await asyncio.gather(
+            *(runner.aclose() for runner in self._runners.values()),
+            return_exceptions=True,
+        )
+        for id, result in zip(self._runners, results, strict=True):
+            if isinstance(result, BaseException):
+                logger.error("closing %s failed", id, exc_info=result)

@@ -29,7 +29,7 @@ let reads = 0
 let changes: Promise<void> = Promise.resolve()
 
 /** Never rejects: a failure shows as the store's error, with the last answer kept. */
-export async function readVoiceSettings(): Promise<void> {
+async function readVoiceSettings(): Promise<void> {
   const read = ++reads
   try {
     const settings = await voiceSettings()

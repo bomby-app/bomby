@@ -3,9 +3,8 @@ import { Track } from "livekit-client"
 import { useEffect, useEffectEvent } from "react"
 
 import { showErrorToast } from "@/components/error-toast"
+import { log } from "@/lib/log"
 import { commandShortcut } from "@/lib/shortcuts"
-
-import { log } from "./api"
 
 /** Mutes or unmutes the mic on a call. Cmd-M is macOS's Minimize, so Shift too. */
 export const MUTE_SHORTCUT = commandShortcut("m", { shift: true })

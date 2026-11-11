@@ -24,7 +24,7 @@ from job import read_metadata
 from memory import Memory, MemoryUnavailable
 from project import Project
 from voice_prompt import PROMPTS, voice_instructions
-from voice_providers import RIME
+from voice_providers import GEMINI, OPENAI, RIME, VoiceProvider
 
 AGENTS = [HARNESSES["claude"]]
 ZONE = "Region/Some_City"
@@ -277,6 +277,32 @@ def test_rime_remembers_in_plain_lines(monkeypatch: pytest.MonkeyPatch) -> None:
     _, remembered = opened(zep, monkeypatch, provider=RIME)
     assert "\nSam ships on Fridays (2026-11-01 to now)" in remembered
     assert "- " not in remembered
+
+
+@pytest.mark.parametrize(
+    ("provider", "remembered_line", "recalled"),
+    [
+        (GEMINI, "- Sam ships on Fridays", "- Sam ships on Fridays"),
+        (RIME, "\nSam ships on Fridays", "Sam ships on Fridays"),
+        # The voice model reads what's remembered; the backend calls recall.
+        (OPENAI, "\nSam ships on Fridays", "- Sam ships on Fridays"),
+    ],
+    ids=["gemini", "rime", "gpt-live"],
+)
+def test_recall_answers_in_the_style_of_the_model_that_calls_it(
+    monkeypatch: pytest.MonkeyPatch,
+    provider: VoiceProvider,
+    remembered_line: str,
+    recalled: str,
+) -> None:
+    zep = FakeZep(summary="Sam builds a music app.", facts=("Sam ships on Fridays",))
+    memory, remembered = opened(zep, monkeypatch, provider=provider)
+    assert memory is not None
+
+    assert remembered_line + " (2026-11-01 to now)" in remembered
+    assert asyncio.run(memory.recall("when does Sam ship")) == (
+        recalled + " (2026-11-01 to now)"
+    )
 
 
 def test_what_is_remembered_follows_the_user_section() -> None:

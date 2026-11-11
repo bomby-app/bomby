@@ -1,6 +1,10 @@
 import { useAgent, useSessionContext } from "@livekit/components-react"
 import { useEffect, useMemo, useState } from "react"
 
+import { showErrorToast } from "@/components/error-toast"
+
+import { stoppable, taskStops } from "./task-stops"
+
 /** What the voice agent publishes as `bomby.tasks` (agent/task_board.py). */
 export type Task = {
   id: string
@@ -16,6 +20,8 @@ export type Task = {
 const ATTRIBUTE = "bomby.tasks"
 /** The agent's RPC for a task's full request (`REQUEST_METHOD` in agent/task_board.py). */
 const REQUEST_METHOD = "bomby.tasks.request"
+/** The agent's RPC to stop a task (`STOP_METHOD` in agent/task_board.py). */
+const STOP_METHOD = "bomby.tasks.stop"
 
 /** The call's tasks, newest first, from the agent participant's attributes. */
 export function useTasks(): Task[] {
@@ -33,7 +39,7 @@ export function useTasks(): Task[] {
 }
 
 /** A task's full request: still being read, read, or the agent couldn't say. */
-export type TaskRequest =
+type TaskRequest =
   | { state: "reading" }
   | { state: "read"; text: string }
   | { state: "failed" }
@@ -81,4 +87,40 @@ export function useTaskRequest(task: Task | null): TaskRequest {
   return answer !== null && answer.id === id
     ? answer.request
     : { state: "reading" }
+}
+
+/**
+ * Stopping the call's tasks: `stop(id)` asks the voice agent to stop task `id`, and
+ * `stopping(task)` says whether it was asked and the task hasn't ended yet, so its Stop
+ * control waits. A stop that fails shows an error toast.
+ */
+export function useStopTask(): {
+  stop: (id: string) => void
+  stopping: (task: Task) => boolean
+} {
+  const session = useSessionContext()
+  const agent = useAgent(session)
+  const identity = "identity" in agent ? agent.identity : undefined
+  const [asked, setAsked] = useState<ReadonlySet<string>>(new Set())
+  const room = session.room
+  const stop = useMemo(
+    () =>
+      taskStops(
+        (id) =>
+          identity
+            ? room.localParticipant.performRpc({
+                destinationIdentity: identity,
+                method: STOP_METHOD,
+                payload: id,
+              })
+            : Promise.reject(new Error("no voice agent in the call")),
+        setAsked,
+        showErrorToast
+      ),
+    [room, identity]
+  )
+  return {
+    stop,
+    stopping: (task) => asked.has(task.id) && stoppable(task),
+  }
 }

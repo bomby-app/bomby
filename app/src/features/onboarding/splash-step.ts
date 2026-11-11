@@ -16,7 +16,7 @@ export type Choices = {
 export const NO_CHOICES: Choices = { chosen: null, onKeys: false }
 
 /** Where the splash is, worked out from what the core reports and what the user chose. */
-export type SplashStep = {
+type SplashStep = {
   /** The agent the agent step offers; null until the core first answers. */
   agent: AgentStatus | null
   agentReady: boolean
@@ -52,7 +52,7 @@ export function splashStep(
  * that's ready, else the first installed. With none installed, Claude Code, to install.
  * Null only until the core first answers.
  */
-export function firstAgent(
+function firstAgent(
   agents: AgentStatus[] | null,
   chosen: string | null
 ): AgentStatus | null {

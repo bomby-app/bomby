@@ -16,6 +16,7 @@
 
 use std::collections::HashSet;
 use std::sync::Mutex;
+use std::time::Duration;
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
@@ -25,6 +26,10 @@ use crate::error::{Error, Result};
 use crate::{app_log, sync};
 
 const EVENT: &str = "update-status";
+
+/// How long a check may take, end to end, before it fails. Without one a stalled request
+/// would leave the status `Checking`, and no check would run again until a restart.
+const CHECK_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Where updating stands.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -308,17 +313,22 @@ async fn check<R: Runtime>(app: &AppHandle<R>) -> UpdateStatus {
     }
     set(app, UpdateStatus::Checking);
 
-    let found = match app.updater() {
+    let found = match app.updater_builder().timeout(CHECK_TIMEOUT).build() {
         Ok(updater) => updater.check().await,
         Err(error) => Err(error),
     };
     let (status, update) = match found {
-        Ok(Some(update)) => (
-            UpdateStatus::Available {
-                version: update.version.clone(),
-            },
-            Some(update),
-        ),
+        Ok(Some(mut update)) => {
+            // The timeout is a total time, too short for a download on a slow connection.
+            // The plugin doesn't pass it on to the update today; this keeps it that way.
+            update.timeout = None;
+            (
+                UpdateStatus::Available {
+                    version: update.version.clone(),
+                },
+                Some(update),
+            )
+        }
         Ok(None) => (UpdateStatus::UpToDate, None),
         Err(error) => {
             let _ = app_log::append(app, &format!("update check failed: {error}"));

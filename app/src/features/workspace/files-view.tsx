@@ -217,7 +217,8 @@ function Directory({
       </div>
     )
   }
-  if (reading.error || !reading.data) {
+  // A failed read again keeps showing the last entries.
+  if (!reading.data) {
     return (
       <p className="py-1 text-xs text-muted-foreground" style={padding}>
         Couldn't open this folder.
@@ -388,7 +389,7 @@ function Preview({
         </Button>
       </div>
       <div className="min-h-0 flex-1 [scrollbar-gutter:stable] overflow-auto">
-        {reading.error ? (
+        {reading.error && !reading.data ? (
           <Note>Couldn't open this file.</Note>
         ) : !view ? null : view.preview.image ? (
           <ImagePreview

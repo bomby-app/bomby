@@ -210,7 +210,13 @@ function ProjectSettings({
         <DeleteProject
           name={project.name}
           onConfirm={async () => {
-            await remove(project.id)
+            setError(null)
+            try {
+              await remove(project.id)
+            } catch (e) {
+              setError(String(e))
+              return
+            }
             onClose()
             onDeleted()
           }}

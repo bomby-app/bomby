@@ -1,11 +1,13 @@
 import {
   ArrowRight,
   Check,
+  CircleQuestionMark,
   CircleSlash,
   Inbox,
   ListEnd,
   LoaderCircle,
   Plus,
+  Square,
   X,
 } from "lucide-react"
 import { useState } from "react"
@@ -16,6 +18,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
@@ -35,15 +38,18 @@ import {
 import { AgentLogo } from "@/features/agents/agent-logos"
 import { cn } from "@/lib/utils"
 
-import { type Task, useTaskRequest, useTasks } from "./tasks"
+import { stoppable } from "./task-stops"
+import { type Task, useStopTask, useTaskRequest, useTasks } from "./tasks"
 
 /**
  * The agents panel in the call's header: a box icon with the number of running tasks,
  * opening the list of what each agent is doing on this call. A task opens what Bomby asked
- * its agent, in full, so the user can catch a request Bomby got wrong.
+ * its agent, in full, so the user can catch a request Bomby got wrong. A task that waits or
+ * runs has Stop, in its row and its dialog.
  */
 export function AgentsPanel() {
   const tasks = useTasks()
+  const stops = useStopTask()
   const working = tasks.filter((t) => t.status === "working").length
   const [listOpen, setListOpen] = useState(false)
   const [opened, setOpened] = useState<string | null>(null)
@@ -83,6 +89,7 @@ export function AgentsPanel() {
                   <TaskRow
                     key={each.id}
                     task={each}
+                    stops={stops}
                     onOpen={() => {
                       setListOpen(false)
                       setOpened(each.id)
@@ -94,18 +101,29 @@ export function AgentsPanel() {
           )}
         </PopoverContent>
       </Popover>
-      <TaskDialog task={task} onClose={() => setOpened(null)} />
+      <TaskDialog task={task} stops={stops} onClose={() => setOpened(null)} />
     </>
   )
 }
 
-function TaskRow({ task, onOpen }: { task: Task; onOpen: () => void }) {
+type Stops = ReturnType<typeof useStopTask>
+
+function TaskRow({
+  task,
+  stops,
+  onOpen,
+}: {
+  task: Task
+  stops: Stops
+  onOpen: () => void
+}) {
   return (
-    <li>
+    // Stop sits on the title's line, level with the status disc, not at the row's middle.
+    <li className="flex items-start gap-1">
       <button
         type="button"
         onClick={onOpen}
-        className="flex w-full gap-2.5 rounded-md px-2 py-2.5 text-left outline-none hover:bg-accent/60 focus-visible:ring-3 focus-visible:ring-ring/50"
+        className="flex min-w-0 flex-1 gap-2.5 rounded-md px-2 py-2.5 text-left outline-none hover:bg-accent/60 focus-visible:ring-3 focus-visible:ring-ring/50"
       >
         <span className="flex size-5 shrink-0 items-center justify-center pt-0.5 text-foreground [&_svg]:size-4">
           <AgentLogo id={task.agent} />
@@ -120,7 +138,33 @@ function TaskRow({ task, onOpen }: { task: Task; onOpen: () => void }) {
           </span>
         </span>
       </button>
+      {stoppable(task) && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              aria-label={`Stop ${task.session}`}
+              disabled={stops.stopping(task)}
+              onClick={() => stops.stop(task.id)}
+              className="mt-2 mr-1 text-muted-foreground"
+            >
+              <StopIcon stopping={stops.stopping(task)} />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Stop</TooltipContent>
+        </Tooltip>
+      )}
     </li>
+  )
+}
+
+/** Stop's square, or a spinner while the agent stops it. */
+function StopIcon({ stopping }: { stopping: boolean }) {
+  return stopping ? (
+    <LoaderCircle className="animate-spin" />
+  ) : (
+    <Square className="fill-current" />
   )
 }
 
@@ -131,9 +175,11 @@ function TaskRow({ task, onOpen }: { task: Task; onOpen: () => void }) {
  */
 function TaskDialog({
   task,
+  stops,
   onClose,
 }: {
   task: Task | null
+  stops: Stops
   onClose: () => void
 }) {
   const request = useTaskRequest(task)
@@ -170,6 +216,19 @@ function TaskDialog({
               Bomby couldn&apos;t send the rest, so this is the start of it.
             </p>
           )}
+          {stoppable(task) && (
+            <DialogFooter>
+              <Button
+                variant="outline"
+                aria-label={`Stop ${task.session}`}
+                disabled={stops.stopping(task)}
+                onClick={() => stops.stop(task.id)}
+              >
+                <StopIcon stopping={stops.stopping(task)} />
+                Stop
+              </Button>
+            </DialogFooter>
+          )}
         </DialogContent>
       )}
     </Dialog>
@@ -200,8 +259,21 @@ const STATUS = {
   stopped: { label: "Stopped", Icon: CircleSlash, disc: HIGHLIGHTER },
 } as const
 
+/**
+ * A status this page doesn't know (a newer agent's): neutral, never a claim that the task
+ * is done.
+ */
+const UNKNOWN_STATUS = {
+  label: "Status unknown",
+  Icon: CircleQuestionMark,
+  disc: "bg-muted text-muted-foreground",
+}
+
 function TaskStatus({ status }: { status: Task["status"] }) {
-  const { label, Icon, disc } = STATUS[status] ?? STATUS.done
+  // Own keys only: a status such as "constructor" must not find the object's prototype.
+  const { label, Icon, disc } = Object.hasOwn(STATUS, status)
+    ? STATUS[status]
+    : UNKNOWN_STATUS
   return (
     <Tooltip>
       <TooltipTrigger asChild>

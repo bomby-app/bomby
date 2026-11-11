@@ -2,6 +2,7 @@ import { Pencil, Play, Trash2 } from "lucide-react"
 import { useState } from "react"
 
 import { ErrorCard } from "@/components/error-card"
+import { showErrorToast } from "@/components/error-toast"
 import { Mascot } from "@/components/mascot"
 import {
   AlertDialog,
@@ -243,8 +244,14 @@ export function DeleteCallDialog({
     : `the call from ${callLabel(call.startedAt)}`
 
   async function confirm() {
-    await deleteCall(call.id)
-    await refresh()
+    try {
+      await deleteCall(call.id)
+      await refresh()
+    } catch (e) {
+      // The dialog has closed by now, so there's no card to put it in.
+      showErrorToast(String(e))
+      return
+    }
     onDeleted?.()
   }
 

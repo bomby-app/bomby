@@ -5,7 +5,7 @@ import type { Task } from "@/features/call/tasks"
 
 // The core's notifications (src-tauri/src/notifications.rs).
 
-export type FinishedTask = Pick<Task, "agentName" | "session" | "task"> & {
+type FinishedTask = Pick<Task, "agentName" | "session" | "task"> & {
   projectId: number
   status: "done" | "failed"
 }

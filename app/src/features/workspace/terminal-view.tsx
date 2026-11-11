@@ -33,8 +33,8 @@ export function TerminalView({
   active: boolean
   onTitle: (title: string) => void
 }) {
-  const ghostty = useGhosttyCore()
   const [error, setError] = useState<string | null>(null)
+  const ghostty = useGhosttyCore(setError)
   const session = useRef<TerminalSession | null>(null)
   const terminal = useRef<WTerm | null>(null)
   const mounted = useRef(false)
@@ -116,25 +116,33 @@ export function TerminalView({
  * terminal while it's mounted: each terminal needs its own (the WASM module itself loads
  * once and is shared), and `WTerm.destroy()` leaves one it was given alone, so this
  * disposes it. The terminal's own cleanup runs first: a ref's cleanup (the wterm
- * component's) comes in the commit, before effect cleanups.
+ * component's) comes in the commit, before effect cleanups. `onError` hears why it
+ * couldn't load.
  */
-function useGhosttyCore(): GhosttyCore | null {
+function useGhosttyCore(
+  onError: (message: string) => void
+): GhosttyCore | null {
   const [core, setCore] = useState<GhosttyCore | null>(null)
   useEffect(() => {
     let live = true
     let loaded: GhosttyCore | null = null
-    void GhosttyCore.load({ scrollbackLines: SCROLLBACK_LINES }).then((c) => {
-      if (live) {
-        loaded = c
-        setCore(c)
-      } else {
-        c.dispose()
+    GhosttyCore.load({ scrollbackLines: SCROLLBACK_LINES }).then(
+      (c) => {
+        if (live) {
+          loaded = c
+          setCore(c)
+        } else {
+          c.dispose()
+        }
+      },
+      (e: unknown) => {
+        if (live) onError(String(e))
       }
-    })
+    )
     return () => {
       live = false
       loaded?.dispose()
     }
-  }, [])
+  }, [onError])
   return core
 }

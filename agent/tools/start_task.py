@@ -5,11 +5,12 @@ The agents are defined in `harnesses/`; running them (adapter, sessions, steerin
 """
 
 import asyncio
+import contextlib
 
 from livekit.agents import RunContext
 from livekit.agents.llm import ToolError, ToolFlag, function_tool
 
-from acp_client import session_name
+from acp_client.runner import session_name
 from call import Call
 from harnesses import DEFAULT_AGENT, HARNESSES, AgentName, Harness
 from sections import MARKDOWN, Style
@@ -77,14 +78,31 @@ async def start_task(
     async def started() -> None:
         await board.start(id)
 
+    # Its own task, so the user can stop it from the agents panel (`TaskBoard.stop`): a
+    # queued one by dropping it, one the agent has by stopping the turn it's in. The voice
+    # model's cancel reaches it through the await.
+    work = asyncio.create_task(runner.run(task, name, on_start=started))
+    board.track(id, work.cancel, lambda: runner.stop(name))
     try:
         await board.publish()
-        turn = await runner.run(task, name, on_start=started)
+        turn = await work
     except asyncio.CancelledError:
+        if not work.done():
+            # The voice model's cancel (or one before the work was awaited): the task is
+            # over once the agent has stopped, as with the user's Stop.
+            _ = work.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                _ = await asyncio.wait({work})
         await board.finish(id, "stopped")
+        if board.stopped_by_user(id) and not _being_cancelled():
+            return user_stopped(context.userdata.user_name)
         raise
     except Exception:
-        await board.finish(id, "failed")
+        # A request steered into a turn the user stopped hears that, not the failure.
+        stopped = board.stopped_by_user(id)
+        await board.finish(id, "stopped" if stopped else "failed")
+        if stopped:
+            return user_stopped(context.userdata.user_name)
         raise
     await board.finish(id, "added" if turn.steered else "done")
     limit = context.userdata.provider.late_result_tokens
@@ -92,6 +110,19 @@ async def start_task(
         return turn.text
     sent = estimate_tokens(task) + estimate_tokens(name) + ARGUMENTS_OVERHEAD
     return fit_report(turn.text, limit - sent)
+
+
+def user_stopped(user_name: str) -> str:
+    """The result of a task the user stopped from the agents panel: a result, not an
+    error, so the voice model hears who stopped it and doesn't apologise or retry."""
+    return f"{user_name or 'The user'} stopped the task."
+
+
+def _being_cancelled() -> bool:
+    """Whether this tool call itself is being cancelled (the voice model's cancel), not
+    only the work it waits on."""
+    current = asyncio.current_task()
+    return current is not None and current.cancelling() > 0
 
 
 ARGUMENTS_OVERHEAD = (

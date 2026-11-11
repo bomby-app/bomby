@@ -71,7 +71,9 @@ icon:
     scripts/compile-app-icon.sh
     scripts/export-about-icon.sh
     bun --bun run tauri icon src-tauri/icons/app-icon.png
+    # `tauri icon` also writes icons for platforms Bomby doesn't ship on: phones and the Windows Store.
     rm -rf src-tauri/icons/android src-tauri/icons/ios
+    rm -f src-tauri/icons/Square*Logo.png src-tauri/icons/StoreLogo.png src-tauri/icons/64x64.png
     tiffutil -cathidpicheck src-tauri/icons/dmg-background.png src-tauri/icons/dmg-background@2x.png -out src-tauri/icons/dmg-background.tiff
 
 # Add shadcn or Agents UI components, e.g. `just app add dialog`

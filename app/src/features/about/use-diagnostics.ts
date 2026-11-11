@@ -3,7 +3,7 @@ import { createStore, useStore } from "@/lib/store"
 import { exportDiagnostics, showDiagnostics } from "./api"
 
 /** Where Export Diagnostics stands. */
-export type DiagnosticsStatus =
+type DiagnosticsStatus =
   | { kind: "idle" }
   | { kind: "exporting" }
   | { kind: "saved" }

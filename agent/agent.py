@@ -4,12 +4,22 @@ import os
 from typing import override
 
 from livekit import rtc
-from livekit.agents import Agent, AgentServer, AgentSession, JobContext, cli
+from livekit.agents import (
+    Agent,
+    AgentServer,
+    AgentSession,
+    CloseEvent,
+    JobContext,
+    cli,
+)
 
 import dev_env
 import lifeline
-from acp_client import CallRunners
+from acp_client.runner import CallRunners
+from acp_client.streams import StreamRecorder
 from call import Call
+from call_failure import ServiceErrors
+from call_failure import report as report_failure
 from call_options import CallOptions
 from extensions import CallExtensions
 from extensions.bridge import APP_IDENTITY, REFUSED, RoomBridge
@@ -18,7 +28,7 @@ from job import read_metadata
 from memory import ATTRIBUTE as MEMORY_ATTRIBUTE
 from memory import UNAVAILABLE, Memory, MemoryUnavailable
 from memory import notify as notify_memory
-from task_board import REQUEST_METHOD, TaskBoard
+from task_board import REQUEST_METHOD, STOP_METHOD, TaskBoard
 from tools import ALL_TOOLS, MEMORY_TOOLS
 from voice_prompt import backend_instructions, local_zone, voice_instructions
 from voice_providers import Tools
@@ -61,11 +71,24 @@ class Assistant(Agent):
         _ = self.session.generate_reply(instructions=greeting)  # pyright: ignore[reportUnknownMemberType]
 
 
+def never_full() -> float:
+    """The worker's load, as LiveKit asks for it: none, however busy the Mac is.
+
+    LiveKit's own measures the whole machine's CPU and, outside dev mode, reports the
+    worker full above 0.7 of it. The server doesn't dispatch a call to a full worker and
+    never tries again, so a call started while a build ran failed with "Agent did not join
+    the room". That check shares load between a fleet's workers; one user's one worker has
+    nobody to pass a call to (docs/livekit-notes.md)."""
+    return 0.0
+
+
 # One user, one call at a time: keep one job process warm instead of the default pool
 # (livekit-agents warms several in production mode; 17 on this Mac, each a full Python).
 # Its health check server listens on this machine only, on any free port, so it never
 # clashes with another worker or shows up on the network.
-server = AgentServer(num_idle_processes=1, host="127.0.0.1", port=0)
+server = AgentServer(
+    num_idle_processes=1, host="127.0.0.1", port=0, load_fnc=never_full
+)
 
 # Explicit dispatch: the app names this agent in each call's token, with the project in
 # the dispatch metadata. Rooms without it get no agent.
@@ -78,10 +101,17 @@ async def entrypoint(ctx: JobContext) -> None:
     # the app found gets one ACP process per call, started on its first task, to
     # run its named sessions. Shutting the job down closes every session and process.
     job = read_metadata(ctx.job.metadata)
+    # From before the voice model connects: its service may refuse the first request.
+    service_errors = ServiceErrors.listen()
     # The voice model, its voice and, on a resumed call, the conversation so far.
     options = CallOptions.from_job(job, os.environ)
+    # What each coding agent is doing, live, for the app's Agents panel; none on console
+    # runs, which have no app.
+    streams = StreamRecorder.from_env(ctx.room.name)
     runners = CallRunners.for_job(
-        job, short_reports=options.provider.late_result_tokens is not None
+        job,
+        short_reports=options.provider.late_result_tokens is not None,
+        streams=streams,
     )
     model_name = options.provider.model
     ctx.log_context_fields = {"room": ctx.room.name, "model": model_name}
@@ -120,8 +150,11 @@ async def entrypoint(ctx: JobContext) -> None:
     if memory:
         memory.on_unavailable(memory_unavailable)
     board = TaskBoard(publish)
-    call = Call(runners, board, memory, options.provider)
+    call = Call(runners, board, memory, options.provider, options.user_name)
     ctx.add_shutdown_callback(call.aclose)
+    if streams is not None:
+        streams.start()
+        ctx.add_shutdown_callback(streams.aclose)
 
     # The page asks for a task's full request when the user opens it: `bomby.tasks` carries
     # each shortened.
@@ -136,6 +169,20 @@ async def entrypoint(ctx: JobContext) -> None:
         return request
 
     _ = ctx.room.local_participant.register_rpc_method(REQUEST_METHOD, task_request)
+
+    # The user stops a task from the agents panel; `start_task` then tells the voice model
+    # who stopped it.
+    async def task_stop(data: rtc.RpcInvocationData) -> str:
+        if data.caller_identity != APP_IDENTITY:
+            raise rtc.RpcError(REFUSED, "Only the app can stop a task.")
+        outcome = board.stop(data.payload)
+        if outcome == "unknown":
+            raise rtc.RpcError(REFUSED, "That task isn't kept anymore.")
+        if outcome == "over":
+            raise rtc.RpcError(REFUSED, "That task has already ended.")
+        return ""
+
+    _ = ctx.room.local_participant.register_rpc_method(STOP_METHOD, task_stop)
 
     # Which audio the agent gets, from whom: the first thing to check on an audio problem.
     def on_track_subscribed(
@@ -160,7 +207,7 @@ async def entrypoint(ctx: JobContext) -> None:
     extensions = CallExtensions.for_call(
         job.extensions if job else {},
         RoomBridge(ctx.room),
-        provider.backend_style if provider.delegates else provider.prompt_style,
+        provider.tool_style,
         SocketTokens.from_env(),
     )
     logger.info("extensions %s", ", ".join(extensions.ids) or "none")
@@ -179,6 +226,13 @@ async def entrypoint(ctx: JobContext) -> None:
     model = options.provider.realtime_model(options.voice, options.options, backend)
     session: AgentSession[Call] = AgentSession(userdata=call, llm=model)
 
+    # The voice model failing for good closes the session and leaves the agent in the room:
+    # the page is told why, and ends the call (`call_failure.py`).
+    def on_close(event: CloseEvent) -> None:
+        report_failure(event, options.provider.name, service_errors, publish)
+
+    _ = session.on("close", on_close)  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
+
     if memory:
         memory.attach(session)
     assistant = Assistant(options, instructions, memory is not None, extensions.tools())
@@ -186,6 +240,13 @@ async def entrypoint(ctx: JobContext) -> None:
 
     # Keeps a provider that closes quiet conversations open until the call ends.
     keeping = asyncio.create_task(options.provider.keep_alive(model))
+
+    # Once it stops, the provider ends a quiet call on its own: the log says why.
+    def keeping_ended(task: asyncio.Task[None]) -> None:
+        if not task.cancelled() and (error := task.exception()) is not None:
+            logger.warning("keeping the conversation open stopped: %r", error)
+
+    keeping.add_done_callback(keeping_ended)
 
     async def stop_keeping() -> None:
         _ = keeping.cancel()

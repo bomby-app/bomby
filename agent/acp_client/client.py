@@ -37,9 +37,11 @@ from acp.schema import (
 
 from harnesses.harness import Harness
 
+from .streams import Recorder
+
 logger = logging.getLogger("bomby.acp_client.client")
 
-CLIENT_INFO = Implementation(name="bomby", version="0.1.0")
+CLIENT_INFO = Implementation(name="bomby", version="0.2.1")
 # The SDK's read buffer per line. It reassembles longer lines anyway; this only saves
 # round trips on large messages. Matches the SDK's agent side.
 STDIO_LIMIT = 50 * 1024 * 1024
@@ -136,8 +138,9 @@ class HarnessClient(Client):
     its own file and shell work; those methods only refuse, in case they are called anyway.
     """
 
-    def __init__(self, harness: Harness) -> None:
+    def __init__(self, harness: Harness, streams: Recorder | None = None) -> None:
         self._harness = harness
+        self._streams = streams  # the Agents panel's live view; None on console runs
         self.replies: dict[str, Reply] = {}
         self.auth_status: dict[str, Any] | None = None
         """The identity the agent last reported through the `authStatus` extension
@@ -153,11 +156,13 @@ class HarnessClient(Client):
         **kwargs: Any,
     ) -> RequestPermissionResponse:
         # Sessions run in the harness's bypass mode; this only catches what still asks.
+        # By kind, never title: a title can be a whole command line, with a token in it.
         option = pick_allow(options)
+        kind = tool_call.kind or "a tool"
         if option is None:
-            logger.warning("no allow option for %r, refusing", tool_call.title)
+            logger.warning("no allow option for %s, refusing", kind)
             return RequestPermissionResponse(outcome=DeniedOutcome(outcome="cancelled"))
-        logger.info("approving %r (%s)", tool_call.title, option.kind)
+        logger.info("approving %s (%s)", kind, option.kind)
         return RequestPermissionResponse(
             outcome=AllowedOutcome(outcome="selected", option_id=option.option_id)
         )
@@ -177,6 +182,13 @@ class HarnessClient(Client):
             reply.add(update.message_id, update.content.text)
         elif isinstance(update, ToolCallStart):
             reply.reset()
+        # After the reply, and guarded: the Agents panel's stream must never touch or
+        # delay a result (`streams.py`). It only queues.
+        if self._streams is not None:
+            try:
+                self._streams.record(session_id, update)
+            except Exception:
+                logger.exception("recording %s's update failed", self._harness.id)
 
     @override
     async def ext_method(self, method: str, params: dict[str, Any]) -> dict[str, Any]:

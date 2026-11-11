@@ -15,7 +15,7 @@ import { LiveKitLogo } from "@/features/setup/provider-logos"
 import { type CredentialsInfo, credentialsInfo } from "./api"
 import { type LiveKitEnv, parseLiveKitEnv } from "./livekit-env"
 
-export type LiveKitFieldValues = LiveKitEnv
+type LiveKitFieldValues = LiveKitEnv
 
 // Typed keys, not prose: no spell check, autocorrect or autofill.
 const KEY_INPUT = {
@@ -35,7 +35,7 @@ const NO_PASTE =
   "Copy the Environment variables box from LiveKit, then paste again."
 
 /** The secret field always starts empty. */
-export function fieldsFrom(info: CredentialsInfo | null): LiveKitFieldValues {
+function fieldsFrom(info: CredentialsInfo | null): LiveKitFieldValues {
   return { url: info?.url ?? "", apiKey: info?.apiKey ?? "", apiSecret: "" }
 }
 

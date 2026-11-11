@@ -1,8 +1,3 @@
-/** The last part of a path: "/Users/me/Dev/samba" -> "samba". */
-export function folderName(path: string): string {
-  return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path
-}
-
 /** `wanted`, or `wanted 2`, `wanted 3`... so it doesn't clash (case-insensitive). */
 export function uniqueName(wanted: string, taken: readonly string[]): string {
   const used = new Set(taken.map((name) => name.toLowerCase()))
@@ -72,10 +67,4 @@ export function timeAgo(at: number, now = Date.now()): string {
 /** A folder for display, with the home folder as "~": "~/code/plantpal". */
 export function shortPath(path: string): string {
   return path.replace(/^\/Users\/[^/]+(?=\/|$)/, "~")
-}
-
-/** "a", "a and b", "a, b and c". */
-export function andList(names: string[]): string {
-  if (names.length <= 1) return names.join("")
-  return `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`
 }

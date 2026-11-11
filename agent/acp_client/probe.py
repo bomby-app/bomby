@@ -34,7 +34,7 @@ from harnesses.harness import Harness
 from job import Pick
 
 from .client import HarnessClient, connect
-from .runner import launch
+from .environment import launch
 from .sessions import can_delete, discard_session
 from .settings import Setting, Skipped, apply, model_name, needs_pick
 

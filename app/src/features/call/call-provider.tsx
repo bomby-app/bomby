@@ -18,17 +18,19 @@ import {
 import { AgentSessionProvider } from "@/components/agents-ui/agent-session-provider"
 import { StartAudioButton } from "@/components/agents-ui/start-audio-button"
 import { useCoreEvent } from "@/hooks/use-core-event"
+import { log } from "@/lib/log"
 
 import { useProjects } from "../projects/projects-provider"
 import {
   callToken,
   callTranscript,
   endCall,
-  log,
   onAgentCrashed,
   openCall,
   saveMessage,
 } from "./api"
+import { callEndings } from "./call-endings"
+import { callFailure } from "./call-failure"
 import { MuteShortcut } from "./mute"
 import { forgetSavedCall } from "./saved-call-view"
 import { bySession, lineId, roleOf, type SessionLines } from "./transcript"
@@ -44,7 +46,7 @@ export type ActiveCall = {
 }
 
 /** What a start is for: a project, and the call to resume if any. */
-export type CallRequest = { projectId: number; resumeCallId?: number }
+type CallRequest = { projectId: number; resumeCallId?: number }
 
 type CallState = {
   /** The call the session is on, from its start until the session disconnects. */
@@ -106,21 +108,28 @@ export function CallProvider({ children }: { children: ReactNode }) {
   // (@livekit/components-react 2.9.24, `useSession`'s `start`; docs/livekit-notes.md).
   const joining = useRef<AbortController | null>(null)
 
+  // A failed start that had connected ends the call twice (its own end, and the room's
+  // disconnect): the second waits on the first, and neither rejects.
+  const [ending] = useState(() =>
+    callEndings((id, e) => log(`Ending call ${id} failed: ${String(e)}`))
+  )
+
   const finish = useCallback(
-    async (id: number) => {
-      // Its last lines are saved, and the call and its session ended, before the call's
-      // page shows its saved transcript; only then is what this page kept of it dropped,
-      // so the transcript read is whole, the last session's end included.
-      await written(id)
-      try {
-        await endCall(id)
-      } finally {
-        forgetSavedCall(id)
-        setActive((current) => (current?.callId === id ? null : current))
-      }
-      await refresh()
-    },
-    [refresh]
+    (id: number) =>
+      ending(id, async () => {
+        // Its last lines are saved, and the call and its session ended, before the call's
+        // page shows its saved transcript; only then is what this page kept of it dropped,
+        // so the transcript read is whole, the last session's end included.
+        await written(id)
+        try {
+          await endCall(id)
+        } finally {
+          forgetSavedCall(id)
+          setActive((current) => (current?.callId === id ? null : current))
+        }
+        await refresh()
+      }),
+    [ending, refresh]
   )
 
   // However the call ends (End call, the room closing, the agent failing), the room
@@ -168,14 +177,16 @@ export function CallProvider({ children }: { children: ReactNode }) {
   }
 
   // Like the starter's useAgentErrors: a failed agent ends the session, and the project's
-  // page says why.
+  // page says why. The first reason stays: the agent leaving as the call ends is a second
+  // failure, and says less than what ended it.
   const onAgentFailed = useCallback(
     (reasons: string[]) => {
       if (active) {
-        setError({
+        const failed = {
           projectId: active.projectId,
           message: reasons.join(" ") || "Lost the connection. Try again?",
-        })
+        }
+        setError((current) => current ?? failed)
       }
     },
     [active]
@@ -216,7 +227,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
   )
 }
 
-/** Ends the session when the agent fails (it timed out joining, or left), as the starter does. */
+/**
+ * Ends the session when the agent fails (it timed out joining, or left), as the starter
+ * does, and when the agent says the voice model ended the call (`callFailure`): the agent
+ * stays in the room then, so nothing else would end it.
+ */
 function EndOnAgentFailure({
   onFailed,
 }: {
@@ -224,12 +239,17 @@ function EndOnAgentFailure({
 }) {
   const { isConnected, end } = useSessionContext()
   const agent = useAgent()
+  const said = callFailure(agent.attributes)
   useEffect(() => {
-    if (isConnected && agent.state === "failed") {
+    if (!isConnected) return
+    if (said !== null) {
+      onFailed([said])
+      void end()
+    } else if (agent.state === "failed") {
       onFailed(agent.failureReasons)
       void end()
     }
-  }, [agent, isConnected, end, onFailed])
+  }, [agent, said, isConnected, end, onFailed])
   return null
 }
 

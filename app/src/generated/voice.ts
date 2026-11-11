@@ -43,7 +43,6 @@ export type VoiceProvider = "gemini" | "openai" | "rime";
 
 export type VoiceSettings = { 
 /**
- * The pick, else the first provider with a saved key, else Gemini; always set in
- * practice (`chosen`).
+ * The pick, else the first provider with a saved key, else Gemini (`chosen`).
  */
-provider: VoiceProvider | null, providers: Array<ProviderSettings>, };
+provider: VoiceProvider, providers: Array<ProviderSettings>, };

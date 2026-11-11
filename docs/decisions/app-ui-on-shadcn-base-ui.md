@@ -13,7 +13,7 @@ The app uses shadcn components. shadcn's CLI now defaults to Base UI (`base-nova
 
 ## Why
 
-- Base UI is shadcn's default and actively maintained; the owner uses it across projects (STA-bot) and finds the code cleaner.
+- Base UI is shadcn's default and actively maintained; the owner uses it across projects and finds the code cleaner.
 - One primitive library for our components and for Agents UI, since Agents UI renders through our components.
 
 ## Consequences

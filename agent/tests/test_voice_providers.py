@@ -9,6 +9,7 @@ from livekit.agents import llm
 from livekit.plugins.rime.realtime import PrismHistoryUpdateError
 from livekit.plugins.rime.realtime import RealtimeModel as PrismModel
 
+from acp_client.environment import APP_KEYS
 from tools import ALL_TOOLS
 from voice_providers import (
     GEMINI,
@@ -30,6 +31,10 @@ def test_each_provider_has_a_distinct_key_and_voice_variable() -> None:
     assert len({p.voice_env for p in PROVIDERS.values()}) == len(PROVIDERS)
     assert provider("") is GEMINI
     assert provider("rime") is RIME
+
+
+def test_coding_agents_never_get_a_voice_providers_key() -> None:
+    assert {p.key_env for p in PROVIDERS.values()} <= APP_KEYS
 
 
 def test_each_provider_defaults_to_one_of_its_own_voices() -> None:

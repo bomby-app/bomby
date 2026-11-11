@@ -19,7 +19,7 @@ export function ExtensionIcon({ id, ...props }: { id: string } & LucideProps) {
 // voice providers' do, features/setup/provider-logos.tsx).
 
 /** Zapier's mark, from its own mask icon (cdn.zapier.com/zapier/images/logo_zapier_black.svg). */
-export function ZapierLogo(props: SVGProps<SVGSVGElement>) {
+function ZapierLogo(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 16 16" aria-hidden="true" {...props}>
       <path
@@ -32,7 +32,7 @@ export function ZapierLogo(props: SVGProps<SVGSVGElement>) {
 }
 
 /** Composio's mark, from its logo (logos.composio.dev/api/composio), without the tile. */
-export function ComposioLogo(props: SVGProps<SVGSVGElement>) {
+function ComposioLogo(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="30 22 120 136" aria-hidden="true" {...props}>
       <path

@@ -17,4 +17,3 @@ Status: accepted, 2026-11-04. Supersedes [name-claudible.md](name-claudible.md).
 ## Consequences
 
 - A new identifier means a new app data folder and keychain service: projects, calls and the saved keys under `com.aburady.claudible` are not seen by Bomby. Re-enter the keys once; the old folder (`~/Library/Application Support/com.aburady.claudible`) and keychain item can be deleted.
-- The Paper file is still named "claudible" until the owner renames it.

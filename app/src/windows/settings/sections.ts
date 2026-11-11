@@ -92,5 +92,3 @@ type Section = {
   component: ComponentType
   badge?: ComponentType
 }
-
-export type SectionId = (typeof SECTIONS)[number]["id"]

@@ -110,9 +110,20 @@ pub(crate) fn entries(folder: &Path, dir: &str) -> Result<Vec<Entry>> {
     Ok(entries)
 }
 
+/// `path`'s metadata, if it's a plain file. A pipe or a device has no size to check, and
+/// opening one can wait forever for its other end.
+fn regular_file(path: &Path) -> Result<fs::Metadata> {
+    let metadata = fs::metadata(path)?;
+    if metadata.is_file() {
+        Ok(metadata)
+    } else {
+        Err(Error::Invalid("This isn't a file to show here.".into()))
+    }
+}
+
 pub(crate) fn preview(folder: &Path, file: &str) -> Result<FilePreview> {
     let path = inside(folder, file)?;
-    let size = fs::metadata(&path)?.len();
+    let size = regular_file(&path)?.len();
     if let Some(mime) = image_type(&path).filter(|_| size <= MAX_IMAGE_BYTES) {
         return Ok(FilePreview {
             text: None,
@@ -144,7 +155,7 @@ pub(crate) fn preview(folder: &Path, file: &str) -> Result<FilePreview> {
 /// An image's bytes, for the preview: only the image types it shows, up to their size.
 pub(crate) fn image(folder: &Path, file: &str) -> Result<Vec<u8>> {
     let path = inside(folder, file)?;
-    let too_big = fs::metadata(&path)?.len() > MAX_IMAGE_BYTES;
+    let too_big = regular_file(&path)?.len() > MAX_IMAGE_BYTES;
     if image_type(&path).is_none() || too_big {
         return Err(Error::Invalid(
             "This file isn't an image to show here.".into(),
@@ -247,5 +258,22 @@ mod tests {
         assert_eq!(image(&dir, "logo.PNG").unwrap(), png);
         assert!(image(&dir, "data.bin").is_err());
         assert!(image(&dir, "../logo.PNG").is_err());
+    }
+
+    #[test]
+    fn refuses_what_isnt_a_plain_file() {
+        let dir = tempfile_dir("special");
+        for name in ["pipe", "pipe.png"] {
+            let made = std::process::Command::new("mkfifo")
+                .arg(dir.join(name))
+                .status()
+                .unwrap();
+            assert!(made.success());
+        }
+        fs::create_dir(dir.join("src")).unwrap();
+        // Opening a pipe waits for its other end, so these answer before they'd open one.
+        assert!(preview(&dir, "pipe").is_err());
+        assert!(image(&dir, "pipe.png").is_err());
+        assert!(preview(&dir, "src").is_err());
     }
 }

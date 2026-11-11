@@ -2,6 +2,7 @@ import asyncio
 import dataclasses
 import json
 import os
+import subprocess
 import sys
 from collections.abc import Collection
 from pathlib import Path
@@ -397,3 +398,21 @@ def test_an_agent_without_its_adapter_asks_for_it(tmp_path: Path) -> None:
     assert setup == Setup(
         "connect", problem="Its ACP adapter isn't set up", adapter="fake-acp"
     )
+
+
+@pytest.mark.parametrize("module", ["acp_client.probe", "probe"])
+def test_the_probe_loads_without_livekit(module: str) -> None:
+    # Settings runs the probe each time it checks the agents; LiveKit takes half a second
+    # to import and the probe needs none of it.
+    loaded = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            f"import sys, {module}; print('livekit' in sys.modules)",
+        ],
+        cwd=Path(__file__).resolve().parent.parent,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert loaded.stdout.strip() == "False"

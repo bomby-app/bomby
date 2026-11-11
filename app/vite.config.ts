@@ -58,12 +58,12 @@ export default defineConfig({
     },
     ignorePatterns,
   },
-  // React Compiler memoizes components and hooks at build time, through Oxc's Rust port
-  // (`oxc-transform-react`; docs/frontend-notes.md).
   // Unit tests of the page's own logic, beside it (`*.test.ts`), in Node: no DOM.
   test: {
     include: ["src/**/*.test.ts"],
   },
+  // React Compiler memoizes components and hooks at build time, through Oxc's Rust port
+  // (`oxc-transform-react`; docs/frontend-notes.md).
   plugins: [react({ compiler: true }), tailwindcss()],
   resolve: {
     alias: [
