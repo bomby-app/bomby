@@ -436,7 +436,7 @@ fn open<R: Runtime>(
         let lookup = scope.spawn(|| agents::usable_now(app));
         let started = (|| -> Result<LiveKitKeys> {
             let server = call_server::for_new_call(app, &db, &vault, &local)?;
-            let log_dir = app.path().app_log_dir()?;
+            let log_dir = crate::dirs::logs(app)?;
             worker.ensure(
                 WorkerConfig {
                     livekit: server.clone(),

@@ -16,6 +16,7 @@ mod credentials;
 mod db;
 mod dev;
 mod diagnostics;
+mod dirs;
 mod error;
 mod extensions;
 mod local_server;
@@ -26,6 +27,7 @@ mod projects;
 mod search;
 mod settings;
 mod setup;
+mod smoke;
 mod sync;
 #[cfg(test)]
 mod testing;
@@ -57,19 +59,24 @@ pub fn run() {
             _ => PermissionResponse::Default,
         })
         .setup(|app| {
-            // ~/Library/Application Support/app.bomby.desktop on macOS.
-            let dir = app.path().app_data_dir()?;
+            // The app's folders, or the smoke check's (smoke.rs).
+            let dirs = dirs::Dirs::for_app(app.handle())?;
+            let dir = dirs.data.clone();
+            let log_dir = dirs.logs.clone();
             std::fs::create_dir_all(&dir)?;
+            app.manage(dirs);
+            app.manage(smoke::Smoke::default());
             adapters::init(&dir);
             app.manage(db::Db::open(&dir.join(db::FILE_NAME))?);
             app.manage(agent::AgentWorker::default());
             app.manage(local_server::LocalServer::new(
                 local_server::bundled()?,
                 dir.clone(),
-                app.path().app_log_dir()?,
+                log_dir,
             ));
-            // `just app dev --no-keys` keeps the keys in memory and leaves the keychain alone.
-            app.manage(if dev::no_keys() {
+            // `just app dev --no-keys` and the smoke check keep the keys in memory and leave
+            // the keychain alone.
+            app.manage(if dev::no_keys() || smoke::active() {
                 credentials::Vault::in_memory()
             } else {
                 credentials::Vault::default()
@@ -89,9 +96,17 @@ pub fn run() {
             tray::init(app.handle())?;
             notifications::init(app.handle())?;
             // Look for the agents now, so Settings and the first call find them ready.
-            tauri::async_runtime::spawn(agents::refresh_in_background(app.handle().clone()));
-            adapters::update_in_background(app.handle());
-            updates::check_in_background(app.handle());
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Ok(found) = agents::refresh_in_background(handle.clone()).await {
+                    smoke::core_ready(&handle, found.len());
+                }
+            });
+            // Both use the network; the smoke check needs none.
+            if !smoke::active() {
+                adapters::update_in_background(app.handle());
+                updates::check_in_background(app.handle());
+            }
             windows::place_main(app.handle())?;
             Ok(())
         })
@@ -156,6 +171,7 @@ pub fn run() {
             settings::set_tone,
             settings::first_run,
             settings::finish_first_run,
+            windows::main_window_ready,
             projects::list_projects,
             projects::create_project,
             projects::update_project,

@@ -237,7 +237,12 @@ fn expand(place: &str, home: Option<&Path>) -> Option<PathBuf> {
 /// Finds each known agent the way a terminal would, then in its usual install places. In
 /// development, `just app dev --agents` can hide some, as if not installed ([`dev`]).
 fn find_all(previous: &HashMap<String, PathBuf>) -> Vec<(&'static Known, Option<PathBuf>)> {
-    let from_shell = shell_paths();
+    // No login shell when no agent may be found (`--agents=none`, the smoke check).
+    let from_shell = KNOWN
+        .iter()
+        .any(|known| dev::agent_shown(known.id))
+        .then(shell_paths)
+        .flatten();
     let home = std::env::var_os("HOME").map(PathBuf::from);
     KNOWN
         .iter()

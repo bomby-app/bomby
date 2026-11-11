@@ -1,6 +1,6 @@
 //! An app for tests: Tauri's mock runtime, no window, with the state the core's commands
 //! use on a fresh in-memory database and keys kept in memory, so a test runs what a command
-//! runs and never touches this Mac's keychain or data.
+//! runs and never touches this Mac's keychain, data or logs.
 
 use tauri::Manager;
 use tauri::test::{MockRuntime, mock_app};
@@ -8,12 +8,19 @@ use tauri::test::{MockRuntime, mock_app};
 use crate::agents::Agents;
 use crate::credentials::{LiveKitKeys, Vault};
 use crate::db::Db;
+use crate::dirs::Dirs;
 use crate::local_server::LocalServer;
 use crate::{agent_picks, calls};
 
 /// The app, with `agents` as the last look found them.
 pub fn app_with(agents: Agents) -> tauri::App<MockRuntime> {
     let app = mock_app();
+    // Anything a test logs goes to the temp folder, never this Mac's log folder.
+    let scratch = std::env::temp_dir().join("bomby-tests");
+    app.manage(Dirs {
+        data: scratch.join("data"),
+        logs: scratch.join("logs"),
+    });
     app.manage(Db::in_memory().unwrap());
     app.manage(Vault::in_memory());
     app.manage(agents);

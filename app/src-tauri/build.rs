@@ -52,6 +52,7 @@ const COMMANDS: &[&str] = &[
     "set_tone",
     "first_run",
     "finish_first_run",
+    "main_window_ready",
     "list_projects",
     "create_project",
     "update_project",

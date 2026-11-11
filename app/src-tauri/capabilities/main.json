@@ -67,6 +67,7 @@
     "allow-install-adapters",
     "allow-first-run",
     "allow-finish-first-run",
+    "allow-main-window-ready",
     "allow-folder-info",
     "allow-folder-changes",
     "allow-folder-entries",

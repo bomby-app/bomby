@@ -150,6 +150,12 @@ jobs:
           codesign --verify --strict --verbose=2 "$APP/Contents/MacOS/livekit-server"
           "$APP/Contents/MacOS/livekit-server" --version
 
+      # The signed app must open before anything is released: its window renders and the
+      # first agents look finishes, with its own temp folder, no keys, no agents and no
+      # network (just app smoke; 0.3.2 hung here with a blank window).
+      - name: Check the signed app opens
+        run: just app smoke "$PWD/$APP"
+
       # What installed copies read to find this version once the release is published
       # (plugins.updater.endpoints in tauri.conf.json).
       - name: Write latest.json

@@ -1,4 +1,11 @@
-import { startTransition, Suspense, useEffect, useMemo, useState } from "react"
+import {
+  startTransition,
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { CALL_NAMES_RPC } from "@/features/call-names/rpc"
@@ -19,6 +26,7 @@ import { openSettings, SETTINGS_SHORTCUT } from "../settings/open-settings"
 import { AppSidebar } from "./app-sidebar"
 import { CommandPalette } from "./command-palette"
 import { CoreNotAnswering } from "./core-not-answering"
+import { reportReady } from "./launch"
 import { MainPanel } from "./main-panel"
 import { NEW_PROJECT_SHORTCUT, PALETTE_SHORTCUT } from "./shortcuts"
 
@@ -48,6 +56,15 @@ export function MainWindow() {
       current = false
     }
   }, [asked])
+
+  // Once, when the first screen has rendered.
+  const shown = first === null ? null : first ? "splash" : "workspace"
+  const reported = useRef(false)
+  useEffect(() => {
+    if (shown === null || reported.current) return
+    reported.current = true
+    void reportReady(shown)
+  }, [shown])
 
   if (error !== null)
     return (
