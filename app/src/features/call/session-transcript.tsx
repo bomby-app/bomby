@@ -7,9 +7,9 @@ import {
   useRef,
   useState,
 } from "react"
-import { Streamdown } from "streamdown"
 
 import { AgentChatIndicator } from "@/components/agents-ui/agent-chat-indicator"
+import { Markdown } from "@/components/markdown"
 import { Bubble, BubbleContent } from "@/components/ui/bubble"
 import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker"
 import { Message, MessageContent } from "@/components/ui/message"
@@ -216,7 +216,7 @@ function line({ id, timestamp, from, message }: ReceivedMessage) {
             variant={isUser ? "secondary" : "ghost"}
           >
             <BubbleContent>
-              <Streamdown>{message}</Streamdown>
+              <Markdown>{message}</Markdown>
             </BubbleContent>
           </Bubble>
         </MessageContent>
