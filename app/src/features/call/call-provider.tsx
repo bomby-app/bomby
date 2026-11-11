@@ -183,7 +183,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
       if (!aborter.signal.aborted) setError({ projectId, message: String(e) })
       // Joining may have failed before the room connected, so no disconnect closes the call.
       if (opened !== null) {
-        await session.end().catch(() => {})
+        // The session is the app's one, and a newer start may already be on it after a
+        // Cancel: end it only while this call is still the one it joined, or the newer
+        // call would end too. This call's row is ended either way.
+        if (tokens.current() === opened) await session.end().catch(() => {})
         await finish(opened)
       }
     } finally {
