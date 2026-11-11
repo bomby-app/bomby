@@ -146,7 +146,7 @@ def test_a_turn_streams_its_messages_and_tool_calls_and_nothing_else(
         },
         # The chunks of one message, sent together.
         {"type": "text", "stream": "1", "message": "m2", "text": "Done: all good"},
-        {"type": "end", "stream": "1"},
+        {"type": "end", "stream": "1", "outcome": "done"},
     ]
     sent = json.dumps(c.lines)
     assert "Thinking" not in sent  # no thoughts
@@ -195,6 +195,8 @@ def test_a_stopped_turn_ends_its_stream(tmp_path: Path) -> None:
     c = asyncio.run(main())
 
     assert [e["type"] for e in c.events] == ["start", "end"]
+    # Not "done": the panel mustn't show a stopped turn's tool calls as completed.
+    assert c.events[-1]["outcome"] == "stopped"
 
 
 def tool(id: str) -> Any:
@@ -209,7 +211,7 @@ def test_a_full_queue_drops_events_and_says_so_but_keeps_start_and_end() -> None
             streams.open("a", "codex", "Codex", "api")
             for id in ("t1", "t2", "t3", "t4"):
                 streams.record("a", tool(id))
-            streams.close("a")
+            streams.close("a", "done")
             streams.start()
             try:
                 await c.until(ended)
@@ -242,7 +244,7 @@ def test_a_message_is_cut_to_its_cap_and_the_next_one_starts_afresh() -> None:
             say("x" * (MAX_MESSAGE + 500), "m1")
             say("more", "m1")
             say("next", "m2")
-            streams.close("a")
+            streams.close("a", "done")
             streams.start()
             try:
                 await c.until(ended)
@@ -290,7 +292,8 @@ class Broken:
     def record(self, session_id: str, update: Any) -> None:
         raise RuntimeError(f"recorder bug on {session_id}: {update!r}")
 
-    def close(self, session_id: str) -> None:
+    def close(self, session_id: str, outcome: str) -> None:
+        del outcome
         self.opened.remove(next(o for o in self.opened if o.endswith(session_id)))
 
 

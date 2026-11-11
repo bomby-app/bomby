@@ -15,6 +15,8 @@ initialize, like an adapter without it. Setup scenarios, by environment variable
 - FAKE_ACP_CAN_DELETE=1: advertise `session/delete`, which it serves either way
 - FAKE_ACP_HANG=<step>: never answer `initialize` or `session/new` (the step's name), in
   the first process only, so a fresh one answers
+- FAKE_ACP_SLOW_CANCEL=<seconds>: a cancelled "hang" turn takes that long to stop, says
+  "late news" and only then answers its prompt, as an agent stopping its tools does
 
 Prompts:
 
@@ -351,6 +353,10 @@ class FakeClaude:
                 _ = await session.cancelled.wait()
             finally:
                 session.steered = None
+            if slow := os.getenv("FAKE_ACP_SLOW_CANCEL"):
+                await asyncio.sleep(float(slow))
+                await say("late news")
+            log("stopped", session_id=session_id)
             return PromptResponse(stop_reason="cancelled")
 
         if text.startswith("wait "):

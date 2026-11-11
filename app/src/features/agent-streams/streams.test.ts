@@ -104,7 +104,7 @@ describe("reduce", () => {
     expect(body(s)[0]).toMatchObject({ status: "running" })
   })
 
-  it("closes every open tool call when the run ends, and keeps the run", () => {
+  it("closes every open tool call when the agent finishes the run, and keeps the run", () => {
     const streams = play(
       start,
       {
@@ -115,7 +115,7 @@ describe("reduce", () => {
         status: "in_progress",
       },
       { type: "tool", stream: "1-1", id: "t2", title: "b", status: "failed" },
-      { type: "end", stream: "1-1", at: 9000 }
+      { type: "end", stream: "1-1", at: 9000, outcome: "done" }
     )
     const [s] = streams
     expect(body(s)).toMatchObject([{ status: "done" }, { status: "error" }])
@@ -124,17 +124,60 @@ describe("reduce", () => {
       kind: "finished",
       at: 9000,
       took: 8000,
+      outcome: "done",
     })
     expect(working(s)).toBe(false)
     // Events after the end change nothing.
     expect(reduce(streams, text("late"))).toBe(streams)
   })
 
+  it("never shows a call as completed when its run was stopped, broke, or just ended", () => {
+    const running: StreamEvent = {
+      type: "tool",
+      stream: "1-1",
+      id: "t1",
+      title: "pnpm test",
+      kind: "execute",
+      status: "in_progress",
+    }
+    const done: StreamEvent = { ...running, id: "t0", status: "completed" }
+    // The last is the core's own end, when the worker went before it could say how.
+    for (const outcome of ["stopped", "failed", undefined, "new word"]) {
+      const [s] = play(start, done, running, {
+        type: "end",
+        stream: "1-1",
+        at: 4000,
+        outcome,
+      })
+      // What the agent said had finished stays finished.
+      expect(body(s)).toMatchObject([{ status: "done" }, { status: "ended" }])
+      const unfinished = body(s)[1]
+      expect(unfinished.kind === "tool" && toolTitle(unfinished)).toBe(
+        "Didn't finish running pnpm test"
+      )
+      const known = outcome === "stopped" || outcome === "failed"
+      expect(s.entries.at(-1)).toMatchObject({
+        kind: "finished",
+        outcome: known ? outcome : "ended",
+      })
+    }
+    expect(
+      activity(
+        play(start, {
+          type: "end",
+          stream: "1-1",
+          at: 2,
+          outcome: "stopped",
+        })[0]
+      )
+    ).toBe("Stopped")
+  })
+
   it("continues the row when the same agent and session runs again", () => {
     const streams = play(
       start,
       { type: "tool", stream: "1-1", id: "t1", title: "a" },
-      { type: "end", stream: "1-1", at: 2000 },
+      { type: "end", stream: "1-1", at: 2000, outcome: "done" },
       { ...start, stream: "1-2", at: 5000 },
       // The same id as a call of the run before: it's this run's own.
       { type: "tool", stream: "1-2", id: "t1", title: "b" },
@@ -223,7 +266,14 @@ describe("activity", () => {
       activity(play(start, running, { ...running, status: "completed" })[0])
     ).toBe("Working")
     expect(
-      activity(play(start, running, { type: "end", stream: "1-1", at: 2 })[0])
+      activity(
+        play(start, running, {
+          type: "end",
+          stream: "1-1",
+          at: 2,
+          outcome: "done",
+        })[0]
+      )
     ).toBe("Finished")
   })
 })
@@ -261,6 +311,12 @@ describe("toolTitle", () => {
     expect(
       toolTitle({ title: null, toolKind: "edit", status: "running" })
     ).toBe("Editing a file")
+    expect(toolTitle({ title: null, toolKind: "edit", status: "ended" })).toBe(
+      "Didn't finish editing a file"
+    )
+    expect(
+      toolTitle({ title: "Read login.ts", toolKind: "read", status: "ended" })
+    ).toBe("Didn't finish: Read login.ts")
     expect(toolTitle({ title: " ", toolKind: null, status: "done" })).toBe(
       "Used a tool"
     )

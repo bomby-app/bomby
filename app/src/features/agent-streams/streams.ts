@@ -1,7 +1,16 @@
 import type { StreamEvent } from "@/generated/agent-streams"
 
-/** A tool call as one line: running, failed, or done (no status). */
-export type ToolStatus = "running" | "error" | "done"
+/**
+ * A tool call as one line: running, failed, done, or ended, when its run was stopped or
+ * broke before the agent said how the call went.
+ */
+export type ToolStatus = "running" | "error" | "done" | "ended"
+
+/**
+ * How a run ended: the agent finished it, it was stopped (or stopped early), it broke, or,
+ * when the worker went before it could say, it just ended.
+ */
+export type Outcome = "done" | "stopped" | "failed" | "ended"
 
 export type Entry =
   | {
@@ -29,12 +38,13 @@ export type Entry =
     }
   | { kind: "dropped"; key: string }
   | {
-      /** The run is over, however it ended. */
+      /** The run is over. */
       kind: "finished"
       key: string
       at: number
       /** How long it ran, in ms. */
       took: number
+      outcome: Outcome
     }
 
 /**
@@ -63,8 +73,10 @@ export type Streams = AgentStream[]
  * `streams` after `event` (agent_streams.rs). A run that starts in an agent and session
  * already listed continues its row. Text appends to the message it continues; a tool call's
  * events are patches by id, within its run, and one for an id not seen yet starts a line;
- * `dropped` leaves one marker where events are missing; `end` closes every tool call still
- * open and ends the run, which stays. Events of a run that isn't going on are ignored.
+ * `dropped` leaves one marker where events are missing; `end` ends the run, which stays, and
+ * its tool calls still open: done when the agent finished the run, only ended otherwise,
+ * since a stopped command didn't run to its end. Events of a run that isn't going on are
+ * ignored.
  */
 export function reduce(streams: Streams, event: StreamEvent): Streams {
   if (event.type === "start") {
@@ -180,9 +192,10 @@ function apply(
       return { ...stream, entries: [...entries, { kind: "dropped", key }] }
     case "end": {
       const began = entries[from]
+      const outcome = outcomeOf(event.outcome)
       const closed = entries.map((e): Entry =>
         e.kind === "tool" && e.status === "running"
-          ? { ...e, status: "done" }
+          ? { ...e, status: outcome === "done" ? "done" : "ended" }
           : e
       )
       return {
@@ -196,6 +209,7 @@ function apply(
             at: event.at,
             took:
               began?.kind === "started" ? Math.max(0, event.at - began.at) : 0,
+            outcome,
           },
         ],
       }
@@ -210,6 +224,21 @@ function toolStatus(status: string | undefined): ToolStatus {
   return "running"
 }
 
+/** The worker's word for how a run ended; one it doesn't give, or a new one, reads ended. */
+function outcomeOf(outcome: string | undefined): Outcome {
+  return outcome === "done" || outcome === "stopped" || outcome === "failed"
+    ? outcome
+    : "ended"
+}
+
+/** A run's end in a word, for its mark and its row. */
+export const ENDINGS: Record<Outcome, string> = {
+  done: "Finished",
+  stopped: "Stopped",
+  failed: "Failed",
+  ended: "Ended",
+}
+
 /** Whether the agent is working in this session now. */
 export function working(stream: AgentStream): boolean {
   return stream.run !== null
@@ -217,35 +246,92 @@ export function working(stream: AgentStream): boolean {
 
 /**
  * What the agent is on, for its row in the list: its running tool call, else that it's
- * writing; "Finished" between runs.
+ * writing; between runs, how the last one ended.
  */
 export function activity(stream: AgentStream): string {
-  if (!working(stream)) return "Finished"
   const last = stream.entries.at(-1)
+  if (!working(stream))
+    return ENDINGS[last?.kind === "finished" ? last.outcome : "ended"]
   if (last?.kind === "tool" && last.status === "running") return toolTitle(last)
   if (last?.kind === "message") return "Writing"
   if (last?.kind === "started") return "Getting started"
   return "Working"
 }
 
-/** Running, done and failed, for a tool call without a title, by its kind. */
-const UNTITLED: Record<string, [string, string, string]> = {
-  read: ["Reading a file", "Read a file", "Failed to read a file"],
-  edit: ["Editing a file", "Edited a file", "Failed to edit a file"],
-  delete: ["Deleting a file", "Deleted a file", "Failed to delete a file"],
-  move: ["Moving a file", "Moved a file", "Failed to move a file"],
-  search: ["Searching", "Searched", "Failed to search"],
-  execute: ["Running a command", "Ran a command", "Failed to run a command"],
-  think: ["Thinking", "Thought it over", "Failed to think it over"],
-  fetch: ["Fetching a page", "Fetched a page", "Failed to fetch a page"],
-  switch_mode: ["Switching modes", "Switched modes", "Failed to switch modes"],
+/** Running, done, failed and ended, in that order. */
+type Words = [string, string, string, string]
+
+/** A tool call without a title, by its kind. */
+const UNTITLED: Record<string, Words> = {
+  read: [
+    "Reading a file",
+    "Read a file",
+    "Failed to read a file",
+    "Didn't finish reading a file",
+  ],
+  edit: [
+    "Editing a file",
+    "Edited a file",
+    "Failed to edit a file",
+    "Didn't finish editing a file",
+  ],
+  delete: [
+    "Deleting a file",
+    "Deleted a file",
+    "Failed to delete a file",
+    "Didn't finish deleting a file",
+  ],
+  move: [
+    "Moving a file",
+    "Moved a file",
+    "Failed to move a file",
+    "Didn't finish moving a file",
+  ],
+  search: [
+    "Searching",
+    "Searched",
+    "Failed to search",
+    "Didn't finish searching",
+  ],
+  execute: [
+    "Running a command",
+    "Ran a command",
+    "Failed to run a command",
+    "Didn't finish running a command",
+  ],
+  think: [
+    "Thinking",
+    "Thought it over",
+    "Failed to think it over",
+    "Didn't finish thinking it over",
+  ],
+  fetch: [
+    "Fetching a page",
+    "Fetched a page",
+    "Failed to fetch a page",
+    "Didn't finish fetching a page",
+  ],
+  switch_mode: [
+    "Switching modes",
+    "Switched modes",
+    "Failed to switch modes",
+    "Didn't finish switching modes",
+  ],
 }
-const ANY_TOOL: [string, string, string] = [
+const ANY_TOOL: Words = [
   "Using a tool",
   "Used a tool",
   "A tool failed",
+  "Didn't finish using a tool",
 ]
-const COMMAND: [string, string, string] = ["Running", "Ran", "Failed to run"]
+const COMMAND: Words = [
+  "Running",
+  "Ran",
+  "Failed to run",
+  "Didn't finish running",
+]
+/** What goes before a title the agent wrote, by status. */
+const BEFORE_TITLE: Words = ["", "", "Failed: ", "Didn't finish: "]
 
 type Titled = {
   title: string | null
@@ -257,13 +343,14 @@ type Titled = {
  * A tool call's line in two parts, with its status in the words (Trace's Tool pattern):
  * `words`, and `command` when the agent titled a command with the command line itself, to
  * set as code after them ("Ran" and "pnpm test"). Another title reads as the agent wrote it
- * ("Read login.ts"), or "Failed: …"; no title, a phrase for its kind.
+ * ("Read login.ts"), or "Failed: …", or "Didn't finish: …" for one its run ended on; no
+ * title, a phrase for its kind.
  */
 export function toolLine(tool: Titled): {
   words: string
   command: string | null
 } {
-  const which = { running: 0, done: 1, error: 2 }[tool.status]
+  const which = { running: 0, done: 1, error: 2, ended: 3 }[tool.status]
   const title = tool.title?.trim()
   if (!title)
     return {
@@ -272,10 +359,7 @@ export function toolLine(tool: Titled): {
     }
   if (tool.toolKind === "execute" && isCommand(title))
     return { words: COMMAND[which], command: title }
-  return {
-    words: tool.status === "error" ? `Failed: ${title}` : title,
-    command: null,
-  }
+  return { words: BEFORE_TITLE[which] + title, command: null }
 }
 
 /** A tool call's line as one string: "Running pnpm test", "Ran pnpm test". */

@@ -2,11 +2,13 @@ import {
   ArrowLeftRight,
   Bot,
   Check,
+  CircleSlash,
   FileText,
   FolderInput,
   Globe,
   Lightbulb,
   LoaderCircle,
+  Minus,
   type LucideIcon,
   PencilLine,
   Play,
@@ -15,10 +17,11 @@ import {
   Trash2,
   TriangleAlert,
   Wrench,
+  X,
 } from "lucide-react"
 import { createElement, useEffect, useState } from "react"
-import { Streamdown } from "streamdown"
 
+import { Markdown } from "@/components/markdown"
 import { Mascot } from "@/components/mascot"
 import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker"
 import { Message, MessageContent } from "@/components/ui/message"
@@ -42,6 +45,9 @@ import { cn } from "@/lib/utils"
 import { watchAgentStreams } from "./api"
 import {
   activity,
+  ENDINGS,
+  type Outcome,
+  type ToolStatus,
   type AgentStream,
   type Entry,
   reduce,
@@ -130,12 +136,20 @@ function useAgentStreams(callId: number | null): Streams {
     if (callId === null) return
     let stop: (() => void) | null = null
     let gone = false
-    watchAgentStreams(callId, (event) =>
-      setState((was) => ({
-        callId,
-        streams: reduce(was.callId === callId ? was.streams : [], event),
-      }))
-    ).then(
+    // A watch that's over says nothing more: an event of the last call still on its way
+    // mustn't replace the next call's streams, so it's turned away here and again when
+    // the update runs.
+    watchAgentStreams(callId, (event) => {
+      if (gone) return
+      setState((was) =>
+        gone
+          ? was
+          : {
+              callId,
+              streams: reduce(was.callId === callId ? was.streams : [], event),
+            }
+      )
+    }).then(
       (unwatch) => {
         if (gone) unwatch()
         else stop = unwatch
@@ -305,6 +319,23 @@ const KIND_ICONS: Record<string, LucideIcon> = {
   switch_mode: ArrowLeftRight,
 }
 
+/** The icon on the mark where a run ended, by how it ended: the tasks list's own. */
+const ENDING_ICONS: Record<Outcome, LucideIcon> = {
+  done: Check,
+  stopped: CircleSlash,
+  failed: X,
+  ended: Minus,
+}
+
+/**
+ * A tool call's status as its Trace line's: none once done, and Trace's quiet "pending"
+ * for one its run ended on, which neither ran to its end nor failed.
+ */
+const LINE_STATUS: Record<
+  ToolStatus,
+  "running" | "error" | "pending" | undefined
+> = { running: "running", error: "error", done: undefined, ended: "pending" }
+
 /** A message, a mark where a run starts or ends, or tool calls in a row as one Trace. */
 function EntryGroup({ entries }: { entries: Entry[] }) {
   const first = entries[0]
@@ -313,9 +344,9 @@ function EntryGroup({ entries }: { entries: Entry[] }) {
       return (
         <Message>
           <MessageContent>
-            <Streamdown className="text-sm leading-relaxed text-foreground">
+            <Markdown className="text-sm leading-relaxed text-foreground">
               {first.text}
-            </Streamdown>
+            </Markdown>
           </MessageContent>
         </Message>
       )
@@ -330,17 +361,22 @@ function EntryGroup({ entries }: { entries: Entry[] }) {
           </MarkerContent>
         </Marker>
       )
-    case "finished":
+    case "finished": {
+      const Icon = ENDING_ICONS[first.outcome]
+      // "Finished in 48s", and "Stopped after 48s" for a run that didn't get there.
+      const span = first.outcome === "done" ? "in" : "after"
       return (
         <Marker variant="separator" className="text-xs">
           <MarkerIcon>
-            <Check className="size-3!" />
+            <Icon className="size-3!" />
           </MarkerIcon>
           <MarkerContent>
-            Finished{first.took > 0 && ` in ${took(first.took)}`}
+            {ENDINGS[first.outcome]}
+            {first.took > 0 && ` ${span} ${took(first.took)}`}
           </MarkerContent>
         </Marker>
       )
+    }
     case "dropped":
       return (
         <Marker>
@@ -360,10 +396,7 @@ function EntryGroup({ entries }: { entries: Entry[] }) {
             const { words, command } = toolLine(tool)
             const Icon = KIND_ICONS[tool.toolKind ?? ""] ?? Wrench
             return (
-              <TraceLine
-                key={tool.key}
-                status={tool.status === "done" ? undefined : tool.status}
-              >
+              <TraceLine key={tool.key} status={LINE_STATUS[tool.status]}>
                 <TraceIcon>
                   <Icon />
                 </TraceIcon>

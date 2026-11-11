@@ -17,10 +17,11 @@ so they don't stream. One connection per call, each line a JSON object: first
     {"type": "text", "stream": "1", "message": "<the agent's message id, or null>", "text": "…"}
     {"type": "tool", "stream": "1", "id": "…", "title"?: "…", "kind"?: "execute", "status"?: "in_progress"}
     {"type": "dropped", "stream": "1"}
-    {"type": "end", "stream": "1"}
+    {"type": "end", "stream": "1", "outcome": "done"}
 
 `text` appends to the message; `tool` is a patch, by id, of the fields it has; `dropped`
-says some events before it were left out (the queue was full).
+says some events before it were left out (the queue was full); `end` says how the turn
+ended (`Outcome`), so the panel doesn't show a stopped turn's tool calls as completed.
 """
 
 import asyncio
@@ -30,7 +31,7 @@ import logging
 import os
 from collections import deque
 from collections.abc import Mapping
-from typing import Any, Protocol, final
+from typing import Any, Literal, Protocol, final
 
 from acp.schema import (
     AgentMessageChunk,
@@ -40,6 +41,10 @@ from acp.schema import (
 )
 
 logger = logging.getLogger("bomby.acp_client.streams")
+
+Outcome = Literal["done", "stopped", "failed"]
+"""How a turn ended: the agent finished it (`done`), it was stopped or stopped early
+(`stopped`: a cancel, or a stop reason other than `end_turn`), or it broke (`failed`)."""
 
 SOCKET_ENV = "BOMBY_STREAMS"
 SECRET_ENV = "BOMBY_STREAMS_SECRET"
@@ -70,8 +75,8 @@ class Recorder(Protocol):
         """One `session/update` for `session_id`; ignored when no turn runs there."""
         ...
 
-    def close(self, session_id: str) -> None:
-        """The turn in `session_id` is over, however it ended."""
+    def close(self, session_id: str, outcome: Outcome) -> None:
+        """The turn in `session_id` is over, and how it ended."""
         ...
 
 
@@ -157,11 +162,14 @@ class StreamRecorder:
         except Exception:
             logger.exception("recording a turn's start failed")
 
-    def close(self, session_id: str) -> None:
+    def close(self, session_id: str, outcome: Outcome) -> None:
         try:
             stream = self._streams.pop(session_id, None)
             if stream is not None and self._live:
-                self._emit({"type": "end", "stream": stream.key}, keep=True)
+                self._emit(
+                    {"type": "end", "stream": stream.key, "outcome": outcome},
+                    keep=True,
+                )
         except Exception:
             logger.exception("recording a turn's end failed")
 

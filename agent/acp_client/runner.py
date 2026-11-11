@@ -20,7 +20,12 @@ from typing import final
 
 from acp import RequestError, text_block
 from acp.client.connection import ClientSideConnection
-from acp.schema import AgentCapabilities, InitializeResponse, NewSessionResponse
+from acp.schema import (
+    AgentCapabilities,
+    InitializeResponse,
+    NewSessionResponse,
+    PromptResponse,
+)
 from livekit.agents.llm import ToolError
 
 from harnesses import HARNESSES, installed
@@ -33,7 +38,7 @@ from .client import HarnessClient, Reply, connect
 from .environment import AGENT_ROOT, launch
 from .sessions import close_session, discard_session
 from .settings import Applied, apply, model_setting, needs_pick
-from .streams import Recorder
+from .streams import Outcome, Recorder
 
 logger = logging.getLogger("bomby.acp_client.runner")
 
@@ -51,6 +56,10 @@ DEFAULT_SESSION = "main"
 # them (`probe.py`). One that doesn't answer in time is stopped, so the next request
 # starts a fresh one.
 START_TIMEOUT_S: float = 30
+# How long a turn that was told to stop may take to end. An agent answers its prompt only
+# once it has stopped its tools and sent its last updates; one that hasn't by then is
+# stopped itself, so its session is never handed on with the old turn still going.
+STOP_TIMEOUT_S: float = 10
 
 
 # What the voice model hears when a harness fails; the details go to the log, and
@@ -405,14 +414,19 @@ class AcpRunner:
             self._streams.open(
                 session_id, self._harness.id, self._harness.short_name, s.name
             )
+        # A task of its own: cancelling this request must not drop the prompt's answer,
+        # which is how the agent says the turn is over (`_stop_turn`).
+        prompt = asyncio.ensure_future(
+            conn.prompt(session_id=session_id, prompt=[text_block(t) for t in texts])
+        )
+        outcome: Outcome = "failed"  # how the turn ended, for the Agents panel
         try:
-            response = await conn.prompt(
-                session_id=session_id, prompt=[text_block(t) for t in texts]
-            )
+            response = await asyncio.shield(prompt)
+            outcome = "done" if response.stop_reason == "end_turn" else "stopped"
         except asyncio.CancelledError:
             # Stop the turn, keep the session: the next request continues it.
-            with contextlib.suppress(Exception):
-                await asyncio.shield(conn.cancel(session_id=session_id))
+            outcome = "stopped"
+            await self._stop_turn(conn, s, session_id, prompt)
             raise
         except (ConnectionError, RequestError) as e:
             if isinstance(e, ConnectionError):
@@ -422,7 +436,7 @@ class AcpRunner:
         finally:
             _ = self._client.replies.pop(session_id, None)
             if self._streams is not None:
-                self._streams.close(session_id)
+                self._streams.close(session_id, outcome)
 
         logger.info(
             "%s turn in %s ended: %s", self._harness.id, s.name, response.stop_reason
@@ -440,6 +454,49 @@ class AcpRunner:
             text = f"{name} stopped early ({response.stop_reason}). Its last message: {text}"
         logger.info("%s turn in %s result: %s", self._harness.id, s.name, text)
         return text, finished
+
+    async def _stop_turn(
+        self,
+        conn: ClientSideConnection,
+        s: _Session,
+        session_id: str,
+        prompt: asyncio.Future[PromptResponse],
+    ) -> None:
+        """Tells the agent to stop the running turn and waits until it has: its answer to
+        the prompt comes once it has stopped its tools and sent its last updates. Until
+        then the turn keeps its session, its reply and its stream, so the next request
+        can't start early or take those updates for its own. One that hasn't ended within
+        `STOP_TIMEOUT_S` loses its adapter instead. The call ending doesn't wait: closing
+        stops the adapter anyway."""
+        with contextlib.suppress(Exception):
+            await asyncio.shield(conn.cancel(session_id=session_id))
+        ended = False
+        try:
+            if not self._closed:
+                done, _ = await asyncio.wait({prompt}, timeout=STOP_TIMEOUT_S)
+                ended = bool(done)
+        finally:
+            if ended:
+                # Over, with a stop reason or an error: either way nothing is left running.
+                if not prompt.cancelled() and isinstance(
+                    prompt.exception(), ConnectionError
+                ):
+                    self._connection_lost(conn)
+            else:
+                _ = prompt.cancel()
+        if ended or self._closed:
+            return
+        logger.warning(
+            "%s turn in %s didn't stop within %g s, so %s was stopped",
+            self._harness.id,
+            s.name,
+            STOP_TIMEOUT_S,
+            self._command,
+        )
+        self._connection_lost(conn)
+        async with self._lock:
+            if conn is self._conn:
+                await self._teardown()
 
     async def _steer(
         self, conn: ClientSideConnection, s: _Session, session_id: str, task: str

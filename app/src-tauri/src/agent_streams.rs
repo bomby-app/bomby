@@ -93,12 +93,16 @@ pub enum StreamEvent {
     /// Some events before this one were left out: the agent's queue was full, or the
     /// stream outgrew what the core holds.
     Dropped { stream: String },
-    /// The turn is over, however it ended; its open tool calls are over with it. `at` as
-    /// in `Start`.
+    /// The turn is over; its open tool calls are over with it. `outcome` is how the worker
+    /// says it ended (`done`, `stopped` or `failed`), and missing when the core ended it
+    /// itself, its connection having closed. `at` as in `Start`.
     End {
         stream: String,
         #[serde(default)]
         at: i64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
+        outcome: Option<String>,
     },
 }
 
@@ -289,8 +293,16 @@ impl Streams {
             })
             .unwrap_or_default();
         for stream in running {
-            let at = now_ms();
-            self.apply(call_id, StreamEvent::End { stream, at });
+            // How its turn ended isn't known: the worker went before it could say.
+            let (at, outcome) = (now_ms(), None);
+            self.apply(
+                call_id,
+                StreamEvent::End {
+                    stream,
+                    at,
+                    outcome,
+                },
+            );
         }
         let mut calls = sync::lock(&self.calls);
         if let Some(call) = calls.get_mut(&call_id) {
@@ -538,6 +550,7 @@ mod tests {
         StreamEvent::End {
             stream: stream.into(),
             at: 0,
+            outcome: None,
         }
     }
 

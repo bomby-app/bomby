@@ -616,6 +616,54 @@ def test_the_call_ends_promptly_while_an_agent_never_answers(
     assert gone(pid)
 
 
+async def stop(running: asyncio.Task[str]) -> None:
+    """Cancels a request, as the user's Stop or the voice model's cancel does, and waits
+    for it to be over."""
+    _ = running.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        _ = await running
+
+
+def test_a_stopped_turn_is_over_only_once_the_agent_says_so(tmp_path: Path) -> None:
+    # After a cancel the agent is still stopping its tools and sending its last updates:
+    # the session's next request doesn't start, or hear those, until its turn has ended.
+    async def scenario(runner: AcpRunner) -> str:
+        await stop(await until_prompted(runner, "hang", "page"))
+        return await text(runner.run("reply next", "page"))
+
+    result, events = run_with_fake(
+        tmp_path, scenario, env={"FAKE_ACP_SLOW_CANCEL": "0.4"}
+    )
+
+    assert result == "Done: next"
+    turn = [n for n in names(events) if n in ("prompt", "cancel", "stopped")]
+    assert turn == ["prompt", "cancel", "stopped", "prompt"]
+    assert len([e for e in events if e["event"] == "initialize"]) == 1
+
+
+def test_an_agent_that_wont_stop_is_stopped_itself(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setattr(runner_module, "STOP_TIMEOUT_S", 0.3)
+
+    async def scenario(runner: AcpRunner) -> str:
+        async with asyncio.timeout(10):  # a missing deadline fails, not hangs
+            await stop(await until_prompted(runner, "hang", "page"))
+            return await text(runner.run("reply next", "page"))
+
+    result, events = run_with_fake(
+        tmp_path, scenario, env={"FAKE_ACP_SLOW_CANCEL": "30"}
+    )
+
+    # The session is never handed on with its old turn still going: a fresh agent
+    # takes the next request.
+    assert result == "Done: next"
+    first, second = (e["pid"] for e in events if e["event"] == "initialize")
+    assert first != second
+    assert gone(first)
+    assert "didn't stop within 0.3 s" in caplog.text
+
+
 def test_child_environment_drops_dotenv_secrets_and_api_keys() -> None:
     environ = {
         "PATH": "/bin",

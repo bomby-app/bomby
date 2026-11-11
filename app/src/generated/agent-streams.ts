@@ -12,4 +12,4 @@ kind?: string,
 /**
  * ACP's status: pending, in_progress, completed or failed.
  */
-status?: string, } | { "type": "dropped", stream: string, } | { "type": "end", stream: string, at: number, };
+status?: string, } | { "type": "dropped", stream: string, } | { "type": "end", stream: string, at: number, outcome?: string, };
