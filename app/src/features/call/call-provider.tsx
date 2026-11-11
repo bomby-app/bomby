@@ -31,6 +31,7 @@ import {
 } from "./api"
 import { callEndings } from "./call-endings"
 import { callFailure } from "./call-failure"
+import { endFailedStart } from "./failed-start"
 import { MuteShortcut } from "./mute"
 import { forgetSavedCall } from "./saved-call-view"
 import { bySession, lineId, roleOf, type SessionLines } from "./transcript"
@@ -181,13 +182,12 @@ export function CallProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       // Cancelled because the call already ended: whatever ended it said why.
       if (!aborter.signal.aborted) setError({ projectId, message: String(e) })
-      // Joining may have failed before the room connected, so no disconnect closes the call.
       if (opened !== null) {
-        // The session is the app's one, and a newer start may already be on it after a
-        // Cancel: end it only while this call is still the one it joined, or the newer
-        // call would end too. This call's row is ended either way.
-        if (tokens.current() === opened) await session.end().catch(() => {})
-        await finish(opened)
+        await endFailedStart(opened, {
+          joined: tokens.current,
+          endSession: () => session.end(),
+          finish,
+        })
       }
     } finally {
       if (joining.current === aborter) joining.current = null
