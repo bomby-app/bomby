@@ -10,6 +10,10 @@
 //!
 //! Secrets never go back to the page: it sees whether one is saved. The core uses them to
 //! mint call tokens and passes them to the agent when it starts one.
+//!
+//! A coding agent's keys are here too, by agent id and environment variable, saved in
+//! Settings, Agents: each reaches only that agent, in its environment
+//! (docs/decisions/agent-keys-through-the-environment.md). Bomby sends them nowhere else.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Mutex;
@@ -63,6 +67,10 @@ struct Keys {
     /// The hosted MCP extensions' sign-ins, by extension id (`extensions/connections.rs`).
     #[serde(default)]
     grants: BTreeMap<String, Grant>,
+    /// The coding agents' keys, by agent id, then by the environment variable the agent
+    /// reads it from: `{"goose": {"OPENROUTER_API_KEY": "..."}}`.
+    #[serde(default)]
+    agent_keys: BTreeMap<String, BTreeMap<String, String>>,
 }
 
 impl Keys {
@@ -86,6 +94,11 @@ impl Keys {
         .into_iter()
         .flatten()
         .chain(self.grants.values().flat_map(Grant::secrets))
+        .chain(
+            self.agent_keys
+                .values()
+                .flat_map(|keys| keys.values().map(String::as_str)),
+        )
     }
 
     fn is_empty(&self) -> bool {
@@ -95,6 +108,7 @@ impl Keys {
             && self.rime_key.is_none()
             && self.zep_key.is_none()
             && self.grants.is_empty()
+            && self.agent_keys.is_empty()
     }
 }
 
@@ -297,6 +311,12 @@ impl Vault {
         Ok(self.keys(app)?.zep_key)
     }
 
+    /// Every coding agent's saved keys, by agent id and variable, for their environment
+    /// (`agent_keys_env`).
+    pub fn agent_keys<R: Runtime>(&self, app: &AppHandle<R>) -> Result<AgentKeys> {
+        self.read(app, |keys| keys.agent_keys.clone())
+    }
+
     /// One hosted MCP extension's sign-in.
     pub fn grant<R: Runtime>(&self, app: &AppHandle<R>, id: &str) -> Result<Option<Grant>> {
         self.read(app, |keys| keys.grants.get(id).cloned())
@@ -342,6 +362,44 @@ impl Vault {
         })?;
         Ok(replaced)
     }
+}
+
+/// The coding agents' saved keys: by agent id, then by environment variable.
+pub type AgentKeys = BTreeMap<String, BTreeMap<String, String>>;
+
+/// Where the voice agent reads the coding agents' keys from (`AGENT_KEYS_ENV` in
+/// `agent/acp_client/environment.py`), which hands each agent only its own.
+pub const AGENT_KEYS_ENV: &str = "BOMBY_AGENT_KEYS";
+
+/// `keys` as the voice agent reads them from [`AGENT_KEYS_ENV`], or `None` when none is
+/// saved. Only ever an environment variable of the worker or the probe: never an argument
+/// (the process list shows those) and never in a call's metadata.
+pub fn agent_keys_env(keys: &AgentKeys) -> Option<String> {
+    let saved: BTreeMap<_, _> = keys.iter().filter(|(_, vars)| !vars.is_empty()).collect();
+    (!saved.is_empty()).then(|| serde_json::json!(saved).to_string())
+}
+
+/// The variables with a saved key, by agent id, for the page: names only, never a key.
+pub fn agent_key_names(keys: &AgentKeys) -> BTreeMap<String, Vec<String>> {
+    keys.iter()
+        .filter(|(_, vars)| !vars.is_empty())
+        .map(|(agent, vars)| (agent.clone(), vars.keys().cloned().collect()))
+        .collect()
+}
+
+/// Whether `name` may hold a coding agent's key: an environment variable's name in capitals
+/// (`OPENROUTER_API_KEY`), and none that runs the agent's process or belongs to Bomby
+/// (`PATH`, `DYLD_...`, `BOMBY_...`, `LIVEKIT_...`). The command also checks the agent asks
+/// for it.
+fn agent_key_name_allowed(name: &str) -> bool {
+    const RESERVED: &[&str] = &["PATH", "HOME", "SHELL", "USER", "TMPDIR", "PWD"];
+    const RESERVED_PREFIXES: &[&str] = &["BOMBY_", "LIVEKIT_", "DYLD_", "LD_"];
+    let mut chars = name.chars();
+    chars.next().is_some_and(|c| c.is_ascii_uppercase())
+        && chars.all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+        && name.len() <= 64
+        && !RESERVED.contains(&name)
+        && !RESERVED_PREFIXES.iter().any(|p| name.starts_with(p))
 }
 
 /// The saved LiveKit keys without the secret, or `None` when nothing is saved.
@@ -473,6 +531,68 @@ pub fn clear_zep_key<R: Runtime>(app: AppHandle<R>, vault: State<'_, Vault>) -> 
     })
 }
 
+/// Which variables have a key saved, by agent id: names only, never a key.
+#[tauri::command(async)]
+pub fn agent_keys<R: Runtime>(
+    app: AppHandle<R>,
+    vault: State<'_, Vault>,
+) -> Result<BTreeMap<String, Vec<String>>> {
+    Ok(agent_key_names(&vault.agent_keys(&app)?))
+}
+
+/// Saves a coding agent's key under the variable `name`, one the agent asks for (its row's
+/// key fields, from the probe). It reaches only that agent, from its next start; the agent
+/// is checked again with it.
+#[tauri::command(async)]
+pub fn save_agent_key<R: Runtime>(
+    app: AppHandle<R>,
+    vault: State<'_, Vault>,
+    agent: String,
+    name: String,
+    key: String,
+) -> Result<()> {
+    let key = key.trim();
+    if !agent_key_name_allowed(&name) || !crate::agents::offers_key(&app, &agent, &name) {
+        return Err(Error::Invalid(format!(
+            "{} doesn't ask for {name}.",
+            crate::agents::name(&agent).unwrap_or("This agent")
+        )));
+    }
+    if key.is_empty() || key.contains(char::is_whitespace) {
+        return Err(Error::Invalid("Paste the whole key.".into()));
+    }
+    vault.update(&app, |keys| {
+        keys.agent_keys
+            .entry(agent.clone())
+            .or_default()
+            .insert(name, key.to_owned());
+        Ok(())
+    })?;
+    crate::agents::keys_changed(&app, &agent);
+    Ok(())
+}
+
+/// Removes a coding agent's saved key: the agent goes back to finding its own.
+#[tauri::command(async)]
+pub fn clear_agent_key<R: Runtime>(
+    app: AppHandle<R>,
+    vault: State<'_, Vault>,
+    agent: String,
+    name: String,
+) -> Result<()> {
+    vault.update(&app, |keys| {
+        if let Some(vars) = keys.agent_keys.get_mut(&agent) {
+            vars.remove(&name);
+            if vars.is_empty() {
+                keys.agent_keys.remove(&agent);
+            }
+        }
+        Ok(())
+    })?;
+    crate::agents::keys_changed(&app, &agent);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -585,6 +705,66 @@ mod tests {
         assert!(!keys.is_empty());
         *keys.voice_key(VoiceProvider::Gemini) = None;
         assert!(keys.is_empty(), "nothing left, so the entry is removed");
+    }
+
+    #[test]
+    fn agent_keys_are_redacted_and_go_to_the_agent_only_as_its_variables() {
+        let vault = Vault::default();
+        let keys = Keys {
+            agent_keys: BTreeMap::from([(
+                "goose".into(),
+                BTreeMap::from([("OPENROUTER_API_KEY".into(), "sk-or-1".into())]),
+            )]),
+            ..Keys::default()
+        };
+        assert!(!keys.is_empty());
+        let saved = vault
+            .read_with(|| Ok(keys), |k| k.agent_keys.clone())
+            .unwrap();
+        assert_eq!(vault.secrets_this_run(), ["sk-or-1"]);
+        assert_eq!(
+            agent_keys_env(&saved).as_deref(),
+            Some(r#"{"goose":{"OPENROUTER_API_KEY":"sk-or-1"}}"#)
+        );
+        assert_eq!(
+            agent_key_names(&saved),
+            BTreeMap::from([("goose".into(), vec!["OPENROUTER_API_KEY".into()])])
+        );
+        assert_eq!(agent_keys_env(&AgentKeys::default()), None);
+        let emptied = BTreeMap::from([("goose".into(), BTreeMap::new())]);
+        assert_eq!(
+            agent_keys_env(&emptied),
+            None,
+            "an agent with none sends nothing"
+        );
+    }
+
+    #[test]
+    fn an_agent_key_is_a_variable_that_runs_nothing_and_isnt_bombys() {
+        for name in [
+            "OPENROUTER_API_KEY",
+            "OPENAI_API_KEY",
+            "XAI_API_KEY",
+            "A1_B",
+        ] {
+            assert!(agent_key_name_allowed(name), "{name}");
+        }
+        for name in [
+            "",
+            "openai_api_key",
+            "1KEY",
+            "KEY-X",
+            "KEY X",
+            "PATH",
+            "HOME",
+            "DYLD_INSERT_LIBRARIES",
+            "LD_PRELOAD",
+            "BOMBY_AGENT_KEYS",
+            "LIVEKIT_API_SECRET",
+            &"K".repeat(65),
+        ] {
+            assert!(!agent_key_name_allowed(name), "{name}");
+        }
     }
 
     #[test]

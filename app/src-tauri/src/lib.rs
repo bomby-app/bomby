@@ -4,6 +4,7 @@
 
 mod adapters;
 mod agent;
+mod agent_checks;
 mod agent_picks;
 mod agent_streams;
 mod agents;
@@ -114,6 +115,9 @@ pub fn run() {
             credentials::has_zep_key,
             credentials::save_zep_key,
             credentials::clear_zep_key,
+            credentials::agent_keys,
+            credentials::save_agent_key,
+            credentials::clear_agent_key,
             settings::memory_setting,
             settings::set_memory_setting,
             settings::memory_incognito,

@@ -1,0 +1,47 @@
+import { ApiKeyForm } from "@/components/api-key-form"
+import { FieldError } from "@/components/ui/field"
+
+import { type AgentStatus, clearAgentKey, saveAgentKey } from "./api"
+import { keyFields } from "./key-fields"
+import { forgetAgentListing } from "./listing-cache"
+import { useSavedAgentKeys } from "./use-agent-keys"
+
+/**
+ * The keys an agent asks for, as its setup probe lists them (`setup.keys`: the agent's own
+ * ACP `env_var` auth methods, else its harness's, for its provider where they follow one),
+ * and any key saved for it it no longer asks for, each saved in the keychain and handed to
+ * this agent alone when Bomby starts it (docs/decisions/agent-keys-through-the-environment.md).
+ * Write-only, like every key. A change rechecks the agent in the core, and its model list
+ * here is asked again: another key can mean other models.
+ */
+export function AgentKeys({ agent }: { agent: AgentStatus }) {
+  const { saved, error } = useSavedAgentKeys(agent.id)
+  const fields = keyFields(agent.setup?.keys ?? [], saved)
+  if (fields.length === 0) return null
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-sm text-muted-foreground">
+        Save {agent.name}'s key here and Bomby hands it to {agent.name} alone,
+        so your Mac stops asking for your password when {agent.name} starts.
+        Without one, {agent.name} uses its own.
+      </p>
+      {fields.map((field) => (
+        <ApiKeyForm
+          key={field.name}
+          id={`${agent.id}-${field.name}`}
+          label={field.label}
+          saved={saved.includes(field.name)}
+          save={async (key) => {
+            await saveAgentKey(agent.id, field.name, key)
+            forgetAgentListing(agent.id)
+          }}
+          remove={async () => {
+            await clearAgentKey(agent.id, field.name)
+            forgetAgentListing(agent.id)
+          }}
+        />
+      ))}
+      {error && <FieldError>{error}</FieldError>}
+    </div>
+  )
+}

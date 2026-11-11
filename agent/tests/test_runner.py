@@ -1,6 +1,7 @@
 import asyncio
 import dataclasses
 import json
+import logging
 import os
 import sys
 from collections.abc import Awaitable, Callable, Mapping
@@ -13,9 +14,10 @@ from livekit.agents.llm import ToolError
 
 import acp_client.runner as runner_module
 from acp_client.client import pick_allow
-from acp_client.environment import child_environment
+from acp_client.environment import AGENT_KEYS_ENV, child_environment
 from acp_client.runner import (
     BRIEFING,
+    NOT_READY_LINE,
     REPORT_RULE,
     SHORT_REPORT_RULE,
     AcpRunner,
@@ -24,10 +26,11 @@ from acp_client.runner import (
     no_model_picked,
     no_report,
     not_ready,
+    report_not_ready,
     steered_note,
     stopped,
 )
-from harnesses import CLAUDE_CODE, Harness
+from harnesses import CLAUDE_CODE, CODEX, GOOSE, Harness
 from job import Pick
 from project import Project
 
@@ -696,6 +699,52 @@ def test_child_environment_drops_the_keys_the_app_passes() -> None:
     }
 
 
+def test_each_agent_gets_only_its_own_saved_keys() -> None:
+    saved = {
+        "goose": {"OPENROUTER_API_KEY": "sk-or", "OPENAI_API_KEY": "sk-goose-openai"},
+        "claude": {"OTHER_API_KEY": "sk-other"},
+    }
+    environ = {
+        "PATH": "/bin",
+        AGENT_KEYS_ENV: json.dumps(saved),
+        # Bomby's own voice keys.
+        "OPENAI_API_KEY": "sk-voice-openai",
+        "GOOGLE_API_KEY": "sk-voice-gemini",
+    }
+
+    goose = child_environment(environ, set(), GOOSE)
+    codex = child_environment(environ, set(), CODEX)
+
+    # Saved for goose, OPENAI_API_KEY is goose's own, not the voice's; the voice's Gemini
+    # key and every other agent's keys stay out, and so does the list of them all.
+    assert goose == {
+        "PATH": "/bin",
+        "OPENROUTER_API_KEY": "sk-or",
+        "OPENAI_API_KEY": "sk-goose-openai",
+        **GOOSE.saved_keys_env,
+    }
+    assert codex == {"PATH": "/bin"}
+
+
+def test_an_agent_without_saved_keys_runs_as_before() -> None:
+    environ = {
+        "PATH": "/bin",
+        AGENT_KEYS_ENV: json.dumps({"codex": {"X_API_KEY": "x"}}),
+    }
+
+    assert child_environment(environ, set(), GOOSE) == {"PATH": "/bin"}
+    assert "GOOSE_DISABLE_KEYRING" not in child_environment({}, set(), GOOSE)
+
+
+@pytest.mark.parametrize(
+    "value", ["not json", "[]", '{"goose": "sk"}', '{"goose": {"K": 1}}']
+)
+def test_saved_keys_that_cant_be_read_reach_no_agent(value: str) -> None:
+    environ = {"PATH": "/bin", AGENT_KEYS_ENV: value}
+
+    assert child_environment(environ, set(), GOOSE) == {"PATH": "/bin"}
+
+
 def test_pick_allow_prefers_allow_once() -> None:
     options = [
         PermissionOption(option_id="a", name="Always", kind="allow_always"),
@@ -706,3 +755,14 @@ def test_pick_allow_prefers_allow_once() -> None:
         pick_allow([PermissionOption(option_id="n", name="No", kind="reject_once")])
         is None
     )
+
+
+def test_a_harness_not_ready_on_a_call_is_logged_for_the_app(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # The core reads this line from the worker's log (`not_ready` in agent.rs).
+    with caplog.at_level(logging.WARNING):
+        report_not_ready(CLAUDE_CODE)
+
+    record = next(r for r in caplog.records if r.getMessage() == NOT_READY_LINE)
+    assert record.__dict__["not_ready"] == "claude"

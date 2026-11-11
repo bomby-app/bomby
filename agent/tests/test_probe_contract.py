@@ -13,7 +13,7 @@ from typing import get_args
 import pytest
 
 import probe as probe_cli
-from acp_client.probe import Setup, Step
+from acp_client.probe import KeyField, Setup, Step
 from acp_client.settings import Option, Setting, Skipped
 
 TESTS = Path(__file__).resolve().parent
@@ -39,6 +39,12 @@ EVERYTHING = Setup(
             options=(Option("kimi", "Kimi K3.1 Pro", "Kimi"),),
         ),
     ),
+    keys=(
+        KeyField(
+            "OPENROUTER_API_KEY", "OpenRouter API key", secret=False, optional=True
+        ),
+    ),
+    setup_files=("/Users/me/.config/goose/config.yaml",),
 )
 
 

@@ -1,0 +1,29 @@
+# A coding agent's keys through its environment
+
+Status: accepted, 2026-11-11 (owner). Builds on [check-agent-setup-with-an-acp-probe.md](check-agent-setup-with-an-acp-probe.md) and [credentials-in-the-os-keychain.md](credentials-in-the-os-keychain.md).
+
+## Context
+
+On a release build, macOS kept asking "goose wants to use your confidential information stored in "goose" in your keychain": at launch, in Settings and in the middle of calls. goose's CLI is ad-hoc signed (`codesign -dv`: `flags=adhoc,linker-signed`, no team, 1.59.0), and its secrets are one keychain item (service `goose`, account `secrets`). macOS ties "Always Allow" to that exact binary, so each goose update asks again, once per goose process that reads the item, and Bomby starts goose at every look and for every call. A password dialog mid-call breaks a voice app, and an unanswered one fails the task as not ready after 30 s.
+
+Claude Code, Codex, OpenCode and omp are Developer ID signed, so they don't have the problem today; any agent would if its binary were unsigned and kept keys in the keychain. So the fix belongs on the harness definition, not on goose.
+
+What goose does with a key in its environment (1.59.0 source, [acp-notes.md](../acp-notes.md#goose-keys)): `get_secret` reads the variable first, but on any miss loads the whole keychain item, and `session/new` looks up every secret of the provider, optional ones too. So `anthropic` and `openai` still read the keychain with their key in the environment (their `*_CUSTOM_HEADERS`). `GOOSE_DISABLE_KEYRING` makes goose never open the keychain: secrets come from the environment, then `~/.config/goose/secrets.yaml`.
+
+## Decision
+
+- **The user may save an agent's key in Bomby**, in Settings, Agents, on the agent's row. It's kept in Bomby's one keychain entry (`agent_keys`, by agent id and variable), and never comes back to the page: the probe takes every saved key out of what an agent says back (`redact` in `acp_client/probe.py`), since an agent's error can echo the key it was given. Export diagnostics takes it out of the logs like every other key; the logs on disk are as written.
+- **Protocol first, harness as fallback**, the rule `setup_command` follows: an agent that advertises ACP `env_var` auth methods gets those variables as its key fields; a harness's `key_vars` names them for one that advertises none (goose), optionally per value of a session setting (goose's `provider`: the user's pick, else the session's current value, so a provider refused for want of its key still shows that key's field; a pick of the agent's own default, goose's `goose`, goes by the session's current value). An agent that refuses `session/new` still shows them: a missing key may be why. The probe reports them (`Setup.keys`); the page draws whatever comes, and shared code names no agent.
+- **Each agent gets only its own keys, through one path.** The core passes all saved agent keys to the worker and to the probe in `BOMBY_AGENT_KEYS` (JSON, environment only: never an argument, which the process list shows, and never a call's LiveKit metadata). `child_environment` strips it with the app's keys, then adds that harness's own variables after every other stripping, for the probe and calls alike. A voice key (`OPENAI_API_KEY`, `GOOGLE_API_KEY`) stays stripped unless the user saved one under that name for that agent.
+- **With a saved key, the harness's `saved_keys_env` is set too.** goose's is `GOOSE_DISABLE_KEYRING=1` (owner, 2026-11-11): with a key saved in Bomby, goose never touches its keychain, whatever the provider. Without a saved key nothing changes: the agent runs exactly as before.
+- **The core checks the variable.** `save_agent_key` takes only a variable the agent's row currently offers, in capitals, and none that runs the process or is Bomby's (`PATH`, `HOME`, `DYLD_*`, `LD_*`, `BOMBY_*`, `LIVEKIT_*`).
+- **A refused pick offers its key.** When a pick is refused and its answer asks for a key the row doesn't offer (goose on a provider without its key), the core adds that field to the row and says to save the key and pick again; the pick itself isn't saved. A key saved for an agent stays on its row while the agent doesn't ask for it, so it can always be replaced or removed.
+- **A change restarts and rechecks.** The worker's config includes the keys, so it restarts with them, as for the voice keys; the agent's remembered check and model list are forgotten, in the core and the page, and it's checked again alone, its row and any open model picker following ([remember-the-launch-check.md](remember-the-launch-check.md)).
+
+## Consequences
+
+- With a goose key saved in Bomby, goose sees no secret it keeps only in its keychain: another provider's key, custom headers, extensions' keys. They come from the environment or `secrets.yaml` instead. Switching goose to a provider whose key isn't saved here makes it refuse that provider rather than fall back to the keychain: the row then offers that provider's key, and the pick goes through once it's saved.
+- A different key than goose's own can change the models goose lists, so a saved model pick may show as no longer offered; the row says so and the user picks again.
+- goose answers `session/new` without checking the key (1.59.0), so a wrong or missing key shows on the first task, not in Settings.
+- goose's provider table (`agent/harnesses/goose.py`) is ours to keep: goose names its key variables only in its own `_goose/unstable/providers/list` extension, not in ACP. Re-check it against goose's `ConfigKey`s when goose adds providers.
+- Bomby now keeps a coding agent's key when the user asks it to: on the Mac, in the keychain, sent nowhere but that agent's environment.

@@ -6,7 +6,7 @@ for any agent that speaks ACP, and lives in `acp_client/`.
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 # Where the adapters are built: by the app, into its own folder (BOMBY_ADAPTERS), or by
@@ -15,6 +15,40 @@ ADAPTERS = Path(
     os.environ.get("BOMBY_ADAPTERS")
     or Path(__file__).resolve().parent.parent / "adapters" / "bin"
 )
+
+
+@dataclass(frozen=True)
+class KeyVar:
+    """An environment variable that holds one of an agent's keys, as ACP's `env_var` auth
+    method names one (`AuthEnvVar`)."""
+
+    name: str
+    """The variable: "OPENROUTER_API_KEY"."""
+    label: str
+    """What Settings calls it: "OpenRouter API key"."""
+    optional: bool = False
+
+
+@dataclass(frozen=True)
+class KeyVars:
+    """The variables an agent reads its keys from, for one that advertises no ACP `env_var`
+    auth method (goose). Settings offers them, and the user's saved values reach only this
+    agent, in its environment (`acp_client/environment.py`)."""
+
+    by_value: Mapping[str, tuple[KeyVar, ...]]
+    """The variables for each value of `setting`, or under "" when there's no `setting`."""
+    setting: str | None = None
+    """The session setting whose value decides them (goose's "provider"): the user's pick
+    for it, else the session's current value."""
+    defaults: frozenset[str] = frozenset()
+    """Values of `setting` that mean "the agent's own default" (goose's "goose"): a pick of
+    one is decided by the session's current value instead."""
+
+    def offered(self, value: str | None) -> tuple[KeyVar, ...]:
+        """The variables for `setting`'s `value` (any, without a `setting`)."""
+        if self.setting is None:
+            return self.by_value.get("", ())
+        return self.by_value.get(value, ()) if value is not None else ()
 
 
 @dataclass(frozen=True)
@@ -60,6 +94,20 @@ class Harness:
     pickable_settings: frozenset[str] = frozenset()
     """Session settings the user can pick beyond the model and effort categories, by config
     option id, for one the agent lists without a category (goose's "provider")."""
+    key_vars: KeyVars | None = None
+    """The variables Settings offers for the agent's keys when its ACP `initialize`
+    advertises no `env_var` auth method; the protocol's come first, like `setup_command`
+    (docs/decisions/agent-keys-through-the-environment.md)."""
+    saved_keys_env: Mapping[str, str] = field(default_factory=dict[str, str])
+    """More environment for the agent whenever the user saved a key for it: what makes it
+    read its keys from the environment alone (goose's `GOOSE_DISABLE_KEYRING`), so it
+    never reads its own keychain item, which macOS asks the user about."""
+    setup_files: tuple[str, ...] = ()
+    """The files that hold the agent's own setup (its provider, model, sign-in), `~` for
+    the home folder. Declaring them lets the app remember a launch check that found the
+    agent ready until one of them changes, instead of starting the agent at every launch
+    (docs/decisions/remember-the-launch-check.md). An agent that declares none is checked
+    at every launch."""
 
     def adapter_path(self, settings: Mapping[str, str]) -> str | None:
         """The adapter to start, if this agent needs one: an override like

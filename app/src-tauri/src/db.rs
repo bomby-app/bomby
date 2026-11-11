@@ -161,6 +161,17 @@ const MIGRATIONS: &[&str] = &[
     "
     CREATE INDEX IF NOT EXISTS messages_by_session ON messages(session_id, created_at);
     ",
+    // 11: launch checks remembered across launches (agent_checks.rs,
+    // docs/decisions/remember-the-launch-check.md): an agent's last ready setup, as JSON, and
+    // what it depended on (its program, setup files, picks and saved keys' names, never a key).
+    "
+    CREATE TABLE agent_checks (
+        agent       TEXT    PRIMARY KEY,
+        setup       TEXT    NOT NULL,
+        fingerprint TEXT    NOT NULL,
+        checked_at  INTEGER NOT NULL
+    );
+    ",
 ];
 
 /// The open database, shared by every command through Tauri state.

@@ -22,6 +22,24 @@ installPage: string,
 check: string, };
 
 /**
+ * A key the agent asks for, saved under the environment variable `name` (`KeyField` in
+ * `agent/acp_client/probe.py`).
+ */
+export type KeyField = { 
+/**
+ * The environment variable: "OPENROUTER_API_KEY".
+ */
+name: string, 
+/**
+ * What the field is called: "OpenRouter API key".
+ */
+label: string, 
+/**
+ * A secret, typed in a password field.
+ */
+secret: boolean, optional: boolean, };
+
+/**
  * What the model picker shows: an agent's setup, and the settings it lets the user pick
  * with the picks applied.
  */
@@ -49,7 +67,17 @@ skipped: Array<Skipped>,
 /**
  * Whether the probe opened a session, so `model` and `skipped` are known.
  */
-session: boolean, };
+session: boolean, 
+/**
+ * The keys Settings offers to save for it, which reach only this agent
+ * (docs/decisions/agent-keys-through-the-environment.md).
+ */
+keys: Array<KeyField>, 
+/**
+ * The files that hold its own setup: a ready check is remembered until one changes
+ * (`agent_checks`). None for an agent that's checked at every launch.
+ */
+setupFiles: Array<string>, };
 
 /**
  * A session setting the user can pick: a model, an effort, goose's provider.
@@ -99,7 +127,17 @@ skipped: Array<Skipped>,
 /**
  * Whether the probe opened a session, so `model` and `skipped` are known.
  */
-session: boolean, };
+session: boolean, 
+/**
+ * The keys Settings offers to save for it, which reach only this agent
+ * (docs/decisions/agent-keys-through-the-environment.md).
+ */
+keys: Array<KeyField>, 
+/**
+ * The files that hold its own setup: a ready check is remembered until one changes
+ * (`agent_checks`). None for an agent that's checked at every launch.
+ */
+setupFiles: Array<string>, };
 
 /**
  * A pick that didn't apply, so the session keeps the agent's default for it.

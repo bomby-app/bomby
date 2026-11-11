@@ -12,13 +12,14 @@ The model picker, which the user opens, gets one either way. Either is closed af
 
 import asyncio
 import contextlib
+import dataclasses
 import logging
 import re
 import tempfile
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 
 from acp import RequestError
 from acp.client.connection import ClientSideConnection
@@ -30,11 +31,11 @@ from acp.schema import (
     TerminalAuthMethod,
 )
 
-from harnesses.harness import Harness
+from harnesses.harness import Harness, KeyVar
 from job import Pick
 
 from .client import HarnessClient, connect
-from .environment import launch
+from .environment import every_saved_key, launch
 from .sessions import can_delete, discard_session
 from .settings import Setting, Skipped, apply, model_name, needs_pick
 
@@ -62,6 +63,20 @@ type Step = Literal["connect", "sign_in", "pick", "unreachable", "ready"]
 
 
 @dataclass(frozen=True)
+class KeyField:
+    """A key Settings offers to save for an agent, which reaches only that agent, in its
+    environment as `name` (docs/decisions/agent-keys-through-the-environment.md)."""
+
+    name: str
+    """The environment variable: "OPENROUTER_API_KEY"."""
+    label: str
+    """What the field is called: "OpenRouter API key"."""
+    secret: bool = True
+    """A secret, typed in a password field (ACP's `AuthEnvVar.secret`)."""
+    optional: bool = False
+
+
+@dataclass(frozen=True)
 class Setup:
     """What Settings shows about an installed agent."""
 
@@ -83,6 +98,12 @@ class Setup:
     check opens none in an agent that can't delete it (omp)."""
     settings: tuple[Setting, ...] = ()
     """What the user can pick, with the picks applied; only when listing."""
+    keys: tuple[KeyField, ...] = ()
+    """The keys Settings offers to save: the agent's ACP `env_var` auth methods', else its
+    harness's (`key_vars`), for its provider where they follow one."""
+    setup_files: tuple[str, ...] = ()
+    """The files that hold its own setup, home folder expanded (`Harness.setup_files`):
+    the app remembers a ready check until one of them changes."""
 
 
 async def probe(
@@ -141,6 +162,7 @@ async def probe_all(
     those in `listing`, and opening a session in those in `sessions` even if they can't
     delete it."""
     ids = list(agents)
+    secrets = every_saved_key(environ)
     setups = await asyncio.gather(
         *(
             probe(
@@ -154,7 +176,34 @@ async def probe_all(
             for id, (harness, program) in agents.items()
         )
     )
-    return dict(zip(ids, setups, strict=True))
+    # What an agent says can echo a key it was given ("Credential rejected: sk-..."), and
+    # the answer goes to the page, which never gets a key back.
+    return {id: redact(s, secrets) for id, s in zip(ids, setups, strict=True)}
+
+
+REDACTED = "[redacted]"
+
+
+def redact[T](value: T, secrets: Collection[str]) -> T:
+    """`value` with every one of `secrets` in its text replaced, through dataclasses and
+    tuples (a `Setup` and everything in it)."""
+    if not secrets:
+        return value
+    if isinstance(value, str):
+        text = value
+        for secret in sorted(secrets, key=len, reverse=True):
+            text = text.replace(secret, REDACTED)
+        return cast(T, text)
+    if isinstance(value, tuple):
+        items = cast(tuple[object, ...], value)
+        return cast(T, tuple(redact(item, secrets) for item in items))
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        fields = {
+            f.name: redact(getattr(value, f.name), secrets)
+            for f in dataclasses.fields(value)
+        }
+        return cast(T, replace(value, **fields))
+    return value
 
 
 async def _check(
@@ -167,20 +216,33 @@ async def _check(
     open_session: bool,
 ) -> Setup:
     fix = setup_command(harness, init.auth_methods or [])
+    files = tuple(str(Path(f).expanduser()) for f in harness.setup_files)
     deletable = can_delete(init.agent_capabilities)
     if not deletable and not listing and not open_session:
         await _wait_for_auth(client, init)
-        return _setup(
+        setup = _setup(
             client.auth_status,
             fix,
             lacks_model=False,
             # Without a session the model setting is unknown: any pick counts.
             lacks_pick=harness.model_selection_required and not picks,
         )
+        return replace(
+            setup,
+            keys=key_fields(harness, init.auth_methods or [], (), picks),
+            setup_files=files,
+        )
     try:
         session = await conn.new_session(cwd=str(FOLDER), mcp_servers=[])
     except RequestError as e:
-        return Setup("sign_in", problem=detail(e), fix=fix)
+        # Its keys still show: a missing one may be why it refused.
+        return Setup(
+            "sign_in",
+            problem=detail(e),
+            fix=fix,
+            keys=key_fields(harness, init.auth_methods or [], (), picks),
+            setup_files=files,
+        )
     try:
         applied = await apply(
             conn, session.session_id, harness, session.config_options, picks
@@ -201,6 +263,8 @@ async def _check(
             model=model,
             skipped=applied.skipped,
             settings=applied.settings if listing else (),
+            keys=key_fields(harness, init.auth_methods or [], applied.settings, picks),
+            setup_files=files,
         )
     finally:
         await discard_session(conn, session.session_id, init.agent_capabilities)
@@ -256,6 +320,50 @@ def detail(error: BaseException) -> str:
         text = error.strerror or ""
     text = (text or str(error) or type(error).__name__).strip().rstrip(".")
     return text if len(text) <= _MAX_DETAIL else text[: _MAX_DETAIL - 3] + "..."
+
+
+def key_fields(
+    harness: Harness,
+    auth_methods: Sequence[AuthMethodAgent | EnvVarAuthMethod | TerminalAuthMethod],
+    settings: Sequence[Setting],
+    picks: Sequence[Pick],
+) -> tuple[KeyField, ...]:
+    """The keys Settings offers for the agent: the variables its `env_var` auth methods
+    name, the protocol first, like `setup_command`; else its harness's `key_vars`, for the
+    value of the setting they follow, the user's pick for it before the session's current
+    one (a provider refused for lack of the very key the user is about to save)."""
+    from_protocol = [
+        KeyField(
+            name=var.name,
+            label=var.label or var.name,
+            secret=var.secret is not False,
+            optional=bool(var.optional),
+        )
+        for method in auth_methods
+        if isinstance(method, EnvVarAuthMethod)
+        for var in method.vars
+    ]
+    if from_protocol:
+        return _unique(from_protocol)
+    if harness.key_vars is None:
+        return ()
+    setting = harness.key_vars.setting
+    value = next((p.value for p in reversed(picks) if p.setting == setting), None)
+    if value is None or value in harness.key_vars.defaults:
+        value = next((s.current for s in settings if s.id == setting), None)
+    return _unique(_field(var) for var in harness.key_vars.offered(value))
+
+
+def _field(var: KeyVar) -> KeyField:
+    return KeyField(name=var.name, label=var.label, optional=var.optional)
+
+
+def _unique(fields: Iterable[KeyField]) -> tuple[KeyField, ...]:
+    """`fields` without a second one for the same variable."""
+    unique: dict[str, KeyField] = {}
+    for field in fields:
+        _ = unique.setdefault(field.name, field)
+    return tuple(unique.values())
 
 
 def setup_command(

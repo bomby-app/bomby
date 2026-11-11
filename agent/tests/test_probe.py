@@ -11,9 +11,11 @@ from typing import Any
 import pytest
 
 import probe as probe_cli
-from acp_client.probe import Setup, probe
+from acp_client.environment import AGENT_KEYS_ENV
+from acp_client.probe import KeyField, Setup, probe, probe_all
 from acp_client.settings import Skipped
 from harnesses import Harness
+from harnesses.harness import KeyVar, KeyVars
 from job import Pick, read_metadata
 
 FAKE_AGENT = Path(__file__).resolve().parent / "fake_claude_acp.py"
@@ -331,6 +333,8 @@ def test_the_command_line_answers_by_agent_id(
             "skipped": [],
             "session": False,
             "settings": [],
+            "keys": [],
+            "setup_files": [],
         }
     }
 
@@ -416,3 +420,149 @@ def test_the_probe_loads_without_livekit(module: str) -> None:
         check=True,
     )
     assert loaded.stdout.strip() == "False"
+
+
+# Keys by provider, as goose's harness names them: the fake agent's provider setting.
+KEYED = dataclasses.replace(
+    FAKE,
+    pickable_settings=frozenset({"provider"}),
+    key_vars=KeyVars(
+        setting="provider",
+        by_value={
+            "p1": (KeyVar("P1_API_KEY", "P1 API key"),),
+            "p2": (KeyVar("P2_API_KEY", "P2 API key"),),
+            "p3": (KeyVar("P3_API_KEY", "P3 API key"),),
+        },
+        defaults=frozenset({"default"}),
+    ),
+)
+
+
+def started_with(tmp_path: Path) -> list[str]:
+    """The key variables the fake agent was started with, by name."""
+    lines = (tmp_path / "acp.jsonl").read_text().splitlines()
+    return next(e["keys"] for e in map(json.loads, lines) if e["event"] == "initialize")
+
+
+def test_an_agent_that_names_its_key_variables_over_acp_gets_those_fields(
+    tmp_path: Path,
+) -> None:
+    env = {
+        **CAN_DELETE,
+        "FAKE_ACP_MODEL": "m1",
+        "FAKE_ACP_ENV_VAR_AUTH": "FAKE_API_KEY",
+    }
+
+    setup, _ = run_probe(tmp_path, env, KEYED)
+
+    # The protocol's come first; the harness's are only for an agent that names none.
+    assert setup.keys == (KeyField("FAKE_API_KEY", "Fake API key"),)
+
+
+def test_key_fields_follow_the_provider_picked_or_the_agents_own(
+    tmp_path: Path,
+) -> None:
+    env = {**CAN_DELETE, "FAKE_ACP_MODEL": "m1"}
+
+    on_its_own, _ = run_probe(tmp_path, env, KEYED)
+    picked, _ = run_probe(tmp_path, env, KEYED, (Pick("provider", "p2"),))
+    # Refused for want of the very key the user is about to save: its fields still show.
+    refused, _ = run_probe(tmp_path, env, KEYED, (Pick("provider", "p3"),))
+    none = dataclasses.replace(KEYED, key_vars=None)
+    without, _ = run_probe(tmp_path, env, none)
+
+    assert [k.name for k in on_its_own.keys] == ["P1_API_KEY"]
+    assert [k.name for k in picked.keys] == ["P2_API_KEY"]
+    # The fake agent refuses p3 as goose refuses a provider without its key.
+    assert refused.skipped == (Skipped("provider", "Provider", "p3", "refused"),)
+    assert [k.name for k in refused.keys] == ["P3_API_KEY"]
+    assert without.keys == ()
+
+
+def test_a_pick_of_the_agents_own_default_shows_the_provider_it_resolves_to(
+    tmp_path: Path,
+) -> None:
+    env = {**CAN_DELETE, "FAKE_ACP_MODEL": "m1"}
+
+    # "default" isn't a value the fake agent lists, so the session stays on p1.
+    setup, _ = run_probe(tmp_path, env, KEYED, (Pick("provider", "default"),))
+
+    assert [k.name for k in setup.keys] == ["P1_API_KEY"]
+
+
+def test_an_agent_that_refuses_a_session_still_shows_the_keys_it_asks_for(
+    tmp_path: Path,
+) -> None:
+    env = {
+        **CAN_DELETE,
+        "FAKE_ACP_AUTH_REQUIRED": "1",
+        "FAKE_ACP_ENV_VAR_AUTH": "FAKE_API_KEY",
+    }
+    harness = dataclasses.replace(FAKE, setup_files=("~/.config/fake/config.yaml",))
+
+    setup, _ = run_probe(tmp_path, env, harness)
+    by_harness, _ = run_probe(
+        tmp_path,
+        {**CAN_DELETE, "FAKE_ACP_AUTH_REQUIRED": "1"},
+        KEYED,
+        (Pick("provider", "p2"),),
+    )
+
+    assert setup.step == "sign_in"
+    assert setup.keys == (KeyField("FAKE_API_KEY", "Fake API key"),)
+    assert setup.setup_files == (str(Path.home() / ".config/fake/config.yaml"),)
+    # Without a session, a harness's fields follow the pick.
+    assert [k.name for k in by_harness.keys] == ["P2_API_KEY"]
+
+
+def test_a_saved_key_an_agent_echoes_never_reaches_the_answer(tmp_path: Path) -> None:
+    saved = {"fake": {"P1_API_KEY": "sk-fake-123456"}, "other": {"X": "sk-other-789"}}
+    environ = {
+        **os.environ,
+        **CAN_DELETE,
+        "FAKE_ACP_LOG": str(tmp_path / "acp.jsonl"),
+        "FAKE_ACP_REFUSE_SESSION": "Credential rejected: sk-fake-123456 (not sk-other-789)",
+        AGENT_KEYS_ENV: json.dumps(saved),
+    }
+
+    setups = asyncio.run(probe_all({"fake": (KEYED, Path(sys.executable))}, environ))
+
+    answer = json.dumps(dataclasses.asdict(setups["fake"]))
+    assert setups["fake"].problem == (
+        "Credential rejected: [redacted] (not [redacted])"
+    )
+    assert "sk-fake" not in answer and "sk-other" not in answer
+
+
+def test_the_probe_starts_an_agent_with_its_own_saved_keys_only(
+    tmp_path: Path,
+) -> None:
+    saved = {
+        "fake": {"P1_API_KEY": "sk-p1"},
+        "other": {"OTHER_API_KEY": "sk-other"},
+    }
+    env = {
+        **CAN_DELETE,
+        "FAKE_ACP_MODEL": "m1",
+        AGENT_KEYS_ENV: json.dumps(saved),
+        "OPENAI_API_KEY": "voice",
+    }
+
+    _ = run_probe(tmp_path, env, KEYED)
+
+    assert started_with(tmp_path) == ["P1_API_KEY"]
+
+
+def test_the_setup_files_come_back_with_the_home_folder_expanded(
+    tmp_path: Path,
+) -> None:
+    harness = dataclasses.replace(FAKE, setup_files=("~/.config/fake/config.yaml",))
+    env = {**CAN_DELETE, "FAKE_ACP_MODEL": "m1"}
+
+    setup, _ = run_probe(tmp_path, env, harness)
+    sessionless, _ = run_probe(tmp_path, {"FAKE_ACP_MODEL": "m1"}, harness)
+
+    expected = (str(Path.home() / ".config/fake/config.yaml"),)
+    assert setup.setup_files == expected
+    assert sessionless.setup_files == expected
+    assert run_probe(tmp_path, env)[0].setup_files == ()

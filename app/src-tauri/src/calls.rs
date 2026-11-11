@@ -17,7 +17,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
-use crate::agent::{AgentWorker, JobCrash, OnCrash, WorkerConfig};
+use crate::agent::{AgentWorker, JobCrash, OnNews, WorkerConfig, WorkerNews};
 use crate::credentials::LiveKitKeys;
 use crate::db::{Db, now_ms};
 use crate::error::{Error, Result};
@@ -77,11 +77,15 @@ fn folders_are_there(project: &projects::CallProject) -> Result<()> {
     Ok(())
 }
 
-/// Tells the main window about each crashed job, by its room.
-fn report_crashes<R: Runtime>(app: &AppHandle<R>) -> OnCrash {
+/// Tells the main window about each crashed job, by its room, and the agents about a coding
+/// agent that wasn't ready on a call, which is checked again when the call ends.
+fn follow_worker<R: Runtime>(app: &AppHandle<R>) -> OnNews {
     let app = app.clone();
-    Arc::new(move |JobCrash { room, reason }| {
-        let _ = app.emit_to(windows::MAIN, AGENT_CRASHED, AgentCrashed { room, reason });
+    Arc::new(move |news| match news {
+        WorkerNews::Crashed(JobCrash { room, reason }) => {
+            let _ = app.emit_to(windows::MAIN, AGENT_CRASHED, AgentCrashed { room, reason });
+        }
+        WorkerNews::NotReady(agent) => agents::not_ready_on_call(&app, &agent),
     })
 }
 
@@ -414,6 +418,7 @@ pub fn open_call<R: Runtime>(
     folders_are_there(&project)?;
     let provider = voice::for_new_call(&app, &db, &vault)?;
     let voice_keys = vault.voice_keys(&app)?;
+    let agent_keys = vault.agent_keys(&app)?;
     // Read before the server starts, so this Mac's server starts only for a call that can open.
     let (memory_user, zep_key) = memory_for_call(&app, &db, &vault)?;
     let memory_incognito = settings::incognito(&db.conn())?;
@@ -428,6 +433,7 @@ pub fn open_call<R: Runtime>(
                     livekit: server.clone(),
                     voice_keys,
                     zep_key,
+                    agent_keys,
                     tokens: app
                         .state::<extensions::tokens::Tokens>()
                         .0
@@ -440,7 +446,7 @@ pub fn open_call<R: Runtime>(
                         .map(agent_streams::StreamSocket::env),
                 },
                 &log_dir,
-                report_crashes(&app),
+                follow_worker(&app),
             )?;
             Ok(server)
         })();
@@ -578,7 +584,9 @@ fn end(conn: &Connection, call_id: i64, at: i64) -> Result<()> {
 #[tauri::command(async)]
 pub fn end_call<R: Runtime>(app: AppHandle<R>, db: State<'_, Db>, call_id: i64) -> Result<()> {
     updates::call_ended(&app, call_id);
-    end(&db.conn(), call_id, now_ms())
+    end(&db.conn(), call_id, now_ms())?;
+    agents::after_call(&app);
+    Ok(())
 }
 
 /// Deletes a call and its transcript (ON DELETE CASCADE).

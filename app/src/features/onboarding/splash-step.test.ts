@@ -14,6 +14,8 @@ const SETUP: Setup = {
   adapter: null,
   skipped: [],
   session: true,
+  keys: [],
+  setupFiles: [],
 }
 
 /** An agent as the core reports it: installed when it has a path. */
