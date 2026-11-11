@@ -61,8 +61,8 @@ pub struct Setup {
     #[serde(default)]
     pub timed_out: bool,
     /// The agent takes keys Settings can save, even when this answer can't name them (goose
-    /// on a provider no session told the probe): so a row that timed out can say macOS may be
-    /// asking for a password for it, with or without a field.
+    /// on a provider no session or config file told the probe): so a row that timed out can
+    /// say macOS may be asking for a password for it, with or without a field.
     #[serde(default)]
     pub takes_keys: bool,
 }

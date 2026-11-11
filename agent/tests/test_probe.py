@@ -18,7 +18,7 @@ from acp_client.probe import KeyField, Setup, probe, probe_all, redact
 from acp_client.redaction import secrets_to_redact
 from acp_client.settings import Skipped
 from harnesses import Harness
-from harnesses.harness import KeyVar, KeyVars
+from harnesses.harness import KeyVar, KeyVars, SettingSource
 from job import Pick, read_metadata
 
 FAKE_AGENT = Path(__file__).resolve().parent / "fake_claude_acp.py"
@@ -669,11 +669,11 @@ def test_an_agent_that_doesnt_answer_in_time_offers_the_keys_it_named_over_acp(
     assert setup.keys == (KeyField("FAKE_API_KEY", "Fake API key"),)
 
 
-def test_without_a_pick_or_a_session_keys_that_follow_a_setting_are_unknown_but_taken(
+def test_without_a_pick_a_session_or_a_saved_setting_keys_are_unknown_but_taken(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Which provider goose is on only a session tells: no field to offer, but the row can
-    # still say macOS may be asking, and the app keeps any fields it showed.
+    # goose's first check ever, with no provider anywhere Bomby can read: no field to offer,
+    # but the row can still say macOS may be asking, and the app keeps any fields it showed.
     monkeypatch.setattr(probe_module, "TIMEOUT_S", 1)
 
     setup, _ = run_probe(
@@ -682,6 +682,41 @@ def test_without_a_pick_or_a_session_keys_that_follow_a_setting_are_unknown_but_
 
     assert (setup.step, setup.timed_out, setup.keys) == ("unreachable", True, ())
     assert setup.takes_keys
+
+
+def test_a_first_check_that_times_out_names_the_keys_for_the_setting_in_the_agents_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # goose keeps its provider in config.yaml: read there, no session needed.
+    monkeypatch.setattr(probe_module, "TIMEOUT_S", 1)
+    config = tmp_path / "config.yaml"
+    _ = config.write_text("active_provider: p2\nGOOSE_MODEL: kimi\n")
+    assert KEYED.key_vars is not None
+    harness = dataclasses.replace(
+        KEYED,
+        key_vars=dataclasses.replace(
+            KEYED.key_vars,
+            saved_in=SettingSource(
+                env=("FAKE_PROVIDER",),
+                files=(str(config),),
+                keys=("active_provider",),
+            ),
+        ),
+    )
+    hang = {**CAN_DELETE, "FAKE_ACP_HANG": "new_session"}
+
+    from_file, _ = run_probe(tmp_path, hang, harness)
+    from_env, _ = run_probe(tmp_path, {**hang, "FAKE_PROVIDER": "p3"}, harness)
+    picked, _ = run_probe(tmp_path, hang, harness, (Pick("provider", "p1"),))
+
+    assert from_file.timed_out
+    assert [k.name for k in from_file.keys] == ["P2_API_KEY"]
+    assert [k.name for k in from_env.keys] == ["P3_API_KEY"], (
+        "its environment comes first"
+    )
+    assert [k.name for k in picked.keys] == ["P1_API_KEY"], (
+        "the user's pick comes first"
+    )
 
 
 def test_an_agent_that_takes_no_keys_says_so() -> None:

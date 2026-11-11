@@ -14,8 +14,10 @@ keychain each time it starts, docs/acp-notes.md#goose-keys).
 
 An agent that fails still comes back with the keys it asks for, as far as the probe can tell
 without a session: its key fields stay on its row, since a missing key, or macOS asking
-for a password for the agent's own keychain item, is often why it failed. And it says
-whether the agent takes keys at all (`takes_keys`), even when it can't name them.
+for a password for the agent's own keychain item, is often why it failed. Where they follow a
+setting (goose's provider), its harness says where the agent keeps it (`KeyVars.saved_in`),
+which is read when no pick and no session decides it. And it says whether the agent takes
+keys at all (`takes_keys`), even when it can't name them.
 """
 
 import asyncio
@@ -118,7 +120,7 @@ class Setup:
     takes_keys: bool = False
     """Whether the agent takes keys Settings can save, as far as the probe can tell: it named
     some (`keys`), or its harness has `key_vars`. True even when which ones isn't known (a
-    provider no session decides), so the app can still say what may be wrong."""
+    provider no session or file decides), so the app can still say what may be wrong."""
 
 
 async def probe(
@@ -149,9 +151,11 @@ async def _probe(
     secrets = secrets_to_redact(environ)
     # What `initialize` answered, if it got that far: its keys show on a failure too.
     started: list[InitializeResponse] = []
+    # The environment it's started with, once known: where a setting its keys follow may be.
+    agent_env: dict[str, str] = dict(environ)
 
     def failed(problem: str, timed_out: bool = False) -> Setup:
-        return _unreachable(harness, picks, started, problem, timed_out)
+        return _unreachable(harness, picks, started, agent_env, problem, timed_out)
 
     try:
         adapter = harness.adapter_path(environ)
@@ -163,6 +167,7 @@ async def _probe(
             )
         # Inside the `try`: a launch or a folder that fails fails this agent only.
         command, args, env = launch(harness, program, environ)
+        agent_env = env
         client = HarnessClient(harness)
         FOLDER.mkdir(exist_ok=True)
         async with asyncio.timeout(TIMEOUT_S):
@@ -173,7 +178,15 @@ async def _probe(
             ):
                 started.append(init)
                 return await _check(
-                    harness, conn, client, init, picks, listing, open_session, secrets
+                    harness,
+                    conn,
+                    client,
+                    init,
+                    picks,
+                    env,
+                    listing,
+                    open_session,
+                    secrets,
                 )
     except TimeoutError:
         return failed("It didn't answer in time", timed_out=True)
@@ -192,18 +205,20 @@ def _unreachable(
     harness: Harness,
     picks: Sequence[Pick],
     started: Sequence[InitializeResponse],
+    env: Mapping[str, str],
     problem: str,
     timed_out: bool,
 ) -> Setup:
     """An agent that didn't answer, with the keys it asks for as far as they're known
     without a session: its ACP `env_var` auth methods if `initialize` answered, else its
-    harness's for the user's pick. Where they follow a setting only a session knows (goose's
-    provider, with no pick), there are none, and the app keeps the ones its row showed."""
+    harness's for the user's pick, or for the setting where the agent keeps it (goose's
+    provider in its config, `KeyVars.saved_in`, read from `env`). Where neither decides
+    them, there are none, and the app keeps the ones its row last showed."""
     auth = (started[0].auth_methods or []) if started else []
     return Setup(
         "unreachable",
         problem=problem,
-        keys=key_fields(harness, auth, (), picks),
+        keys=key_fields(harness, auth, (), picks, env),
         setup_files=tuple(str(Path(f).expanduser()) for f in harness.setup_files),
         timed_out=timed_out,
     )
@@ -262,6 +277,7 @@ async def _check(
     client: HarnessClient,
     init: InitializeResponse,
     picks: Sequence[Pick],
+    env: Mapping[str, str],
     listing: bool,
     open_session: bool,
     secrets: Collection[str],
@@ -280,7 +296,7 @@ async def _check(
         )
         return replace(
             setup,
-            keys=key_fields(harness, init.auth_methods or [], (), picks),
+            keys=key_fields(harness, init.auth_methods or [], (), picks, env),
             setup_files=files,
         )
     try:
@@ -291,7 +307,7 @@ async def _check(
             "sign_in",
             problem=detail(e, secrets),
             fix=fix,
-            keys=key_fields(harness, init.auth_methods or [], (), picks),
+            keys=key_fields(harness, init.auth_methods or [], (), picks, env),
             setup_files=files,
         )
     try:
@@ -314,7 +330,9 @@ async def _check(
             model=model,
             skipped=applied.skipped,
             settings=applied.settings,
-            keys=key_fields(harness, init.auth_methods or [], applied.settings, picks),
+            keys=key_fields(
+                harness, init.auth_methods or [], applied.settings, picks, env
+            ),
             setup_files=files,
         )
     finally:
@@ -381,11 +399,14 @@ def key_fields(
     auth_methods: Sequence[AuthMethodAgent | EnvVarAuthMethod | TerminalAuthMethod],
     settings: Sequence[Setting],
     picks: Sequence[Pick],
+    env: Mapping[str, str] | None = None,
 ) -> tuple[KeyField, ...]:
     """The keys Settings offers for the agent: the variables its `env_var` auth methods
     name, the protocol first, like `setup_command`; else its harness's `key_vars`, for the
     value of the setting they follow, the user's pick for it before the session's current
-    one (a provider refused for lack of the very key the user is about to save)."""
+    one (a provider refused for lack of the very key the user is about to save), and,
+    without either, the value where the agent keeps it (`saved_in`), read with `env`, the
+    environment it's started with."""
     from_protocol = [
         KeyField(
             name=var.name,
@@ -405,6 +426,8 @@ def key_fields(
     value = next((p.value for p in reversed(picks) if p.setting == setting), None)
     if value is None or value in harness.key_vars.defaults:
         value = next((s.current for s in settings if s.id == setting), None)
+    if value is None and env is not None and harness.key_vars.saved_in is not None:
+        value = harness.key_vars.saved_in.read(env)
     return _unique(_field(var) for var in harness.key_vars.offered(value))
 
 

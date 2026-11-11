@@ -8,6 +8,9 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import cast
+
+import yaml
 
 # Where the adapters are built: by the app, into its own folder (BOMBY_ADAPTERS), or by
 # `just agent install` (agent/adapters/bin) for console runs.
@@ -30,6 +33,44 @@ class KeyVar:
 
 
 @dataclass(frozen=True)
+class SettingSource:
+    """Where an agent keeps a session setting's value outside a session, read the way the
+    agent reads it: the first of `env` that's set, else the first of `keys` found at the top
+    of its YAML `files` (`~` for the home folder), a later file winning over an earlier one.
+    Only a text value counts. The probe reads it when no session answers (`KeyVars.saved_in`),
+    so a check that times out can still name the keys that follow the setting."""
+
+    env: tuple[str, ...] = ()
+    files: tuple[str, ...] = ()
+    keys: tuple[str, ...] = ()
+
+    def read(self, environ: Mapping[str, str]) -> str | None:
+        """The value, if the agent has one set in `environ` (the environment it's started
+        with) or its files. A file that can't be read or parsed counts as empty, as the
+        agent skips it too."""
+        for name in self.env:
+            if value := environ.get(name):
+                return value
+        merged: dict[object, object] = {}
+        for file in self.files:
+            merged.update(_yaml_mapping(Path(file).expanduser()))
+        for key in self.keys:
+            value = merged.get(key)
+            if isinstance(value, str) and value:
+                return value
+        return None
+
+
+def _yaml_mapping(path: Path) -> dict[object, object]:
+    """The top-level mapping of the YAML file at `path`; empty when there's none."""
+    try:
+        loaded: object = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError):
+        return {}
+    return cast("dict[object, object]", loaded) if isinstance(loaded, dict) else {}
+
+
+@dataclass(frozen=True)
 class KeyVars:
     """The variables an agent reads its keys from, for one that advertises no ACP `env_var`
     auth method (goose). Settings offers them, and the user's saved values reach only this
@@ -43,6 +84,10 @@ class KeyVars:
     defaults: frozenset[str] = frozenset()
     """Values of `setting` that mean "the agent's own default" (goose's "goose"): a pick of
     one is decided by the session's current value instead."""
+    saved_in: SettingSource | None = None
+    """Where the agent keeps `setting` outside a session (goose's provider, in its
+    config.yaml): what decides the variables when no session answers and the user picked
+    no value, as on a first check that times out."""
 
     def offered(self, value: str | None) -> tuple[KeyVar, ...]:
         """The variables for `setting`'s `value` (any, without a `setting`)."""
